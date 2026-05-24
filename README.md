@@ -1,141 +1,85 @@
 # Knowledge Base Q&A Bot
 
-## How to Use
+A grounded Q&A bot over a small Markdown knowledge base, with citations back to the original `filename#heading`. The repo holds two parallel retrieval strategies; the prototype targets the Markdown KB strategy first, with the Vector RAG app preserved for post-prototype comparison work (see [ADR-0002](project-docs/adr/0002-two-parallel-retrieval-apps.md)).
 
-1. Read `PROMPT.md`
-2. Review the sample Markdown docs in `docs/`
-3. Choose a learning mode:
-   - **Challenge Track:** Build from scratch using `PROMPT.md` as your spec
-   - **Guided Track:** Pick a scaffold and fill in the TODOs
-4. Choose a retrieval strategy:
-   - **Markdown KB:** Markdown section index + BM25 keyword search
-   - **Vector RAG:** Markdown chunks + embeddings + vector search
-5. Verify with the curl tests in `PROMPT.md`
-6. Bring your design tradeoffs to live session
+For the exercise spec and verification, see [`PROMPT.md`](PROMPT.md). For the project's shared vocabulary, see [`CONTEXT.md`](CONTEXT.md). For decisions, see [`project-docs/adr/`](project-docs/adr/).
 
-## Recommended Path
+## Retrieval strategies
 
-If you want the simplest guided path, start here:
+| Strategy | Folder | Core idea | Status |
+|----------|--------|-----------|--------|
+| Markdown KB | [`markdown_kb/`](markdown_kb/) | Parse Markdown headings into Sections, BM25 over a persisted Section Index | Active — prototype target |
+| Vector RAG | [`vector_rag/`](vector_rag/) | Split Markdown into chunks, embed with OpenAI, retrieve via FAISS | Scaffold only — post-prototype work |
 
-```bash
-cd scaffold/markdown_kb
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
-
-Then run the verification tests from `PROMPT.md`.
-
-## Guided Track Options
-
-| Strategy | Folder | Core Idea | Best For |
-|----------|--------|-----------|----------|
-| Markdown KB | `scaffold/markdown_kb/` | Parse Markdown headings, build section-level index, rank sections with BM25 | Small knowledge bases, agent-readable docs, easy debugging |
-| Vector RAG | `scaffold/vector_rag/` | Split Markdown into chunks, embed chunks, retrieve with vector search | Larger corpora, semantic queries, traditional RAG practice |
-
-## Shared API
-
-Both strategies should expose the same API:
+Both apps expose the same external API:
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/health` | Liveness check |
-| POST | `/index` | Read `docs/*.md` and build the retrieval index |
-| POST | `/chat` | Answer a question with grounded sources |
+| `GET` | `/health` | Liveness check |
+| `POST` | `/index` | Read `docs/*.md` and build the retrieval index |
+| `POST` | `/chat` | Answer a question with grounded Sections and Citations |
 
-After calling `/index`, each strategy persists its retrieval index:
+After calling `POST /index`, each strategy persists its retrieval artifact under `.kb/`:
 
-| Strategy | Persisted Index | Startup Behavior |
-|----------|-----------------|------------------|
-| Markdown KB | `.kb/index.json` | Loads the section index into memory |
-| Vector RAG | `.kb/faiss_index/` | Loads the FAISS index into memory |
+| Strategy | Persisted artifact | Startup behavior |
+|----------|--------------------|------------------|
+| Markdown KB | `.kb/index.json` (Section Index) | Loads the index into memory on startup |
+| Vector RAG | `.kb/faiss_index/` | Loads the FAISS index into memory on startup |
 
-Restarting the server should not require rebuilding immediately. Re-run `/index` after changing `docs/*.md`.
+Restarting the server does not require rebuilding immediately. Re-run `POST /index` after editing `docs/*.md`.
+
+## Running the Markdown KB app
+
+```bash
+cd markdown_kb
+python3 -m venv .venv
+source .venv/bin/activate         # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+
+export OPENAI_API_KEY="sk-..."
+export KB_SCORE_THRESHOLD="0.5"    # optional; default 0.5
+
+uvicorn app.main:app --reload
+```
+
+Then run the curl verification cases listed in [`PROMPT.md`](PROMPT.md).
 
 ## Prerequisites
 
-Both guided tracks use OpenAI for final answer generation:
+Both apps use OpenAI for final answer generation:
 
 ```bash
 export OPENAI_API_KEY="sk-..."
 ```
 
-The Markdown KB track does not need embeddings. The Vector RAG track uses OpenAI embeddings.
+The Markdown KB app does not need embeddings. The Vector RAG app uses OpenAI embeddings.
 
-## Stretch Goals
+## Layout
 
-Pick one or more after the core `/index` and `/chat` flow works.
-
-### Score Threshold and Fallback
-
-Add a similarity or BM25 score threshold so weak retrieval results become an explicit fallback instead of a shaky answer. Track how often the system says it cannot confirm from the knowledge base.
-
-### Streaming Interface
-
-For a better user experience, add a streaming endpoint:
-
-```text
-POST /chat/stream
+```
+/
+├── CLAUDE.md                  ← agent-skill configuration
+├── CONTEXT.md                 ← shared vocabulary (glossary)
+├── PROMPT.md                  ← exercise spec + design answers + verification
+├── README.md                  ← this file
+├── docs/                      ← Sources (the bot's runtime knowledge base)
+├── project-docs/
+│   ├── adr/                   ← architectural decisions
+│   └── agents/                ← issue-tracker, triage-labels, domain docs
+├── markdown_kb/               ← active retrieval app (BM25 + Section Index)
+└── vector_rag/                ← scaffold app for future comparison work
 ```
 
-Recommended approach:
+## Stretch goals
 
-- Use Server-Sent Events (SSE) for a simple one-way token stream
-- Send `source` events before token events so the UI can show what context was selected
-- Send `token` events as the LLM produces output
-- Send a final `done` event when the answer is complete
+The following stretch goals from `PROMPT.md` are deferred until after the Markdown KB prototype is verified end-to-end. They are described here for orientation only.
 
-This is intentionally a stretch goal. The core exercise is still retrieval quality and grounded answer generation.
-
-### Browser UI
-
-Build a tiny browser UI over `/chat` or `/chat/stream`. Show selected sources before the answer, then render streamed tokens as they arrive.
-
-### Multi-Format Import
-
-Karpathy-style knowledge bases often treat Markdown as the canonical knowledge format, not the only input format.
-
-Add an import pipeline:
-
-```text
-raw/*.txt or raw/*.html -> docs/*.md -> POST /index -> retrieval index
-```
-
-Recommended scope:
-
-- Start with `.txt` and `.html`
-- Preserve source filename in front matter or metadata
-- Convert headings into Markdown headings
-- Keep `docs/*.md` as the human-readable canonical copy
-- Rebuild the retrieval index after conversion
-
-Avoid parsing complex PDFs or spreadsheets first. The goal is to teach normalization into clean Markdown, not file parser edge cases.
-
-### Alternative Interfaces
-
-Keep the retrieval logic the same, but expose it through another interface:
-
-```text
-CLI: kb index / kb ask
-MCP: expose index, search, and chat as agent tools
-Web UI: simple chat screen over /chat or /chat/stream
-```
-
-This is useful for comparing interface design. The core exercise should still stay focused on indexing, retrieval, grounding, and citation quality.
-
-### Wiki Index Generation
-
-Generate `wiki/index.md` from `.kb/index.json` so humans and agents can browse the available topics without calling the API.
-
-### Answer Filing
-
-Write useful Q&A results back into `wiki/` after review. Keep filed answers source-grounded and preserve citations back to the original Markdown sections.
-
-### Conversation Memory
-
-Add short conversation memory for follow-up questions. Memory should help interpret the query, but it must not override retrieved sources or citation requirements.
-
-### Paraphrase Comparison
-
-Create a small set of paraphrased queries and compare Markdown KB vs Vector RAG. Look for cases where BM25 misses synonyms and cases where vector search retrieves semantically related but wrong chunks.
+- **Score threshold and Cannot Confirm fallback** — already part of the core design (see [ADR-0001](project-docs/adr/0001-strict-grounded-answers.md)).
+- **Streaming interface** (`POST /chat/stream` via SSE).
+- **Browser UI** showing retrieved Sections before the streamed answer.
+- **Multi-format import** (`.txt` / `.html` → canonical Markdown in `docs/`).
+- **Alternative interfaces** (CLI, MCP server, web UI).
+- **Wiki Index generation** — emit `wiki/index.md` from the Section Index so humans and agents can browse topics without calling the API. This is the first step toward the Karpathy-style LLM Wiki layer.
+- **Answer Filing** — write reviewed Q&A results back into `wiki/`, with Citations preserved.
+- **Conversation memory** — short context for follow-up questions; retrieved Sources still control the final answer.
+- **Paraphrase comparison** — paraphrased queries to expose BM25 synonym misses vs vector semantic false positives.

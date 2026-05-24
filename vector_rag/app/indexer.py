@@ -10,8 +10,8 @@ from langchain_community.vectorstores import FAISS
 from langchain_openai import OpenAIEmbeddings
 
 
-DOCS_DIR = Path(__file__).resolve().parents[3] / "docs"
-INDEX_DIR = Path(__file__).resolve().parents[3] / ".kb" / "faiss_index"
+DOCS_DIR = Path(__file__).resolve().parents[2] / "docs"
+INDEX_DIR = Path(__file__).resolve().parents[2] / ".kb" / "faiss_index"
 EMBEDDING_MODEL = "text-embedding-3-small"
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 
