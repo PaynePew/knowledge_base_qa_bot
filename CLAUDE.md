@@ -6,6 +6,9 @@ See `PROMPT.md` for the exercise spec + the answered design questions, `README.m
 
 ## Workflow triggers
 
+**To implement the prototype slices (issues #2–#7), follow** [`project-docs/orchestration-plan.md`](project-docs/orchestration-plan.md). It defines the Sonnet 4.6 implementer + Opus 4.7 reviewer loop, the per-slice TDD style, the commit / issue-comment / merge-gate protocol, and the human-escalation rules. A fresh session can pick up the work by running:
+> "Execute `project-docs/orchestration-plan.md`, starting from the first open `ready-for-agent` issue (dependency order: #3 → #4 → #5 → #6 → #7, all gated on #2 being closed first)."
+
 **Before starting any phase beyond the current prototype** (wiki layer, `/ingest`, multi-turn conversation, streaming, etc.), re-read [`project-docs/inspiration.md`](project-docs/inspiration.md) and `grep` the section for the relevant phase tag — for example `grep "phase: wiki" project-docs/inspiration.md`. Operational patterns that are too detailed for `CONTEXT.md` or an ADR but too valuable to forget live there, each tagged with the phase that should trigger its review.
 
 ## Agent skills
