@@ -366,7 +366,15 @@ def load_index_json(index_path: Path | None = None) -> tuple[int, int]:
 
     Returns (files_indexed, sections_indexed). Returns (0, 0) if the file
     does not exist.
+
+    Raises json.JSONDecodeError (or any other parse exception) on a corrupt
+    index file so the server fails fast rather than silently serving wrong data.
+
+    On a successful load, emits an ``index_loaded | files=N sections=M`` entry
+    to wiki/log.md so the log records server boot + index reload across restarts.
     """
+    from .logger import log_event
+
     global sections
 
     if index_path is None:
@@ -376,6 +384,7 @@ def load_index_json(index_path: Path | None = None) -> tuple[int, int]:
         return 0, 0
 
     raw = index_path.read_text(encoding="utf-8")
+    # Let json.JSONDecodeError propagate — corrupt index is a fail-fast condition.
     payload = json.loads(raw)
 
     with _index_lock:
@@ -392,6 +401,11 @@ def load_index_json(index_path: Path | None = None) -> tuple[int, int]:
             for item in payload.get("sections", [])
         ]
         rebuild_stats()
+
+    log_event(
+        "index_loaded",
+        f"files={files_indexed} sections={len(sections)}",
+    )
 
     return files_indexed, len(sections)
 
