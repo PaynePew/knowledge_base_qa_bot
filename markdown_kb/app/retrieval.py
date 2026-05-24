@@ -52,6 +52,10 @@ def query(question: str) -> dict:
     3. If top score < threshold → Cannot Confirm.
     """
     if not indexer.sections:
+        log_event(
+            "chat_fallback",
+            f'"{question[:60].replace(chr(34), chr(39))}" reason=not_indexed',
+        )
         return {
             "answer": "The knowledge base has not been indexed yet. Call POST /index first.",
             "sources": [],
@@ -59,9 +63,18 @@ def query(question: str) -> dict:
 
     ranked = indexer.search(question, k=3)
 
-    if not ranked or ranked[0][1] < _SCORE_THRESHOLD:
+    # Determine the effective top score (0.0 when no results were returned)
+    top_score = ranked[0][1] if ranked else 0.0
+
+    if top_score < _SCORE_THRESHOLD:
         # Cannot Confirm — pre-LLM gate, no LLM call (ADR-0001)
-        _write_chat_log(question, ranked)
+        # Log with reason=below_threshold regardless of whether search returned
+        # results (score 0.0 is still below any positive threshold).
+        truncated = question[:60].replace('"', "'")
+        log_event(
+            "chat_fallback",
+            f'"{truncated}" reason=below_threshold top_score={round(top_score, 3)}',
+        )
         return {
             "answer": "I cannot confirm from the knowledge base.",
             "sources": [],
