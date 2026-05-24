@@ -1,0 +1,6 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers"
+markers = [
+    "live: Opt-in live integration tests that make real OpenAI API calls; skipped by default.",
+]
