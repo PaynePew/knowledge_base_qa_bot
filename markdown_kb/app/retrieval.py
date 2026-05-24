@@ -1,22 +1,29 @@
+"""Retrieval layer — happy-path query() for the grounded /chat endpoint.
+
+Flow:
+  1. tokenize query
+  2. search top-3 Sections via BM25
+  3. pre-LLM Cannot Confirm gate (ADR-0001)
+  4. build_prompt with Citation markers
+  5. call LLM
+  6. write chat log entry
+  7. return {answer, sources}
+"""
+from __future__ import annotations
+
 import os
 
-from langchain.schema import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from . import indexer
+from .logger import log_event
+from .prompt_builder import SYSTEM_PROMPT, build_prompt
 
-
-SYSTEM_PROMPT = """
-# TODO: Write the system prompt for the knowledge base Q&A assistant.
-#
-# Design decision: Hallucination defense for raw Markdown context.
-#
-# Hints:
-# 1. Only answer using the provided CONTEXT.
-# 2. Cite sources using filename#heading.
-# 3. Define fallback behavior when the context lacks the answer.
-# 4. Explicitly prohibit guessing or outside knowledge.
-"""
+# Score threshold below which retrieval is treated as "no match".
+# Default 0.5 — calibrated against the sample corpus. Override with
+# KB_SCORE_THRESHOLD env var.
+_SCORE_THRESHOLD = float(os.getenv("KB_SCORE_THRESHOLD", "0.5"))
 
 _llm = None
 
@@ -26,55 +33,87 @@ def get_llm():
     if _llm is None:
         _llm = ChatOpenAI(
             model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-            request_timeout=20,
+            timeout=20,
             max_retries=1,
         )
     return _llm
 
 
-def build_prompt(query: str, ranked_sections: list) -> str:
-    # TODO: Build the prompt from top-ranked Markdown sections.
-    #
-    # Design decision: Put raw Markdown sections into CONTEXT with citations.
-    #
-    # Hints:
-    # 1. Include [Source: filename#heading] before each section.
-    # 2. Include heading_path so the model sees the document structure.
-    # 3. Include only top sections passed into this function.
-    # 4. Place CONTEXT before QUESTION.
-    return f"CONTEXT:\n(no context)\n\nQUESTION:\n{query}"
-
-
 def query(question: str) -> dict:
+    """Answer a question against the indexed corpus.
+
+    Returns a dict with keys:
+        answer  — grounded text (may be "I cannot confirm from the knowledge base.")
+        sources — list of {source, heading, score, content} dicts
+
+    Pre-LLM gates (ADR-0001 — never hand weak context to the LLM):
+    1. If sections is empty → not indexed yet.
+    2. If BM25 yields no results → Cannot Confirm.
+    3. If top score < threshold → Cannot Confirm.
+    """
     if not indexer.sections:
         return {
             "answer": "The knowledge base has not been indexed yet. Call POST /index first.",
             "sources": [],
         }
 
-    ranked_sections = indexer.search(question, k=3)
-    if not ranked_sections:
+    ranked = indexer.search(question, k=3)
+
+    if not ranked or ranked[0][1] < _SCORE_THRESHOLD:
+        # Cannot Confirm — pre-LLM gate, no LLM call (ADR-0001)
+        _write_chat_log(question, ranked)
         return {
             "answer": "I cannot confirm from the knowledge base.",
             "sources": [],
         }
 
+    # Build sections list and prompt
+    ranked_sections = [sec for sec, _score in ranked]
+    prompt_text = build_prompt(question, ranked_sections)
+
+    # Call LLM
     response = get_llm().invoke([
         SystemMessage(content=SYSTEM_PROMPT),
-        HumanMessage(content=build_prompt(question, ranked_sections)),
+        HumanMessage(content=prompt_text),
     ])
 
     sources = [
         {
-            "source": section.id,
-            "heading": " > ".join(section.heading_path),
+            "source": sec.id,
+            "heading": " > ".join(sec.heading_path),
             "score": round(score, 3),
-            "content": section.content[:240],
+            "content": sec.content[:240],
         }
-        for section, score in ranked_sections
+        for sec, score in ranked
     ]
+
+    # Write chat log entry
+    _write_chat_log(question, ranked)
 
     return {
         "answer": response.content,
         "sources": sources,
     }
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _write_chat_log(
+    question: str,
+    ranked: list,
+) -> None:
+    """Append a chat log entry to wiki/log.md.
+
+    Format:
+        ## [<ts>] chat | "<truncated_query>" top=<section_id>:<score>
+    """
+    truncated = question[:60].replace('"', "'")
+    if ranked:
+        top_sec, top_score = ranked[0]
+        summary = f'"{truncated}" top={top_sec.id}:{round(top_score, 3)}'
+    else:
+        summary = f'"{truncated}" top=none'
+    log_event("chat", summary)
