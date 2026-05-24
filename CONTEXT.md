@@ -11,8 +11,8 @@ A markdown file in `docs/` that the bot indexes. Each Source contains one or mor
 _Avoid_: Document (overloaded — LangChain's `Document` type stays internal to the library, not used as a domain term), Article (too narrow — won't cover future inputs like podcast notes or book chapters), Doc (collides with the `docs/` folder name).
 
 **Section**:
-The retrieval unit. A leaf-heading slice of a Source: heading text plus body content up to the next heading at the same or shallower depth. Carries a `heading_path` breadcrumb listing its parent headings. Identified by `{source-filename}#{heading-slug}` (e.g. `refund_policy.md#refund-timeline`). A Source with no headings degrades to a single Section identified by the bare filename.
-_Avoid_: Chunk (implies fixed-size splitting, which we deliberately don't do), Paragraph (too granular — would fragment a single topic).
+The retrieval unit. A heading-anchored slice of a Source. A heading becomes a Section when either (i) it has no child headings (a *leaf*), or (ii) it carries non-whitespace body content directly between itself and its first child heading (a *body-bearing intermediate*). The Section's content is the body it owns directly — never the recursive body of its children, which are their own Sections. Carries a `heading_path` breadcrumb listing its parent headings. Identified by `{source-filename}#{heading-slug}` (e.g. `refund_policy.md#refund-timeline`). A Source with no headings degrades to a single Section identified by the bare filename. Empty-body leaves are still Sections (heading-only); their `tokens` come from the heading text alone.
+_Avoid_: Chunk (implies fixed-size splitting, which we deliberately don't do), Paragraph (too granular — would fragment a single topic), Leaf section (the rule is broader than leaves alone).
 
 **Section Index**:
 The persisted inverted index over all Sections, saved to `.kb/index.json`. Stores both the BM25 metadata (doc frequencies, average length) and a full snapshot of each Section's content, so the server can answer queries after restart without re-reading `docs/`. Goes stale when `docs/` changes and `/index` has not been re-run.
@@ -32,10 +32,51 @@ _Avoid_: "I don't know" (sounds like a model limitation rather than a KB boundar
 
 ## Reserved (not yet implemented)
 
+> The concrete target shape of the future wiki layer is `AgriciDaniel/claude-obsidian` (5.4K⭐, actively maintained — see ADR-0003). The reserved terms below mirror that repo's structure so vocabulary aligns from day one. Operational patterns we want to remember but that are not vocabulary live in [`project-docs/inspiration.md#deferred-patterns`](project-docs/inspiration.md) — re-read that section before starting any phase beyond the current prototype.
+
+**Wiki** _(future)_:
+The LLM-maintained markdown layer that sits between Sources and queries. Planned as a `wiki/` directory of synthesis pages, organized by entity type (entities, concepts, comparisons, …). Distinct from Sources: Sources are immutable raw input; the Wiki is the LLM's compiled view, where cross-references and synthesis accumulate. Co-queried alongside Sources under the W2 layered model (ADR-0003).
+_Avoid_: Notes (too generic), Knowledge base (the project as a whole is a knowledge base; this term refers to the LLM-maintained layer specifically).
+
 **Wiki Index** _(future)_:
-The human- and LLM-readable catalog of wiki pages, planned to live at `wiki/index.md` once the wiki layer exists. Distinct from the Section Index: a navigation surface, not a search data structure. Reserved here so the term is available without renaming the Section Index later.
+The human- and LLM-readable catalog of Wiki pages, planned to live at `wiki/index.md`. Distinct from the Section Index: a navigation surface, not a search data structure. Reserved so the term is available without renaming the Section Index later.
+
+**Hot Cache** _(future)_:
+A small (~500 words) working-memory file at `wiki/hot.md` containing the most recent context — the answer to "where were we?" between sessions. First file an agent reads on session start, before the Wiki Index. Multiple commenters on Karpathy's gist proposed this and the `claude-obsidian` repo implements it; the access pattern there is hot → index → domain-index → individual pages (a 4-level depth budget).
+_Avoid_: Working memory (overloaded with LLM-architecture terms), Session cache (overloaded with HTTP).
+
+**Wiki Log** _(future)_:
+A chronological, append-only event log at `wiki/log.md`. Each entry starts with a consistent prefix (e.g. `## [2026-04-02] ingest | source-name`) so it remains parseable with `grep`. Records ingests, queries, lint passes, and pattern reviews. Karpathy's original spec calls this `log.md`; we prefix "Wiki" to avoid colliding with other log conventions.
+_Avoid_: Changelog (the project root may have its own CHANGELOG.md for releases), Audit log (overloaded with compliance language).
+
+**Source Template** _(future)_:
+A per-source-type Markdown skeleton used by `/ingest` to produce a Wiki page from a Source. The `claude-obsidian` repo ships five: `comparison`, `concept`, `entity`, `question`, `source`. Templates live under `_templates/` and define the YAML frontmatter schema for each type (confidence, status, contradictions fields and similar). Empirical sweet spot is **5–7 types**: `claude-obsidian` ships 5; gist commenter @bluewater8008 reported 7 working well in cross-domain use. Fewer than 5 forces unrelated source kinds into a single shape (loss of fidelity); more than 7 creates classification overhead with little marginal value.
+_Avoid_: Schema (overloaded — we already use "the schema" for `CLAUDE.md` / `WIKI.md`), Note template (too generic).
+
+**Lint Pass** _(future)_:
+A periodic health check over the Wiki: contradiction detection, stale claims, orphan pages, missing cross-references, gaps suggested by repeated cannot-confirm queries. Karpathy's third core operation, alongside Ingest and Query.
+_Avoid_: Sanity check (vague), Audit (compliance overtone).
+
+**Ingest** _(future)_:
+The operation of taking a new Source and integrating it into the Wiki: read it, summarize it, update touched entity / concept / comparison pages, write a log entry, optionally flag contradictions with prior Sources. The current prototype only implements Query; Ingest is the next major phase.
+_Avoid_: Import (more about format conversion than synthesis), Process (too generic).
+
+**Grounding Check** _(future)_:
+A secondary LLM call performed *after* the answer is drafted, verifying that every factual claim in the draft is supported by the cited Sections. Acts as a post-LLM validation layer that complements the pre-LLM Cannot Confirm threshold gate. Reserved for the post-prototype anti-hallucination work — see `project-docs/inspiration.md`.
+_Avoid_: Verification, Fact-check (overloaded with journalism/social-media usage).
+
+**Query Rewriting** _(future)_:
+Reformulating a follow-up user question into a self-contained query that carries the necessary conversational context, so retrieval can be performed without the multi-turn history. Required for the PROMPT.md "Conversation Memory" stretch goal.
+_Avoid_: Query expansion (a different technique that adds synonyms to a single-turn query), Question reformulation (verbose).
+
+**Conversation Store** _(future)_:
+A session-scoped store of recent turns, keyed by session id, used to feed Query Rewriting in multi-turn flows. Planned with a sliding window (~10 turns) and TTL eviction. Does not exist in the prototype.
+_Avoid_: Session store (overloaded with auth/cookie usage), Chat history (vague).
 
 ## Flagged ambiguities
 
 **Slug generation for non-ASCII headings is undefined.**
 The current `slugify()` strips everything outside `[a-z0-9]`, so a heading like `## 退款政策` collapses to the literal fallback string `section`. Multiple non-ASCII headings inside one Source will therefore all collide on `section` and pile up `section-2`, `section-3`, … — usable but unreadable. Acceptable for the English-only sample `docs/`; must be revisited before ingesting personal notes that contain CJK or other non-Latin headings (likely at the same time the wiki layer is added).
+
+**Section ID is not stable across renames.**
+A Section's identifier is derived purely from `{source-filename}#{heading-slug}`. Renaming a Source file or editing a heading text changes the identifier, which silently invalidates every Citation a caller already received. Accepted unflagged for the prototype because the PROMPT.md verification freezes both filenames and headings; a content-derived stable identifier (UUID sidecar or content hash) becomes worth implementing at the same time the wiki layer is added, since that is when accumulated Citations start being expensive to invalidate.

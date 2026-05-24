@@ -1,7 +1,7 @@
 import math
 import re
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 from pathlib import Path
 
@@ -42,6 +42,7 @@ class Section:
     heading_path: list[str]
     content: str
     tokens: list[str]
+    metadata: dict = field(default_factory=dict)  # YAML frontmatter (future use)
 
     def to_dict(self) -> dict:
         return {
@@ -51,6 +52,7 @@ class Section:
             "heading_path": self.heading_path,
             "content": self.content,
             "tokens": self.tokens,
+            "metadata": self.metadata,
         }
 
 
@@ -70,15 +72,48 @@ def tokenize(text: str) -> list[str]:
 
 
 def parse_markdown(path: Path) -> list[Section]:
-    # TODO: Parse one Markdown file into section-level records.
-    #
-    # Design decision: The retrieval unit is a heading section, not a whole file.
-    #
-    # Hints:
-    # 1. Use HEADING_RE to detect Markdown headings.
-    # 2. Track heading_path so citations include parent context.
-    # 3. Each Section id should look like "refund_policy.md#refund-timeline".
-    # 4. Tokens should include both headings and content.
+    """Parse one Markdown file into Sections under the body-bearing rule.
+
+    See CONTEXT.md > Section for the formal definition. The 10-rule spec:
+
+    1.  Read the file as UTF-8.
+    2.  If the file starts with `---\\n`, strip and parse the YAML frontmatter
+        into a dict. Attach this dict to every Section's `metadata` field.
+        Do NOT tokenize frontmatter values into BM25 tokens.
+    3.  Scan the remaining body line by line, maintaining `in_fence: bool`.
+        Toggle `in_fence` whenever a line starts with three backticks. While
+        `in_fence` is true, treat every line as content — do NOT match
+        HEADING_RE against fenced code (so `# bash comment` inside a code
+        block is not treated as a heading).
+    4.  Outside fences, match HEADING_RE. Use a stack to track the current
+        heading path. When a heading at depth d arrives, pop the stack until
+        the top has depth < d (those headings are "closed" and emitted as
+        Sections if they qualify under rule 5). Then push the new heading.
+    5.  A heading becomes a Section when either:
+            (i)  It is a leaf — from its push to its pop, no deeper heading
+                 was ever pushed on top of it; OR
+            (ii) It is body-bearing — between its push and the first deeper
+                 heading pushed on top of it, the body content accumulated
+                 directly under it is not whitespace-only.
+        In case (ii) the Section's content is only the body owned directly
+        by this heading, NOT the recursive content of its children.
+    6.  Emit a `log_event("parse_warning", ...)` whenever a non-leaf heading
+        has only whitespace body and therefore produces no Section (this is
+        normal for h1 file titles, but worth logging at startup).
+    7.  A Source with zero headings produces a single Section: `id=filename`
+        (no `#anchor`), `heading=filename`, `heading_path=[filename]`,
+        `content=` full file body.
+    8.  An empty-body leaf (heading present, body whitespace-only) is still
+        emitted as a Section. Its `content` is `""`; its `tokens` come from
+        the heading text alone. BM25 will rank it low unless the query
+        matches the heading directly, which is the desired behavior.
+    9.  Heading slug collisions inside the same Source: append `-2`, `-3`, …
+        suffixes. Never silently overwrite a previously emitted Section.
+    10. `tokens` is the concatenation of (a) lowercase alphanumeric tokens
+        from the heading text and (b) the same for the body content, with
+        STOP_WORDS removed. The same tokenization applies to query strings
+        at retrieval time.
+    """
     return []
 
 

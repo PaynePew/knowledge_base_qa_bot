@@ -75,6 +75,7 @@ The Markdown KB app does not need embeddings. The Vector RAG app uses OpenAI emb
 The following stretch goals from `PROMPT.md` are deferred until after the Markdown KB prototype is verified end-to-end. They are described here for orientation only.
 
 - **Score threshold and Cannot Confirm fallback** — already part of the core design (see [ADR-0001](project-docs/adr/0001-strict-grounded-answers.md)).
+- **Output validation (Grounding Check)** — a secondary LLM call after the draft answer that verifies every claim traces back to a cited Section. Complements the pre-LLM threshold gate; closes the anti-hallucination loop. See `project-docs/inspiration.md` for the four-layer framing this comes from.
 - **Streaming interface** (`POST /chat/stream` via SSE).
 - **Browser UI** showing retrieved Sections before the streamed answer.
 - **Multi-format import** (`.txt` / `.html` → canonical Markdown in `docs/`).
