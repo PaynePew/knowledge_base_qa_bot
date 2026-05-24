@@ -207,6 +207,11 @@ def test_low_threshold_allows_out_of_scope_query_to_reach_llm(
     capture = CaptureLLM()
     monkeypatch.setattr(retrieval_module, "_llm", capture)
     monkeypatch.setattr(retrieval_module, "get_llm", lambda: capture)
+    # Also patch the retry LLM so the grounding check doesn't attempt a real
+    # OpenAI call (the canned response has no [Source: token, so the check
+    # fires; we just need it to use the same stub).
+    monkeypatch.setattr(retrieval_module, "_retry_llm", capture)
+    monkeypatch.setattr(retrieval_module, "get_retry_llm", lambda: capture)
 
     from app.main import app
 
@@ -214,7 +219,7 @@ def test_low_threshold_allows_out_of_scope_query_to_reach_llm(
     resp = client.post("/chat", json={"query": "Which restaurants are nearby?"})
 
     assert resp.status_code == 200
-    # With threshold=0.0 the LLM must have been invoked
+    # With threshold=0.0 the LLM must have been invoked (primary + possibly retry)
     assert capture.call_count >= 1, (
         f"Expected LLM to be invoked when KB_SCORE_THRESHOLD=0.0, "
         f"but call_count={capture.call_count}"
