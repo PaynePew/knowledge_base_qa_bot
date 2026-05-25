@@ -113,13 +113,11 @@ def query(question: str) -> dict:
     ranked_sections = [sec for sec, _score in ranked]
     prompt_text = build_prompt(question, ranked_sections)
 
-    # Call LLM — map OpenAI exception classes to HTTP responses (issue #5)
     answer = _call_llm_with_error_handling(question, prompt_text)
 
-    # Light grounding check (post-LLM heuristic — issue #5):
-    # If the answer neither contains [Source: nor equals the exact Cannot Confirm
-    # phrase, retry once at temperature=0. If still ungrounded, replace with
-    # Cannot Confirm and clear sources.
+    # Light grounding check: if the answer neither contains [Source: nor equals
+    # the exact Cannot Confirm phrase, retry once at temperature=0. If still
+    # ungrounded, replace with Cannot Confirm and clear sources.
     sources = [
         {
             "source": sec.id,
@@ -149,7 +147,7 @@ def query(question: str) -> dict:
 def _call_llm_with_error_handling(question: str, prompt_text: str) -> str:
     """Invoke the LLM and map OpenAI exceptions to HTTPExceptions.
 
-    Error mapping (issue #5):
+    Error mapping:
       - APITimeoutError, RateLimitError → HTTP 503 (transient; caller should retry)
       - AuthenticationError            → HTTP 500 (bad API key)
       - Any other APIError             → HTTP 500 (unexpected service error)
@@ -211,7 +209,7 @@ def _apply_grounding_check(
     answer: str,
     sources: list[dict],
 ) -> tuple[str, list[dict]]:
-    """Post-LLM light grounding heuristic (issue #5).
+    """Post-LLM light grounding heuristic.
 
     If the first answer is ungrounded (no [Source: and not Cannot Confirm):
       1. Retry the same prompt at temperature=0 (single retry).
