@@ -10,6 +10,9 @@ Provides:
   - indexed_corpus:       builds the real Section Index against REAL_DOCS into
                           the tmp paths set up by the autouse redirect
   - pytest_collection_modifyitems: skip @pytest.mark.live unless -m live
+
+Also loads .env at the very top so live tests pick up OPENAI_API_KEY
+the same way uvicorn does via app.main.
 """
 from __future__ import annotations
 
@@ -17,9 +20,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+from dotenv import find_dotenv, load_dotenv
 
-import app.indexer as _indexer
-import app.logger as _logger
+# Load .env BEFORE importing app modules — mirrors what app.main does for the
+# running server. find_dotenv walks up from cwd (markdown_kb/ when pytest runs)
+# and locates the repo-root .env. Without this, live tests that read
+# OPENAI_API_KEY at test-function start fail before app.main has a chance to
+# call load_dotenv itself.
+load_dotenv(find_dotenv(usecwd=True))
+
+import app.indexer as _indexer  # noqa: E402
+import app.logger as _logger  # noqa: E402
 
 REAL_DOCS = Path(__file__).resolve().parents[2] / "docs"
 
