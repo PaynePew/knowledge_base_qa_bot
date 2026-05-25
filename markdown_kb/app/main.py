@@ -1,4 +1,7 @@
+from dotenv import find_dotenv, load_dotenv
 from fastapi import FastAPI
+
+load_dotenv(find_dotenv(usecwd=True))
 
 from .indexer import load_index_json
 from .routes import router
