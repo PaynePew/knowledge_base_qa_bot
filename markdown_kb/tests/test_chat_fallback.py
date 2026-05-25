@@ -15,11 +15,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.indexer as indexer
-import app.logger as logger_module
 import app.retrieval as retrieval_module
 from app.retrieval import CANNOT_CONFIRM_PHRASE, NOT_INDEXED_MESSAGE
 
-REAL_DOCS = Path(__file__).resolve().parents[2] / "docs"
+from .conftest import FakeLLMResponse
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -49,11 +48,7 @@ class CaptureLLM:
     def invoke(self, messages):
         self.call_count += 1
         self.last_messages = messages
-
-        class _Resp:
-            content = "Some canned answer from the LLM."
-
-        return _Resp()
+        return FakeLLMResponse(content="Some canned answer from the LLM.")
 
 
 # ---------------------------------------------------------------------------
@@ -62,39 +57,14 @@ class CaptureLLM:
 
 
 @pytest.fixture()
-def indexed_corpus(tmp_path, monkeypatch):
-    """Index real docs/ into a tmp location; clean up after each test."""
-    kb_dir = tmp_path / ".kb"
-    index_path = kb_dir / "index.json"
-    monkeypatch.setattr(indexer, "INDEX_PATH", index_path)
+def empty_corpus():
+    """Ensure no sections are indexed — simulates a pre-index state.
 
-    wiki_dir = tmp_path / "wiki"
-    log_path = wiki_dir / "log.md"
-    monkeypatch.setattr(logger_module, "LOG_PATH", log_path)
-
-    indexer.build_index(REAL_DOCS)
-
-    yield {"log_path": log_path}
-
+    Path redirection is handled by conftest's autouse `_redirect_paths_to_tmp`.
+    """
+    import app.logger as _logger
     indexer.sections.clear()
-
-
-@pytest.fixture()
-def empty_corpus(tmp_path, monkeypatch):
-    """Ensure no sections are indexed — simulates a pre-index state."""
-    kb_dir = tmp_path / ".kb"
-    index_path = kb_dir / "index.json"
-    monkeypatch.setattr(indexer, "INDEX_PATH", index_path)
-
-    wiki_dir = tmp_path / "wiki"
-    log_path = wiki_dir / "log.md"
-    monkeypatch.setattr(logger_module, "LOG_PATH", log_path)
-
-    # Explicitly clear any leftover in-memory state
-    indexer.sections.clear()
-
-    yield {"log_path": log_path}
-
+    yield {"log_path": _logger.LOG_PATH}
     indexer.sections.clear()
 
 

@@ -25,12 +25,12 @@ from app.indexer import (
 )
 import app.indexer as indexer
 
+from .conftest import REAL_DOCS
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-REAL_DOCS = Path(__file__).resolve().parents[2] / "docs"
 
 
 def _write(tmp_dir: Path, filename: str, content: str) -> Path:

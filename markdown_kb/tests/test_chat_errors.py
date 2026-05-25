@@ -23,12 +23,10 @@ import openai
 import pytest
 from fastapi.testclient import TestClient
 
-import app.indexer as indexer
-import app.logger as logger_module
 import app.retrieval as retrieval_module
 from app.retrieval import CANNOT_CONFIRM_PHRASE
 
-REAL_DOCS = Path(__file__).resolve().parents[2] / "docs"
+from .conftest import FakeLLMResponse
 
 REFUND_SECTION_ID = "refund_policy.md#refund-timeline"
 
@@ -99,37 +97,7 @@ class CountingLLM:
     def invoke(self, messages: list):
         self.call_count += 1
         idx = min(self.call_count - 1, len(self._responses) - 1)
-        content = self._responses[idx]
-
-        class _Resp:
-            pass
-
-        r = _Resp()
-        r.content = content
-        return r
-
-
-# ---------------------------------------------------------------------------
-# Shared fixture: indexed corpus + log redirection
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture()
-def indexed_corpus(tmp_path, monkeypatch):
-    """Index real docs/ into a tmp location; clean up after each test."""
-    kb_dir = tmp_path / ".kb"
-    index_path = kb_dir / "index.json"
-    monkeypatch.setattr(indexer, "INDEX_PATH", index_path)
-
-    wiki_dir = tmp_path / "wiki"
-    log_path = wiki_dir / "log.md"
-    monkeypatch.setattr(logger_module, "LOG_PATH", log_path)
-
-    indexer.build_index(REAL_DOCS)
-
-    yield {"log_path": log_path}
-
-    indexer.sections.clear()
+        return FakeLLMResponse(content=self._responses[idx])
 
 
 # ---------------------------------------------------------------------------

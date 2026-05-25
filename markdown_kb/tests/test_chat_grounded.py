@@ -15,11 +15,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.indexer as indexer
-import app.logger as logger_module
 import app.retrieval as retrieval_module
 from app.retrieval import CANNOT_CONFIRM_PHRASE
 
-REAL_DOCS = Path(__file__).resolve().parents[2] / "docs"
+from .conftest import FakeLLMResponse
 
 # ---------------------------------------------------------------------------
 # Helpers / constants
@@ -48,14 +47,12 @@ class FakeLLM:
 
     def invoke(self, messages: list):
         self.last_messages = messages
-
-        class _Resp:
-            content = (
+        return FakeLLMResponse(
+            content=(
                 f"Approved refunds are processed within 5-7 business days. "
                 f"[Source: {self.source_id}]"
             )
-
-        return _Resp()
+        )
 
 
 @pytest.fixture()
@@ -66,28 +63,6 @@ def fake_llm_refund():
 @pytest.fixture()
 def fake_llm_email():
     return FakeLLM(source_id=EMAIL_SECTION_ID)
-
-
-@pytest.fixture(autouse=False)
-def indexed_corpus(tmp_path, monkeypatch):
-    """Build the section index once from the real docs/ and patch paths."""
-    # Redirect .kb/index.json to tmp so we don't pollute the real .kb/
-    kb_dir = tmp_path / ".kb"
-    index_path = kb_dir / "index.json"
-    monkeypatch.setattr(indexer, "INDEX_PATH", index_path)
-
-    # Redirect log to tmp so we don't pollute wiki/log.md
-    wiki_dir = tmp_path / "wiki"
-    log_path = wiki_dir / "log.md"
-    monkeypatch.setattr(logger_module, "LOG_PATH", log_path)
-
-    # Build index from the real docs/
-    indexer.build_index(REAL_DOCS)
-
-    yield {"log_path": log_path}
-
-    # Clean up in-memory state so tests don't bleed into each other
-    indexer.sections.clear()
 
 
 @pytest.fixture()

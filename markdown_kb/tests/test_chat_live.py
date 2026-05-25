@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 import app.indexer as indexer
 import app.logger as logger_module
 
-REAL_DOCS = Path(__file__).resolve().parents[2] / "docs"
+from .conftest import REAL_DOCS
 
 
 # ---------------------------------------------------------------------------

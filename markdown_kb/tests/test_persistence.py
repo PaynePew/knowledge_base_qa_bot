@@ -25,7 +25,7 @@ from fastapi.testclient import TestClient
 
 from app.retrieval import NOT_INDEXED_MESSAGE
 
-REAL_DOCS = Path(__file__).resolve().parents[2] / "docs"
+from .conftest import REAL_DOCS, FakeLLMResponse
 
 # The section that the happy-path refund query should return
 REFUND_SECTION_ID = "refund_policy.md#refund-timeline"
@@ -43,14 +43,12 @@ class FakeLLM:
         self.source_id = source_id
 
     def invoke(self, messages: list):
-        class _Resp:
-            pass
-
-        _Resp.content = (
-            f"Approved refunds are processed within 5-7 business days. "
-            f"[Source: {self.source_id}]"
+        return FakeLLMResponse(
+            content=(
+                f"Approved refunds are processed within 5-7 business days. "
+                f"[Source: {self.source_id}]"
+            )
         )
-        return _Resp()
 
 
 def _reload_app_modules(monkeypatch, index_path: Path, log_path: Path):
