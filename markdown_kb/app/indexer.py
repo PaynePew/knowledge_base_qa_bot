@@ -16,7 +16,7 @@ import re
 import tempfile
 import threading
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -76,15 +76,7 @@ class Section:
     metadata: dict = field(default_factory=dict)  # YAML frontmatter (future use)
 
     def to_dict(self) -> dict:
-        return {
-            "id": self.id,
-            "file": self.file,
-            "heading": self.heading,
-            "heading_path": self.heading_path,
-            "content": self.content,
-            "tokens": self.tokens,
-            "metadata": self.metadata,
-        }
+        return asdict(self)
 
 
 # ---------------------------------------------------------------------------

@@ -209,8 +209,8 @@ def _apply_grounding_check(
     question: str,
     prompt_text: str,
     answer: str,
-    sources: list,
-) -> tuple[str, list]:
+    sources: list[dict],
+) -> tuple[str, list[dict]]:
     """Post-LLM light grounding heuristic (issue #5).
 
     If the first answer is ungrounded (no [Source: and not Cannot Confirm):
@@ -252,7 +252,7 @@ def _apply_grounding_check(
 
 def _write_chat_log(
     question: str,
-    ranked: list,
+    ranked: list[tuple[indexer.Section, float]],
 ) -> None:
     """Append a chat log entry to wiki/log.md.
 
