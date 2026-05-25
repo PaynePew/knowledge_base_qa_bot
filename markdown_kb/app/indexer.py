@@ -8,6 +8,7 @@ in its docstring below.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import math
 import os
@@ -17,7 +18,6 @@ import threading
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
-
 
 # ---------------------------------------------------------------------------
 # Paths and constants
@@ -363,11 +363,9 @@ def write_index_json(index_path: Path | None = None) -> None:
             fh.write("\n")
         os.replace(tmp_path_str, index_path)
     except Exception:
-        # Clean up tmp file on failure
-        try:
+        # Clean up tmp file on failure (best effort — tmp may already be gone)
+        with contextlib.suppress(OSError):
             os.unlink(tmp_path_str)
-        except OSError:
-            pass
         raise
 
 
@@ -435,10 +433,7 @@ def build_index(docs_dir: Path = DOCS_DIR) -> tuple[int, int]:
     # Determine which directories to scan.
     # If caller passes a non-default docs_dir, use just that (test isolation).
     # In production the default hits SOURCE_DIRS.
-    if docs_dir is not DOCS_DIR:
-        scan_dirs = [docs_dir]
-    else:
-        scan_dirs = SOURCE_DIRS
+    scan_dirs = [docs_dir] if docs_dir is not DOCS_DIR else SOURCE_DIRS
 
     new_sections: list[Section] = []
     for source_dir in scan_dirs:

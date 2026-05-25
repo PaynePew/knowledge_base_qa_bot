@@ -171,11 +171,13 @@ def test_corrupt_index_json_raises_at_startup(tmp_path, monkeypatch):
         monkeypatch, index_path, log_path
     )
 
-    # The startup hook should raise (JSONDecodeError propagated), causing
-    # TestClient context manager __enter__ to raise.
-    with pytest.raises(Exception):
-        with TestClient(fresh_app, raise_server_exceptions=True) as client:
-            pass  # startup fires in __enter__; corrupt JSON must raise here
+    # The startup hook should raise JSONDecodeError, causing TestClient's
+    # context manager __enter__ to propagate it.
+    with (
+        pytest.raises(json.JSONDecodeError),
+        TestClient(fresh_app, raise_server_exceptions=True),
+    ):
+        pass  # startup fires in __enter__; corrupt JSON must raise here
 
     # Clean up
     fresh_indexer.sections.clear()
@@ -254,7 +256,7 @@ def test_startup_load_writes_index_loaded_log_entry(tmp_path, monkeypatch):
         monkeypatch, index_path, log_path
     )
 
-    with TestClient(fresh_app) as client2:
+    with TestClient(fresh_app):
         # Startup fires in __enter__; just verify the log after context entry
         pass
 

@@ -15,18 +15,19 @@ from pathlib import Path
 
 import pytest
 
+import app.indexer as indexer
 from app.indexer import (
     Section,
     build_index,
     load_index_json,
     parse_markdown,
     write_index_json,
+)
+from app.indexer import (
     sections as _sections,
 )
-import app.indexer as indexer
 
 from .conftest import REAL_DOCS
-
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -21,7 +21,6 @@ import pytest
 import app.indexer as _indexer
 import app.logger as _logger
 
-
 REAL_DOCS = Path(__file__).resolve().parents[2] / "docs"
 
 

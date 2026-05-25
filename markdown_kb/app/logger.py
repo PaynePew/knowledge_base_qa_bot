@@ -25,7 +25,7 @@ def log_event(kind: str, summary: str, log_path: Path | None = None) -> None:
     target = log_path if log_path is not None else LOG_PATH
     target.parent.mkdir(parents=True, exist_ok=True)
 
-    ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    ts = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     line = f"## [{ts}] {kind} | {summary}\n"
 
     with target.open("a", encoding="utf-8") as fh:
