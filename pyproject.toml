@@ -1,0 +1,17 @@
+[project]
+name = "knowledge_base_qa_bot"
+version = "0.1.0"
+description = "Grounded Q&A bot over a small Markdown knowledge base. The active prototype lives in markdown_kb/ (BM25 over heading sections). A vector_rag/ scaffold exists for the future hybrid layer but is intentionally not in the workspace today; it pins the legacy langchain 0.3.x ecosystem (langchain-community never moved to 1.x), which conflicts with markdown_kb's 1.x deps. When vector_rag is reactivated, either upgrade its imports to langchain 1.x equivalents and add it to [tool.uv.workspace].members, or run it as a standalone uv project (`cd vector_rag && uv sync`)."
+requires-python = ">=3.11"
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["markdown_kb"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0",
+    "httpx>=0.28",
+]

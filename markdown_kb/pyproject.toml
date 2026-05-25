@@ -1,3 +1,20 @@
+[project]
+name = "markdown-kb"
+version = "0.1.0"
+description = "Markdown KB retrieval strategy: BM25 over heading sections."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi==0.136.3",
+    "uvicorn==0.34.0",
+    "openai==2.38.0",
+    "langchain-core==1.4.0",
+    "langchain-openai==1.2.2",
+    "python-dotenv>=1.2.2",
+]
+
+[tool.uv]
+package = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--strict-markers"

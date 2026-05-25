@@ -30,19 +30,30 @@ Restarting the server does not require rebuilding immediately. Re-run `POST /ind
 
 ## Running the Markdown KB app
 
-```bash
-cd markdown_kb
-python3 -m venv .venv
-source .venv/bin/activate         # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+Dependencies are managed with [uv](https://docs.astral.sh/uv/) (single `.venv/` at the repo root, single `uv.lock`). See [`pyproject.toml`](pyproject.toml) for the workspace layout.
 
+```bash
+# One-time: install deps for all workspace members
+uv sync --all-packages
+
+# Run the server (relative imports require running from markdown_kb/)
+cd markdown_kb
 export OPENAI_API_KEY="sk-..."
 export KB_SCORE_THRESHOLD="0.5"    # optional; default 0.5
+uv run uvicorn app.main:app --reload
+```
 
-uvicorn app.main:app --reload
+Run the tests with:
+
+```bash
+cd markdown_kb
+uv run pytest                       # default: skips live OpenAI tests
+uv run pytest -m live               # opt-in: real OpenAI API calls
 ```
 
 Then run the curl verification cases listed in [`PROMPT.md`](PROMPT.md).
+
+> The `vector_rag/` scaffold is intentionally **not** in the uv workspace — it pins the legacy langchain 0.3.x ecosystem, which conflicts with `markdown_kb`'s 1.x deps. When you reactivate it, either upgrade its imports to langchain 1.x and add it to `[tool.uv.workspace].members`, or run it standalone (`cd vector_rag && uv sync`).
 
 ## Prerequisites
 
