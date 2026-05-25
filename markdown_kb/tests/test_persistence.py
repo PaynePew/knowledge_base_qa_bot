@@ -23,6 +23,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from app.retrieval import NOT_INDEXED_MESSAGE
+
 REAL_DOCS = Path(__file__).resolve().parents[2] / "docs"
 
 # The section that the happy-path refund query should return
@@ -210,8 +212,8 @@ def test_missing_index_json_server_starts_and_chat_returns_not_indexed(
         resp_chat = client.post("/chat", json={"query": "How long do refunds take?"})
         assert resp_chat.status_code == 200
         body = resp_chat.json()
-        assert "not been indexed" in body["answer"].lower(), (
-            f"Expected 'not indexed' message, got: {body['answer']!r}"
+        assert body["answer"] == NOT_INDEXED_MESSAGE, (
+            f"Expected NOT_INDEXED_MESSAGE, got: {body['answer']!r}"
         )
         assert body["sources"] == [], (
             f"Expected sources == [], got: {body['sources']}"

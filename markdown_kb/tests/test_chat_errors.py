@@ -26,10 +26,10 @@ from fastapi.testclient import TestClient
 import app.indexer as indexer
 import app.logger as logger_module
 import app.retrieval as retrieval_module
+from app.retrieval import CANNOT_CONFIRM_PHRASE
 
 REAL_DOCS = Path(__file__).resolve().parents[2] / "docs"
 
-CANNOT_CONFIRM_PHRASE = "I cannot confirm from the knowledge base."
 REFUND_SECTION_ID = "refund_policy.md#refund-timeline"
 
 # ---------------------------------------------------------------------------

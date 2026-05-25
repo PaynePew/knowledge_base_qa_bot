@@ -25,8 +25,18 @@ from .prompt_builder import SYSTEM_PROMPT, build_prompt
 
 # Score threshold below which retrieval is treated as "no match".
 # Default 0.5 — calibrated against the sample corpus. Override with
-# KB_SCORE_THRESHOLD env var.
+# KB_SCORE_THRESHOLD env var. Read at import time: a server restart picks
+# up a new value; runtime changes do not (tests monkeypatch _SCORE_THRESHOLD
+# directly).
 _SCORE_THRESHOLD = float(os.getenv("KB_SCORE_THRESHOLD", "0.5"))
+
+# Sentinel strings the system returns to /chat clients. Tests import these
+# constants so a typo in production is caught instead of silently passing
+# against a hardcoded test literal.
+CANNOT_CONFIRM_PHRASE = "I cannot confirm from the knowledge base."
+NOT_INDEXED_MESSAGE = (
+    "The knowledge base has not been indexed yet. Call POST /index first."
+)
 
 _llm = None
 # Separate singleton for temperature=0 grounding retries.
@@ -76,7 +86,7 @@ def query(question: str) -> dict:
             f'"{question[:60].replace(chr(34), chr(39))}" reason=not_indexed',
         )
         return {
-            "answer": "The knowledge base has not been indexed yet. Call POST /index first.",
+            "answer": NOT_INDEXED_MESSAGE,
             "sources": [],
         }
 
@@ -95,7 +105,7 @@ def query(question: str) -> dict:
             f'"{truncated}" reason=below_threshold top_score={round(top_score, 3)}',
         )
         return {
-            "answer": "I cannot confirm from the knowledge base.",
+            "answer": CANNOT_CONFIRM_PHRASE,
             "sources": [],
         }
 
@@ -134,8 +144,6 @@ def query(question: str) -> dict:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-CANNOT_CONFIRM_PHRASE = "I cannot confirm from the knowledge base."
 
 
 def _call_llm_with_error_handling(question: str, prompt_text: str) -> str:

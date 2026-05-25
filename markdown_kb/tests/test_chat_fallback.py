@@ -17,11 +17,9 @@ from fastapi.testclient import TestClient
 import app.indexer as indexer
 import app.logger as logger_module
 import app.retrieval as retrieval_module
+from app.retrieval import CANNOT_CONFIRM_PHRASE, NOT_INDEXED_MESSAGE
 
 REAL_DOCS = Path(__file__).resolve().parents[2] / "docs"
-
-# The exact phrase the spec mandates — no trailing period, no apology.
-CANNOT_CONFIRM_PHRASE = "I cannot confirm from the knowledge base."
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -245,8 +243,8 @@ def test_pre_index_chat_returns_not_indexed_message(empty_corpus, monkeypatch):
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
     body = resp.json()
 
-    assert "not been indexed" in body["answer"].lower(), (
-        f"Expected 'not indexed' message, got: {body['answer']!r}"
+    assert body["answer"] == NOT_INDEXED_MESSAGE, (
+        f"Expected NOT_INDEXED_MESSAGE, got: {body['answer']!r}"
     )
     assert body["sources"] == [], (
         f"Expected sources == [], got: {body['sources']}"

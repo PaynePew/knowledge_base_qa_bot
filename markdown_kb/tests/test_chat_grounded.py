@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 import app.indexer as indexer
 import app.logger as logger_module
 import app.retrieval as retrieval_module
+from app.retrieval import CANNOT_CONFIRM_PHRASE
 
 REAL_DOCS = Path(__file__).resolve().parents[2] / "docs"
 
@@ -311,7 +312,7 @@ def test_cannot_confirm_no_llm_call(indexed_corpus, monkeypatch):
 
     assert resp.status_code == 200
     body = resp.json()
-    assert "I cannot confirm from the knowledge base." in body["answer"], (
-        f"Expected 'Cannot Confirm' answer, got: {body['answer']}"
+    assert body["answer"] == CANNOT_CONFIRM_PHRASE, (
+        f"Expected CANNOT_CONFIRM_PHRASE, got: {body['answer']!r}"
     )
     assert call_count["n"] == 0, "LLM must NOT be called when retrieval yields no candidates"
