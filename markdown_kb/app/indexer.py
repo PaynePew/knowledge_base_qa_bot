@@ -173,13 +173,23 @@ def parse_markdown(path: Path) -> list[Section]:
     body = raw
     if raw.startswith("---\n"):
         try:
-            import yaml  # optional; graceful fallback if not installed
-            end = raw.index("\n---\n", 4)
+            import yaml  # optional; PyYAML is not yet a hard dep (Wiki layer territory)
+            end = raw.index("\n---\n", 4)  # closing fence
             fm_text = raw[4:end]
             metadata = yaml.safe_load(fm_text) or {}
             body = raw[end + 5:]  # skip \n---\n
-        except (ValueError, ImportError, Exception):
-            # If YAML parse fails or PyYAML not installed, treat as no frontmatter
+        except ImportError:
+            log_event(
+                "parse_warning",
+                f"frontmatter present in {filename} but PyYAML is not installed; treating as no frontmatter",
+            )
+            body = raw
+        except (yaml.YAMLError, ValueError) as exc:
+            # yaml.YAMLError → malformed YAML; ValueError → missing closing fence
+            log_event(
+                "parse_warning",
+                f"frontmatter parse failed in {filename}: {type(exc).__name__}",
+            )
             body = raw
 
     lines = body.splitlines(keepends=True)
