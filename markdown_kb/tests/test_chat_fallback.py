@@ -210,17 +210,14 @@ def test_retrieval_empty_log_has_no_top_section(indexed_corpus, monkeypatch):
     """chat_fallback log for the retrieval_empty case must NOT include top_section=.
 
     When BM25 returns no results there is no top hit to log.
-    Uses indexed_corpus so sections is non-empty, then patches search to return
-    empty to force the retrieval_empty path without triggering the not_indexed gate.
+    Uses indexed_corpus (sections populated from real docs) with a deliberately
+    out-of-vocabulary query whose tokens have zero overlap with any indexed
+    Section.  BM25 scores all sections 0.0; the ``score > 0`` filter in
+    ``indexer.search`` (indexer.py:548) returns [] legitimately — no mock needed.
 
     The retrieval_empty case has no BM25 hit at all, so top_section= has nothing
     to point to and must be absent from the log entry.
     """
-    import app.indexer as _indexer
-
-    # Patch indexer.search to return empty (simulates retrieval_empty)
-    monkeypatch.setattr(_indexer, "search", lambda q, k=3: [])
-
     sentinel = SentinelLLM()
     monkeypatch.setattr(retrieval_module, "_llm", sentinel)
     monkeypatch.setattr(retrieval_module, "get_llm", lambda: sentinel)
@@ -230,7 +227,9 @@ def test_retrieval_empty_log_has_no_top_section(indexed_corpus, monkeypatch):
     from app.main import app
 
     client = TestClient(app)
-    client.post("/chat", json={"query": "xyzzy_no_results_query"})
+    # Gibberish tokens — zero overlap with the shipping/refund/account corpus.
+    # BM25 scores every section 0.0; score > 0 filter yields [] naturally.
+    client.post("/chat", json={"query": "zzxxyyvvqq plmnbrtdsk wfjkqzxv"})
 
     content = log_path.read_text(encoding="utf-8")
 
