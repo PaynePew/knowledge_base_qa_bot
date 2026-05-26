@@ -546,3 +546,47 @@ def search(query: str, k: int = 3) -> list[tuple[Section, float]]:
     ranked = [(section, bm25_score(query_tokens, section)) for section in sections]
     ranked.sort(key=lambda item: item[1], reverse=True)
     return [(section, score) for section, score in ranked[:k] if score > 0]
+
+
+def expand_to_pages(hits: list[Section]) -> list[Section]:
+    """Expand BM25 hits to full parent pages.
+
+    Pure function over ``indexer.sections``. No side-effects, no I/O.
+
+    Contract:
+    - Input: BM25 hits at Section granularity (Section list, no scores).
+    - Output: hits ∪ all sibling Sections of their parent pages.
+    - Page key: ``Section.file`` (bare slug under A2, post-#53).
+    - Page ordering: the page whose top hit ranks highest (i.e. appears
+      earliest in ``hits``) comes first in the output.
+    - Section ordering within a page: document order as determined by
+      the order of entries in ``indexer.sections``.
+    - Deduplication: each parent page is expanded exactly once, even when
+      multiple BM25 hits belong to the same page.
+
+    Returns an empty list when ``hits`` is empty.
+    """
+    if not hits:
+        return []
+
+    # Determine the rank of each page by the position of its first (best) hit
+    # in the input hits list. Lower index = higher rank = comes first.
+    page_rank: dict[str, int] = {}
+    for rank, sec in enumerate(hits):
+        if sec.file not in page_rank:
+            page_rank[sec.file] = rank
+
+    # Collect all sections of each hit page from the module-level sections list,
+    # preserving document order (= position in indexer.sections).
+    pages: dict[str, list[Section]] = {file: [] for file in page_rank}
+    for sec in sections:
+        if sec.file in pages:
+            pages[sec.file].append(sec)
+
+    # Sort pages by their rank (best hit position), then flatten in document order.
+    sorted_files = sorted(page_rank.keys(), key=lambda f: page_rank[f])
+    result: list[Section] = []
+    for file in sorted_files:
+        result.extend(pages[file])
+
+    return result

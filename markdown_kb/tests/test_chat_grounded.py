@@ -326,6 +326,72 @@ def test_no_live_llm_calls_in_default_tests(client_with_fake_llm):
 
 
 # ---------------------------------------------------------------------------
+# B3 page expansion: prompt CONTEXT contains full parent page, not just BM25 hit
+# (Slice 4-4 #49)
+# ---------------------------------------------------------------------------
+
+
+def test_prompt_contains_expanded_page_sections(client_with_fake_llm, indexed_corpus):
+    """After B3: LLM prompt CONTEXT contains ALL sections of the hit page, not just the BM25 hit.
+
+    For 'How long do refunds take?', the top BM25 hit is refund-timeline.
+    After expand_to_pages(), the prompt must also contain cancellation-window
+    and non-refundable-items (the other sections of refund_policy.md).
+    """
+    client, fake_llm, _ = client_with_fake_llm
+
+    client.post("/chat", json={"query": "How long do refunds take?"})
+
+    # Extract the prompt from FakeLLM's recorded messages
+    assert fake_llm.last_messages, "FakeLLM must have been invoked"
+    # The HumanMessage is index 1 (after SystemMessage)
+    human_msg = fake_llm.last_messages[1]
+    prompt_text = human_msg.content
+
+    # The BM25 hit must be in the prompt
+    assert "[Source: refund_policy.md#refund-timeline]" in prompt_text, (
+        f"BM25 hit must be in prompt. Prompt:\n{prompt_text}"
+    )
+    # Sibling sections must also be present (B3 expansion)
+    assert "[Source: refund_policy.md#cancellation-window]" in prompt_text, (
+        f"Sibling section cancellation-window must be in prompt after B3 expansion. "
+        f"Prompt:\n{prompt_text}"
+    )
+    assert "[Source: refund_policy.md#non-refundable-items]" in prompt_text, (
+        f"Sibling section non-refundable-items must be in prompt after B3 expansion. "
+        f"Prompt:\n{prompt_text}"
+    )
+
+
+def test_sources_are_bm25_hits_not_expanded(client_with_fake_llm, indexed_corpus):
+    """After B3: ChatResponse.sources[] is still BM25 top-K, NOT the expanded set.
+
+    The BM25 hit for 'How long do refunds take?' is only refund-timeline.
+    sources must list only that section (the BM25 result), not all 3 page sections.
+    """
+    client, _, _ = client_with_fake_llm
+
+    resp = client.post("/chat", json={"query": "How long do refunds take?"})
+    body = resp.json()
+
+    source_ids = [s["source"] for s in body["sources"]]
+
+    # The BM25 hit must be in sources
+    assert REFUND_SECTION_ID in source_ids, (
+        f"BM25 top hit '{REFUND_SECTION_ID}' must be in sources, got: {source_ids}"
+    )
+    # Sibling sections should NOT be in sources (expansion is for LLM context, not client)
+    assert "refund_policy.md#cancellation-window" not in source_ids, (
+        f"Sibling section must NOT be in sources (B3 only expands LLM context). "
+        f"Got sources: {source_ids}"
+    )
+    assert "refund_policy.md#non-refundable-items" not in source_ids, (
+        f"Sibling section must NOT be in sources (B3 only expands LLM context). "
+        f"Got sources: {source_ids}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Cannot Confirm gate — pre-LLM, no LLM call when no candidates
 # (ADR-0001: block before LLM when retrieval yields nothing)
 # ---------------------------------------------------------------------------

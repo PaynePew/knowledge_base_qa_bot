@@ -141,16 +141,22 @@ def query(question: str) -> dict:
             ),
         }
 
-    # Build sections list and prompt
+    # Build sections list and prompt.
+    # B3 page expansion (Slice 4-4): expand BM25 hits to full parent pages so
+    # the LLM receives page-coherent context. The expanded list is used for
+    # prompt construction and grounding verification; sources[] stays BM25 top-K.
     ranked_sections = [sec for sec, _score in ranked]
-    prompt_text = build_prompt(question, ranked_sections)
+    expanded_sections = indexer.expand_to_pages(ranked_sections)
+    prompt_text = build_prompt(question, expanded_sections)
 
     draft = _call_llm_with_error_handling(question, prompt_text)
 
     # Post-LLM Grounding Check (ADR-0004 layer 3).
-    # Replaces the previous light [Source: heuristic.  verify() never raises —
-    # all verifier failures map to grounding_outcome.reason = "verifier_unavailable".
-    outcome = grounding_module.verify(draft, ranked_sections)
+    # Grounding verifier receives expanded_sections (all pages in LLM context)
+    # so a claim citing a sibling section is correctly validated.
+    # verify() never raises — all verifier failures map to
+    # grounding_outcome.reason = "verifier_unavailable".
+    outcome = grounding_module.verify(draft, expanded_sections)
 
     if outcome.passed:
         # Verifier approved — return the draft as-is.
