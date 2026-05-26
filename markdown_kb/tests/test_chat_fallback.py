@@ -153,6 +153,95 @@ def test_out_of_scope_query_logs_chat_fallback_below_threshold(indexed_corpus, m
 
 
 # ---------------------------------------------------------------------------
+# AC 4b (Slice 4-5a #50): below_threshold log includes top_section=<section_id>
+# ---------------------------------------------------------------------------
+
+
+def test_below_threshold_log_includes_top_section(indexed_corpus, monkeypatch):
+    """chat_fallback | … reason=below_threshold must include top_section=<section_id>.
+
+    Slice 4-5a AC: the BM25 top-1 hit id is appended so /lint can localise
+    coverage gaps even when the score was below threshold.
+
+    Forces the below_threshold path by setting threshold=9999.0 and using an
+    in-scope query that returns BM25 hits with non-zero scores.
+    """
+    # Set threshold very high so ANY BM25 result is below threshold
+    monkeypatch.setattr(retrieval_module, "_SCORE_THRESHOLD", 9999.0)
+
+    sentinel = SentinelLLM()
+    monkeypatch.setattr(retrieval_module, "_llm", sentinel)
+    monkeypatch.setattr(retrieval_module, "get_llm", lambda: sentinel)
+
+    log_path: Path = indexed_corpus["log_path"]
+
+    from app.main import app
+
+    client = TestClient(app)
+    # An in-scope query that returns BM25 hits (non-zero scores) but is below the
+    # artificially high threshold
+    client.post("/chat", json={"query": "How long do refunds take?"})
+
+    content = log_path.read_text(encoding="utf-8")
+
+    assert "chat_fallback |" in content, f"Expected 'chat_fallback |' in log, got:\n{content}"
+    assert "reason=below_threshold" in content, (
+        f"Expected 'reason=below_threshold' in log, got:\n{content}"
+    )
+    assert "top_section=" in content, (
+        f"Expected 'top_section=<section_id>' in below_threshold log entry, got:\n{content}"
+    )
+    # Verify top_section= points to a real section id (not empty)
+    fallback_lines = [line for line in content.splitlines() if "chat_fallback |" in line]
+    assert fallback_lines
+    fallback_line = fallback_lines[-1]  # last one (may be multiple from index build)
+    top_section_parts = [tok for tok in fallback_line.split() if tok.startswith("top_section=")]
+    assert top_section_parts, f"top_section= token not found in line:\n{fallback_line}"
+    section_id = top_section_parts[0][len("top_section=") :]
+    assert section_id, f"top_section= value must be a non-empty section id, got: {section_id!r}"
+
+
+# ---------------------------------------------------------------------------
+# AC 4c (Slice 4-5a #50): retrieval_empty log does NOT include top_section=
+# ---------------------------------------------------------------------------
+
+
+def test_retrieval_empty_log_has_no_top_section(indexed_corpus, monkeypatch):
+    """chat_fallback log for the retrieval_empty case must NOT include top_section=.
+
+    When BM25 returns no results there is no top hit to log.
+    Uses indexed_corpus so sections is non-empty, then patches search to return
+    empty to force the retrieval_empty path without triggering the not_indexed gate.
+
+    The retrieval_empty case has no BM25 hit at all, so top_section= has nothing
+    to point to and must be absent from the log entry.
+    """
+    import app.indexer as _indexer
+
+    # Patch indexer.search to return empty (simulates retrieval_empty)
+    monkeypatch.setattr(_indexer, "search", lambda q, k=3: [])
+
+    sentinel = SentinelLLM()
+    monkeypatch.setattr(retrieval_module, "_llm", sentinel)
+    monkeypatch.setattr(retrieval_module, "get_llm", lambda: sentinel)
+
+    log_path: Path = indexed_corpus["log_path"]
+
+    from app.main import app
+
+    client = TestClient(app)
+    client.post("/chat", json={"query": "xyzzy_no_results_query"})
+
+    content = log_path.read_text(encoding="utf-8")
+
+    assert "chat_fallback |" in content, f"Expected 'chat_fallback |' in log, got:\n{content}"
+    assert "top_section=" not in content, (
+        f"top_section= must NOT appear in retrieval_empty log entry (no BM25 hit exists), "
+        f"got:\n{content}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # AC 5: KB_SCORE_THRESHOLD=0.0 allows the same query to reach the LLM
 # ---------------------------------------------------------------------------
 

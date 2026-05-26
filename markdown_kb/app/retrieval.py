@@ -125,13 +125,24 @@ def query(question: str) -> dict:
         # Log with reason=below_threshold regardless of whether search returned
         # results (score 0.0 is still below any positive threshold).
         truncated = question[:60].replace('"', "'")
-        log_event(
-            "chat_fallback",
-            f'"{truncated}" reason=below_threshold top_score={round(top_score, 3)}',
-        )
         # Distinguish retrieval_empty (no results) from below_threshold (results but low score).
         # Both trigger pre-LLM gate; reason differs so callers can show appropriate fallback UX.
         gate_reason = "retrieval_empty" if not ranked else "below_threshold"
+        if ranked:
+            # Slice 4-5a: enrich below_threshold log with top BM25 hit id so
+            # Phase 5 /lint can localise coverage gaps to specific sections.
+            top_sec = ranked[0][0]
+            log_event(
+                "chat_fallback",
+                f'"{truncated}" reason=below_threshold top_score={round(top_score, 3)}'
+                f" top_section={top_sec.id}",
+            )
+        else:
+            # retrieval_empty — no top hit exists, do not append top_section=
+            log_event(
+                "chat_fallback",
+                f'"{truncated}" reason=below_threshold top_score={round(top_score, 3)}',
+            )
         return {
             "answer": CANNOT_CONFIRM_PHRASE,
             "sources": sources,
@@ -164,9 +175,13 @@ def query(question: str) -> dict:
     else:
         # Verifier rejected or unavailable — fail-closed with Cannot Confirm.
         answer = CANNOT_CONFIRM_PHRASE
+        # Slice 4-5a: enrich with cited= listing the post-B3-expansion Section ids.
+        # Phase 5 /lint uses this to localise coverage gaps without replaying BM25.
+        cited_ids = ",".join(sec.id for sec in expanded_sections)
         log_event(
             "chat_grounding_fallback",
-            f'"{question[:60].replace(chr(34), chr(39))}" reason={outcome.reason}',
+            f'"{question[:60].replace(chr(34), chr(39))}" reason={outcome.reason}'
+            f" cited={cited_ids}",
         )
 
     # Write chat log entry
