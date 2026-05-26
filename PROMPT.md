@@ -100,6 +100,8 @@ Principles:
 - `account_help.md#change-email-address` ← `## Change Email Address`
 
 Implementation: `slugify()` lowercases and replaces non-alphanumerics with `-` (already in the scaffold).
+
+> **W1 evolution (Phase 4):** the citation form is preserved in shape but its referent shifts from docs Source filename to wiki page slug. Citations under W1 read `[Source: refund-policy#cancellation-window]` (bare slug, no `.md`, no type subdirectory). The contract's intent — every claim cites a real file and a real heading — holds. See [ADR-0006](project-docs/adr/0006-w1-after-phase-3.md) for the full reasoning.
 The `sources[]` returned in `ChatResponse` carries three fields per source:
 - `source` (the citation id),
 - `heading` (the human-readable heading path),
