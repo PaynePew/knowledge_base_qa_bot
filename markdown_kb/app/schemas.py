@@ -6,6 +6,25 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+# ---------------------------------------------------------------------------
+# Grounding failure block (Slice #4 — fail-soft grounding check on ingest)
+# ---------------------------------------------------------------------------
+
+
+class GroundingFailure(BaseModel):
+    """Frontmatter sub-block written when a wiki page fails grounding check.
+
+    Written as a nested YAML block under `grounding_failure:` in the page
+    frontmatter.  Only present when `status == "failed_grounding"`.
+
+    `reason` mirrors GroundingOutcome.reason from grounding.py.
+    `unsupported_claims` is empty for `verifier_unavailable` (no claims were
+    extracted when the verifier itself failed).
+    """
+
+    reason: Literal["claim_unsupported", "verifier_unavailable"]
+    unsupported_claims: list[str] = []
+
 
 class IndexResponse(BaseModel):
     files_indexed: int
@@ -83,10 +102,12 @@ SourceType = Literal["entity", "concept"]
 
 
 class WikiPageFrontmatter(BaseModel):
-    """7-field frontmatter schema for a wiki synthesis page.
+    """Frontmatter schema for a wiki synthesis page.
 
-    All 7 fields are required. `confidence` is intentionally deferred to
-    Phase 5 /lint (no defensible algorithm at ingest time per PRD #28 Q10).
+    All base fields are required. `grounding_failure` is only populated when
+    `status == "failed_grounding"` (Slice #4 fail-soft grounding check).
+    `confidence` is intentionally deferred to Phase 5 /lint (no defensible
+    algorithm at ingest time per PRD #28 Q10).
     """
 
     id: str
@@ -96,6 +117,7 @@ class WikiPageFrontmatter(BaseModel):
     sources: list[str]  # list of "filename#slug" citation strings
     status: Literal["live", "failed_grounding"]
     open_questions: list[str]
+    grounding_failure: GroundingFailure | None = None
 
 
 class WikiPageDraft(BaseModel):
@@ -150,7 +172,11 @@ class IngestResponse(BaseModel):
     `results` lists one IngestSourceResult per successfully processed Source.
     `failed_sources` lists bare filenames that could not be processed (Source
     not found, parse error, etc.).
+    `pages_with_failed_grounding` lists page ids (slugs) of pages that were
+    written but failed the grounding check (status=failed_grounding).  Added
+    in Slice #4 — empty on all prior slices.
     """
 
     results: list[IngestSourceResult]
     failed_sources: list[str]
+    pages_with_failed_grounding: list[str] = []

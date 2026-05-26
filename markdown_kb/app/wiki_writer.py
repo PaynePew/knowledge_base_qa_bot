@@ -79,9 +79,12 @@ def _render_frontmatter(draft: WikiPageDraft) -> str:
 
     Uses PyYAML's `default_flow_style=False` for human-readable block style.
     The `sources` list renders as a proper YAML sequence.
+
+    The optional `grounding_failure` block is only included when
+    ``draft.frontmatter.status == "failed_grounding"`` (Slice #4).
     """
     fm = draft.frontmatter
-    data = {
+    data: dict = {
         "id": fm.id,
         "type": fm.type,
         "created": fm.created,
@@ -90,6 +93,11 @@ def _render_frontmatter(draft: WikiPageDraft) -> str:
         "status": fm.status,
         "open_questions": fm.open_questions,
     }
+    if fm.grounding_failure is not None:
+        data["grounding_failure"] = {
+            "reason": fm.grounding_failure.reason,
+            "unsupported_claims": fm.grounding_failure.unsupported_claims,
+        }
     return yaml.dump(data, default_flow_style=False, allow_unicode=True).rstrip()
 
 

@@ -116,4 +116,5 @@ def ingest(req: IngestRequest | None = None) -> IngestResponse:
     return IngestResponse(
         results=batch.results,
         failed_sources=batch.failed_sources,
+        pages_with_failed_grounding=batch.pages_with_failed_grounding,
     )

@@ -10,10 +10,11 @@ pipeline for one or more Sources:
     4b. entity  → one WikiPageDraft collapsing the whole Source
     5. Resolve slug collisions across Sources (-2, -3 suffix)
     6. Preserve `created` timestamp for pages that already exist on disk
-    7. Delete orphan pages (per-Source scoped) via wiki_writer.delete_orphans
-    8. Write pages via wiki_writer.write_pages_for_source
-    9. Return an IngestBatchResult summarising outcomes with meaningful
-       pages_created / pages_updated / pages_deleted per Source
+    7. Run grounding verifier on each generated page (Slice #4 — fail-soft)
+    8. Delete orphan pages (per-Source scoped) via wiki_writer.delete_orphans
+    9. Write pages via wiki_writer.write_pages_for_source
+    10. Return an IngestBatchResult summarising outcomes with meaningful
+        pages_created / pages_updated / pages_deleted per Source
 
 Continue-on-error: a Source that throws at any stage is recorded in
 `failed_sources` but does not stop the batch (Q3 grill decision).
@@ -22,11 +23,18 @@ Concurrency: ingest holds ``indexer._index_lock`` for the write + orphan-delete
 step so it is mutually exclusive with ``build_index()`` (Q7 grill decision).
 No per-page locking is needed for the prototype.
 
-Hardcodes still in place (per Slice #3 spec):
-- `status=live` always (Slice #4 introduces `failed_grounding`)
-- No verifier call (Slice #4 adds Grounding Check)
-- No red link rules in prompt (Slice #4)
-- No ingest log event kinds beyond existing ones (Slice #4 adds 5)
+Grounding Check (Slice #4 — ADR-0004 fail-soft):
+- Verifier uses OPENAI_VERIFIER_MODEL (independent of OPENAI_INGEST_MODEL).
+- On claim_supported: page written with status=live.
+- On claim_unsupported or verifier_unavailable: page written with
+  status=failed_grounding + grounding_failure frontmatter block.
+  Page id added to IngestBatchResult.pages_with_failed_grounding.
+
+Wiki Log (Slice #4 — five new kind values):
+- ingest_batch_started / ingest_batch_completed bracket the whole batch.
+- ingest_source emitted per successful Source.
+- ingest_grounding_failed emitted per page with failed grounding.
+- ingest_error emitted per Source-level failure (replaces prior ad-hoc kinds).
 
 See PRD #28 for the full pipeline design.
 """
@@ -36,9 +44,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .grounding import verify
 from .indexer import DOCS_DIR, _index_lock, parse_markdown, slugify
 from .logger import log_event
-from .schemas import IngestSourceResult
+from .schemas import GroundingFailure, IngestSourceResult
 from .templates import classify_source, generate_entity_page, generate_page
 from .wiki_writer import (
     delete_orphans,
@@ -59,10 +68,15 @@ class IngestBatchResult:
     `results` lists one IngestSourceResult per successfully-processed Source.
     `failed_sources` lists bare filenames that failed (Source not found, parse
     error, LLM call failure, or write failure).
+    `pages_with_failed_grounding` lists page ids (slugs) that were written but
+    failed the grounding check (status=failed_grounding).  Added in Slice #4.
+    `_llm_call_count` tracks total LLM calls for the batch_completed log entry.
     """
 
     results: list[IngestSourceResult] = field(default_factory=list)
     failed_sources: list[str] = field(default_factory=list)
+    pages_with_failed_grounding: list[str] = field(default_factory=list)
+    _llm_call_count: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -134,11 +148,17 @@ def ingest_sources(
         "entity": set(),
     }
 
+    # --- ingest_batch_started ---
+    log_event(
+        "ingest_batch_started",
+        f"sources={len(source_pairs)}",
+    )
+
     for source_name, source_path in source_pairs:
         if not source_path.exists():
             log_event(
-                "ingest_source_not_found",
-                f"source={source_name}",
+                "ingest_error",
+                f"source={source_name} error=source_not_found",
             )
             batch.failed_sources.append(source_name)
             continue
@@ -147,16 +167,16 @@ def ingest_sources(
             sections = parse_markdown(source_path)
         except Exception as exc:  # noqa: BLE001
             log_event(
-                "ingest_parse_error",
-                f"source={source_name} exc={type(exc).__name__}",
+                "ingest_error",
+                f"source={source_name} error={type(exc).__name__}:parse_error",
             )
             batch.failed_sources.append(source_name)
             continue
 
         if not sections:
             log_event(
-                "ingest_no_sections",
-                f"source={source_name}",
+                "ingest_error",
+                f"source={source_name} error=no_sections",
             )
             batch.failed_sources.append(source_name)
             continue
@@ -165,10 +185,11 @@ def ingest_sources(
         try:
             source_content = source_path.read_text(encoding="utf-8")
             source_type = classify_source(source_content)
+            batch._llm_call_count += 1
         except Exception as exc:  # noqa: BLE001
             log_event(
-                "ingest_llm_error",
-                f"source={source_name} stage=classify exc={type(exc).__name__}",
+                "ingest_error",
+                f"source={source_name} error={type(exc).__name__}:classify_failed",
             )
             batch.failed_sources.append(source_name)
             continue
@@ -187,6 +208,7 @@ def ingest_sources(
                 # Override the slug with the collision-resolved one
                 draft = draft.model_copy(update={"slug": final_slug})
                 drafts = [draft]
+                batch._llm_call_count += 1
             else:
                 # concept: 1:N — one page per Section
                 drafts = []
@@ -194,6 +216,7 @@ def ingest_sources(
                     raw_slug = slugify(section.heading)
                     final_slug = resolve_slug_collision(used_slugs["concept"], raw_slug)
                     section_draft = generate_page(section, "concept")
+                    batch._llm_call_count += 1
                     # Override slug and frontmatter.id with collision-resolved value
                     updated_fm = section_draft.frontmatter.model_copy(update={"id": final_slug})
                     section_draft = section_draft.model_copy(
@@ -202,8 +225,8 @@ def ingest_sources(
                     drafts.append(section_draft)
         except Exception as exc:  # noqa: BLE001
             log_event(
-                "ingest_llm_error",
-                f"source={source_name} stage=generate exc={type(exc).__name__}",
+                "ingest_error",
+                f"source={source_name} error={type(exc).__name__}:generate_failed",
             )
             batch.failed_sources.append(source_name)
             continue
@@ -227,11 +250,51 @@ def ingest_sources(
                 draft = draft.model_copy(update={"frontmatter": preserved_fm})
             drafts_with_preserved_timestamps.append(draft)
 
-        # Step 6+7: Under the index lock, delete orphans then write pages.
+        # Step 6: Run grounding verifier on each draft (ADR-0004 fail-soft).
+        #
+        # Verifier uses OPENAI_VERIFIER_MODEL (independent of OPENAI_INGEST_MODEL).
+        # On claim_supported: status stays "live".
+        # On claim_unsupported or verifier_unavailable: status="failed_grounding"
+        # + grounding_failure frontmatter block.  Page is still written (fail-soft).
+        # CitableContent Protocol: each draft's body acts as the "draft answer";
+        # sections from the source act as the "citable content".
+        drafts_with_grounding: list = []
+        for draft in drafts_with_preserved_timestamps:
+            grounding_outcome = verify(draft.body, sections)
+            if grounding_outcome.passed:
+                # claim_supported — keep status=live
+                drafts_with_grounding.append(draft)
+            else:
+                # claim_unsupported or verifier_unavailable — fail-soft
+                reason = grounding_outcome.reason
+                unsupported: list[str] = []
+                if (
+                    grounding_outcome.result is not None
+                    and grounding_outcome.result.unsupported_claims
+                ):
+                    unsupported = grounding_outcome.result.unsupported_claims
+
+                gf = GroundingFailure(
+                    reason=reason,  # type: ignore[arg-type]
+                    unsupported_claims=unsupported,
+                )
+                failed_fm = draft.frontmatter.model_copy(
+                    update={"status": "failed_grounding", "grounding_failure": gf}
+                )
+                draft = draft.model_copy(update={"frontmatter": failed_fm})
+                drafts_with_grounding.append(draft)
+
+                log_event(
+                    "ingest_grounding_failed",
+                    f"page={draft.slug} reason={reason} claims={unsupported}",
+                )
+                batch.pages_with_failed_grounding.append(draft.slug)
+
+        # Step 7+8: Under the index lock, delete orphans then write pages.
         #
         # Orphan scope is per-Source: only pages derived from source_name are
         # considered.  current_page_ids is the set of slugs in the target set.
-        current_page_ids = {d.slug for d in drafts_with_preserved_timestamps}
+        current_page_ids = {d.slug for d in drafts_with_grounding}
 
         with _index_lock:
             deleted = delete_orphans(
@@ -241,23 +304,26 @@ def ingest_sources(
             )
             write_result = write_pages_for_source(
                 source_name,
-                drafts_with_preserved_timestamps,
+                drafts_with_grounding,
                 wiki_dir=resolved_wiki_dir,
             )
 
         if write_result.errors:
             slug, err_msg = write_result.errors[0]
             log_event(
-                "ingest_write_error",
-                f"source={source_name} slug={slug} err={err_msg}",
+                "ingest_error",
+                f"source={source_name} error={type(Exception()).__name__}:write_error:{slug}",
             )
             batch.failed_sources.append(source_name)
             continue
 
+        # --- ingest_source (only on success) ---
         log_event(
-            "ingest_complete",
-            f"source={source_name} type={source_type} pages={len(write_result.pages_written)}"
-            f" deleted={len(deleted)}",
+            "ingest_source",
+            f"source={source_name} type={source_type}"
+            f" pages_created={len(write_result.pages_created)}"
+            f" pages_updated={len(write_result.pages_updated)}"
+            f" pages_deleted={len(deleted)}",
         )
         batch.results.append(
             IngestSourceResult(
@@ -268,5 +334,18 @@ def ingest_sources(
                 pages_deleted=deleted,
             )
         )
+
+    total_pages = sum(len(r.pages_written) for r in batch.results)
+    failed_grounding = len(batch.pages_with_failed_grounding)
+
+    # --- ingest_batch_completed ---
+    log_event(
+        "ingest_batch_completed",
+        f"sources={len(source_pairs)}"
+        f" total_pages={total_pages}"
+        f" llm_calls={batch._llm_call_count}"
+        f" cost_usd=0.00"
+        f" failed_grounding={failed_grounding}",
+    )
 
     return batch
