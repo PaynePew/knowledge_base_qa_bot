@@ -121,13 +121,19 @@ def test_ingest_acme_shop_live(tmp_path, monkeypatch):
     page_path = wiki_dir / page_rel
     assert page_path.exists(), f"Expected wiki page at {page_path}, file not found"
 
-    # Shape assertion 6: frontmatter is parseable as YAML and has all 7 fields
+    # Shape assertion 6: frontmatter is parseable as YAML and has all 7 fields.
+    # The page layout (per wiki_writer._render_page) is:
+    #     <sentinel HTML comment>\n\n---\n<yaml>\n---\n\n# heading\n\n<body>\n[citation]
+    # so we locate the first two "---" delimiter lines rather than assuming the
+    # file starts with "---". Same pattern as test_wiki_writer.test_frontmatter_yaml_round_trip.
     raw_content = page_path.read_text(encoding="utf-8")
-    assert raw_content.startswith("---"), (
-        f"Expected YAML frontmatter (--- delimiter), got: {raw_content[:80]!r}"
+    lines = raw_content.splitlines()
+    dash_indices = [i for i, line in enumerate(lines) if line.strip() == "---"]
+    assert len(dash_indices) >= 2, (
+        f"Expected at least 2 '---' frontmatter delimiters, got indices: {dash_indices}\n"
+        f"File head:\n{raw_content[:200]!r}"
     )
-    fm_end = raw_content.index("---", 3)
-    fm_yaml = raw_content[3:fm_end].strip()
+    fm_yaml = "\n".join(lines[dash_indices[0] + 1 : dash_indices[1]])
     frontmatter = yaml.safe_load(fm_yaml)
     assert isinstance(frontmatter, dict), f"Frontmatter is not a dict: {frontmatter!r}"
 
@@ -141,8 +147,8 @@ def test_ingest_acme_shop_live(tmp_path, monkeypatch):
         f"got: {frontmatter['type']!r}"
     )
 
-    # Shape assertion 8: content body is non-empty (after frontmatter block)
-    content_body = raw_content[fm_end + 3 :].strip()
+    # Shape assertion 8: content body is non-empty (after the closing --- delimiter)
+    content_body = "\n".join(lines[dash_indices[1] + 1 :]).strip()
     assert content_body, "Expected non-empty content body after frontmatter"
 
     # Clean up in-memory state
