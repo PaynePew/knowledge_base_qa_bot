@@ -46,6 +46,14 @@ _Avoid_: Wiki entry (vague), Synth page (informal).
 A speculative `[[concept-slug]]` wikilink inside a Wiki Page that does not yet resolve to an existing page. Used by the LLM during ingest to mark concepts warranting their own page that the wiki does not yet cover. Phase 5 `/lint` will scan and rank these into a backlog. Red Links are intentional placeholders — they represent gaps the knowledge owner should fill.
 _Avoid_: Broken link (negative connotation; Red Links are intentional), Wikilink (overloaded — wikilinks can be resolved or unresolved).
 
+**Wiki Index**:
+The human- and LLM-readable catalog of all Sections in the knowledge base, generated at `wiki/index.md` as a deterministic mechanical projection of `.kb/index.json` after every `POST /index` call. One H2 per Source, a bullet list of its Sections beneath with clickable `../docs/<filename>#<slug>` links. A navigation surface, not a search data structure — distinct from the Section Index, which is the BM25 inverted index. Gitignored (regenerable runtime artifact). Implemented in `wiki_index.py`; see ADR-0003.
+_Avoid_: Catalog (vague), TOC (too narrow — implies linear ordering, but Wiki Index groups by Source).
+
+**Wiki Log**:
+A chronological, append-only event log at `wiki/log.md`. Each entry follows the format `## [<ISO-8601 UTC>] <kind> | <summary>` so it remains parseable with `grep`. Records every `POST /index`, `POST /chat`, `POST /ingest` event, fallback path, OpenAI error, parse warning, and verifier outcome. Per-kind summary fields are documented in each phase's PRD (current kinds: `index_built`, `chat`, `chat_fallback`, `chat_error`, `parse_warning`, `ingest_batch_started`, `ingest_source`, `ingest_grounding_failed`, `ingest_batch_completed`, `ingest_error`). Implemented via `log_event` in `logger.py`. Gitignored (runtime trace; not part of curated state).
+_Avoid_: Changelog (project root may have its own CHANGELOG.md for releases), Audit log (overloaded with compliance language).
+
 **Cannot Confirm**:
 The literal phrase `"I cannot confirm from the knowledge base."` returned as the answer whenever the bot cannot safely back the answer from cited Sections. Treated as a successful, expected response — not a failure mode. Three situations produce this response:
 
@@ -64,16 +72,9 @@ _Avoid_: "I don't know" (sounds like a model limitation rather than a KB boundar
 The LLM-maintained markdown layer that sits between Sources and queries. Planned as a `wiki/` directory of synthesis pages, organized by entity type (entities, concepts, comparisons, …). Distinct from Sources: Sources are immutable raw input; the Wiki is the LLM's compiled view, where cross-references and synthesis accumulate. Co-queried alongside Sources under the W2 layered model (ADR-0003).
 _Avoid_: Notes (too generic), Knowledge base (the project as a whole is a knowledge base; this term refers to the LLM-maintained layer specifically).
 
-**Wiki Index** _(future)_:
-The human- and LLM-readable catalog of Wiki pages, planned to live at `wiki/index.md`. Distinct from the Section Index: a navigation surface, not a search data structure. Reserved so the term is available without renaming the Section Index later.
-
 **Hot Cache** _(future)_:
 A small (~500 words) working-memory file at `wiki/hot.md` containing the most recent context — the answer to "where were we?" between sessions. First file an agent reads on session start, before the Wiki Index. Multiple commenters on Karpathy's gist proposed this and the `claude-obsidian` repo implements it; the access pattern there is hot → index → domain-index → individual pages (a 4-level depth budget).
 _Avoid_: Working memory (overloaded with LLM-architecture terms), Session cache (overloaded with HTTP).
-
-**Wiki Log** _(future)_:
-A chronological, append-only event log at `wiki/log.md`. Each entry starts with a consistent prefix (e.g. `## [2026-04-02] ingest | source-name`) so it remains parseable with `grep`. Records ingests, queries, lint passes, and pattern reviews. Karpathy's original spec calls this `log.md`; we prefix "Wiki" to avoid colliding with other log conventions.
-_Avoid_: Changelog (the project root may have its own CHANGELOG.md for releases), Audit log (overloaded with compliance language).
 
 **Lint Pass** _(future)_:
 A periodic health check over the Wiki: contradiction detection, stale claims, orphan pages, missing cross-references, gaps suggested by repeated cannot-confirm queries. Karpathy's third core operation, alongside Ingest and Query.

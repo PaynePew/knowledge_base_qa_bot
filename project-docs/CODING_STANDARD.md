@@ -353,8 +353,8 @@ If you want a debug-only channel, instead either:
 
 ### 6.4 Live smoke discipline
 
-- Exactly one live test exists today (`test_chat_live.py`). Adding a second is scope creep — push the assertion into a mocked integration test instead.
-- A live test asserts **shape** (200, citation pattern present, non-empty sources), **never** specific words. Models update; tests outlive them.
+- **One live test per LLM-facing surface** is the policy. After Phase 3 the surfaces are: `/chat` (`test_chat_live.py`) and `/ingest` (`test_ingest_live.py`). Adding a third live test to either surface — or a new surface without explicit PRD authorisation — is scope creep; push the assertion into a mocked integration test instead.
+- A live test asserts **shape** (200, citation pattern present, non-empty sources, all expected frontmatter fields parseable), **never** specific words. Models update; tests outlive them.
 
 ### 6.5 Fixtures
 
@@ -524,7 +524,7 @@ Each signal has a **severity** that determines the reviewer's action:
 ### Testing drift (§6)
 
 - [ ] **FAIL** — A test mocks `indexer.search` or any other deep-module entry point (mock the LLM, not the index; per §6.3).
-- [ ] **FAIL** — A second `@pytest.mark.live` test appears (one is the policy; per §6.4).
+- [ ] **FAIL** — A third `@pytest.mark.live` test appears on an already-covered LLM-facing surface, OR a live test is added to a new surface without explicit PRD authorisation (one-per-surface is the policy; per §6.4 — current authorised surfaces: `/chat`, `/ingest`).
 - [ ] **FAIL** — A test asserts an absolute BM25 score value (corpus-sensitive, brittle; per §6.2 — assert ranking order or shape instead).
 - [ ] **FLAG** — A test asserts specific LLM output text content beyond shape + `[Source:` marker (will break across model updates; per §6.2).
 - [ ] **FIX** — A test mutates `indexer.sections` without restoring via `monkeypatch` or explicit teardown (per §6.5).
