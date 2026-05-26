@@ -450,7 +450,7 @@ def build_index(docs_dir: Path = DOCS_DIR) -> tuple[int, int]:
 
     new_sections: list[Section] = []
     for source_dir in scan_dirs:
-        for md_file in sorted(source_dir.glob("*.md")):
+        for md_file in sorted(source_dir.glob("**/*.md")):
             new_sections.extend(parse_markdown(md_file))
 
     with _index_lock:

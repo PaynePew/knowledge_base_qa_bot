@@ -94,17 +94,25 @@ def chat(req: ChatRequest) -> ChatResponse:
 
 
 @router.post("/ingest", response_model=IngestResponse)
-def ingest(req: IngestRequest) -> IngestResponse:
-    """Ingest one Source and write a wiki synthesis page.
+def ingest(req: IngestRequest | None = None) -> IngestResponse:
+    """Ingest one or all Sources and write wiki synthesis pages.
 
-    Shallow wrapper around `ingest_sources([req.source])`.  All domain logic
-    (parse → synthesise → write) lives in `ingest.py` (CODING_STANDARD §2.3).
+    - No body (or body with ``source=null``): batch mode — processes all
+      Sources discovered under docs/ via ``glob("**/*.md")``.
+    - Body with ``source="<filename>"``: single-source mode.
 
-    Returns 200 with the IngestResponse in all cases, including when the Source
-    is not found (reflected in `failed_sources`).  Returns 400 only if no body
-    is sent — FastAPI's Pydantic validation handles that automatically.
+    Shallow wrapper around `ingest_sources(...)`.  All domain logic
+    (parse → classify → synthesise → write) lives in `ingest.py`
+    (CODING_STANDARD §2.3).
+
+    Returns 200 with the IngestResponse in all cases, including when a Source
+    is not found (reflected in ``failed_sources``).
     """
-    batch = ingest_sources([req.source])
+    if req is None or req.source is None:
+        # Batch mode: ingest all docs/
+        batch = ingest_sources(None)
+    else:
+        batch = ingest_sources([req.source])
     return IngestResponse(
         results=batch.results,
         failed_sources=batch.failed_sources,
