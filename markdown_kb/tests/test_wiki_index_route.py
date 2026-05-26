@@ -92,6 +92,12 @@ def test_index_happy_path_all_five_fields(tmp_path, monkeypatch):
     wiki_dir = tmp_path / "wiki"
     monkeypatch.setattr(_indexer, "WIKI_DIR", wiki_dir)
 
+    # Slice 4-2: SOURCE_DIRS now points to wiki subdirs; override with REAL_DOCS
+    # for this test because it is testing wiki-index-write plumbing, not which
+    # source dirs are scanned. Using REAL_DOCS preserves the 3-file / 9-section
+    # contract that this test was written to verify.
+    monkeypatch.setattr(_indexer, "SOURCE_DIRS", [REAL_DOCS])
+
     from app.main import app
 
     client = TestClient(app)
@@ -143,6 +149,10 @@ def test_index_wiki_failure_returns_200_with_failure_fields(tmp_path, monkeypatc
     # write_wiki_index — see test_index_happy_path_all_five_fields).
     wiki_dir = tmp_path / "wiki"
     monkeypatch.setattr(_indexer, "WIKI_DIR", wiki_dir)
+
+    # Slice 4-2: patch SOURCE_DIRS to REAL_DOCS so we get 3/9 counts to verify.
+    # This test is exercising wiki-index failure plumbing, not source-dir selection.
+    monkeypatch.setattr(_indexer, "SOURCE_DIRS", [REAL_DOCS])
 
     # Monkey-patch write_wiki_index to simulate failure
     monkeypatch.setattr(
@@ -209,6 +219,11 @@ def test_chat_works_after_wiki_failure_index(tmp_path, monkeypatch):
 
     wiki_dir = tmp_path / "wiki"
     monkeypatch.setattr(_indexer, "WIKI_DIR", wiki_dir)
+
+    # Slice 4-2: patch SOURCE_DIRS to REAL_DOCS so /chat has docs sections to search.
+    # The test's concern is "does /chat still work after a wiki write failure?" —
+    # answerable with any indexed content.
+    monkeypatch.setattr(_indexer, "SOURCE_DIRS", [REAL_DOCS])
 
     # Simulate wiki write failure
     monkeypatch.setattr(

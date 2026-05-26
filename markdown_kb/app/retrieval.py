@@ -39,7 +39,7 @@ _SCORE_THRESHOLD = float(os.getenv("KB_SCORE_THRESHOLD", "0.5"))
 # constants so a typo in production is caught instead of silently passing
 # against a hardcoded test literal.
 CANNOT_CONFIRM_PHRASE = "I cannot confirm from the knowledge base."
-NOT_INDEXED_MESSAGE = "The knowledge base has not been indexed yet. Call POST /index first."
+NOT_INDEXED_MESSAGE = "The knowledge base has not been indexed yet. Call POST /ingest to populate the wiki, then POST /index."
 
 _llm = None
 # Separate singleton for temperature=0 grounding retries.

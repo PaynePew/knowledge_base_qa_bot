@@ -61,3 +61,34 @@ def test_logger_creates_wiki_dir(tmp_path, monkeypatch):
     log_event("test", "creating dir")
     assert wiki_dir.exists(), "wiki/ directory should be created by log_event"
     assert log_path.exists(), "log.md should exist after log_event"
+
+
+# ---------------------------------------------------------------------------
+# Slice 4-2 AC: wiki_layer_empty log kind is accepted by log_event
+# ---------------------------------------------------------------------------
+
+
+def test_logger_wiki_layer_empty_kind(tmp_path, monkeypatch):
+    """log_event accepts 'wiki_layer_empty' as a kind and writes it correctly.
+
+    Verifies the new log kind emitted by build_index() when both
+    wiki/entities/ and wiki/concepts/ scan to zero sections (ADR-0006).
+    The logger itself is kind-agnostic; this test proves it does not
+    reject or mangle the new kind string.
+    """
+    wiki_dir = tmp_path / "wiki"
+    log_path = wiki_dir / "log.md"
+
+    monkeypatch.setattr(logger_module, "LOG_PATH", log_path)
+
+    log_event("wiki_layer_empty", "entities=0 concepts=0")
+
+    assert log_path.exists(), "log.md must be created"
+    content = log_path.read_text(encoding="utf-8")
+    lines = content.splitlines(keepends=True)
+    assert len(lines) == 1, f"Expected 1 line, got {len(lines)}"
+
+    line = lines[0]
+    assert re.match(LOG_LINE_RE, line), f"Line format mismatch: {repr(line)}"
+    assert "wiki_layer_empty" in line, f"Expected 'wiki_layer_empty' in log line: {repr(line)}"
+    assert "entities=0 concepts=0" in line, f"Expected summary in log line: {repr(line)}"

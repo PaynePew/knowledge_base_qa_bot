@@ -136,6 +136,11 @@ def test_restart_preserves_index_and_chat_answers(tmp_path, monkeypatch):
     monkeypatch.setattr(logger_module, "LOG_PATH", log_path)
     monkeypatch.setattr(indexer, "WIKI_DIR", wiki_dir)
 
+    # Slice 4-2: SOURCE_DIRS now points to wiki subdirs. Patch to REAL_DOCS so
+    # this restart-persistence test has actual sections to persist and search.
+    # The test is verifying .kb/index.json round-trip, not source-dir selection.
+    monkeypatch.setattr(indexer, "SOURCE_DIRS", [REAL_DOCS])
+
     from app.main import app as first_app
 
     fake = FakeLLM()

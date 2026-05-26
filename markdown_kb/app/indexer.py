@@ -25,12 +25,13 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Paths and constants
 # ---------------------------------------------------------------------------
-
 from ._paths import DOCS_DIR, INDEX_PATH, WIKI_DIR
 
-# ADR-0003: build_index iterates this list so adding WIKI_DIR needs no
-# signature change.
-SOURCE_DIRS: list[Path] = [DOCS_DIR]
+# ADR-0006 (W1): build_index scans only the curated wiki subdirs.
+# Whitelist semantics — meta-files (wiki/index.md, wiki/log.md, wiki/hot.md,
+# wiki/README.md, wiki/.archive/*) are excluded by construction because only
+# explicit subdirectories appear here. Phase 6 will append WIKI_DIR/"qa".
+SOURCE_DIRS: list[Path] = [WIKI_DIR / "entities", WIKI_DIR / "concepts"]
 
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -463,6 +464,18 @@ def build_index(docs_dir: Path = DOCS_DIR) -> tuple[int, int]:
         "index_built",
         f"files={files_indexed} sections={len(sections)}",
     )
+
+    # ADR-0006: emit wiki_layer_empty when both whitelisted wiki subdirs scan to
+    # zero sections — distinct ops signal from routine index_missing so /lint
+    # (Phase 5) can tell "system deployed but never ingested" apart from a
+    # normal cannot-confirm. Only fires when using the default SOURCE_DIRS
+    # (production path); skipped when caller passes an explicit docs_dir
+    # (test-isolation path).
+    if docs_dir is DOCS_DIR and len(sections) == 0:
+        log_event(
+            "wiki_layer_empty",
+            "entities=0 concepts=0",
+        )
 
     # Best-effort wiki index write — non-blocking; failure stored for route layer.
     # Called via module reference so tests can monkeypatch _wiki_index_module.write_wiki_index.

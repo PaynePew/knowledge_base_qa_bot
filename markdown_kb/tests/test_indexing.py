@@ -1,12 +1,21 @@
 """Component tests for parse_markdown, build_index, and related helpers.
 
-These tests cover Slice 1 acceptance criteria:
+Original Slice 1 tests (parse_markdown behaviour) are preserved verbatim.
+Slice 4-2 tests replace the obsolete docs/-scoped build_index tests with
+wiki-whitelist scope + meta-file exclusion + wiki_layer_empty emission tests.
+
+Tests:
 - test_parse_markdown_sample_docs: exact Section IDs match the real docs/
 - test_parse_markdown_body_bearing_rule: H1 with intro + H2 child → two Sections
 - test_parse_markdown_fenced_code: # inside fenced block is content, not heading
 - test_parse_markdown_slug_collision: two ##Overview in one Source → -2 suffix
-- test_build_index_counts: POST /index returns 3 files / 9 sections
+- test_build_index_scans_wiki_subdirs: wiki entities/ + concepts/ are indexed
+- test_build_index_excludes_wiki_meta_files: index.md, log.md, hot.md, README.md excluded
+- test_build_index_meta_files_not_in_index_json: meta-files absent from .kb/index.json
 - test_write_and_load_index_json: round-trip lossless through load_index_json
+- test_wiki_layer_empty_emitted_when_both_subdirs_empty: new log kind emitted
+- test_wiki_layer_empty_not_emitted_when_entities_has_page: no emission with content
+- test_wiki_layer_empty_not_emitted_when_concepts_has_page: no emission with content
 """
 
 import json
@@ -29,6 +38,10 @@ from app.indexer import (
 )
 
 from .conftest import REAL_DOCS
+
+# Path to hand-written wiki fixtures (deterministic, not LLM-generated)
+WIKI_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "wiki"
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -135,36 +148,180 @@ def test_parse_markdown_slug_collision(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Acceptance criterion: build_index counts 3 files / 9 sections
+# Slice 4-2 AC: build_index scans wiki/entities/ and wiki/concepts/ (not docs/)
 # ---------------------------------------------------------------------------
 
 
-def test_build_index_counts(tmp_path, monkeypatch):
-    """build_index on the real docs/ produces 3 files and 9 sections."""
+def test_build_index_scans_wiki_subdirs(tmp_path, monkeypatch):
+    """build_index (default SOURCE_DIRS) indexes wiki/entities/ and wiki/concepts/.
+
+    Uses hand-written fixtures under tests/fixtures/wiki/.
+    """
+    import app.indexer as indexer_module
+    import app.logger as logger_module
+
+    kb_dir = tmp_path / ".kb"
+    index_path = kb_dir / "index.json"
+    wiki_dir = tmp_path / "wiki"
+
+    # Copy fixtures into the tmp wiki
+    entities_src = WIKI_FIXTURES / "entities"
+    concepts_src = WIKI_FIXTURES / "concepts"
+
+    entities_dst = wiki_dir / "entities"
+    concepts_dst = wiki_dir / "concepts"
+    entities_dst.mkdir(parents=True)
+    concepts_dst.mkdir(parents=True)
+
+    for f in entities_src.iterdir():
+        (entities_dst / f.name).write_bytes(f.read_bytes())
+    for f in concepts_src.iterdir():
+        (concepts_dst / f.name).write_bytes(f.read_bytes())
+
+    monkeypatch.setattr(indexer_module, "INDEX_PATH", index_path)
+    monkeypatch.setattr(indexer_module, "WIKI_DIR", wiki_dir)
+    monkeypatch.setattr(logger_module, "LOG_PATH", tmp_path / "wiki" / "log.md")
+
+    # Rebuild SOURCE_DIRS to use the patched WIKI_DIR
+    monkeypatch.setattr(
+        indexer_module,
+        "SOURCE_DIRS",
+        [wiki_dir / "entities", wiki_dir / "concepts"],
+    )
+
+    files_count, sections_count = build_index()
+
+    assert files_count >= 1, f"Expected at least 1 file indexed, got {files_count}"
+    assert sections_count >= 1, f"Expected at least 1 section indexed, got {sections_count}"
+
+    # Sections should come from the wiki fixtures, not docs/
+    sec_files = {s.file for s in indexer_module.sections}
+    assert "acme-shop.md" in sec_files or any("acme-shop" in f for f in sec_files), (
+        f"Expected acme-shop fixture to be indexed, got files: {sec_files}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Slice 4-2 AC: meta-files directly under wiki/ are NOT in the index
+# ---------------------------------------------------------------------------
+
+
+def test_build_index_excludes_wiki_meta_files(tmp_path, monkeypatch):
+    """Meta-files (index.md, log.md, hot.md, README.md) directly under wiki/
+    must NOT appear in the section index even when present on disk.
+
+    The whitelist semantics (only entities/ and concepts/ subdirs) naturally
+    exclude them — this test verifies the invariant explicitly.
+    """
+    import app.indexer as indexer_module
+    import app.logger as logger_module
+
+    wiki_dir = tmp_path / "wiki"
+    entities_dir = wiki_dir / "entities"
+    concepts_dir = wiki_dir / "concepts"
+    entities_dir.mkdir(parents=True)
+    concepts_dir.mkdir(parents=True)
+
+    # Write meta-files directly under wiki/ — they must NOT be indexed
+    for meta_name in ("index.md", "log.md", "hot.md", "README.md"):
+        (wiki_dir / meta_name).write_text(
+            f"# {meta_name}\n\nThis is a meta-file that must not be indexed.\n",
+            encoding="utf-8",
+        )
+
+    # Copy one real fixture so the index is non-empty
+    src_fixture = WIKI_FIXTURES / "concepts" / "cancellation-window.md"
+    (concepts_dir / "cancellation-window.md").write_bytes(src_fixture.read_bytes())
+
+    monkeypatch.setattr(indexer_module, "INDEX_PATH", tmp_path / ".kb" / "index.json")
+    monkeypatch.setattr(indexer_module, "WIKI_DIR", wiki_dir)
+    monkeypatch.setattr(logger_module, "LOG_PATH", wiki_dir / "log.md")
+
+    monkeypatch.setattr(
+        indexer_module,
+        "SOURCE_DIRS",
+        [entities_dir, concepts_dir],
+    )
+
+    build_index()
+
+    indexed_files = {s.file for s in indexer_module.sections}
+    for meta_name in ("index.md", "log.md", "hot.md", "README.md"):
+        assert meta_name not in indexed_files, (
+            f"Meta-file '{meta_name}' must NOT appear in the section index but was found.\n"
+            f"Indexed files: {indexed_files}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Slice 4-2 AC: meta-files absent from .kb/index.json
+# ---------------------------------------------------------------------------
+
+
+def test_build_index_meta_files_not_in_index_json(tmp_path, monkeypatch):
+    """Verify .kb/index.json does not contain any meta-file Section after build_index."""
+    import app.indexer as indexer_module
+    import app.logger as logger_module
+
+    wiki_dir = tmp_path / "wiki"
+    entities_dir = wiki_dir / "entities"
+    concepts_dir = wiki_dir / "concepts"
+    entities_dir.mkdir(parents=True)
+    concepts_dir.mkdir(parents=True)
+
+    for meta_name in ("index.md", "log.md", "hot.md", "README.md"):
+        (wiki_dir / meta_name).write_text(
+            f"# {meta_name}\n\nMeta content.\n",
+            encoding="utf-8",
+        )
+
+    src_fixture = WIKI_FIXTURES / "concepts" / "cancellation-window.md"
+    (concepts_dir / "cancellation-window.md").write_bytes(src_fixture.read_bytes())
+
     kb_dir = tmp_path / ".kb"
     index_path = kb_dir / "index.json"
 
-    # Patch INDEX_PATH to a temp location so we don't pollute the real .kb/
-    monkeypatch.setattr(indexer, "INDEX_PATH", index_path)
+    monkeypatch.setattr(indexer_module, "INDEX_PATH", index_path)
+    monkeypatch.setattr(indexer_module, "WIKI_DIR", wiki_dir)
+    monkeypatch.setattr(logger_module, "LOG_PATH", wiki_dir / "log.md")
 
-    files_count, sections_count = build_index(REAL_DOCS)
-    assert files_count == 3, f"Expected 3 files, got {files_count}"
-    assert sections_count == 9, f"Expected 9 sections, got {sections_count}"
+    monkeypatch.setattr(
+        indexer_module,
+        "SOURCE_DIRS",
+        [entities_dir, concepts_dir],
+    )
+
+    build_index()
+
+    assert index_path.exists(), ".kb/index.json must exist after build_index"
+    raw = index_path.read_text(encoding="utf-8")
+    parsed = json.loads(raw)
+
+    indexed_file_names = {s["file"] for s in parsed["sections"]}
+    for meta_name in ("index.md", "log.md", "hot.md", "README.md"):
+        assert meta_name not in indexed_file_names, (
+            f"Meta-file '{meta_name}' must NOT appear in index.json sections but was found.\n"
+            f"Indexed files: {indexed_file_names}"
+        )
 
 
 # ---------------------------------------------------------------------------
-# Acceptance criterion: .kb/index.json round-trip
+# Acceptance criterion: .kb/index.json round-trip (preserved from Slice 1)
 # ---------------------------------------------------------------------------
 
 
 def test_write_and_load_index_json(tmp_path, monkeypatch):
-    """write_index_json then load_index_json round-trips losslessly."""
+    """write_index_json then load_index_json round-trips losslessly.
+
+    Uses REAL_DOCS explicitly (not the default SOURCE_DIRS) to keep this
+    test isolated from the whitelist change.
+    """
     kb_dir = tmp_path / ".kb"
     index_path = kb_dir / "index.json"
 
     monkeypatch.setattr(indexer, "INDEX_PATH", index_path)
 
-    # Build from real docs
+    # Build from real docs explicitly (bypasses SOURCE_DIRS whitelist)
     build_index(REAL_DOCS)
 
     # Verify it's pretty-printed JSON
@@ -186,3 +343,117 @@ def test_write_and_load_index_json(tmp_path, monkeypatch):
     original_ids = {s.id for s in loaded}
     assert "refund_policy.md#refund-timeline" in original_ids
     assert "account_help.md#change-email-address" in original_ids
+
+
+# ---------------------------------------------------------------------------
+# Slice 4-2 AC: wiki_layer_empty emitted when both subdirs have zero sections
+# ---------------------------------------------------------------------------
+
+
+def test_wiki_layer_empty_emitted_when_both_subdirs_empty(tmp_path, monkeypatch):
+    """wiki_layer_empty log kind is emitted when both entities/ and concepts/
+    scan to zero sections (both directories empty).
+    """
+    import app.indexer as indexer_module
+    import app.logger as logger_module
+
+    wiki_dir = tmp_path / "wiki"
+    entities_dir = wiki_dir / "entities"
+    concepts_dir = wiki_dir / "concepts"
+    entities_dir.mkdir(parents=True)
+    concepts_dir.mkdir(parents=True)
+
+    log_path = wiki_dir / "log.md"
+    monkeypatch.setattr(indexer_module, "INDEX_PATH", tmp_path / ".kb" / "index.json")
+    monkeypatch.setattr(indexer_module, "WIKI_DIR", wiki_dir)
+    monkeypatch.setattr(logger_module, "LOG_PATH", log_path)
+    monkeypatch.setattr(
+        indexer_module,
+        "SOURCE_DIRS",
+        [entities_dir, concepts_dir],
+    )
+
+    build_index()
+
+    assert log_path.exists(), "log.md must exist after build_index"
+    content = log_path.read_text(encoding="utf-8")
+    assert "wiki_layer_empty" in content, (
+        f"Expected 'wiki_layer_empty' in log when both wiki subdirs are empty.\n"
+        f"Log content:\n{content}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Slice 4-2 AC: wiki_layer_empty NOT emitted when entities/ has at least one page
+# ---------------------------------------------------------------------------
+
+
+def test_wiki_layer_empty_not_emitted_when_entities_has_page(tmp_path, monkeypatch):
+    """wiki_layer_empty must NOT be emitted when entities/ contains at least one page."""
+    import app.indexer as indexer_module
+    import app.logger as logger_module
+
+    wiki_dir = tmp_path / "wiki"
+    entities_dir = wiki_dir / "entities"
+    concepts_dir = wiki_dir / "concepts"
+    entities_dir.mkdir(parents=True)
+    concepts_dir.mkdir(parents=True)
+
+    # One entity fixture — concepts/ is empty
+    src = WIKI_FIXTURES / "entities" / "acme-shop.md"
+    (entities_dir / "acme-shop.md").write_bytes(src.read_bytes())
+
+    log_path = wiki_dir / "log.md"
+    monkeypatch.setattr(indexer_module, "INDEX_PATH", tmp_path / ".kb" / "index.json")
+    monkeypatch.setattr(indexer_module, "WIKI_DIR", wiki_dir)
+    monkeypatch.setattr(logger_module, "LOG_PATH", log_path)
+    monkeypatch.setattr(
+        indexer_module,
+        "SOURCE_DIRS",
+        [entities_dir, concepts_dir],
+    )
+
+    build_index()
+
+    content = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+    assert "wiki_layer_empty" not in content, (
+        f"wiki_layer_empty must NOT be emitted when entities/ has a page.\nLog content:\n{content}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Slice 4-2 AC: wiki_layer_empty NOT emitted when concepts/ has at least one page
+# ---------------------------------------------------------------------------
+
+
+def test_wiki_layer_empty_not_emitted_when_concepts_has_page(tmp_path, monkeypatch):
+    """wiki_layer_empty must NOT be emitted when concepts/ contains at least one page."""
+    import app.indexer as indexer_module
+    import app.logger as logger_module
+
+    wiki_dir = tmp_path / "wiki"
+    entities_dir = wiki_dir / "entities"
+    concepts_dir = wiki_dir / "concepts"
+    entities_dir.mkdir(parents=True)
+    concepts_dir.mkdir(parents=True)
+
+    # One concept fixture — entities/ is empty
+    src = WIKI_FIXTURES / "concepts" / "cancellation-window.md"
+    (concepts_dir / "cancellation-window.md").write_bytes(src.read_bytes())
+
+    log_path = wiki_dir / "log.md"
+    monkeypatch.setattr(indexer_module, "INDEX_PATH", tmp_path / ".kb" / "index.json")
+    monkeypatch.setattr(indexer_module, "WIKI_DIR", wiki_dir)
+    monkeypatch.setattr(logger_module, "LOG_PATH", log_path)
+    monkeypatch.setattr(
+        indexer_module,
+        "SOURCE_DIRS",
+        [entities_dir, concepts_dir],
+    )
+
+    build_index()
+
+    content = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+    assert "wiki_layer_empty" not in content, (
+        f"wiki_layer_empty must NOT be emitted when concepts/ has a page.\nLog content:\n{content}"
+    )
