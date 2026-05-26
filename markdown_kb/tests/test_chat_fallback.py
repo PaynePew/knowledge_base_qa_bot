@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 
 import app.indexer as indexer
 import app.retrieval as retrieval_module
+from app.grounding import GroundingOutcome
 from app.retrieval import CANNOT_CONFIRM_PHRASE, NOT_INDEXED_MESSAGE
 
 from .conftest import FakeLLMResponse
@@ -94,8 +95,12 @@ def test_out_of_scope_query_returns_cannot_confirm_exact_phrase(indexed_corpus, 
         f"Expected exact phrase '{CANNOT_CONFIRM_PHRASE}', got: {body['answer']!r}"
     )
 
-    # AC 2: sources is empty list
-    assert body["sources"] == [], f"Expected sources == [], got: {body['sources']}"
+    # AC 2: grounding.reason reflects the pre-LLM gate (below_threshold or retrieval_empty)
+    assert "grounding" in body, "Response must have 'grounding' field"
+    assert body["grounding"]["passed"] is False
+    assert body["grounding"]["reason"] in ("below_threshold", "retrieval_empty"), (
+        f"Expected pre-LLM gate reason, got: {body['grounding']['reason']!r}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -161,11 +166,14 @@ def test_low_threshold_allows_out_of_scope_query_to_reach_llm(indexed_corpus, mo
     capture = CaptureLLM()
     monkeypatch.setattr(retrieval_module, "_llm", capture)
     monkeypatch.setattr(retrieval_module, "get_llm", lambda: capture)
-    # Also patch the retry LLM so the grounding check doesn't attempt a real
-    # OpenAI call (the canned response has no [Source: token, so the check
-    # fires; we just need it to use the same stub).
-    monkeypatch.setattr(retrieval_module, "_retry_llm", capture)
-    monkeypatch.setattr(retrieval_module, "get_retry_llm", lambda: capture)
+
+    # Mock grounding.verify() so the post-LLM check doesn't attempt a real API call.
+    approved_outcome = GroundingOutcome(passed=True, reason="claim_supported")
+    monkeypatch.setattr(
+        retrieval_module.grounding_module,
+        "verify",
+        lambda draft, sections: approved_outcome,
+    )
 
     from app.main import app
 
@@ -173,9 +181,9 @@ def test_low_threshold_allows_out_of_scope_query_to_reach_llm(indexed_corpus, mo
     resp = client.post("/chat", json={"query": "Which restaurants are nearby?"})
 
     assert resp.status_code == 200
-    # With threshold=0.0 the LLM must have been invoked (primary + possibly retry)
-    assert capture.call_count >= 1, (
-        f"Expected LLM to be invoked when KB_SCORE_THRESHOLD=0.0, "
+    # With threshold=0.0 the LLM must have been invoked (primary call only — no retry LLM)
+    assert capture.call_count == 1, (
+        f"Expected LLM to be invoked exactly once when KB_SCORE_THRESHOLD=0.0, "
         f"but call_count={capture.call_count}"
     )
 
@@ -203,6 +211,13 @@ def test_pre_index_chat_returns_not_indexed_message(empty_corpus, monkeypatch):
         f"Expected NOT_INDEXED_MESSAGE, got: {body['answer']!r}"
     )
     assert body["sources"] == [], f"Expected sources == [], got: {body['sources']}"
+
+    # Grounding field: index_missing (AC #2 from issue #12)
+    assert "grounding" in body, "Response must have 'grounding' field"
+    assert body["grounding"]["passed"] is False
+    assert body["grounding"]["reason"] == "index_missing", (
+        f"Expected grounding.reason=index_missing, got: {body['grounding']['reason']!r}"
+    )
 
 
 # ---------------------------------------------------------------------------

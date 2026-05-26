@@ -11,12 +11,14 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 import app.indexer as indexer
 import app.retrieval as retrieval_module
+from app.grounding import GroundingClaim, GroundingOutcome, GroundingResult
 from app.retrieval import CANNOT_CONFIRM_PHRASE
 
 from .conftest import FakeLLMResponse
@@ -66,11 +68,44 @@ def fake_llm_email():
     return FakeLLM(source_id=EMAIL_SECTION_ID)
 
 
+def _make_approved_outcome(source_id: str) -> GroundingOutcome:
+    """Build a GroundingOutcome(passed=True) stub for fixture use.
+
+    The claim text and citing_section_ids match the FakeLLM canned answer.
+    """
+    return GroundingOutcome(
+        passed=True,
+        reason="claim_supported",
+        result=GroundingResult(
+            reasoning="All claims trace to the cited section.",
+            claims=[
+                GroundingClaim(
+                    text="Approved refunds are processed within 5-7 business days.",
+                    supported=True,
+                    citing_section_ids=[source_id],
+                )
+            ],
+            unsupported_claims=[],
+            passed=True,
+        ),
+        retries_attempted=0,
+    )
+
+
 @pytest.fixture()
 def client_with_fake_llm(indexed_corpus, fake_llm_refund, monkeypatch):
-    """TestClient with a FakeLLM injected for refund-related queries."""
+    """TestClient with a FakeLLM injected for refund-related queries.
+
+    grounding.verify() is patched to return claim_supported so the test
+    exercises the full route → retrieval → grounding path without real API calls.
+    """
     monkeypatch.setattr(retrieval_module, "_llm", fake_llm_refund)
     monkeypatch.setattr(retrieval_module, "get_llm", lambda: fake_llm_refund)
+    monkeypatch.setattr(
+        retrieval_module.grounding_module,
+        "verify",
+        lambda draft, sections: _make_approved_outcome(REFUND_SECTION_ID),
+    )
 
     from app.main import app
 
@@ -79,9 +114,18 @@ def client_with_fake_llm(indexed_corpus, fake_llm_refund, monkeypatch):
 
 @pytest.fixture()
 def client_with_email_llm(indexed_corpus, fake_llm_email, monkeypatch):
-    """TestClient with a FakeLLM injected for email-related queries."""
+    """TestClient with a FakeLLM injected for email-related queries.
+
+    grounding.verify() is patched to return claim_supported so the test
+    exercises the full route → retrieval → grounding path without real API calls.
+    """
     monkeypatch.setattr(retrieval_module, "_llm", fake_llm_email)
     monkeypatch.setattr(retrieval_module, "get_llm", lambda: fake_llm_email)
+    monkeypatch.setattr(
+        retrieval_module.grounding_module,
+        "verify",
+        lambda draft, sections: _make_approved_outcome(EMAIL_SECTION_ID),
+    )
 
     from app.main import app
 
@@ -103,6 +147,7 @@ def test_chat_refund_query_returns_200_with_citation(client_with_fake_llm):
     # Response shape
     assert "answer" in body, "Response must have 'answer' field"
     assert "sources" in body, "Response must have 'sources' field"
+    assert "grounding" in body, "Response must have 'grounding' field"
 
     # Citation in answer (the fake LLM includes it)
     assert REFUND_SECTION_ID in body["answer"], (
@@ -113,6 +158,17 @@ def test_chat_refund_query_returns_200_with_citation(client_with_fake_llm):
     source_ids = [s["source"] for s in body["sources"]]
     assert REFUND_SECTION_ID in source_ids, (
         f"sources must contain '{REFUND_SECTION_ID}', got: {source_ids}"
+    )
+
+    # Grounding field reflects verifier approval (AC #6 from issue #12)
+    assert body["grounding"]["passed"] is True, (
+        f"Expected grounding.passed=True, got: {body['grounding']}"
+    )
+    assert body["grounding"]["reason"] == "claim_supported", (
+        f"Expected grounding.reason=claim_supported, got: {body['grounding']['reason']!r}"
+    )
+    assert body["grounding"]["claims"] is not None and len(body["grounding"]["claims"]) > 0, (
+        f"Expected grounding.claims to be non-empty, got: {body['grounding']['claims']}"
     )
 
 
@@ -130,11 +186,23 @@ def test_chat_email_query_returns_200_with_citation(client_with_email_llm):
 
     assert "answer" in body
     assert "sources" in body
+    assert "grounding" in body
 
     # Citation in sources
     source_ids = [s["source"] for s in body["sources"]]
     assert EMAIL_SECTION_ID in source_ids, (
         f"sources must contain '{EMAIL_SECTION_ID}', got: {source_ids}"
+    )
+
+    # Grounding field reflects verifier approval (AC #6 from issue #12)
+    assert body["grounding"]["passed"] is True, (
+        f"Expected grounding.passed=True, got: {body['grounding']}"
+    )
+    assert body["grounding"]["reason"] == "claim_supported", (
+        f"Expected grounding.reason=claim_supported, got: {body['grounding']['reason']!r}"
+    )
+    assert body["grounding"]["claims"] is not None and len(body["grounding"]["claims"]) > 0, (
+        f"Expected grounding.claims to be non-empty, got: {body['grounding']['claims']}"
     )
 
 
@@ -286,3 +354,10 @@ def test_cannot_confirm_no_llm_call(indexed_corpus, monkeypatch):
         f"Expected CANNOT_CONFIRM_PHRASE, got: {body['answer']!r}"
     )
     assert call_count["n"] == 0, "LLM must NOT be called when retrieval yields no candidates"
+
+    # Grounding field reflects the pre-LLM gate reason (AC #2 from issue #12)
+    assert "grounding" in body, "Response must have 'grounding' field"
+    assert body["grounding"]["passed"] is False
+    assert body["grounding"]["reason"] in ("below_threshold", "retrieval_empty"), (
+        f"Expected pre-LLM gate reason, got: {body['grounding']['reason']!r}"
+    )

@@ -18,6 +18,7 @@ Run with:
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 import httpx
 import openai
@@ -25,6 +26,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.retrieval as retrieval_module
+from app.grounding import GroundingOutcome
 from app.retrieval import CANNOT_CONFIRM_PHRASE
 
 from .conftest import FakeLLMResponse
@@ -257,64 +259,101 @@ def test_generic_api_error_logs_openai_api(indexed_corpus, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# AC 4: ungrounded response (no [Source:) → retry once → replace with Cannot
-#        Confirm when second response is also ungrounded; LLM invoked exactly 2x
+# AC 4: grounding.verify() returns claim_unsupported → Cannot Confirm;
+#        LLM invoked exactly once (grounding.verify() replaces the old retry heuristic)
 # ---------------------------------------------------------------------------
 
 
-def test_ungrounded_response_replaced_with_cannot_confirm(indexed_corpus, monkeypatch):
-    """When LLM returns text without [Source: → retry → replace with Cannot Confirm."""
-    # Both responses lack [Source: and are not the exact Cannot Confirm phrase
-    fake_llm = CountingLLM(["This is an answer without any citation."])
+def test_verifier_rejects_answer_replaced_with_cannot_confirm(indexed_corpus, monkeypatch):
+    """When grounding.verify() returns claim_unsupported → answer becomes Cannot Confirm.
+
+    The old light heuristic used a temperature=0 retry LLM; the new ADR-0004 layer 3
+    grounding check uses grounding.verify() with a separate structured-output call.
+    """
+    fake_llm = CountingLLM(["Refunds take 3 days. Also, we offer free shipping worldwide."])
     client = _make_client(fake_llm, monkeypatch)
 
-    resp = client.post("/chat", json={"query": "How long do refunds take?"})
+    rejected_outcome = GroundingOutcome(
+        passed=False,
+        reason="claim_unsupported",
+        result=None,
+        retries_attempted=0,
+    )
+    with patch("app.retrieval.grounding_module.verify", return_value=rejected_outcome):
+        resp = client.post("/chat", json={"query": "How long do refunds take?"})
 
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
     body = resp.json()
     assert body["answer"] == CANNOT_CONFIRM_PHRASE, (
         f"Expected exact Cannot Confirm phrase, got: {body['answer']!r}"
     )
-    assert body["sources"] == [], f"Expected sources == [], got: {body['sources']}"
+    assert body["grounding"]["reason"] == "claim_unsupported", (
+        f"Expected reason=claim_unsupported, got: {body['grounding']['reason']!r}"
+    )
 
 
-def test_ungrounded_response_invokes_llm_twice(indexed_corpus, monkeypatch):
-    """When LLM response is ungrounded → retry → LLM must be invoked exactly twice."""
-    fake_llm = CountingLLM(["No citations here at all."])
+def test_verifier_rejects_answer_invokes_llm_once(indexed_corpus, monkeypatch):
+    """When grounding.verify() rejects → main LLM invoked exactly once (no retry LLM)."""
+    fake_llm = CountingLLM(["Some claim without proof."])
     client = _make_client(fake_llm, monkeypatch)
 
-    client.post("/chat", json={"query": "How long do refunds take?"})
+    rejected_outcome = GroundingOutcome(
+        passed=False,
+        reason="claim_unsupported",
+        result=None,
+        retries_attempted=0,
+    )
+    with patch("app.retrieval.grounding_module.verify", return_value=rejected_outcome):
+        client.post("/chat", json={"query": "How long do refunds take?"})
 
-    assert fake_llm.call_count == 2, (
-        f"Expected LLM to be invoked exactly 2 times, got: {fake_llm.call_count}"
+    assert fake_llm.call_count == 1, (
+        f"Expected LLM to be invoked exactly 1 time, got: {fake_llm.call_count}"
     )
 
 
 # ---------------------------------------------------------------------------
-# AC 5: exact Cannot Confirm phrase on first call → passed through, LLM called once
+# AC 5: grounding.verify() returns claim_supported → draft returned as-is;
+#        LLM invoked exactly once
 # ---------------------------------------------------------------------------
 
 
-def test_cannot_confirm_phrase_passed_through_unchanged(indexed_corpus, monkeypatch):
-    """When LLM returns exact Cannot Confirm phrase → pass through unchanged."""
-    fake_llm = CountingLLM([CANNOT_CONFIRM_PHRASE])
+def test_verifier_approves_answer_returned_as_is(indexed_corpus, monkeypatch):
+    """When grounding.verify() returns claim_supported → draft is returned unchanged."""
+    canned_answer = "Refunds take 5-7 business days. [Source: refund_policy.md#refund-timeline]"
+    fake_llm = CountingLLM([canned_answer])
     client = _make_client(fake_llm, monkeypatch)
 
-    resp = client.post("/chat", json={"query": "How long do refunds take?"})
+    approved_outcome = GroundingOutcome(
+        passed=True,
+        reason="claim_supported",
+        result=None,
+        retries_attempted=0,
+    )
+    with patch("app.retrieval.grounding_module.verify", return_value=approved_outcome):
+        resp = client.post("/chat", json={"query": "How long do refunds take?"})
 
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
     body = resp.json()
-    assert body["answer"] == CANNOT_CONFIRM_PHRASE, (
-        f"Expected Cannot Confirm phrase passed through, got: {body['answer']!r}"
+    assert body["answer"] == canned_answer, (
+        f"Expected draft passed through, got: {body['answer']!r}"
     )
+    assert body["grounding"]["passed"] is True
 
 
-def test_cannot_confirm_phrase_invokes_llm_once(indexed_corpus, monkeypatch):
-    """When LLM returns exact Cannot Confirm phrase → LLM invoked exactly once."""
-    fake_llm = CountingLLM([CANNOT_CONFIRM_PHRASE])
+def test_verifier_approves_answer_invokes_llm_once(indexed_corpus, monkeypatch):
+    """When grounding.verify() approves → main LLM invoked exactly once."""
+    canned_answer = "Refunds take 5-7 business days. [Source: refund_policy.md#refund-timeline]"
+    fake_llm = CountingLLM([canned_answer])
     client = _make_client(fake_llm, monkeypatch)
 
-    client.post("/chat", json={"query": "How long do refunds take?"})
+    approved_outcome = GroundingOutcome(
+        passed=True,
+        reason="claim_supported",
+        result=None,
+        retries_attempted=0,
+    )
+    with patch("app.retrieval.grounding_module.verify", return_value=approved_outcome):
+        client.post("/chat", json={"query": "How long do refunds take?"})
 
     assert fake_llm.call_count == 1, (
         f"Expected LLM to be invoked exactly 1 time, got: {fake_llm.call_count}"
