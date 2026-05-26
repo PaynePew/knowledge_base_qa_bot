@@ -1,184 +1,173 @@
-# Orchestration Plan — Implementing Slices 2–6
+# Orchestration plan
 
-This file is the operational playbook for a Claude Code session whose only job is to drive Slices 2–6 of the prototype implementation to completion. It exists because the orchestration design and TDD policy were settled in a long `/grill-with-docs` + `/to-prd` + `/to-issues` session, and we want a fresh session (with a clean context window) to execute them without re-doing the alignment work.
+How a fresh Claude Code session drives `ready-for-agent` issues to a merged PR. This document is the **meta-doc** — it points to the four per-role prompt files under [`project-docs/agents/`](agents/) and defines the loop, hand-off contract, and stop conditions. It deliberately does NOT contain agent prompts inline — those live in the role files so each can be tuned independently and stay context-light when injected into sub-agent prompts.
 
-## Handoff one-liner
+## Roles
 
-> "Execute `project-docs/orchestration-plan.md`, starting from the first issue that is still open and `ready-for-agent` (dependency order: #3 → #4 → #5 → #6 → #7, all gated on #2 being closed first)."
-
-That is all the new session needs. Everything else lives in the repo.
-
-## What the orchestrator agent should read first
-
-In this order:
-
-1. `CLAUDE.md` — workflow triggers, agent skills configuration
-2. This file (`project-docs/orchestration-plan.md`)
-3. `project-docs/prd.md` — the PRD (also GitHub issue #1)
-4. `CONTEXT.md` — vocabulary (Source, Section, Section Index, Citation, Grounded Answer, Cannot Confirm; reserved Wiki / Hot Cache / Wiki Log / Source Template / Lint Pass / Ingest)
-5. `project-docs/adr/0001-strict-grounded-answers.md` — pre-LLM Cannot Confirm gate
-6. `project-docs/adr/0002-two-parallel-retrieval-apps.md` — dual-app layout
-7. `project-docs/adr/0003-w2-layered-wiki-target-claude-obsidian.md` — W2 layered Wiki, target = claude-obsidian, `SOURCE_DIRS` as a list
-8. `markdown_kb/tests/README.md` — test philosophy (integration-first, fake LLM by default, one `@pytest.mark.live` smoke)
-9. `markdown_kb/app/indexer.py` — Section dataclass and the 10-rule `parse_markdown` docstring
-
-The deferred patterns in `project-docs/inspiration.md` are NOT in scope for these slices. If an implementer suggests pulling one in, the orchestrator must reject it — those are post-prototype.
-
-## Mode
-
-**B — Semi-auto, non-blocking advance.** After each slice closes successfully, the orchestrator immediately starts the next slice. The human can interrupt at any time via the Claude Code interrupt keys (`Esc Esc` or `Ctrl+C`). There is no timed veto window — the design is "proceed unless interrupted," not "wait for confirmation."
-
-If the human wants explicit confirmation between slices, switch to **Mode C — Manual gate**: orchestrator stops after each slice and waits for the human to type "continue" (or equivalent). The human can request the switch at any time.
-
-## Roles and models
-
-| Role | Model | How spawned |
-|---|---|---|
-| Orchestrator | Opus 4.7 | The top-level Claude Code session |
-| Implementer | Sonnet 4.6 | `Agent(subagent_type="general-purpose", model="sonnet", prompt=…)` |
-| Reviewer | Opus 4.7 | `Agent(subagent_type="general-purpose", model="opus", prompt=…)` |
-
-Issue tracker: `PaynePew/knowledge_base_qa_bot` (verified — see `project-docs/agents/issue-tracker.md`).
-Triage label: `ready-for-agent` (already applied to all six slice issues).
-
-## Issue order (strict dependency)
-
-1. `#3` Slice 2 — Answer a grounded query through `/chat`
-2. `#4` Slice 3 — Cannot Confirm fallback for out-of-scope queries
-3. `#5` Slice 4 — Error handling for OpenAI failures + light grounding check
-4. `#6` Slice 5 — Server restart preserves the Section Index
-5. `#7` Slice 6 — Live smoke test against real OpenAI
-
-All five depend on `#2` (Slice 1) being closed first. If `#2` is still open, start with that one using the same Implementer/Reviewer protocol below.
-
-After each successful slice, the next slice in the list above becomes the active one. Slices `#5`, `#6`, `#7` (Error handling, Restart, Live smoke) only depend on `#4` (Slice 3) via `#3` (Slice 2). They could parallelize, but Mode B runs them sequentially for simplicity.
-
-## Per-slice loop
-
-For each open issue with label `ready-for-agent` in the order above, the orchestrator runs three steps.
-
-### Step 1 — Implementer (Sonnet 4.6)
-
-Spawn with this prompt template (substitute `<N>`, `<TITLE>`):
-
-> You are implementing GitHub issue #<N> for the `knowledge_base_qa_bot` repo at `PaynePew/knowledge_base_qa_bot`.
->
-> 1. Read the issue body: `gh issue view <N> -R PaynePew/knowledge_base_qa_bot`.
-> 2. Read `CONTEXT.md`, the three ADRs in `project-docs/adr/`, `markdown_kb/tests/README.md` (test philosophy), and the `parse_markdown` 10-rule docstring in `markdown_kb/app/indexer.py`.
-> 3. **TDD step (RED):** Translate every unchecked acceptance criterion in the issue body into a failing pytest test. Use the test style indicated in the per-slice TDD table in `project-docs/orchestration-plan.md`. Place tests under `markdown_kb/tests/`. Run pytest and confirm they fail for the right reason (not a bug in the test).
-> 4. **Implementation step (GREEN):** Implement the production code until every test from step 3 passes.
-> 5. Do NOT add strict unit tests for trivial helpers (`slugify`, `tokenize`, etc.). The component and integration tests cover them transitively.
-> 6. Run the full test suite (`pytest` with default markers — exclude `live`). If anything outside this slice goes red, fix it in the same commit. Do not commit a broken state.
-> 7. Commit with this message format:
->    ```
->    feat: implement Slice <N> — <TITLE> (closes #<N>)
->
->    <2-3 sentence summary of what was built end-to-end>
->
->    Acceptance criteria results:
->    - [x] Criterion 1 — short verification note
->    - [x] Criterion 2 — short verification note
->    ...
->
->    Files touched:
->    - path/to/file.py — what changed there
->    - path/to/file.py — what changed there
->    ```
-> 8. Post a comment on issue #<N> with the same body as the commit message:
->    `gh issue comment <N> -R PaynePew/knowledge_base_qa_bot --body-file <tmp-file>`
-> 9. Do NOT close the issue. The orchestrator closes it after the reviewer signs off.
-> 10. Return a one-paragraph summary of what you did to the orchestrator.
-
-### Step 2 — Reviewer (Opus 4.7)
-
-Spawn with this prompt template:
-
-> You are reviewing the HEAD commit on the `knowledge_base_qa_bot` repo. The implementer just claimed to have closed issue #<N>.
->
-> 1. Read the issue body: `gh issue view <N> -R PaynePew/knowledge_base_qa_bot`.
-> 2. Read the implementer's commit: `git log -1 --stat HEAD` and `git diff HEAD~1..HEAD`.
-> 3. **Re-run the full test suite** (`pytest`, default markers). If anything is red, the review is FAIL.
-> 4. For each acceptance criterion in the issue body, verify it is *genuinely* met by inspecting code + tests — not just claimed in the commit message.
-> 5. Verify the implementation respects:
->    - `CONTEXT.md` vocabulary — code identifiers use the glossary terms (Source, Section, Citation, etc.).
->    - ADR-0001 — strict grounded; pre-LLM Cannot Confirm gate runs before any LLM call; exact-phrase fallback.
->    - ADR-0002 — single retrieval app per directory; no premature plugin/protocol refactor.
->    - ADR-0003 — `SOURCE_DIRS` is a list (not a single path) so the future Wiki layer can be appended.
->    - The 10-rule `parse_markdown` spec (only if Slice 2 / `#3` touches the parser).
->    - The test philosophy in `markdown_kb/tests/README.md`.
-> 6. Flag scope creep: if the implementer added anything not authorized by the issue's "What to build" section, call it out.
-> 7. Post a review comment on the issue starting with the literal first word **PASS** or **FAIL**:
->    `gh issue comment <N> -R PaynePew/knowledge_base_qa_bot --body "<your review>"`
-> 8. If PASS: just post the comment, do nothing to the code.
-> 9. If FAIL: list the specific changes the implementer must make. Do NOT make the changes yourself.
-> 10. Return your final verdict (PASS / FAIL) and the comment body to the orchestrator.
-
-### Step 3 — Orchestrator advances
-
-- If Reviewer returned `PASS`:
-  - Close the issue: `gh issue close <N> -R PaynePew/knowledge_base_qa_bot --reason completed`
-  - Print a one-line update to the user (e.g., `Slice <N> merged. Advancing to #<next>.`)
-  - Continue to the next issue in the order above.
-- If Reviewer returned `FAIL`:
-  - Spawn the Implementer again with the Reviewer's feedback as additional context (paste the FAIL comment).
-  - Re-run Step 1 → Step 2 → Step 3.
-  - Max **2 reviewer-driven retries per slice**. If the third review still fails, STOP and post an issue comment summarizing the deadlock; do not advance.
-
-## TDD style per slice
-
-The grilling session decided that strict unit-TDD on every function (slugify, tokenize, BM25 numerics) is too heavy. The acceptance criteria in each issue body are themselves the RED specification.
-
-| Slice | Issue | TDD style | Where the RED test lives |
+| Role | Prompt file | Triggered by | Produces |
 |---|---|---|---|
-| Slice 2 | `#3` | **Integration TDD** | `markdown_kb/tests/test_chat_grounded.py` — two PROMPT.md curl cases via `TestClient` + fake LLM |
-| Slice 3 | `#4` | **Integration TDD** | `markdown_kb/tests/test_chat_fallback.py` — out-of-scope query returns exact phrase + mock LLM never invoked |
-| Slice 4 | `#5` | **Component TDD** | `markdown_kb/tests/test_chat_errors.py` — mock LLM raises each error class → assert HTTP status + log entry |
-| Slice 5 | `#6` | **Integration TDD** | `markdown_kb/tests/test_persistence.py` — TestClient app recreation reads `.kb/index.json` |
-| Slice 6 | `#7` | **No TDD layer** — the test IS the deliverable | `markdown_kb/tests/test_chat_live.py` — single `@pytest.mark.live` smoke against real OpenAI |
+| **Plan** | [`agents/plan.md`](agents/plan.md) | Human or orchestrator at the start of a cycle | A `<plan>` JSON block: `top` (next issue to tackle) + `alternatives` + `blocked` |
+| **Implement** | [`agents/implement.md`](agents/implement.md) | Orchestrator after Plan returns a `top` | A series of incremental commits on `slice/<N>-<desc>` + a structured COMPLETE / BLOCKED report on the issue |
+| **Review** | [`agents/review.md`](agents/review.md) | Orchestrator after Implement returns COMPLETE | Zero or more `refactor:` commits + a PASS / PASS_WITH_CONCERNS / FAIL report on the issue. Injects relevant sections of `project-docs/CODING_STANDARD.md`. |
+| **Merge** | [`agents/merge.md`](agents/merge.md) | Orchestrator after Review returns PASS or PASS_WITH_CONCERNS | Branch pushed to origin, PR opened with `Closes #N`, issue comment linking to the PR |
 
-## Merge-gate hard rules
+The **orchestrator** is the top-level Claude Code session (typically Opus 4.7). Sub-agents are spawned via the `Agent` tool — recommended models:
 
-- The Implementer's commit is ONLY allowed if `pytest` (default markers, excluding `live`) is fully green in the repo after the commit.
-- If pytest fails, the Implementer must fix before committing. No broken commits land on `main`.
-- The "merge" in this single-branch flow is the commit reaching `main` directly. No PR workflow.
-- The "merge summary" is the commit message body — conventional commits format + acceptance-criteria checklist + files touched. The Implementer writes it; the orchestrator does not edit it.
-- The Reviewer re-runs `pytest` as part of review. A red test suite means automatic FAIL.
+- Plan: Haiku 4.5 or Sonnet 4.6 (light reasoning, cheap)
+- Implement: Sonnet 4.6 (main coding work)
+- Review: Opus 4.7 (deeper reasoning, catches drift the implementer missed)
+- Merge: Haiku 4.5 (mechanical workflow)
 
-## Context economy for sub-agents
+Model choice is a tuning knob — override per slice if a particular issue warrants it.
 
-Do NOT paste the full orchestrator conversation or this `orchestration-plan.md` into sub-agent prompts. Each sub-agent rebuilds its own context from the repo:
+## The loop
 
-- The issue body (acceptance criteria + what to build)
-- `CONTEXT.md`
-- The three ADRs
-- `markdown_kb/tests/README.md`
-- The `parse_markdown` 10-rule docstring (only slices touching the parser)
+```
+[human]
+  "run plan agent"
+    ↓
+[Plan agent — agents/plan.md]
+  Reads: open ready-for-agent issues
+  Outputs: <plan> JSON
+    ↓
+[orchestrator]
+  Confirms top with human (Mode C — Manual gate)
+    OR auto-advances (Mode B — Semi-auto, non-blocking)
+    ↓
+[Implement agent — agents/implement.md]
+  Branch: slice/<N>-<desc> (orchestrator creates and checks out before spawn)
+  TDD RGR per AC, incremental commits
+  Posts COMPLETE or BLOCKED report on issue
+    ↓
+[Review agent — agents/review.md]
+  Reads diff + commits + implementer report
+  Injects relevant CODING_STANDARD.md sections (§3.1, §4, §5, §11 mandatory; others on demand)
+  Posts PASS / PASS_WITH_CONCERNS / FAIL report on issue
+    ↓ (if PASS or PASS_WITH_CONCERNS)
+[Merge agent — agents/merge.md]
+  Re-runs tests + ruff
+  Pushes branch to origin
+  Opens PR with Closes #N
+  Comments on issue with PR link
+    ↓
+[human]
+  Reviews PR on GitHub, merges
+    ↓
+GitHub auto-closes issue via Closes #N keyword
+    ↓
+[orchestrator]
+  Returns to Plan agent for next slice OR stops if no more ready-for-agent issues
+```
 
-This keeps each Sonnet / Opus run's context bounded and cheap.
+## Modes
 
-## When to STOP autonomous mode and ask the human
+- **Mode B — Semi-auto, non-blocking**: orchestrator advances Plan → Implement → Review → Merge → next without pause. Human can interrupt at any time (Esc Esc / Ctrl+C). Default for routine slices.
+- **Mode C — Manual gate**: orchestrator stops after each agent and waits for the human to type "continue" (or equivalent). Default when human wants to inspect each step (e.g. first slice of a new project, or after a previous slice had concerns).
 
-Stop and surface a blocker to the user if any of the following happens:
+The human can request the mode switch at any time during the loop.
 
-- A slice fails review twice (third attempt would be the deadlock case above).
-- A slice's implementation breaks more than 2 unrelated tests in the suite (regression too wide to fix in-slice).
-- The Implementer wants to add a NEW deferred pattern from `project-docs/inspiration.md` that the issue did not authorize — that is scope creep and must be human-approved.
-- ANY proposed change to `PROMPT.md`, `CONTEXT.md`, the ADRs in `project-docs/adr/`, or `project-docs/inspiration.md` — those are human territory. A sub-agent can suggest changes via an issue comment but must not commit them.
-- An unexpected failure in `gh` CLI, git, or the Python environment that the sub-agent cannot self-diagnose within one attempt.
+## Hand-off contract
 
-## After the last slice
+### Issue labels
 
-When `#7` (Slice 6 — Live smoke) is closed:
+- `ready-for-agent` — Plan picks from this set. Set by `/to-issues` or human after triage.
+- `needs-info`, `needs-triage`, `ready-for-human`, `wontfix` — Plan ignores these.
 
-- The orchestrator runs `gh issue list -R PaynePew/knowledge_base_qa_bot --label ready-for-agent --state open` to confirm zero open ready-for-agent issues.
-- It then asks the human to run `pytest -m live` once manually (live smoke needs the human's `OPENAI_API_KEY` and confirms the real model follows the SYSTEM_PROMPT).
-- Final user-facing message: a summary of all five slices closed + git log oneline of the five commits + reminder to run live smoke before pushing.
+### Branch naming
 
-## Out of scope for the orchestrator
+`slice/<N>-<short-kebab-description>`. Examples: `slice/9-lock-design-docs`, `slice/10-grounding-foundations`.
 
-The orchestrator does NOT:
+The orchestrator creates and checks out the branch **before** spawning Implement. Implement does not create branches.
 
-- Change the PRD, ADRs, vocabulary, or test philosophy. Those are products of the human-led grilling session.
-- Create new issues, even for surfaced patterns. If something genuinely deserves a new issue, post a comment on the current slice's issue describing it and surface to the human.
-- Run `git push`. The human controls pushing to remote.
-- Run `pytest -m live`. That requires the human's API key and is a manual verification step.
+### Commit conventions
+
+Conventional Commits per `~/.claude/rules/git-workflow.md`:
+
+```
+<type>: <description>
+
+<optional body>
+```
+
+Types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`, `style`.
+
+Slice commit bodies include: 2-3 sentence summary, AC checklist, files-touched list. See `agents/implement.md` for the exact template.
+
+### PR body
+
+Built by Merge agent. Always starts with `Closes #N`. Includes: implementer's What-was-built, AC self-report, reviewer's verdict + flagged concerns, final test result.
+
+### Issue auto-close
+
+The `Closes #N` keyword in the PR body makes GitHub close the issue automatically when the human merges. **No agent runs `gh issue close`.**
+
+## Resume protocol
+
+Branches may resume across sessions. Each agent checks the working tree on startup:
+
+- If working tree is clean → start fresh per its prompt.
+- If working tree is dirty → WIP-commit (`git commit -am "wip: checkpoint before resume"`) or stash, then proceed. Never `git reset --hard` silently. Per `agents/implement.md`.
+
+The orchestrator can resume any in-flight slice by checking out the existing branch and re-spawning the agent at the right step.
+
+## Stop conditions
+
+Stop and surface to the human if any of the following occurs:
+
+1. **Plan agent reports no ready-for-agent issues** — cycle complete.
+2. **Implement agent returns BLOCKED twice in a row** on the same issue — deadlock; needs human intervention.
+3. **Review agent returns FAIL twice in a row** — the implementer cannot satisfy the AC; needs human re-scope or specification fix.
+4. **Merge agent returns BLOCKED** — pre-push tests fail in a way ruff cannot auto-fix; needs a fix-up implement pass.
+5. **An agent proposes modifying `PROMPT.md`, `CONTEXT.md`, `project-docs/adr/`, `project-docs/inspiration.md`, or `project-docs/CODING_STANDARD.md`** that is NOT explicitly authorised by the slice AC — those are human territory; stop and surface for approval. (Slices that are docs-only and explicitly authorise such edits — e.g. Grounding Check Slice #1 — are the exception.)
+6. **Any agent reports the venv is broken or a critical dependency is missing** — fix the environment before resuming.
+
+## Spawning sub-agents (orchestrator-side guide)
+
+When spawning a role agent, pass the prompt file path + a minimal substitution map. Recommended `Agent` tool invocation shape:
+
+```
+Agent(
+  description="<slice> — <role>",
+  subagent_type="general-purpose",
+  model="sonnet",  # or opus / haiku per role
+  prompt="""
+You are the {ROLE} agent.
+
+Read your role contract from: project-docs/agents/{ROLE}.md
+
+Substitutions to apply when you see {{VARIABLE}} placeholders:
+- {{ISSUE}} = <issue number>
+- {{BRANCH}} = slice/<N>-<desc>
+- {{TARGET_BRANCH}} = main
+- {{IN_PROGRESS_LIST}} = <comma-separated, plan only>
+
+Begin by following the prompt file's start-up sequence.
+""")
+```
+
+Do NOT inline the full role prompt into the spawning message — that doubles the context cost. The sub-agent reads its own role file once on launch.
+
+## Context economy
+
+The orchestrator's job is to **move issues forward**, not to deeply re-understand the codebase each cycle. Per-cycle context for the orchestrator stays bounded:
+
+- `gh issue list` results (Plan input)
+- `<plan>` JSON output (Plan → Implement hand-off)
+- Issue body excerpts when relevant
+- Final reports from each agent
+
+Sub-agents rebuild their own context from the repo (their role file + the docs they need). Do NOT paste the orchestrator's conversation history into a sub-agent prompt.
+
+## After the last ready-for-agent issue is merged
+
+Plan agent returns `{"top": null, "alternatives": [], "blocked": []}` (or just blocked items). The orchestrator reports:
+
+> All ready-for-agent issues processed. Blocked: [list]. Recommend running `/grill-with-docs` on Phase 2 design before generating the next batch of issues.
+
+## What the orchestrator does NOT do
+
+- Change `PROMPT.md`, `CONTEXT.md`, ADRs, `CODING_STANDARD.md`, or `inspiration.md` (those are human-authored or `/grill-with-docs`-driven).
+- Create new issues from scratch — `/to-prd` + `/to-issues` are the human-invoked paths.
+- Run `git push` to `main` — Merge agent pushes the slice branch; humans merge PRs on GitHub.
+- Run `pytest -m live` automatically — that requires the human's `OPENAI_API_KEY` and is a manual verification step before declaring a slice production-ready.
+- Touch `.claude/` or any harness configuration.

@@ -22,6 +22,32 @@ Where this file conflicts with `CONTEXT.md`, the ADRs, or the PRD, **those docum
 - FastAPI / Pydantic / pytest official recommendations.
 - John Ousterhout, *A Philosophy of Software Design* — the source for "deep modules" used throughout this codebase.
 
+## 0.2 Reviewer injection scope
+
+This document is the **reviewer agent's** standards reference (see [`project-docs/agents/review.md`](agents/review.md)). To keep review-agent context bounded, the reviewer reads sections **lazily, only when relevant to the diff under review**. The injection contract:
+
+**Mandatory for every review** (read first, before looking at the diff):
+- **§3 Domain rules** — vocabulary discipline (Source / Section / Citation / Cannot Confirm), reserved terms, sentinel string constants
+- **§4 Error handling** — OpenAI exception → HTTP status mapping, fail-fast on corruption, Cannot Confirm as a success
+- **§5 Logging and observability** — single `log_event` channel, bounded summaries, no `print()`
+- **§11 Drift signals** — the actionable reviewer checklist (see § 11 itself for severity guide)
+
+**Conditional — read only when the diff touches them:**
+- **§1 Style** — if reformatting / naming / docstring issues come up (most style is handled by `ruff`; this section is for the cases ruff cannot catch, e.g. docstring intent quality)
+- **§2 Architecture** — if a new module is added or an existing one significantly restructured
+- **§6 Testing** — if test files are in the diff
+- **§7 Dependencies** — if `pyproject.toml` or `uv.lock` is in the diff
+- **§10 Design patterns in use** — when pattern-recognition is needed (e.g. reviewer suspects an anti-pattern is being introduced)
+
+**Out of reviewer scope** (these are author-time / orchestrator-time):
+- **§0** (Reading order, Authority, this section)
+- **§8 Tooling recommendations** — adopting these is a separate `chore:` commit, not a per-slice review concern
+- **§9 Commits and review** — the commit message rules are checked by the implementer; the reviewer-checklist subset (§9.2) is duplicated in agents/review.md's review process for self-containment
+
+**Citation discipline when flagging**: when the reviewer flags an issue, it must cite the section by number (e.g. "§3.1 vocabulary drift — `Document` used at `app/indexer.py:42`, should be `Source`"). Do NOT dump the section's full prose into the report — the section number is enough for the human to look up.
+
+**Budget**: an active review typically loads §3 + §4 + §5 + §11 eagerly (~80 lines combined) plus 0-2 conditional sections on demand. Total injection is well under 200 lines — fits cleanly in any sub-agent's context window.
+
 ---
 
 ## 1. Style
@@ -443,27 +469,72 @@ Notable patterns **rejected** (do not introduce):
 
 ---
 
-## 11. Drift signals (the reviewer's checklist)
+## 11. Drift signals (the reviewer's actionable checklist)
 
-If any of these appears in a diff, **stop and flag it**:
+When the **review agent** ([`project-docs/agents/review.md`](agents/review.md)) inspects a diff, it walks this checklist top-to-bottom and ticks anything that appears in the actual diff (verified via `git diff`, NOT inferred from the issue body or PRD spec — see Factual discipline in `review.md`).
 
-- [ ] A test mocks `indexer.search` or any other deep-module entry point. (Mock the LLM, not the index.)
-- [ ] A new domain term appears in code without a `CONTEXT.md` entry.
-- [ ] A new module imports `langchain` or `langchain_openai` outside `retrieval.py`.
-- [ ] A branch returns a paraphrase of "Cannot Confirm" instead of the constant `CANNOT_CONFIRM_PHRASE`.
-- [ ] `SOURCE_DIRS` is reduced to a single `Path` "for simplicity" (breaks ADR-0003).
-- [ ] `Section.metadata` is removed because it's "unused" (breaks PRD § Section dataclass shape).
-- [ ] A `requirements.txt` reappears anywhere in the tree.
-- [ ] `print()` lands in production code.
-- [ ] A second `@pytest.mark.live` test appears.
-- [ ] A test asserts an absolute BM25 score (not just ranking order).
-- [ ] HTTP error mapping for OpenAI exceptions drifts away from § 4.2.
-- [ ] `wiki/log.md` is added to `.gitignore`.
-- [ ] An ADR-0001 / 0002 / 0003 invariant is broken without a paired new ADR.
-- [ ] A new dependency is added by hand-editing `pyproject.toml` instead of `uv add`.
-- [ ] LangChain `HumanMessage` / `SystemMessage` types leak out of `retrieval.py`.
-- [ ] A `wiki`, `ingest`, `hot_cache`, etc. local variable consumes a reserved CONTEXT term.
-- [ ] A module-level docstring is missing or describes "what the code does" instead of "intent + which ADR/PRD section drives it."
-- [ ] A function-scope import lacks a comment explaining the circular-dep workaround.
+Each signal has a **severity** that determines the reviewer's action:
 
-The reviewer's job is to spot these. The implementer's job is to not write them in the first place.
+- **FAIL** = AC is not actually satisfied (or a hard ADR invariant is broken without a paired new ADR). Reviewer returns `FAIL`; the implementer must revisit. Reviewer does NOT silently fix these.
+- **FIX** = small, safe, mechanical refactor the reviewer can apply directly with a `refactor:` commit. Reviewer fixes, commits immediately (per Turn-budget discipline), and lists the commit in "Changes made".
+- **FLAG** = correctness or scope concern that needs human judgment. Reviewer notes in "Concerns flagged for human" and does NOT make the change.
+
+### Vocabulary drift (§3.1)
+
+- [ ] **FAIL** — A new domain term appears in code without a `CONTEXT.md` entry, OR a synonym smuggles in for an existing CONTEXT term (e.g. `Document` / `Article` / `Doc` for what should be `Source`).
+- [ ] **FIX** — A local variable name consumes a reserved CONTEXT term (`wiki`, `ingest`, `hot_cache`, `wiki_index`, `lint_pass`, `query_rewriting`, `conversation_store`, `grounding_check`, `source_template`).
+
+### Sentinel string drift (§3.3)
+
+- [ ] **FIX** — A branch returns a paraphrase of "Cannot Confirm" instead of the constant `CANNOT_CONFIRM_PHRASE`.
+- [ ] **FIX** — An inline `"I cannot confirm from the knowledge base."` literal appears in tests or routes (use the constant).
+
+### Architecture & dependency drift (§2)
+
+- [ ] **FAIL** — A new module imports `langchain` or `langchain_openai` outside `retrieval.py`, OR LangChain types (`HumanMessage`, `SystemMessage`, `ChatOpenAI`) leak through `retrieval.py`'s return values into other modules. (Violates §2.4.)
+- [ ] **FAIL** — Business / conditional logic appears in `routes.py`, `schemas.py`, or `main.py` (shallow modules per §2.3). Should be in a deep module.
+- [ ] **FAIL** — `SOURCE_DIRS` is reduced to a single `Path` "for simplicity" (violates ADR-0003 + §2.5).
+- [ ] **FAIL** — `Section.metadata` is removed because it's "unused" (violates PRD § Section dataclass shape + §2.5).
+- [ ] **FAIL** — Pre-LLM Cannot Confirm gate (`retrieval.py:88`) is bypassed when score is "just barely below threshold" (violates ADR-0001 + §4.3).
+- [ ] **FAIL** — A `Retriever` protocol / plugin layer is extracted before both `markdown_kb` and `vector_rag` are end-to-end working (premature per ADR-0002 + §2.2).
+
+### Error handling drift (§4)
+
+- [ ] **FAIL** — HTTP error mapping for OpenAI exceptions drifts away from §4.2 (e.g. `RateLimitError` returns 500 instead of 503).
+- [ ] **FAIL** — A persistent-state load (e.g. `.kb/index.json`) silently fallbacks to empty on corruption instead of raising (violates §4.1 fail-fast).
+- [ ] **FIX** — A handler uses bare `raise` instead of `raise HTTPException(...) from exc` (loses the exception chain per §4.2).
+- [ ] **FAIL** — Pydantic boundary validation is re-implemented inside a route handler (violates §4.4).
+
+### Logging drift (§5)
+
+- [ ] **FAIL** — `print()`, `logging.getLogger(...)`, or `sys.stderr.write(...)` lands in production code (violates §5.1 single log channel).
+- [ ] **FIX** — A new log site logs full user queries or full document content (violates §5.3 bounded summaries; truncate to 60 chars).
+- [ ] **FIX** — A new log site logs unrounded float scores (violates §5.3; use `round(score, 3)`).
+- [ ] **FAIL** — A new log `kind=` is used without a corresponding row in PRD § Log entry conventions.
+
+### Testing drift (§6)
+
+- [ ] **FAIL** — A test mocks `indexer.search` or any other deep-module entry point (mock the LLM, not the index; per §6.3).
+- [ ] **FAIL** — A second `@pytest.mark.live` test appears (one is the policy; per §6.4).
+- [ ] **FAIL** — A test asserts an absolute BM25 score value (corpus-sensitive, brittle; per §6.2 — assert ranking order or shape instead).
+- [ ] **FLAG** — A test asserts specific LLM output text content beyond shape + `[Source:` marker (will break across model updates; per §6.2).
+- [ ] **FIX** — A test mutates `indexer.sections` without restoring via `monkeypatch` or explicit teardown (per §6.5).
+
+### Dependencies drift (§7)
+
+- [ ] **FAIL** — `requirements.txt` reappears anywhere in the tree (uv is the single source of truth per §7.1).
+- [ ] **FAIL** — A new dependency is added by hand-editing `pyproject.toml` instead of `uv add` (lockfile drift risk per §7.2).
+- [ ] **FLAG** — A new dependency lacks a one-sentence rationale in the commit message (per §7.2).
+
+### Documentation discipline (§1.6, §1.8)
+
+- [ ] **FIX** — A new module is missing the top-of-file docstring with intent + ADR/PRD reference.
+- [ ] **FIX** — A function-scope import lacks a comment explaining the circular-dep workaround.
+- [ ] **FIX** — A comment paraphrases obvious code (delete it — only WHY-comments per §1.8).
+
+### Git hygiene
+
+- [ ] **FAIL** — `wiki/log.md` is added to `.gitignore` (violates PRD US #23 + §2.5).
+- [ ] **FAIL** — An ADR-0001 / 0002 / 0003 / 0004 / 0005 invariant is broken **without** a paired new ADR superseding it.
+
+The reviewer's job is to spot these and act per the severity. The implementer's job is to not write them in the first place — reading this section before writing code is cheaper than re-doing it after a `FAIL`.

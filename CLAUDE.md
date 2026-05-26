@@ -6,8 +6,15 @@ See `PROMPT.md` for the exercise spec + the answered design questions, `README.m
 
 ## Workflow triggers
 
-**To implement the prototype slices (issues #2–#7), follow** [`project-docs/orchestration-plan.md`](project-docs/orchestration-plan.md). It defines the Sonnet 4.6 implementer + Opus 4.7 reviewer loop, the per-slice TDD style, the commit / issue-comment / merge-gate protocol, and the human-escalation rules. A fresh session can pick up the work by running:
-> "Execute `project-docs/orchestration-plan.md`, starting from the first open `ready-for-agent` issue (dependency order: #3 → #4 → #5 → #6 → #7, all gated on #2 being closed first)."
+**To process any `ready-for-agent` issue, follow** [`project-docs/orchestration-plan.md`](project-docs/orchestration-plan.md). It defines the four-role loop (plan → implement → review → merge → human-merges-PR), the hand-off contract (labels, branch naming `slice/<N>-<desc>`, commit format, PR auto-close via `Closes #N`), the resume protocol, and the stop conditions. The per-role agent prompts live under [`project-docs/agents/`](project-docs/agents/) — one file per role, deliberately decoupled from the meta-doc so each can be tuned independently:
+
+- [`agents/plan.md`](project-docs/agents/plan.md) — ranks open `ready-for-agent` issues, outputs `<plan>` JSON
+- [`agents/implement.md`](project-docs/agents/implement.md) — TDD RGR, incremental commits, COMPLETE / BLOCKED report
+- [`agents/review.md`](project-docs/agents/review.md) — diff review, `CODING_STANDARD.md` injection, PASS / FAIL report
+- [`agents/merge.md`](project-docs/agents/merge.md) — push branch, open PR with `Closes #N`, link PR on issue
+
+A fresh session can pick up the work by running:
+> "Execute the orchestration loop in `project-docs/orchestration-plan.md`, starting from `agents/plan.md` against the currently open `ready-for-agent` issues."
 
 **Before starting any phase beyond the current prototype** (wiki layer, `/ingest`, multi-turn conversation, streaming, etc.), re-read [`project-docs/inspiration.md`](project-docs/inspiration.md) and `grep` the section for the relevant phase tag — for example `grep "phase: wiki" project-docs/inspiration.md`. Operational patterns that are too detailed for `CONTEXT.md` or an ADR but too valuable to forget live there, each tagged with the phase that should trigger its review.
 
@@ -24,3 +31,7 @@ Five canonical roles using default label strings (`needs-triage`, `needs-info`, 
 ### Domain docs
 
 Single-context — one `CONTEXT.md` at the root, ADRs under `project-docs/adr/`. See `project-docs/agents/domain.md`.
+
+### Coding standard
+
+The reviewer agent injects [`project-docs/CODING_STANDARD.md`](project-docs/CODING_STANDARD.md) into its prompt — see that file's §0.2 "Reviewer injection scope" for which sections are mandatory vs on-demand. Implementers should also skim §11 (drift signals) before starting a slice to avoid common FAIL conditions.
