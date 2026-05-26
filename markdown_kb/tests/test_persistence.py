@@ -12,6 +12,7 @@ the lifespan startup hook runs as it would in a real server restart.
 Run with:
     pytest -m "not live"   (from markdown_kb/)
 """
+
 from __future__ import annotations
 
 import importlib
@@ -188,9 +189,7 @@ def test_corrupt_index_json_raises_at_startup(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_missing_index_json_server_starts_and_chat_returns_not_indexed(
-    tmp_path, monkeypatch
-):
+def test_missing_index_json_server_starts_and_chat_returns_not_indexed(tmp_path, monkeypatch):
     """With no .kb/index.json present the server starts fine and /chat returns
     the 'knowledge base has not been indexed yet' response."""
     kb_dir = tmp_path / ".kb"
@@ -215,9 +214,7 @@ def test_missing_index_json_server_starts_and_chat_returns_not_indexed(
         assert body["answer"] == NOT_INDEXED_MESSAGE, (
             f"Expected NOT_INDEXED_MESSAGE, got: {body['answer']!r}"
         )
-        assert body["sources"] == [], (
-            f"Expected sources == [], got: {body['sources']}"
-        )
+        assert body["sources"] == [], f"Expected sources == [], got: {body['sources']}"
 
     # Clean up
     fresh_indexer.sections.clear()
@@ -263,13 +260,9 @@ def test_startup_load_writes_index_loaded_log_entry(tmp_path, monkeypatch):
     assert log_path.exists(), "wiki/log.md must exist after startup-load"
     content = log_path.read_text(encoding="utf-8")
 
-    assert "index_loaded |" in content, (
-        f"Expected 'index_loaded |' entry in log, got:\n{content}"
-    )
+    assert "index_loaded |" in content, f"Expected 'index_loaded |' entry in log, got:\n{content}"
     # Must contain files=N sections=M pattern
-    assert re.search(r"files=\d+", content), (
-        f"Expected 'files=N' in log entry, got:\n{content}"
-    )
+    assert re.search(r"files=\d+", content), f"Expected 'files=N' in log entry, got:\n{content}"
     assert re.search(r"sections=\d+", content), (
         f"Expected 'sections=M' in log entry, got:\n{content}"
     )

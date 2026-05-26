@@ -1,4 +1,5 @@
 """Pydantic request/response models for the FastAPI routes. No domain logic."""
+
 from pydantic import BaseModel
 
 

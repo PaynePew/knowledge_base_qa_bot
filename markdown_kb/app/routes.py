@@ -1,4 +1,5 @@
 """HTTP wiring for /health, /index, /chat. No domain logic."""
+
 from fastapi import APIRouter
 
 from .indexer import build_index

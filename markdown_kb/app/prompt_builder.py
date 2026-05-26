@@ -13,6 +13,7 @@ Prompt structure (per PROMPT.md Q3):
     QUESTION:
     <user question>
 """
+
 from __future__ import annotations
 
 from .indexer import Section
@@ -57,11 +58,7 @@ def build_prompt(question: str, ranked_sections: list[Section]) -> str:
 
     for sec in ranked_sections:
         breadcrumb = " > ".join(sec.heading_path)
-        block = (
-            f"[Source: {sec.id}]\n"
-            f"Heading: {breadcrumb}\n"
-            f"{sec.content}\n"
-        )
+        block = f"[Source: {sec.id}]\nHeading: {breadcrumb}\n{sec.content}\n"
         parts.append(block)
 
     parts.append(f"\nQUESTION:\n{question}")

@@ -1,5 +1,6 @@
 """FastAPI app entrypoint. Loads .env, wires the router, rehydrates the
 Section Index on startup via lifespan."""
+
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 

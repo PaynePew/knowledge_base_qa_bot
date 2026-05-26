@@ -1,4 +1,5 @@
 """Component tests for logger.py — log_event format and append behavior."""
+
 import re
 from pathlib import Path
 
@@ -7,9 +8,7 @@ import pytest
 import app.logger as logger_module
 from app.logger import log_event
 
-LOG_LINE_RE = re.compile(
-    r"^## \[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z\] \S+ \| .+\n$"
-)
+LOG_LINE_RE = re.compile(r"^## \[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z\] \S+ \| .+\n$")
 
 
 # ---------------------------------------------------------------------------

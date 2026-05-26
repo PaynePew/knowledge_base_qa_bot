@@ -7,6 +7,7 @@ OpenAI calls) and assert the LLM is NEVER invoked in fallback scenarios.
 Run with:
     pytest -m "not live"   (from markdown_kb/)
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -33,9 +34,7 @@ class SentinelLLM:
 
     def invoke(self, messages):
         self.call_count += 1
-        raise AssertionError(
-            "LLM must NOT be invoked when the pre-LLM Cannot Confirm gate fires."
-        )
+        raise AssertionError("LLM must NOT be invoked when the pre-LLM Cannot Confirm gate fires.")
 
 
 class CaptureLLM:
@@ -63,6 +62,7 @@ def empty_corpus():
     Path redirection is handled by conftest's autouse `_redirect_paths_to_tmp`.
     """
     import app.logger as _logger
+
     indexer.sections.clear()
     yield {"log_path": _logger.LOG_PATH}
     indexer.sections.clear()
@@ -74,9 +74,7 @@ def empty_corpus():
 # ---------------------------------------------------------------------------
 
 
-def test_out_of_scope_query_returns_cannot_confirm_exact_phrase(
-    indexed_corpus, monkeypatch
-):
+def test_out_of_scope_query_returns_cannot_confirm_exact_phrase(indexed_corpus, monkeypatch):
     """POST /chat with an out-of-scope query returns 200 and the exact Cannot
     Confirm phrase — no trailing punctuation, no apology, no explanation."""
     sentinel = SentinelLLM()
@@ -97,9 +95,7 @@ def test_out_of_scope_query_returns_cannot_confirm_exact_phrase(
     )
 
     # AC 2: sources is empty list
-    assert body["sources"] == [], (
-        f"Expected sources == [], got: {body['sources']}"
-    )
+    assert body["sources"] == [], f"Expected sources == [], got: {body['sources']}"
 
 
 # ---------------------------------------------------------------------------
@@ -119,9 +115,7 @@ def test_out_of_scope_query_does_not_invoke_llm(indexed_corpus, monkeypatch):
     # If the sentinel's invoke() fires, it raises AssertionError and the test fails
     resp = client.post("/chat", json={"query": "Which restaurants are nearby?"})
     assert resp.status_code == 200
-    assert sentinel.call_count == 0, (
-        f"LLM was invoked {sentinel.call_count} time(s); expected 0."
-    )
+    assert sentinel.call_count == 0, f"LLM was invoked {sentinel.call_count} time(s); expected 0."
 
 
 # ---------------------------------------------------------------------------
@@ -129,9 +123,7 @@ def test_out_of_scope_query_does_not_invoke_llm(indexed_corpus, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_out_of_scope_query_logs_chat_fallback_below_threshold(
-    indexed_corpus, monkeypatch
-):
+def test_out_of_scope_query_logs_chat_fallback_below_threshold(indexed_corpus, monkeypatch):
     """wiki/log.md must contain a chat_fallback entry with reason=below_threshold
     and top_score=<score> for an out-of-scope query."""
     sentinel = SentinelLLM()
@@ -148,15 +140,11 @@ def test_out_of_scope_query_logs_chat_fallback_below_threshold(
     assert log_path.exists(), "wiki/log.md must exist after /chat request"
     content = log_path.read_text(encoding="utf-8")
 
-    assert "chat_fallback |" in content, (
-        f"Expected 'chat_fallback |' in log, got:\n{content}"
-    )
+    assert "chat_fallback |" in content, f"Expected 'chat_fallback |' in log, got:\n{content}"
     assert "reason=below_threshold" in content, (
         f"Expected 'reason=below_threshold' in log, got:\n{content}"
     )
-    assert "top_score=" in content, (
-        f"Expected 'top_score=<score>' in log, got:\n{content}"
-    )
+    assert "top_score=" in content, f"Expected 'top_score=<score>' in log, got:\n{content}"
 
 
 # ---------------------------------------------------------------------------
@@ -164,9 +152,7 @@ def test_out_of_scope_query_logs_chat_fallback_below_threshold(
 # ---------------------------------------------------------------------------
 
 
-def test_low_threshold_allows_out_of_scope_query_to_reach_llm(
-    indexed_corpus, monkeypatch
-):
+def test_low_threshold_allows_out_of_scope_query_to_reach_llm(indexed_corpus, monkeypatch):
     """When KB_SCORE_THRESHOLD=0.0 is set, an out-of-scope query that would
     otherwise be gated DOES reach the (mocked) LLM — proving the env var works."""
     # Set threshold to 0.0 so ANY positive BM25 score passes
@@ -216,9 +202,7 @@ def test_pre_index_chat_returns_not_indexed_message(empty_corpus, monkeypatch):
     assert body["answer"] == NOT_INDEXED_MESSAGE, (
         f"Expected NOT_INDEXED_MESSAGE, got: {body['answer']!r}"
     )
-    assert body["sources"] == [], (
-        f"Expected sources == [], got: {body['sources']}"
-    )
+    assert body["sources"] == [], f"Expected sources == [], got: {body['sources']}"
 
 
 # ---------------------------------------------------------------------------
@@ -243,12 +227,8 @@ def test_pre_index_chat_logs_chat_fallback_not_indexed(empty_corpus, monkeypatch
     assert log_path.exists(), "wiki/log.md must exist after /chat request"
     content = log_path.read_text(encoding="utf-8")
 
-    assert "chat_fallback |" in content, (
-        f"Expected 'chat_fallback |' in log, got:\n{content}"
-    )
-    assert "reason=not_indexed" in content, (
-        f"Expected 'reason=not_indexed' in log, got:\n{content}"
-    )
+    assert "chat_fallback |" in content, f"Expected 'chat_fallback |' in log, got:\n{content}"
+    assert "reason=not_indexed" in content, f"Expected 'reason=not_indexed' in log, got:\n{content}"
     # LLM must not be invoked
     assert sentinel.call_count == 0, (
         f"LLM was invoked {sentinel.call_count} time(s) before indexing; expected 0."

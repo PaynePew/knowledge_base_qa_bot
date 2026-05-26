@@ -5,6 +5,7 @@ Each line has the format:
 
 The log is append-only; entries are never deleted or modified.
 """
+
 from __future__ import annotations
 
 import datetime

@@ -6,6 +6,7 @@ executable assertions. All tests use a FakeLLM stub (no live OpenAI calls).
 Run with:
     pytest -m "not live"   (from markdown_kb/)
 """
+
 from __future__ import annotations
 
 import re
@@ -152,14 +153,10 @@ def test_chat_writes_log_entry(client_with_fake_llm):
     content = log_path.read_text(encoding="utf-8")
 
     # Must contain at least one chat log entry
-    assert "chat |" in content, (
-        f"Expected 'chat |' entry in log, got:\n{content}"
-    )
+    assert "chat |" in content, f"Expected 'chat |' entry in log, got:\n{content}"
 
     # Must contain query (truncated or full)
-    assert "refund" in content.lower(), (
-        f"Log must mention the query keyword, got:\n{content}"
-    )
+    assert "refund" in content.lower(), f"Log must mention the query keyword, got:\n{content}"
 
     # Must contain top section id
     assert REFUND_SECTION_ID in content, (
@@ -188,9 +185,7 @@ def test_build_prompt_structure(indexed_corpus):
     q_pos = prompt.find("QUESTION:")
     assert ctx_pos != -1, "Prompt must contain 'CONTEXT:'"
     assert q_pos != -1, "Prompt must contain 'QUESTION:'"
-    assert ctx_pos < q_pos, (
-        f"CONTEXT: (pos {ctx_pos}) must appear before QUESTION: (pos {q_pos})"
-    )
+    assert ctx_pos < q_pos, f"CONTEXT: (pos {ctx_pos}) must appear before QUESTION: (pos {q_pos})"
 
     # Each cited Section appears under a [Source: filename#heading] header line
     for sec in ranked_sections:

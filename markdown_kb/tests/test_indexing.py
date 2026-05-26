@@ -8,6 +8,7 @@ These tests cover Slice 1 acceptance criteria:
 - test_build_index_counts: POST /index returns 3 files / 9 sections
 - test_write_and_load_index_json: round-trip lossless through load_index_json
 """
+
 import json
 import re
 import tempfile
@@ -112,9 +113,7 @@ def test_parse_markdown_fenced_code(tmp_path):
     result = parse_markdown(p)
     # Only "Real Heading" is a real heading — fenced '# ...' must NOT produce a Section
     ids = [s.id for s in result]
-    assert len(result) == 1, (
-        f"Expected 1 section (the real heading), got {len(result)}: {ids}"
-    )
+    assert len(result) == 1, f"Expected 1 section (the real heading), got {len(result)}: {ids}"
     assert ids[0] == "fenced.md#real-heading"
     # Content should include the fenced code lines
     assert "echo hello" in result[0].content
@@ -127,13 +126,7 @@ def test_parse_markdown_fenced_code(tmp_path):
 
 def test_parse_markdown_slug_collision(tmp_path):
     """Two '## Overview' in one Source → #overview and #overview-2."""
-    md = (
-        "# Doc\n"
-        "## Overview\n"
-        "First overview content.\n"
-        "## Overview\n"
-        "Second overview content.\n"
-    )
+    md = "# Doc\n## Overview\nFirst overview content.\n## Overview\nSecond overview content.\n"
     p = _write(tmp_path, "collision.md", md)
     result = parse_markdown(p)
     ids = [s.id for s in result]
