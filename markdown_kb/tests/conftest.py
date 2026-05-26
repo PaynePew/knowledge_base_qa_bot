@@ -62,6 +62,44 @@ def pytest_collection_modifyitems(config, items):
 
 
 @pytest.fixture(autouse=True)
+def _mock_ingest_verifier_supported(request, monkeypatch):
+    """Default ``app.ingest.verify`` to ``claim_supported`` for hermetic tests.
+
+    Why this exists (issue #42): ``grounding.verify()`` constructs a fresh
+    ``ChatOpenAI`` instance per call (see ``markdown_kb/app/grounding.py``),
+    so it is **not** covered by fixtures that mock ``templates._ingest_llm``.
+    Without this autouse default, every test that exercises ``/ingest`` (or
+    calls ``ingest_sources`` directly) silently hits the real OpenAI API for
+    the grounding check — non-hermetic, costs money, and is non-deterministic
+    (the verifier's "claim supported / unsupported" judgment flakes around
+    ~10 % even for the fake ``FIXED_BODY``). The most visible symptom was
+    ``test_ingest_creates_wiki_page_with_correct_structure`` intermittently
+    failing on ``parsed["status"] == "live"``.
+
+    Tests that want a different verifier outcome override this with their
+    own ``with patch("app.ingest.verify", return_value=other_outcome):``
+    context manager — ``unittest.mock.patch`` composes correctly on top of
+    the autouse monkeypatch (the inner patch wins inside the ``with`` block,
+    and the autouse default is restored on exit).
+
+    Live tests (``@pytest.mark.live``) opt out so they continue to exercise
+    the real verifier end-to-end.
+    """
+    if request.node.get_closest_marker("live"):
+        return
+
+    from app.grounding import GroundingOutcome
+
+    supported = GroundingOutcome(passed=True, reason="claim_supported", result=None)
+
+    # ``app.ingest`` may not be imported yet for non-ingest tests; importing
+    # it lazily here keeps the autouse cost negligible.
+    import app.ingest as ingest_module
+
+    monkeypatch.setattr(ingest_module, "verify", lambda *_a, **_kw: supported)
+
+
+@pytest.fixture(autouse=True)
 def _redirect_paths_to_tmp(tmp_path, monkeypatch):
     """Autouse safety net: redirect INDEX_PATH, LOG_PATH, and WIKI_DIR to tmp.
 
