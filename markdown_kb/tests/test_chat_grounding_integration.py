@@ -3,6 +3,11 @@
 Tests mirror the PROMPT.md verification curl cases and assert the grounding
 field shape for all six GroundingInfo.reason values.
 
+Also covers B3 page-expansion wiring (Slice 4-4 issue #49):
+    - prompt CONTEXT contains all sections of each hit's parent page
+    - grounding.verify() receives the expanded section set
+    - ChatResponse.sources[] stays BM25 top-K (not expanded)
+
 Mock-mode tests (default, no OPENAI_API_KEY needed):
     Use fake LLM stubs and monkeypatched grounding.verify() so the full
     route → retrieval → schema mapping is exercised without real API calls.
@@ -348,6 +353,93 @@ def test_sources_populated_on_below_threshold(indexed_corpus, monkeypatch):
     # sources must be non-empty — retrieval ran before the gate fired
     assert len(body["sources"]) > 0, (
         f"Expected non-empty sources on below_threshold, got: {body['sources']}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# B3 page expansion wiring (Slice 4-4 #49)
+# ---------------------------------------------------------------------------
+
+
+def test_b3_grounding_verify_receives_expanded_sections(indexed_corpus, monkeypatch):
+    """grounding.verify() is called with expanded_sections, not just BM25 hits.
+
+    For 'How long do refunds take?', BM25 hits refund-timeline.
+    After B3 expansion, grounding.verify() must receive all 3 sections of
+    refund_policy.md so a claim citing a sibling section validates correctly.
+    """
+    fake_llm = FakeLLM(source_id=REFUND_SECTION_ID)
+    monkeypatch.setattr(retrieval_module, "_llm", fake_llm)
+    monkeypatch.setattr(retrieval_module, "get_llm", lambda: fake_llm)
+
+    # Capture the sections list passed to grounding.verify()
+    captured: dict = {}
+
+    def _capture_verify(draft, sections):
+        captured["sections"] = list(sections)
+        return _approved_outcome(REFUND_SECTION_ID)
+
+    monkeypatch.setattr(retrieval_module.grounding_module, "verify", _capture_verify)
+
+    from app.main import app
+
+    client = TestClient(app)
+    client.post("/chat", json={"query": "How long do refunds take?"})
+
+    assert "sections" in captured, "grounding.verify() must have been called"
+    verify_section_ids = [s.id for s in captured["sections"]]
+
+    # All three sections of refund_policy.md must be present (B3 expansion)
+    assert REFUND_SECTION_ID in verify_section_ids, (
+        f"BM25 hit must be in verify sections, got: {verify_section_ids}"
+    )
+    assert "refund_policy.md#cancellation-window" in verify_section_ids, (
+        f"Sibling cancellation-window must be in verify sections, got: {verify_section_ids}"
+    )
+    assert "refund_policy.md#non-refundable-items" in verify_section_ids, (
+        f"Sibling non-refundable-items must be in verify sections, got: {verify_section_ids}"
+    )
+
+
+def test_b3_prompt_context_contains_expanded_page(indexed_corpus, monkeypatch):
+    """LLM prompt CONTEXT contains expanded page content, not just the BM25 hit.
+
+    Inspects the messages recorded by FakeLLM after a /chat request.
+    For 'How long do refunds take?' → all 3 refund_policy.md sections in prompt.
+    """
+
+    class _RecordingLLM:
+        def __init__(self):
+            self.last_messages: list = []
+
+        def invoke(self, messages: list) -> FakeLLMResponse:
+            self.last_messages = messages
+            return FakeLLMResponse(content=f"Answer. [Source: {REFUND_SECTION_ID}]")
+
+    recording_llm = _RecordingLLM()
+    monkeypatch.setattr(retrieval_module, "_llm", recording_llm)
+    monkeypatch.setattr(retrieval_module, "get_llm", lambda: recording_llm)
+    monkeypatch.setattr(
+        retrieval_module.grounding_module,
+        "verify",
+        lambda draft, sections: _approved_outcome(REFUND_SECTION_ID),
+    )
+
+    from app.main import app
+
+    client = TestClient(app)
+    client.post("/chat", json={"query": "How long do refunds take?"})
+
+    assert recording_llm.last_messages, "LLM must have been invoked"
+    human_msg = recording_llm.last_messages[1]
+    prompt_text = human_msg.content
+
+    # Expanded siblings must appear in CONTEXT
+    assert "[Source: refund_policy.md#cancellation-window]" in prompt_text, (
+        f"Sibling section must be in prompt CONTEXT after B3 expansion.\nPrompt:\n{prompt_text}"
+    )
+    assert "[Source: refund_policy.md#non-refundable-items]" in prompt_text, (
+        f"Sibling section must be in prompt CONTEXT after B3 expansion.\nPrompt:\n{prompt_text}"
     )
 
 
