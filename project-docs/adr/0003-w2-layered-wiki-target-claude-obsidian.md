@@ -14,7 +14,7 @@ The choice of `claude-obsidian` as the reference implementation, rather than des
 
 ## Consequences
 
-- `build_index()` is designed today with a *list* of source directories (`SOURCE_DIRS = [DOCS_DIR]`), so adding `WIKI_DIR` later requires no signature change.
+- **Invariant** — `SOURCE_DIRS: list[Path]` (declared in `indexer.py`) stays a list, not a single `Path`, so adding `WIKI_DIR` later requires no signature change. Reducing it to a single `Path` "for simplicity" is a deliberate ADR-0003 violation; the reviewer must fail any PR that does so without a paired ADR superseding this one.
 - `CONTEXT.md` reserves the vocabulary up front: **Wiki**, **Wiki Index**, **Hot Cache**, **Wiki Log**, **Source Template**, **Lint Pass**, **Ingest**. The naming follows `claude-obsidian` so a future contributor (or future me) does not invent a parallel vocabulary.
 - The `docs/` folder name stays (PROMPT.md verification freezes it). The `claude-obsidian` convention is `.raw/`, but renaming is a cheap follow-up if it ever matters — see Section ID stability note in `CONTEXT.md`.
 - Operational patterns we want to inherit from `claude-obsidian` and the community discussion (Two-output rule, L0/L1/L2/L3 token budget, frontmatter schema, etc.) but that are not vocabulary live in [`project-docs/inspiration.md#deferred-patterns`](../inspiration.md). Re-read that section before starting any post-prototype phase.

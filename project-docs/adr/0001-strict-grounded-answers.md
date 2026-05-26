@@ -6,7 +6,7 @@ We chose strict over loose because the project's headline use cases (customer-su
 
 ## Consequences
 
-- The score-threshold fallback runs *before* the LLM call when retrieval is weak — the model is never handed weak context and asked to police itself.
+- **Invariant** — The pre-LLM Cannot Confirm gate runs *before* the LLM call when retrieval is empty or sub-threshold. The model is never handed weak context and asked to police itself. Bypassing this gate ("score is just barely below threshold, send to LLM anyway") is a deliberate ADR-0001 violation; the reviewer must fail any PR that does so without a paired ADR superseding this one.
 - The system prompt must explicitly frame `"cannot confirm"` as a *good* answer, otherwise the model's "be helpful" prior produces plausible-sounding fabrications.
 - Partial-match cases ("the KB mentions card provider delays but does not specify Visa") are answered by quoting the partial Section and naming what is missing, never by completing the gap with general knowledge.
 - Cross-Section synthesis is allowed and expected (e.g. combining `cancellation-window` and `refund-timeline` to answer one question), provided every claim still traces to a cited Section.
