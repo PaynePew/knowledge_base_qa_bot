@@ -2,6 +2,8 @@
 
 from fastapi import APIRouter
 
+import app.indexer as _indexer
+
 from .indexer import build_index
 from .retrieval import query
 from .schemas import ChatRequest, ChatResponse, GroundingClaim, GroundingInfo, IndexResponse
@@ -17,7 +19,14 @@ def health() -> dict[str, str]:
 @router.post("/index", response_model=IndexResponse)
 def index_docs() -> IndexResponse:
     files_count, sections_count = build_index()
-    return IndexResponse(files_indexed=files_count, sections_indexed=sections_count)
+    wiki_written, wiki_path, wiki_error = _indexer.last_wiki_index_outcome
+    return IndexResponse(
+        files_indexed=files_count,
+        sections_indexed=sections_count,
+        wiki_index_written=wiki_written,
+        wiki_index_path=str(wiki_path) if wiki_path is not None else None,
+        wiki_index_error=wiki_error,
+    )
 
 
 @router.post("/chat", response_model=ChatResponse)
