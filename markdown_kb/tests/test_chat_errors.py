@@ -1,13 +1,14 @@
-"""Integration tests for error handling (Slice 4 — issue #5).
+"""Integration tests for error handling (issue #5, updated for Slice 4 / issue #12).
 
 Covers:
   AC 1: APITimeoutError / RateLimitError → HTTP 503, log kind=openai_transient
   AC 2: AuthenticationError → HTTP 500, log kind=openai_auth
   AC 3: generic APIError → HTTP 500, log kind=openai_api
-  AC 4: ungrounded LLM response (no [Source:) → grounding retry → replaced with
-        Cannot Confirm phrase and sources==[], LLM invoked exactly twice
-  AC 5: exact Cannot Confirm phrase on first call → passed through unchanged,
-        LLM invoked exactly once
+  AC 4: grounding.verify() returns claim_unsupported → answer replaced with the
+        Cannot Confirm phrase; main LLM invoked exactly once (the old
+        light-heuristic temperature=0 retry is gone — ADR-0004 layer 3).
+  AC 5: grounding.verify() returns claim_supported → draft is returned unchanged;
+        main LLM invoked exactly once.
 
 All tests run without live OpenAI calls.
 
