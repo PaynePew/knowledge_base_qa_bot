@@ -19,8 +19,8 @@ Authorized by [`prd.md`](prd.md) (Phase 1).
 | Kind | When fired | Summary template |
 |---|---|---|
 | `chat` | Successful `/chat` response written | `"<truncated query>" sources=N grounded_reason=X` |
-| `chat_fallback` | Pre-LLM Cannot Confirm gate fires | `"<truncated query>" reason=<not_indexed\|below_threshold> [top_score=X]` |
-| `chat_grounding_fallback` | Post-LLM verifier returned not-passed; reply replaced with Cannot Confirm | `"<truncated query>" reason=<outcome.reason>` |
+| `chat_fallback` | Pre-LLM Cannot Confirm gate fires | `"<truncated query>" reason=<not_indexed\|below_threshold> [top_score=X] [top_section=<id>]` |
+| `chat_grounding_fallback` | Post-LLM verifier returned not-passed; reply replaced with Cannot Confirm | `"<truncated query>" reason=<outcome.reason> cited=<comma_separated_section_ids>` |
 | `chat_error` | OpenAI exception during `/chat`; mapped per [`CODING_STANDARD.md`](CODING_STANDARD.md) § 4.2 | `"<truncated query>" kind=<openai_transient\|openai_auth\|openai_api> exc=<ExcClass>` |
 
 ### `chat_error` `kind=` sub-tags

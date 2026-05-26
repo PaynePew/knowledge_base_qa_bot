@@ -444,6 +444,88 @@ def test_b3_prompt_context_contains_expanded_page(indexed_corpus, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Slice 4-5a #50: chat_grounding_fallback log includes cited=<ids>
+# ---------------------------------------------------------------------------
+
+
+def test_grounding_fallback_log_includes_cited_field(indexed_corpus, monkeypatch):
+    """chat_grounding_fallback log entry must include cited=<comma_separated_section_ids>.
+
+    The cited= field lists the post-B3-expansion Section set (the full set the
+    LLM saw), not just the BM25 top-K hits. This is critical for Phase 5 /lint
+    which uses the log to localise coverage gaps without replaying BM25.
+
+    Uses a query that hits refund_policy.md so B3 expansion adds sibling sections.
+    After B3 expansion for 'How long do refunds take?', the prompt CONTEXT
+    contains all 3 refund_policy.md sections:
+      - refund_policy.md#refund-timeline  (BM25 hit)
+      - refund_policy.md#cancellation-window (B3 sibling)
+      - refund_policy.md#non-refundable-items (B3 sibling)
+    All three must appear in cited= because the verifier saw them in context.
+    """
+    fake_llm = FakeLLM(
+        source_id=REFUND_SECTION_ID,
+        content="Refunds take 3 days. Also we offer free worldwide shipping.",
+    )
+    monkeypatch.setattr(retrieval_module, "_llm", fake_llm)
+    monkeypatch.setattr(retrieval_module, "get_llm", lambda: fake_llm)
+    # Force verifier to reject so chat_grounding_fallback is emitted
+    monkeypatch.setattr(
+        retrieval_module.grounding_module,
+        "verify",
+        lambda draft, sections: _rejected_outcome(),
+    )
+
+    log_path = indexed_corpus["log_path"]
+
+    from app.main import app
+
+    client = TestClient(app)
+    client.post("/chat", json={"query": "How long do refunds take?"})
+
+    assert log_path.exists(), "wiki/log.md must exist after /chat request"
+    content = log_path.read_text(encoding="utf-8")
+
+    assert "chat_grounding_fallback |" in content, (
+        f"Expected 'chat_grounding_fallback |' in log, got:\n{content}"
+    )
+
+    # Extract the chat_grounding_fallback line
+    fallback_lines = [line for line in content.splitlines() if "chat_grounding_fallback |" in line]
+    assert fallback_lines, f"No chat_grounding_fallback line found in:\n{content}"
+    fallback_line = fallback_lines[0]
+
+    assert "cited=" in fallback_line, (
+        f"Expected 'cited=<ids>' in chat_grounding_fallback line, got:\n{fallback_line}"
+    )
+
+    # Extract cited= value and verify it's a comma-separated list of section ids
+    cited_part = [tok for tok in fallback_line.split() if tok.startswith("cited=")]
+    assert cited_part, f"cited= token not found in line:\n{fallback_line}"
+    cited_value = cited_part[0][len("cited=") :]
+    cited_ids = cited_value.split(",")
+    assert len(cited_ids) >= 1, f"cited= must list at least one section id, got: {cited_value!r}"
+
+    # All cited ids must be non-empty strings (basic shape check)
+    assert all(cid.strip() for cid in cited_ids), (
+        f"cited= must contain non-empty section ids, got: {cited_value!r}"
+    )
+
+    # The BM25 hit must appear in cited (it was in the LLM context)
+    assert REFUND_SECTION_ID in cited_ids, (
+        f"BM25 hit {REFUND_SECTION_ID!r} must be in cited=, got: {cited_ids}"
+    )
+
+    # After B3 expansion, sibling sections must also appear in cited
+    assert "refund_policy.md#cancellation-window" in cited_ids, (
+        f"B3 sibling 'refund_policy.md#cancellation-window' must be in cited=, got: {cited_ids}"
+    )
+    assert "refund_policy.md#non-refundable-items" in cited_ids, (
+        f"B3 sibling 'refund_policy.md#non-refundable-items' must be in cited=, got: {cited_ids}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Live integration tests (opt-in, require OPENAI_API_KEY)
 # ---------------------------------------------------------------------------
 
