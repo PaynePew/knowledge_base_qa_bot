@@ -105,18 +105,10 @@ The following stretch goals from `PROMPT.md` are described here for orientation.
 
 ## Roadmap
 
-**Path B** is the chosen implementation sequence: Grounding Check first (post-LLM validation, layer 3 of the anti-hallucination stack), then Wiki Index Generation (navigation surface for the Karpathy-style wiki layer). Axis A stretch goals (streaming, UI, multi-format, alternative interfaces) are deferred until after both phases ship and first interview feedback is gathered.
+For the full multi-phase implementation sequence, dependencies, effort estimates, and interview-ready stopping points, see [`project-docs/roadmap.md`](project-docs/roadmap.md).
 
-| Phase | Scope | Status |
-|-------|-------|--------|
-| **Phase 1 — Grounding Check** | Post-LLM claim-level verification, Block & Replace contract, unified `grounding` field on `ChatResponse`. Four slices: design docs → schemas → verifier → route wiring. See [ADR-0004](project-docs/adr/0004-post-llm-grounding-check.md). | In progress |
-| **Phase 2 — Wiki Index Generation** | Project `.kb/index.json` into `wiki/index.md`. Design to be locked in a follow-up grill session (projection format, trigger route, LLM-assisted summarisation). See [ADR-0003](project-docs/adr/0003-w2-layered-wiki-target-claude-obsidian.md). | Planned |
+**Done:** Prototype, Phase 1 (Grounding Check, [ADR-0004](project-docs/adr/0004-post-llm-grounding-check.md)), Phase 2 (Wiki Index Generation).
 
-**Deferred (axis A) — adoption triggers:**
+**Next up:** Phase 3 (`/ingest` — Source → curated `wiki/` synthesis pages). Design grill in progress.
 
-| Item | Trigger |
-|------|---------|
-| Streaming Interface (`POST /chat/stream` via SSE) | Sustained user demand after interview feedback |
-| Browser UI (retrieved Sections + streamed answer) | Same as streaming |
-| Multi-format import (`.txt` / `.html` → Markdown) | First non-Markdown Source in practice |
-| Alternative interfaces (CLI / MCP server / web UI) | Concrete downstream consumer with interface requirements |
+**⭐ Recommended stopping point:** Phase 5 (`/lint`), which closes the Karpathy Ingest + Query + Lint trio.

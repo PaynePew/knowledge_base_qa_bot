@@ -16,7 +16,10 @@ See `PROMPT.md` for the exercise spec + the answered design questions, `README.m
 A fresh session can pick up the work by running:
 > "Execute the orchestration loop in `project-docs/orchestration-plan.md`, starting from `agents/plan.md` against the currently open `ready-for-agent` issues."
 
-**Before starting any phase beyond the current prototype** (wiki layer, `/ingest`, multi-turn conversation, streaming, etc.), re-read [`project-docs/inspiration.md`](project-docs/inspiration.md) and `grep` the section for the relevant phase tag — for example `grep "phase: wiki" project-docs/inspiration.md`. Operational patterns that are too detailed for `CONTEXT.md` or an ADR but too valuable to forget live there, each tagged with the phase that should trigger its review.
+**Before starting any phase beyond the current prototype** (wiki layer, `/ingest`, multi-turn conversation, streaming, etc.):
+
+1. Read [`project-docs/roadmap.md`](project-docs/roadmap.md) to confirm the phase's scope, downstream dependencies, and per-phase prep notes (some phases have gotchas — e.g., Phase 5 `/lint` needs hand-planted test fixtures, Phase 7 Paraphrase Comparison has LLM-bias caveats).
+2. Re-read [`project-docs/inspiration.md`](project-docs/inspiration.md) and `grep` the section for the relevant phase tag — for example `grep "phase: wiki" project-docs/inspiration.md`. Operational patterns that are too detailed for `CONTEXT.md` or an ADR but too valuable to forget live there, each tagged with the phase that should trigger its review.
 
 ## Agent skills
 
