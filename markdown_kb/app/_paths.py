@@ -1,4 +1,6 @@
-"""Canonical filesystem locations for the markdown_kb app.
+"""Shallow module per Ousterhout. Public surface: ``DOCS_DIR``, ``WIKI_DIR``, ``INDEX_PATH``.
+
+Canonical filesystem locations for the markdown_kb app.
 
 Centralises the three path constants previously declared in
 :mod:`markdown_kb.app.indexer`. Both ``indexer.py`` (BM25 indexing /

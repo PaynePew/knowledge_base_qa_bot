@@ -1,4 +1,6 @@
-"""Wiki Index projection module.
+"""Medium module per Ousterhout. Public surface: ``project_wiki_index``, ``write_wiki_index``.
+
+Wiki Index projection module.
 
 Provides two public functions for Phase 2 Wiki Index Generation (PRD #17):
 

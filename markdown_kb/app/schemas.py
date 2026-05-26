@@ -1,4 +1,6 @@
-"""Pydantic request/response models for the FastAPI routes. No domain logic."""
+"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``).
+
+Pydantic request/response models for the FastAPI routes. No domain logic."""
 
 from __future__ import annotations
 

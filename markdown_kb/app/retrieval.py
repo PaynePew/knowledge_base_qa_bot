@@ -1,4 +1,6 @@
-"""Retrieval layer — query() for the grounded /chat endpoint.
+"""Deep module per Ousterhout. Public surface: ``query``.
+
+Retrieval layer — query() for the grounded /chat endpoint.
 
 Flow:
   1. tokenize query

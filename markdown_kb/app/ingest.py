@@ -1,4 +1,6 @@
-"""Ingest coordinator — Source → wiki synthesis page pipeline.
+"""Deep module per Ousterhout. Public surface: ``ingest_sources``.
+
+Ingest coordinator — Source → wiki synthesis page pipeline.
 
 Provides `ingest_sources(source_filenames)` which orchestrates the ingest
 pipeline for one or more Sources:
