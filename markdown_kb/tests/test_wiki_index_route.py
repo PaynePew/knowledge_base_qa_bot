@@ -81,15 +81,16 @@ def test_index_happy_path_all_five_fields(tmp_path, monkeypatch):
     """POST /index returns all five IndexResponse fields; wiki/index.md written."""
     import app.indexer as _indexer
     import app.logger as _logger
-    import app.wiki_index as _wiki_index_module
 
     # Redirect log path and index path to tmp
     monkeypatch.setattr(_logger, "LOG_PATH", tmp_path / "wiki" / "log.md")
     monkeypatch.setattr(_indexer, "INDEX_PATH", tmp_path / ".kb" / "index.json")
 
-    # Redirect WIKI_DIR to tmp so write_wiki_index uses the tmp dir
+    # Redirect WIKI_DIR on the indexer module — write_wiki_index reads it from
+    # ``indexer`` at call time so this propagates correctly without the
+    # import-time-binding pitfall.
     wiki_dir = tmp_path / "wiki"
-    monkeypatch.setattr(_wiki_index_module, "WIKI_DIR", wiki_dir)
+    monkeypatch.setattr(_indexer, "WIKI_DIR", wiki_dir)
 
     from app.main import app
 
@@ -138,9 +139,10 @@ def test_index_wiki_failure_returns_200_with_failure_fields(tmp_path, monkeypatc
     monkeypatch.setattr(_logger, "LOG_PATH", tmp_path / "wiki" / "log.md")
     monkeypatch.setattr(_indexer, "INDEX_PATH", tmp_path / ".kb" / "index.json")
 
-    # Redirect WIKI_DIR to tmp
+    # Redirect WIKI_DIR on the indexer module (read at call time inside
+    # write_wiki_index — see test_index_happy_path_all_five_fields).
     wiki_dir = tmp_path / "wiki"
-    monkeypatch.setattr(_wiki_index_module, "WIKI_DIR", wiki_dir)
+    monkeypatch.setattr(_indexer, "WIKI_DIR", wiki_dir)
 
     # Monkey-patch write_wiki_index to simulate failure
     monkeypatch.setattr(
@@ -206,7 +208,7 @@ def test_chat_works_after_wiki_failure_index(tmp_path, monkeypatch):
     monkeypatch.setattr(_indexer, "INDEX_PATH", tmp_path / ".kb" / "index.json")
 
     wiki_dir = tmp_path / "wiki"
-    monkeypatch.setattr(_wiki_index_module, "WIKI_DIR", wiki_dir)
+    monkeypatch.setattr(_indexer, "WIKI_DIR", wiki_dir)
 
     # Simulate wiki write failure
     monkeypatch.setattr(

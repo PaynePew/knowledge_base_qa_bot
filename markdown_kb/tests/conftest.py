@@ -63,17 +63,28 @@ def pytest_collection_modifyitems(config, items):
 
 @pytest.fixture(autouse=True)
 def _redirect_paths_to_tmp(tmp_path, monkeypatch):
-    """Autouse safety net: redirect INDEX_PATH and LOG_PATH to tmp.
+    """Autouse safety net: redirect INDEX_PATH, LOG_PATH, and WIKI_DIR to tmp.
 
     Without this, any test that calls build_index() or log_event() without
     its own monkeypatch (notably test_indexing.py and test_logger.py callers
-    of parse_markdown's parse_warning path) pollutes the real .kb/index.json
-    and wiki/log.md. Tests that do their own patching compose fine —
-    monkeypatch applies in order and the test's setattr wins. Tests that
-    reload modules (test_persistence) bypass this entirely, which is also fine.
+    of parse_markdown's parse_warning path) pollutes the real .kb/index.json,
+    wiki/log.md, and wiki/index.md (since Slice #2 of Phase 2 wires
+    write_wiki_index into build_index). Tests that do their own patching
+    compose fine — monkeypatch applies in order and the test's setattr wins.
+
+    Modules are re-imported inside the fixture (rather than relying on the
+    module-level ``_indexer`` / ``_logger`` bindings) so the patch targets the
+    *current* sys.modules entry. ``test_persistence`` removes ``app.*`` from
+    sys.modules and re-imports them; subsequent tests in the same session
+    would otherwise patch the stale (pre-reload) module objects, leaking the
+    real WIKI_DIR / INDEX_PATH into production paths.
     """
-    monkeypatch.setattr(_logger, "LOG_PATH", tmp_path / "wiki" / "log.md")
-    monkeypatch.setattr(_indexer, "INDEX_PATH", tmp_path / ".kb" / "index.json")
+    import app.indexer as current_indexer
+    import app.logger as current_logger
+
+    monkeypatch.setattr(current_logger, "LOG_PATH", tmp_path / "wiki" / "log.md")
+    monkeypatch.setattr(current_indexer, "INDEX_PATH", tmp_path / ".kb" / "index.json")
+    monkeypatch.setattr(current_indexer, "WIKI_DIR", tmp_path / "wiki")
 
 
 @pytest.fixture()

@@ -57,6 +57,11 @@ def _reload_app_modules(monkeypatch, index_path: Path, log_path: Path):
     (sections, doc_freq, etc.) are re-initialised, simulating a real server
     restart within a single process.
 
+    Patches INDEX_PATH, LOG_PATH, and WIKI_DIR on the freshly-imported modules
+    so any IO performed during the simulated startup / build is redirected to
+    ``tmp_path`` and does not pollute the production working tree. ``wiki_dir``
+    is derived from ``log_path.parent`` to keep the helper's signature stable.
+
     Returns (app, indexer_module, logger_module, retrieval_module).
     """
     for key in list(sys.modules.keys()):
@@ -68,9 +73,11 @@ def _reload_app_modules(monkeypatch, index_path: Path, log_path: Path):
     import app.retrieval as new_retrieval
 
     # Patch paths *before* importing app.main so the startup hook sees the
-    # right INDEX_PATH.
+    # right INDEX_PATH. WIKI_DIR is patched on the indexer module; the
+    # wiki_index module reads it at call time so this propagates correctly.
     monkeypatch.setattr(new_indexer, "INDEX_PATH", index_path)
     monkeypatch.setattr(new_logger, "LOG_PATH", log_path)
+    monkeypatch.setattr(new_indexer, "WIKI_DIR", log_path.parent)
 
     import app.main as new_main
 
@@ -98,6 +105,7 @@ def test_restart_preserves_index_and_chat_answers(tmp_path, monkeypatch):
 
     monkeypatch.setattr(indexer, "INDEX_PATH", index_path)
     monkeypatch.setattr(logger_module, "LOG_PATH", log_path)
+    monkeypatch.setattr(indexer, "WIKI_DIR", wiki_dir)
 
     from app.main import app as first_app
 
@@ -239,6 +247,7 @@ def test_startup_load_writes_index_loaded_log_entry(tmp_path, monkeypatch):
 
     monkeypatch.setattr(indexer, "INDEX_PATH", index_path)
     monkeypatch.setattr(logger_module, "LOG_PATH", log_path)
+    monkeypatch.setattr(indexer, "WIKI_DIR", wiki_dir)
 
     from app.main import app as first_app
 
