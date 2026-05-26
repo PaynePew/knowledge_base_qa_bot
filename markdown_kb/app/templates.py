@@ -90,11 +90,18 @@ synthesis wiki page for the given Source section.
 Rules:
 - Write a short, clear prose summary of the section content.
 - Stay faithful to the source — do not add facts not present in the source.
-- You may use [[wikilink]] syntax to reference related concepts you know from \
-the source; prefer concrete links over vague ones.
 - In `open_questions`, list any genuinely ambiguous or unanswered aspects \
 apparent from the source. Leave the list empty if there are none.
 - Keep the body to 2–4 sentences; quality over quantity.
+
+Red link rule: When you mention a concept warranting its own page that the \
+wiki may not yet cover, use Obsidian-style [[concept-slug]] wikilinks. Use the \
+same slug convention as wiki page filenames (lowercase, hyphen-separated, no \
+extension). do NOT verify whether the page actually exists — it is intentional \
+that some links are unresolved ("red links"). Constraints: maximum 5 wikilinks \
+per page; do NOT use for common terms (e.g. [[customer]], [[refund]] when the \
+whole page is about refunds); only for concepts that warrant their own page \
+(entity / concept).
 """
 
 
@@ -116,11 +123,18 @@ product, person, place, or named thing that the KB describes as a whole).
 Rules:
 - Write a short, clear prose summary covering the entire Source.
 - Stay faithful to the source — do not add facts not present in the source.
-- You may use [[wikilink]] syntax to reference related concepts you know from \
-the source; prefer concrete links over vague ones.
 - In `open_questions`, list any genuinely ambiguous or unanswered aspects \
 apparent from the source. Leave the list empty if there are none.
 - Keep the body to 3–6 sentences; quality over quantity.
+
+Red link rule: When you mention a concept warranting its own page that the \
+wiki may not yet cover, use Obsidian-style [[concept-slug]] wikilinks. Use the \
+same slug convention as wiki page filenames (lowercase, hyphen-separated, no \
+extension). do NOT verify whether the page actually exists — it is intentional \
+that some links are unresolved ("red links"). Constraints: maximum 5 wikilinks \
+per page; do NOT use for common terms (e.g. [[customer]], [[product]] when the \
+whole page is about that product); only for concepts that warrant their own \
+page (entity / concept).
 """
 
 
