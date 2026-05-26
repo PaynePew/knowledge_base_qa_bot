@@ -52,6 +52,35 @@ class FakeLLM:
         )
 
 
+def _make_approved_outcome(source_id: str):
+    """Build a passed GroundingOutcome for the canned FakeLLM draft.
+
+    Mirrors the helper in ``test_wiki_index_route.py`` so the /chat path can
+    run without constructing a real ``ChatOpenAI`` verifier (which would need
+    OPENAI_API_KEY). Imported lazily so test_persistence's sys.modules reload
+    does not leave stale references.
+    """
+    from app.grounding import GroundingClaim, GroundingOutcome, GroundingResult
+
+    return GroundingOutcome(
+        passed=True,
+        reason="claim_supported",
+        result=GroundingResult(
+            reasoning="All claims trace to the cited section.",
+            claims=[
+                GroundingClaim(
+                    text="Approved refunds are processed within 5-7 business days.",
+                    supported=True,
+                    citing_section_ids=[source_id],
+                )
+            ],
+            unsupported_claims=[],
+            passed=True,
+        ),
+        retries_attempted=0,
+    )
+
+
 def _reload_app_modules(monkeypatch, index_path: Path, log_path: Path):
     """Remove cached app modules from sys.modules so that module-level globals
     (sections, doc_freq, etc.) are re-initialised, simulating a real server
@@ -130,6 +159,16 @@ def test_restart_preserves_index_and_chat_answers(tmp_path, monkeypatch):
     fresh_fake = FakeLLM()
     monkeypatch.setattr(fresh_retrieval, "_llm", fresh_fake)
     monkeypatch.setattr(fresh_retrieval, "get_llm", lambda: fresh_fake)
+    # Bypass the real grounding verifier — it would otherwise construct
+    # ChatOpenAI(model=...) inside grounding.verify() and fail with
+    # "Missing credentials" when OPENAI_API_KEY is unset (e.g. CI without
+    # the secret, or local runs without the .env loaded). Same pattern as
+    # test_wiki_index_route.py::test_chat_works_after_wiki_failure_index.
+    monkeypatch.setattr(
+        fresh_retrieval.grounding_module,
+        "verify",
+        lambda draft, sections: _make_approved_outcome(REFUND_SECTION_ID),
+    )
 
     with TestClient(fresh_app) as client2:
         # Startup hook should have loaded sections before any request
