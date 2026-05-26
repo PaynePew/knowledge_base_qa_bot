@@ -20,12 +20,9 @@ AC coverage (issue #31):
 from __future__ import annotations
 
 import threading
-import time
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-import yaml
 
 import app.templates as templates_module
 from app.schemas import WikiPageDraft, WikiPageFrontmatter
@@ -49,8 +46,14 @@ def _make_draft(
     page_type: str = "concept",
     created: str = FIXED_TS,
     updated: str = FIXED_TS,
+    heading: str | None = None,
 ) -> WikiPageDraft:
-    """Build a minimal WikiPageDraft for testing."""
+    """Build a minimal WikiPageDraft for testing.
+
+    ``heading`` defaults to a title-cased reconstruction of the slug.
+    """
+    if heading is None:
+        heading = slug.replace("-", " ").title()
     citation_id = f"{source}#{slug}"
     fm = WikiPageFrontmatter(
         id=slug,
@@ -66,6 +69,7 @@ def _make_draft(
         body=f"Content for {slug}.",
         citation_line=f"[Source: {citation_id}]",
         slug=slug,
+        heading=heading,
     )
 
 
@@ -112,11 +116,9 @@ def test_scenario_a_orphan_page_deleted(tmp_path):
     write_pages_for_source("refund_policy.md", drafts_v2, wiki_dir=wiki_dir)
 
     # Orphan page is gone
-    assert (
-        (wiki_dir / "concepts" / "partial-refund.md").does_not_exist()
-        if hasattr((wiki_dir / "concepts" / "partial-refund.md"), "does_not_exist")
-        else not (wiki_dir / "concepts" / "partial-refund.md").exists()
-    ), "Expected partial-refund.md to be deleted after re-ingest"
+    assert not (wiki_dir / "concepts" / "partial-refund.md").exists(), (
+        "Expected partial-refund.md to be deleted after re-ingest"
+    )
 
     # delete_orphans returned the deleted slug path
     assert "concepts/partial-refund.md" in deleted, (

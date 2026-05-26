@@ -126,12 +126,19 @@ class WikiPageDraft(BaseModel):
     Carries the full rendered body (LLM content) and the structured
     frontmatter separately so wiki_writer.py can serialize them without
     re-parsing the body text.
+
+    ``heading`` is the human-readable H1 to render at the top of the page.
+    It is captured by the templates layer (where the original Section
+    heading or Source-stem form is known) instead of being reconstructed
+    from the slug in wiki_writer — the previous ``slug.replace("-", " ").title()``
+    approach lost acronyms ("HTTP" -> "Http") and non-ASCII characters.
     """
 
     frontmatter: WikiPageFrontmatter
     body: str  # LLM-generated prose, may contain [[wikilinks]]
     citation_line: str  # e.g. "[Source: refund_policy.md#cancellation-window]"
     slug: str  # e.g. "cancellation-window" — used as the output filename stem
+    heading: str  # e.g. "Cancellation Window" — used as the page's H1
 
 
 class IngestSourceResult(BaseModel):

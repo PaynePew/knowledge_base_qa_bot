@@ -24,9 +24,7 @@ from pathlib import Path
 # Paths and constants
 # ---------------------------------------------------------------------------
 
-DOCS_DIR = Path(__file__).resolve().parents[2] / "docs"
-WIKI_DIR = Path(__file__).resolve().parents[2] / "wiki"
-INDEX_PATH = Path(__file__).resolve().parents[2] / ".kb" / "index.json"
+from ._paths import DOCS_DIR, INDEX_PATH, WIKI_DIR
 
 # ADR-0003: build_index iterates this list so adding WIKI_DIR needs no
 # signature change.

@@ -44,8 +44,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ._paths import DOCS_DIR
 from .grounding import verify
-from .indexer import DOCS_DIR, _index_lock, parse_markdown, slugify
+from .indexer import _index_lock, parse_markdown, slugify
 from .logger import log_event
 from .schemas import GroundingFailure, IngestSourceResult
 from .templates import classify_source, generate_entity_page, generate_page
@@ -274,6 +275,11 @@ def ingest_sources(
                 ):
                     unsupported = grounding_outcome.result.unsupported_claims
 
+                # mypy cannot narrow grounding_outcome.reason (full 6-variant Literal)
+                # to GroundingFailure.reason ({"claim_unsupported", "verifier_unavailable"})
+                # from the runtime `not grounding_outcome.passed` guard above — the
+                # narrowing is provable from the verify() implementation but invisible
+                # to the static checker.
                 gf = GroundingFailure(
                     reason=reason,  # type: ignore[arg-type]
                     unsupported_claims=unsupported,
@@ -310,9 +316,13 @@ def ingest_sources(
 
         if write_result.errors:
             slug, err_msg = write_result.errors[0]
+            # err_msg is formatted by wiki_writer as "<ClassName>: <message>" so it
+            # already carries the real exception type; drop the previous
+            # type(Exception()).__name__ literal (which always resolved to
+            # "Exception") and surface the message instead.
             log_event(
                 "ingest_error",
-                f"source={source_name} error={type(Exception()).__name__}:write_error:{slug}",
+                f"source={source_name} error=write_error:{slug} detail={err_msg}",
             )
             batch.failed_sources.append(source_name)
             continue
