@@ -80,6 +80,7 @@ The Markdown KB app does not need embeddings. The Vector RAG app uses OpenAI emb
 ├── PROMPT.md                  ← exercise spec + design answers + verification
 ├── README.md                  ← this file
 ├── docs/                      ← Sources (the bot's runtime knowledge base)
+├── wiki/                      ← generated/curated wiki layer (see wiki/README.md)
 ├── project-docs/
 │   ├── adr/                   ← architectural decisions
 │   └── agents/                ← issue-tracker, triage-labels, domain docs

@@ -120,7 +120,7 @@ Token budget for context loading: ~200 tokens (Hot Cache), ~1–2K (Wiki Index),
 ### Pattern: Frontmatter schema for Wiki pages
 **phase: wiki, phase: ingest** · `claude-obsidian` Source Templates + several gist commenters
 
-Every Wiki page carries YAML frontmatter with at minimum: `created`, `updated`, `confidence` (`low|medium|high`), `status` (`draft|live|stale|superseded`), `sources` (list of Citations the page derives from), `open_questions` (free-text list). Enables Lint Pass to run as SQL-like queries. **Trigger condition for adoption:** when the first Wiki page is generated.
+Every Wiki page carries YAML frontmatter with at minimum: `created`, `updated`, `confidence` (`low|medium|high`), `status` (`draft|live|stale|superseded`), `sources` (list of Citations the page derives from), `open_questions` (free-text list). Enables Lint Pass to run as SQL-like queries. **Trigger condition for adoption:** when the first **curated** Wiki page is generated (i.e., `POST /ingest` writes the first `wiki/entities/*.md` or `wiki/concepts/*.md`). Generated artifacts like `wiki/index.md` do NOT trigger this pattern — they are filesystem projections, not governance subjects. See PRD #17 for the artifact taxonomy that draws this line.
 
 ### Pattern: Hot Cache as session bridge
 **phase: wiki, phase: conversation** · multiple commenters + `claude-obsidian` ships `wiki/hot.md`
