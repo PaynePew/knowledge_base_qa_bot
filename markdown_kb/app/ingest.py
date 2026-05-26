@@ -29,7 +29,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .indexer import DOCS_DIR, parse_markdown
+from .indexer import DOCS_DIR, parse_markdown, slugify
 from .logger import log_event
 from .schemas import IngestSourceResult
 from .templates import classify_source, generate_entity_page, generate_page
@@ -158,8 +158,6 @@ def ingest_sources(
         # Step 4: generate draft(s)
         try:
             if source_type == "entity":
-                from .indexer import slugify
-
                 source_stem = Path(source_name).stem
                 raw_slug = slugify(source_stem)
                 final_slug = resolve_slug_collision(used_slugs["entity"], raw_slug)
@@ -173,8 +171,6 @@ def ingest_sources(
                 drafts = [draft]
             else:
                 # concept: 1:N — one page per Section
-                from .indexer import slugify
-
                 drafts = []
                 for section in sections:
                     raw_slug = slugify(section.heading)
