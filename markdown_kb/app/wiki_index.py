@@ -23,7 +23,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from .indexer import WIKI_DIR, Section
+from .indexer import Section
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -125,7 +125,13 @@ def write_wiki_index(
         ``(False, None, "<ExceptionClass>: <message>")`` on any failure.
     """
     if wiki_dir is None:
-        wiki_dir = WIKI_DIR
+        # Read at call time (not import time) so tests can monkey-patch
+        # ``indexer.WIKI_DIR`` and have it take effect here. Mirrors how
+        # ``write_index_json`` reads its module-level ``INDEX_PATH`` at call
+        # time within the same module.
+        from . import indexer
+
+        wiki_dir = indexer.WIKI_DIR
 
     try:
         wiki_dir.mkdir(parents=True, exist_ok=True)
