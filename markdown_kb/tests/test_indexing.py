@@ -3,13 +3,16 @@
 Original Slice 1 tests (parse_markdown behaviour) are preserved verbatim.
 Slice 4-2 tests replace the obsolete docs/-scoped build_index tests with
 wiki-whitelist scope + meta-file exclusion + wiki_layer_empty emission tests.
+Slice 4-3a tests assert bare-slug Section.id and Section.file for wiki-derived Sections.
 
 Tests:
 - test_parse_markdown_sample_docs: exact Section IDs match the real docs/
 - test_parse_markdown_body_bearing_rule: H1 with intro + H2 child → two Sections
 - test_parse_markdown_fenced_code: # inside fenced block is content, not heading
 - test_parse_markdown_slug_collision: two ##Overview in one Source → -2 suffix
+- test_parse_markdown_with_source_id: source_id param overrides filename in Section.id/file
 - test_build_index_scans_wiki_subdirs: wiki entities/ + concepts/ are indexed
+- test_build_index_wiki_sections_use_bare_slug: Section.id and .file use bare slug
 - test_build_index_excludes_wiki_meta_files: index.md, log.md, hot.md, README.md excluded
 - test_build_index_meta_files_not_in_index_json: meta-files absent from .kb/index.json
 - test_write_and_load_index_json: round-trip lossless through load_index_json
@@ -148,6 +151,95 @@ def test_parse_markdown_slug_collision(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Slice 4-3a AC: parse_markdown source_id param overrides filename in Section.id/file
+# ---------------------------------------------------------------------------
+
+
+def test_parse_markdown_with_source_id(tmp_path):
+    """When source_id is supplied to parse_markdown, Section.id uses that prefix
+    instead of the filename. Section.file also uses the bare source_id.
+
+    This is the mechanism build_index uses to produce bare-slug IDs for
+    wiki-derived Sections (e.g. 'refund-policy' instead of 'refund-policy.md').
+    """
+    md = "## Cancellation Window\nContent about cancellations.\n"
+    p = _write(tmp_path, "refund-policy.md", md)
+    result = parse_markdown(p, source_id="refund-policy")
+    assert len(result) == 1, f"Expected 1 section, got {len(result)}: {[s.id for s in result]}"
+    sec = result[0]
+    # id must use bare slug, not filename
+    assert sec.id == "refund-policy#cancellation-window", (
+        f"Expected 'refund-policy#cancellation-window', got {sec.id!r}"
+    )
+    # file must also be the bare slug
+    assert sec.file == "refund-policy", f"Expected file='refund-policy', got {sec.file!r}"
+
+
+# ---------------------------------------------------------------------------
+# Slice 4-3a AC: build_index produces bare-slug Section.id and .file for wiki
+# ---------------------------------------------------------------------------
+
+
+def test_build_index_wiki_sections_use_bare_slug(tmp_path, monkeypatch):
+    """Sections from SOURCE_DIRS use the bare slug form: no type subdir, no .md.
+
+    A wiki page at wiki/entities/acme-shop.md with heading '## Standard Shipping'
+    produces Section.id = 'acme-shop#standard-shipping', Section.file = 'acme-shop'.
+    """
+    import app.indexer as indexer_module
+    import app.logger as logger_module
+
+    wiki_dir = tmp_path / "wiki"
+    entities_dir = wiki_dir / "entities"
+    entities_dir.mkdir(parents=True)
+    (wiki_dir / "concepts").mkdir(parents=True)
+
+    # Copy acme-shop fixture which has heading 'Acme Shop'
+    src = WIKI_FIXTURES / "entities" / "acme-shop.md"
+    (entities_dir / "acme-shop.md").write_bytes(src.read_bytes())
+
+    kb_dir = tmp_path / ".kb"
+    index_path = kb_dir / "index.json"
+
+    monkeypatch.setattr(indexer_module, "INDEX_PATH", index_path)
+    monkeypatch.setattr(indexer_module, "WIKI_DIR", wiki_dir)
+    monkeypatch.setattr(logger_module, "LOG_PATH", wiki_dir / "log.md")
+    monkeypatch.setattr(
+        indexer_module,
+        "SOURCE_DIRS",
+        [entities_dir, wiki_dir / "concepts"],
+    )
+
+    build_index()
+
+    secs = indexer_module.sections
+    assert secs, "Expected at least one section indexed"
+
+    for sec in secs:
+        # Section.file must be bare slug — no .md extension
+        assert not sec.file.endswith(".md"), (
+            f"Section.file must NOT end with .md for wiki-derived sections, got {sec.file!r}"
+        )
+        # Section.id prefix must match Section.file
+        id_prefix = sec.id.split("#")[0] if "#" in sec.id else sec.id
+        assert id_prefix == sec.file, (
+            f"Section.id prefix '{id_prefix}' must match Section.file '{sec.file}'"
+        )
+
+    # Specifically: acme-shop.md's sections should use 'acme-shop' as slug
+    acme_secs = [s for s in secs if s.file == "acme-shop"]
+    assert acme_secs, (
+        f"Expected sections with file='acme-shop', got files: {[s.file for s in secs]}"
+    )
+    # Check the Section.id form: 'acme-shop#<heading-slug>'
+    acme_id_prefixes = {s.id.split("#")[0] if "#" in s.id else s.id for s in acme_secs}
+    assert all(p == "acme-shop" for p in acme_id_prefixes), (
+        f"Expected all acme-shop Section.id to start with 'acme-shop', got: "
+        f"{[s.id for s in acme_secs]}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Slice 4-2 AC: build_index scans wiki/entities/ and wiki/concepts/ (not docs/)
 # ---------------------------------------------------------------------------
 
@@ -194,11 +286,17 @@ def test_build_index_scans_wiki_subdirs(tmp_path, monkeypatch):
     assert files_count >= 1, f"Expected at least 1 file indexed, got {files_count}"
     assert sections_count >= 1, f"Expected at least 1 section indexed, got {sections_count}"
 
-    # Sections should come from the wiki fixtures, not docs/
+    # Sections should come from the wiki fixtures, not docs/.
+    # Slice 4-3a: Section.file uses bare slug (no .md extension).
     sec_files = {s.file for s in indexer_module.sections}
-    assert "acme-shop.md" in sec_files or any("acme-shop" in f for f in sec_files), (
-        f"Expected acme-shop fixture to be indexed, got files: {sec_files}"
+    assert "acme-shop" in sec_files, (
+        f"Expected acme-shop fixture to be indexed with bare slug, got files: {sec_files}"
     )
+    # No section file should end with .md for wiki-derived sources.
+    for sf in sec_files:
+        assert not sf.endswith(".md"), (
+            f"Wiki section file must NOT end with .md (bare slug expected), got: {sf!r}"
+        )
 
 
 # ---------------------------------------------------------------------------

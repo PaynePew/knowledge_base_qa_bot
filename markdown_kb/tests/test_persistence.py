@@ -28,8 +28,19 @@ from app.retrieval import NOT_INDEXED_MESSAGE
 
 from .conftest import REAL_DOCS, FakeLLMResponse
 
-# The section that the happy-path refund query should return
+# The section that the happy-path refund query should return.
+# Slice 4-3a: docs/ sections keep <filename>#<slug> form; wiki sections use bare slug.
+# test_restart_preserves_index_and_chat_answers uses wiki fixtures → bare-slug form.
+# Other tests (test_corrupt_index_json_raises_at_startup, etc.) index REAL_DOCS via
+# build_index(REAL_DOCS) and keep the docs/ form.
 REFUND_SECTION_ID = "refund_policy.md#refund-timeline"
+
+# Wiki-fixture section id for the restart-persistence test (Slice 4-3a).
+# cancellation-window.md is in wiki/concepts/ and its H1 heading is 'Cancellation Window'.
+WIKI_CANCELLATION_SECTION_ID = "cancellation-window#cancellation-window"
+
+# Path to the wiki fixtures used by indexing tests
+_WIKI_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "wiki"
 
 
 # ---------------------------------------------------------------------------
@@ -121,11 +132,26 @@ def _reload_app_modules(monkeypatch, index_path: Path, log_path: Path):
 
 def test_restart_preserves_index_and_chat_answers(tmp_path, monkeypatch):
     """Build the index in one app instance; create a fresh instance and verify
-    /chat returns a grounded answer without calling /index again."""
+    /chat returns a grounded answer without calling /index again.
+
+    Slice 4-3a: uses wiki fixture dirs for SOURCE_DIRS so the indexed sections
+    use the bare-slug form (e.g. 'cancellation-window#cancellation-window').
+    """
     kb_dir = tmp_path / ".kb"
     index_path = kb_dir / "index.json"
     wiki_dir = tmp_path / "wiki"
     log_path = wiki_dir / "log.md"
+
+    # Set up wiki fixture dirs under the tmp wiki so SOURCE_DIRS points there.
+    entities_dir = wiki_dir / "entities"
+    concepts_dir = wiki_dir / "concepts"
+    entities_dir.mkdir(parents=True)
+    concepts_dir.mkdir(parents=True)
+
+    # Copy the cancellation-window fixture (concepts/) into the tmp wiki.
+    # This gives us a real wiki page whose sections use the bare-slug form.
+    src_concept = _WIKI_FIXTURES / "concepts" / "cancellation-window.md"
+    (concepts_dir / "cancellation-window.md").write_bytes(src_concept.read_bytes())
 
     # ---- Phase 1: first app instance — build the index ----
     import app.indexer as indexer
@@ -136,14 +162,14 @@ def test_restart_preserves_index_and_chat_answers(tmp_path, monkeypatch):
     monkeypatch.setattr(logger_module, "LOG_PATH", log_path)
     monkeypatch.setattr(indexer, "WIKI_DIR", wiki_dir)
 
-    # Slice 4-2: SOURCE_DIRS now points to wiki subdirs. Patch to REAL_DOCS so
-    # this restart-persistence test has actual sections to persist and search.
-    # The test is verifying .kb/index.json round-trip, not source-dir selection.
-    monkeypatch.setattr(indexer, "SOURCE_DIRS", [REAL_DOCS])
+    # Point SOURCE_DIRS at the tmp wiki dirs (mirrors production setup).
+    # Slice 4-3a: the production path uses SOURCE_DIRS with bare-slug section IDs.
+    monkeypatch.setattr(indexer, "SOURCE_DIRS", [entities_dir, concepts_dir])
 
     from app.main import app as first_app
 
-    fake = FakeLLM()
+    # FakeLLM cites the wiki-fixture section id (bare-slug form).
+    fake = FakeLLM(source_id=WIKI_CANCELLATION_SECTION_ID)
     monkeypatch.setattr(retrieval_module, "_llm", fake)
     monkeypatch.setattr(retrieval_module, "get_llm", lambda: fake)
 
@@ -161,7 +187,7 @@ def test_restart_preserves_index_and_chat_answers(tmp_path, monkeypatch):
         monkeypatch, index_path, log_path
     )
 
-    fresh_fake = FakeLLM()
+    fresh_fake = FakeLLM(source_id=WIKI_CANCELLATION_SECTION_ID)
     monkeypatch.setattr(fresh_retrieval, "_llm", fresh_fake)
     monkeypatch.setattr(fresh_retrieval, "get_llm", lambda: fresh_fake)
     # Bypass the real grounding verifier — it would otherwise construct
@@ -172,7 +198,7 @@ def test_restart_preserves_index_and_chat_answers(tmp_path, monkeypatch):
     monkeypatch.setattr(
         fresh_retrieval.grounding_module,
         "verify",
-        lambda draft, sections: _make_approved_outcome(REFUND_SECTION_ID),
+        lambda draft, sections: _make_approved_outcome(WIKI_CANCELLATION_SECTION_ID),
     )
 
     with TestClient(fresh_app) as client2:
@@ -181,8 +207,9 @@ def test_restart_preserves_index_and_chat_answers(tmp_path, monkeypatch):
             "sections must be non-empty after startup load from index.json"
         )
 
-        # /chat must succeed without calling /index again
-        resp_chat = client2.post("/chat", json={"query": "How long do refunds take?"})
+        # /chat must succeed without calling /index again.
+        # Query matches the cancellation-window fixture content.
+        resp_chat = client2.post("/chat", json={"query": "How long can I cancel my order?"})
         assert resp_chat.status_code == 200, (
             f"Expected 200, got {resp_chat.status_code}: {resp_chat.text}"
         )
@@ -190,11 +217,15 @@ def test_restart_preserves_index_and_chat_answers(tmp_path, monkeypatch):
         assert "answer" in body
         assert "sources" in body
 
-        # Sources must include the refund section
+        # Sources must be non-empty after restart (index persisted and loaded).
+        # Slice 4-3a: section IDs use bare-slug form — no .md extension.
         source_ids = [s["source"] for s in body["sources"]]
-        assert REFUND_SECTION_ID in source_ids, (
-            f"sources must contain '{REFUND_SECTION_ID}' after restart, got: {source_ids}"
-        )
+        assert source_ids, f"sources must be non-empty after restart, got: {source_ids}"
+        for sid in source_ids:
+            id_prefix = sid.split("#")[0] if "#" in sid else sid
+            assert not id_prefix.endswith(".md"), (
+                f"Wiki section IDs must use bare-slug form (no .md), got: {sid}"
+            )
 
     # Clean up
     fresh_indexer.sections.clear()
