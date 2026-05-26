@@ -10,6 +10,7 @@ Flow:
   7. write chat log entry
   8. return {answer, sources}
 """
+
 from __future__ import annotations
 
 import os
@@ -34,9 +35,7 @@ _SCORE_THRESHOLD = float(os.getenv("KB_SCORE_THRESHOLD", "0.5"))
 # constants so a typo in production is caught instead of silently passing
 # against a hardcoded test literal.
 CANNOT_CONFIRM_PHRASE = "I cannot confirm from the knowledge base."
-NOT_INDEXED_MESSAGE = (
-    "The knowledge base has not been indexed yet. Call POST /index first."
-)
+NOT_INDEXED_MESSAGE = "The knowledge base has not been indexed yet. Call POST /index first."
 
 _llm = None
 # Separate singleton for temperature=0 grounding retries.
@@ -157,10 +156,12 @@ def _call_llm_with_error_handling(question: str, prompt_text: str) -> str:
     """
     truncated = question[:60].replace('"', "'")
     try:
-        response = get_llm().invoke([
-            SystemMessage(content=SYSTEM_PROMPT),
-            HumanMessage(content=prompt_text),
-        ])
+        response = get_llm().invoke(
+            [
+                SystemMessage(content=SYSTEM_PROMPT),
+                HumanMessage(content=prompt_text),
+            ]
+        )
         return response.content
     except (openai.APITimeoutError, openai.RateLimitError) as exc:
         log_event(
@@ -231,10 +232,12 @@ def _apply_grounding_check(
 
     # Use get_retry_llm() (temperature=0) so tests can inject a stub via
     # monkeypatch; in production this is a fresh temperature=0 singleton.
-    retry_response = get_retry_llm().invoke([
-        SystemMessage(content=SYSTEM_PROMPT),
-        HumanMessage(content=prompt_text),
-    ])
+    retry_response = get_retry_llm().invoke(
+        [
+            SystemMessage(content=SYSTEM_PROMPT),
+            HumanMessage(content=prompt_text),
+        ]
+    )
     retry_answer = retry_response.content
 
     if _is_grounded(retry_answer):

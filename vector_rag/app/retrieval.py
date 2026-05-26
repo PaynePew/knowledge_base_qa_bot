@@ -59,10 +59,12 @@ def query(question: str) -> dict:
             "sources": [],
         }
 
-    response = get_llm().invoke([
-        SystemMessage(content=SYSTEM_PROMPT),
-        HumanMessage(content=build_prompt(question, ranked_chunks)),
-    ])
+    response = get_llm().invoke(
+        [
+            SystemMessage(content=SYSTEM_PROMPT),
+            HumanMessage(content=build_prompt(question, ranked_chunks)),
+        ]
+    )
 
     sources = [
         {

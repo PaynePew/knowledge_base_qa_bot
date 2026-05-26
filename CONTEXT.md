@@ -26,8 +26,18 @@ _Avoid_: Source (Citation is a reference to a Section, not the Source as a whole
 An answer composed strictly from the cited Sections present in the LLM prompt's CONTEXT. Synthesis across multiple cited Sections is permitted; inference beyond what is written and any use of outside world knowledge is not. Every factual claim must carry at least one Citation. See ADR-0001.
 _Avoid_: Sourced answer (vague), Cited answer (citing without grounding is still possible and we explicitly reject it).
 
+**Grounding Check**:
+A post-LLM validation step performed after the main answer is drafted. A second structured LLM call (the verifier) extracts atomic factual claims from the draft and judges each against the cited Sections. If any single claim is unsupported, the entire draft is discarded and `Cannot Confirm` is returned (Block & Replace contract). The check operates at claim-level granularity: each claim is judged independently, and the verifier records `citing_section_ids` per supported claim. The verifier uses `gpt-4o-mini` by default, independently configurable via `OPENAI_VERIFIER_MODEL`. On verifier failure after bounded retry, the system fails closed. Implemented in `grounding.py`, which consumes a `CitableContent` Protocol (not the markdown_kb-specific `Section` type) so `vector_rag/` can adopt it without changes. See ADR-0004.
+_Avoid_: Verification (too generic), Fact-check (overloaded with journalism/social-media usage).
+
 **Cannot Confirm**:
-The literal phrase `"I cannot confirm from the knowledge base."` returned as the answer whenever the Section Index yields no Sections, only Sections below the score threshold, or Sections that partially relate but do not answer the question. Treated as a successful, expected response — not a failure mode. The score threshold is configured via the `KB_SCORE_THRESHOLD` env var (default `0.5` for the current sample corpus; recalibrate as the corpus grows). The fallback is gated *before* the LLM call whenever retrieval is empty or below threshold, so the LLM is never tempted to confabulate around weak context.
+The literal phrase `"I cannot confirm from the knowledge base."` returned as the answer whenever the bot cannot safely back the answer from cited Sections. Treated as a successful, expected response — not a failure mode. Three situations produce this response:
+
+- **(a) Pre-LLM threshold gate**: the Section Index yields no Sections, or only Sections below the score threshold. The LLM is never called; the fallback fires before any model invocation, so the model is never tempted to confabulate around weak context. Corresponds to `grounding.reason` values `retrieval_empty`, `below_threshold`, or `index_missing`.
+- **(b) Post-LLM grounding failure**: the Grounding Check verifier finds at least one claim in the draft that is not supported by the cited Sections. The draft is discarded and `Cannot Confirm` is returned. Corresponds to `grounding.reason = "claim_unsupported"`.
+- **(c) Post-LLM verifier unavailable**: the Grounding Check verifier fails after bounded retry (transient errors, hard errors). The system fails closed: `Cannot Confirm` is returned rather than releasing an unverified draft. Corresponds to `grounding.reason = "verifier_unavailable"`.
+
+All three situations produce the identical surface response (`"I cannot confirm from the knowledge base."`); the `grounding` field on `ChatResponse` carries the structured reason. The score threshold is configured via the `KB_SCORE_THRESHOLD` env var (default `0.5` for the current sample corpus; recalibrate as the corpus grows).
 _Avoid_: "I don't know" (sounds like a model limitation rather than a KB boundary), "Out of scope" (overloaded with product-feature language).
 
 ## Reserved (not yet implemented)
@@ -60,10 +70,6 @@ _Avoid_: Sanity check (vague), Audit (compliance overtone).
 **Ingest** _(future)_:
 The operation of taking a new Source and integrating it into the Wiki: read it, summarize it, update touched entity / concept / comparison pages, write a log entry, optionally flag contradictions with prior Sources. The current prototype only implements Query; Ingest is the next major phase.
 _Avoid_: Import (more about format conversion than synthesis), Process (too generic).
-
-**Grounding Check** _(future)_:
-A secondary LLM call performed *after* the answer is drafted, verifying that every factual claim in the draft is supported by the cited Sections. Acts as a post-LLM validation layer that complements the pre-LLM Cannot Confirm threshold gate. Reserved for the post-prototype anti-hallucination work — see `project-docs/inspiration.md`.
-_Avoid_: Verification, Fact-check (overloaded with journalism/social-media usage).
 
 **Query Rewriting** _(future)_:
 Reformulating a follow-up user question into a self-contained query that carries the necessary conversational context, so retrieval can be performed without the multi-turn history. Required for the PROMPT.md "Conversation Memory" stretch goal.

@@ -14,6 +14,7 @@ All tests run without live OpenAI calls.
 Run with:
     pytest -m "not live"   (from markdown_kb/)
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -129,17 +130,13 @@ def test_api_timeout_returns_503(indexed_corpus, monkeypatch):
 
     resp = client.post("/chat", json={"query": "How long do refunds take?"})
 
-    assert resp.status_code == 503, (
-        f"Expected 503, got {resp.status_code}: {resp.text}"
-    )
+    assert resp.status_code == 503, f"Expected 503, got {resp.status_code}: {resp.text}"
     body = resp.json()
     assert "detail" in body, f"Expected 'detail' in error response, got: {body}"
     assert "temporarily unavailable" in body["detail"].lower(), (
         f"Expected 'temporarily unavailable' in detail, got: {body['detail']!r}"
     )
-    assert "retry" in body["detail"].lower(), (
-        f"Expected 'retry' in detail, got: {body['detail']!r}"
-    )
+    assert "retry" in body["detail"].lower(), f"Expected 'retry' in detail, got: {body['detail']!r}"
 
 
 def test_api_timeout_logs_openai_transient(indexed_corpus, monkeypatch):
@@ -152,9 +149,7 @@ def test_api_timeout_logs_openai_transient(indexed_corpus, monkeypatch):
 
     assert log_path.exists(), "wiki/log.md must exist after /chat request"
     content = log_path.read_text(encoding="utf-8")
-    assert "chat_error |" in content, (
-        f"Expected 'chat_error |' in log, got:\n{content}"
-    )
+    assert "chat_error |" in content, f"Expected 'chat_error |' in log, got:\n{content}"
     assert "kind=openai_transient" in content, (
         f"Expected 'kind=openai_transient' in log, got:\n{content}"
     )
@@ -172,9 +167,7 @@ def test_rate_limit_returns_503(indexed_corpus, monkeypatch):
 
     resp = client.post("/chat", json={"query": "How long do refunds take?"})
 
-    assert resp.status_code == 503, (
-        f"Expected 503, got {resp.status_code}: {resp.text}"
-    )
+    assert resp.status_code == 503, f"Expected 503, got {resp.status_code}: {resp.text}"
     body = resp.json()
     assert "temporarily unavailable" in body["detail"].lower(), (
         f"Expected 'temporarily unavailable' in detail, got: {body['detail']!r}"
@@ -191,9 +184,7 @@ def test_rate_limit_logs_openai_transient(indexed_corpus, monkeypatch):
 
     assert log_path.exists(), "wiki/log.md must exist after /chat request"
     content = log_path.read_text(encoding="utf-8")
-    assert "chat_error |" in content, (
-        f"Expected 'chat_error |' in log, got:\n{content}"
-    )
+    assert "chat_error |" in content, f"Expected 'chat_error |' in log, got:\n{content}"
     assert "kind=openai_transient" in content, (
         f"Expected 'kind=openai_transient' in log, got:\n{content}"
     )
@@ -211,14 +202,10 @@ def test_auth_error_returns_500(indexed_corpus, monkeypatch):
 
     resp = client.post("/chat", json={"query": "How long do refunds take?"})
 
-    assert resp.status_code == 500, (
-        f"Expected 500, got {resp.status_code}: {resp.text}"
-    )
+    assert resp.status_code == 500, f"Expected 500, got {resp.status_code}: {resp.text}"
     body = resp.json()
     assert "detail" in body, f"Expected 'detail' in error response, got: {body}"
-    assert "auth" in body["detail"].lower(), (
-        f"Expected 'auth' in detail, got: {body['detail']!r}"
-    )
+    assert "auth" in body["detail"].lower(), f"Expected 'auth' in detail, got: {body['detail']!r}"
     assert "openai_api_key" in body["detail"].lower() or "api_key" in body["detail"].lower(), (
         f"Expected 'OPENAI_API_KEY' reference in detail, got: {body['detail']!r}"
     )
@@ -234,12 +221,8 @@ def test_auth_error_logs_openai_auth(indexed_corpus, monkeypatch):
 
     assert log_path.exists(), "wiki/log.md must exist after /chat request"
     content = log_path.read_text(encoding="utf-8")
-    assert "chat_error |" in content, (
-        f"Expected 'chat_error |' in log, got:\n{content}"
-    )
-    assert "kind=openai_auth" in content, (
-        f"Expected 'kind=openai_auth' in log, got:\n{content}"
-    )
+    assert "chat_error |" in content, f"Expected 'chat_error |' in log, got:\n{content}"
+    assert "kind=openai_auth" in content, f"Expected 'kind=openai_auth' in log, got:\n{content}"
 
 
 # ---------------------------------------------------------------------------
@@ -254,9 +237,7 @@ def test_generic_api_error_returns_500(indexed_corpus, monkeypatch):
 
     resp = client.post("/chat", json={"query": "How long do refunds take?"})
 
-    assert resp.status_code == 500, (
-        f"Expected 500, got {resp.status_code}: {resp.text}"
-    )
+    assert resp.status_code == 500, f"Expected 500, got {resp.status_code}: {resp.text}"
     body = resp.json()
     assert "detail" in body, f"Expected 'detail' in error response, got: {body}"
 
@@ -271,12 +252,8 @@ def test_generic_api_error_logs_openai_api(indexed_corpus, monkeypatch):
 
     assert log_path.exists(), "wiki/log.md must exist after /chat request"
     content = log_path.read_text(encoding="utf-8")
-    assert "chat_error |" in content, (
-        f"Expected 'chat_error |' in log, got:\n{content}"
-    )
-    assert "kind=openai_api" in content, (
-        f"Expected 'kind=openai_api' in log, got:\n{content}"
-    )
+    assert "chat_error |" in content, f"Expected 'chat_error |' in log, got:\n{content}"
+    assert "kind=openai_api" in content, f"Expected 'kind=openai_api' in log, got:\n{content}"
 
 
 # ---------------------------------------------------------------------------
@@ -293,16 +270,12 @@ def test_ungrounded_response_replaced_with_cannot_confirm(indexed_corpus, monkey
 
     resp = client.post("/chat", json={"query": "How long do refunds take?"})
 
-    assert resp.status_code == 200, (
-        f"Expected 200, got {resp.status_code}: {resp.text}"
-    )
+    assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
     body = resp.json()
     assert body["answer"] == CANNOT_CONFIRM_PHRASE, (
         f"Expected exact Cannot Confirm phrase, got: {body['answer']!r}"
     )
-    assert body["sources"] == [], (
-        f"Expected sources == [], got: {body['sources']}"
-    )
+    assert body["sources"] == [], f"Expected sources == [], got: {body['sources']}"
 
 
 def test_ungrounded_response_invokes_llm_twice(indexed_corpus, monkeypatch):
@@ -329,9 +302,7 @@ def test_cannot_confirm_phrase_passed_through_unchanged(indexed_corpus, monkeypa
 
     resp = client.post("/chat", json={"query": "How long do refunds take?"})
 
-    assert resp.status_code == 200, (
-        f"Expected 200, got {resp.status_code}: {resp.text}"
-    )
+    assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
     body = resp.json()
     assert body["answer"] == CANNOT_CONFIRM_PHRASE, (
         f"Expected Cannot Confirm phrase passed through, got: {body['answer']!r}"

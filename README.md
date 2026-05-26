@@ -83,15 +83,33 @@ The Markdown KB app does not need embeddings. The Vector RAG app uses OpenAI emb
 
 ## Stretch goals
 
-The following stretch goals from `PROMPT.md` are deferred until after the Markdown KB prototype is verified end-to-end. They are described here for orientation only.
+The following stretch goals from `PROMPT.md` are described here for orientation.
 
 - **Score threshold and Cannot Confirm fallback** — already part of the core design (see [ADR-0001](project-docs/adr/0001-strict-grounded-answers.md)).
-- **Output validation (Grounding Check)** — a secondary LLM call after the draft answer that verifies every claim traces back to a cited Section. Complements the pre-LLM threshold gate; closes the anti-hallucination loop. See `project-docs/inspiration.md` for the four-layer framing this comes from.
-- **Streaming interface** (`POST /chat/stream` via SSE).
-- **Browser UI** showing retrieved Sections before the streamed answer.
-- **Multi-format import** (`.txt` / `.html` → canonical Markdown in `docs/`).
-- **Alternative interfaces** (CLI, MCP server, web UI).
-- **Wiki Index generation** — emit `wiki/index.md` from the Section Index so humans and agents can browse topics without calling the API. This is the first step toward the Karpathy-style LLM Wiki layer.
-- **Answer Filing** — write reviewed Q&A results back into `wiki/`, with Citations preserved.
-- **Conversation memory** — short context for follow-up questions; retrieved Sources still control the final answer.
-- **Paraphrase comparison** — paraphrased queries to expose BM25 synonym misses vs vector semantic false positives.
+- **Output validation (Grounding Check)** — **in progress** (Phase 1, Slices #1-#4). A second structured LLM call after the draft answer verifies every claim traces back to a cited Section. Complements the pre-LLM threshold gate; closes the anti-hallucination loop. Design locked in [ADR-0004](project-docs/adr/0004-post-llm-grounding-check.md).
+- **Wiki Index generation** — planned (Phase 2). Emit `wiki/index.md` from the Section Index so humans and agents can browse topics without calling the API. First concrete step toward the Karpathy-style LLM Wiki layer (ADR-0003). Design to be locked in a follow-up session before implementation.
+- **Answer Filing** — deferred until `wiki/` directory exists (requires Phase 2).
+- **Conversation memory** — deferred until real multi-turn usage demand emerges.
+- **Paraphrase comparison** — deferred until `vector_rag/` is reactivated (langchain 0.3 → 1.x migration).
+- **Streaming interface** (`POST /chat/stream` via SSE) — deferred; adoption trigger: sustained user demand after interview feedback.
+- **Browser UI** showing retrieved Sections before the streamed answer — deferred; adoption trigger: same as streaming.
+- **Multi-format import** (`.txt` / `.html` → canonical Markdown in `docs/`) — deferred; adoption trigger: first non-Markdown Source in practice.
+- **Alternative interfaces** (CLI, MCP server, web UI) — deferred; adoption trigger: concrete downstream consumer with interface requirements.
+
+## Roadmap
+
+**Path B** is the chosen implementation sequence: Grounding Check first (post-LLM validation, layer 3 of the anti-hallucination stack), then Wiki Index Generation (navigation surface for the Karpathy-style wiki layer). Axis A stretch goals (streaming, UI, multi-format, alternative interfaces) are deferred until after both phases ship and first interview feedback is gathered.
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| **Phase 1 — Grounding Check** | Post-LLM claim-level verification, Block & Replace contract, unified `grounding` field on `ChatResponse`. Four slices: design docs → schemas → verifier → route wiring. See [ADR-0004](project-docs/adr/0004-post-llm-grounding-check.md). | In progress |
+| **Phase 2 — Wiki Index Generation** | Project `.kb/index.json` into `wiki/index.md`. Design to be locked in a follow-up grill session (projection format, trigger route, LLM-assisted summarisation). See [ADR-0003](project-docs/adr/0003-w2-layered-wiki-target-claude-obsidian.md). | Planned |
+
+**Deferred (axis A) — adoption triggers:**
+
+| Item | Trigger |
+|------|---------|
+| Streaming Interface (`POST /chat/stream` via SSE) | Sustained user demand after interview feedback |
+| Browser UI (retrieved Sections + streamed answer) | Same as streaming |
+| Multi-format import (`.txt` / `.html` → Markdown) | First non-Markdown Source in practice |
+| Alternative interfaces (CLI / MCP server / web UI) | Concrete downstream consumer with interface requirements |

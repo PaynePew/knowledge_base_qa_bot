@@ -9,6 +9,7 @@ Requirements:
     OPENAI_API_KEY must be set in the environment; the test fails with a clear
     message if it is absent rather than silently passing or skipping.
 """
+
 from __future__ import annotations
 
 import os
@@ -61,6 +62,7 @@ def test_chat_refund_query_live(tmp_path, monkeypatch):
     # Reset any cached LLM singleton so we get a fresh real ChatOpenAI instance
     # with the current OPENAI_API_KEY from the environment.
     import app.retrieval as retrieval_module
+
     monkeypatch.setattr(retrieval_module, "_llm", None)
     monkeypatch.setattr(retrieval_module, "_retry_llm", None)
 
@@ -73,9 +75,7 @@ def test_chat_refund_query_live(tmp_path, monkeypatch):
     resp = client.post("/chat", json={"query": "How long do refunds take?"})
 
     # Shape assertion 1: HTTP 200
-    assert resp.status_code == 200, (
-        f"Expected HTTP 200, got {resp.status_code}: {resp.text}"
-    )
+    assert resp.status_code == 200, f"Expected HTTP 200, got {resp.status_code}: {resp.text}"
 
     body = resp.json()
 

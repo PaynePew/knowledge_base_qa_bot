@@ -14,6 +14,7 @@ Provides:
 Also loads .env at the very top so live tests pick up OPENAI_API_KEY
 the same way uvicorn does via app.main.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

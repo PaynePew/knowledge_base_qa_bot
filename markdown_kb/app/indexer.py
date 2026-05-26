@@ -6,6 +6,7 @@ index in memory, and persists it as pretty-printed JSON to .kb/index.json.
 The parse_markdown function follows the 10-rule body-bearing spec documented
 in its docstring below.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -166,10 +167,11 @@ def parse_markdown(path: Path) -> list[Section]:
     if raw.startswith("---\n"):
         try:
             import yaml  # optional; PyYAML is not yet a hard dep (Wiki layer territory)
+
             end = raw.index("\n---\n", 4)  # closing fence
             fm_text = raw[4:end]
             metadata = yaml.safe_load(fm_text) or {}
-            body = raw[end + 5:]  # skip \n---\n
+            body = raw[end + 5 :]  # skip \n---\n
         except ImportError:
             log_event(
                 "parse_warning",
@@ -273,13 +275,15 @@ def parse_markdown(path: Path) -> list[Section]:
             # Compute heading_path at push time: ancestors + this heading
             ancestor_path = [e["heading"] for e in stack]
             # Push the new heading
-            stack.append({
-                "depth": new_depth,
-                "heading": heading_text,
-                "body_lines": [],
-                "has_child": False,
-                "path": ancestor_path + [heading_text],
-            })
+            stack.append(
+                {
+                    "depth": new_depth,
+                    "heading": heading_text,
+                    "body_lines": [],
+                    "has_child": False,
+                    "path": ancestor_path + [heading_text],
+                }
+            )
         else:
             # Content line — accumulate on current heading's body
             if stack:
@@ -319,9 +323,7 @@ def rebuild_stats() -> None:
     for sec in sections:
         for tok in set(sec.tokens):
             doc_freq[tok] += 1
-    avg_doc_len = (
-        sum(len(s.tokens) for s in sections) / len(sections) if sections else 0.0
-    )
+    avg_doc_len = sum(len(s.tokens) for s in sections) / len(sections) if sections else 0.0
     files_indexed = len({s.file for s in sections})
 
 
@@ -346,9 +348,7 @@ def write_index_json(index_path: Path | None = None) -> None:
     }
 
     # Atomic write: write to a sibling tmp file then os.replace
-    tmp_fd, tmp_path_str = tempfile.mkstemp(
-        dir=index_path.parent, suffix=".tmp", prefix="index_"
-    )
+    tmp_fd, tmp_path_str = tempfile.mkstemp(dir=index_path.parent, suffix=".tmp", prefix="index_")
     try:
         with os.fdopen(tmp_fd, "w", encoding="utf-8") as fh:
             json.dump(payload, fh, indent=2, ensure_ascii=False)
@@ -480,9 +480,6 @@ def bm25_score(
 
 def search(query: str, k: int = 3) -> list[tuple[Section, float]]:
     query_tokens = tokenize(query)
-    ranked = [
-        (section, bm25_score(query_tokens, section))
-        for section in sections
-    ]
+    ranked = [(section, bm25_score(query_tokens, section)) for section in sections]
     ranked.sort(key=lambda item: item[1], reverse=True)
     return [(section, score) for section, score in ranked[:k] if score > 0]
