@@ -64,7 +64,6 @@ def test_chat_refund_query_live(tmp_path, monkeypatch):
     import app.retrieval as retrieval_module
 
     monkeypatch.setattr(retrieval_module, "_llm", None)
-    monkeypatch.setattr(retrieval_module, "_retry_llm", None)
 
     # Build the real section index from docs/
     indexer.build_index(REAL_DOCS)
@@ -95,6 +94,19 @@ def test_chat_refund_query_live(tmp_path, monkeypatch):
     assert refund_sources, (
         f"Expected at least one source with 'refund_policy.md#', got sources: "
         f"{[s.get('source') for s in sources]}"
+    )
+
+    # Shape assertion 5: grounding field is present and shows claim_supported
+    grounding = body.get("grounding")
+    assert grounding is not None, "ChatResponse must have 'grounding' field"
+    assert grounding.get("passed") is True, (
+        f"Expected grounding.passed=True for supported query, got: {grounding}"
+    )
+    assert grounding.get("reason") == "claim_supported", (
+        f"Expected grounding.reason=claim_supported, got: {grounding.get('reason')!r}"
+    )
+    assert grounding.get("claims") is not None and len(grounding["claims"]) > 0, (
+        f"Expected non-empty grounding.claims, got: {grounding.get('claims')}"
     )
 
     # Clean up in-memory state
