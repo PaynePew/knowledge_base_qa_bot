@@ -48,13 +48,14 @@ Authorized by [ADR-0004](adr/0004-post-llm-grounding-check.md).
 
 ## Indexer + Wiki Index
 
-Authorized by [`prd.md`](prd.md) (Phase 1, indexer) and [ADR-0003](adr/0003-w2-layered-wiki-target-claude-obsidian.md) (Phase 2, wiki_index projection).
+Authorized by [`prd.md`](prd.md) (Phase 1, indexer), [ADR-0003](adr/0003-w2-layered-wiki-target-claude-obsidian.md) (Phase 2, wiki_index projection), and [ADR-0006](adr/0006-w1-after-phase-3.md) (Phase 4, wiki whitelist + wiki_layer_empty signal).
 
 | Kind | When fired | Summary template |
 |---|---|---|
 | `parse_warning` | Frontmatter unavailable / unparseable, or a non-leaf heading has no body content | `frontmatter present in <file> but PyYAML is not installed` or `frontmatter parse failed in <file>: <ExcType>` or `non-leaf heading with no body in <file>: '<heading>'` |
 | `index_loaded` | Section Index rehydrated from `.kb/index.json` on app startup | `files=N sections=M` |
 | `index_built` | `build_index()` completed successfully | `files=N sections=M` |
+| `wiki_layer_empty` | `build_index()` ran on the default `SOURCE_DIRS` and both `wiki/entities/` and `wiki/concepts/` resolved to zero sections (ADR-0006). Distinct ops signal from `index_missing` so Phase 5 `/lint` can tell "system deployed but never ingested" apart from a normal cannot-confirm. `/chat` output is unchanged. | `entities=0 concepts=0` |
 | `wiki_index_error` | `write_wiki_index()` failed during `build_index()`; non-blocking (index still serves) | `reason=<ExcType>: <message>` |
 
 ---
