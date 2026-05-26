@@ -44,7 +44,7 @@ This document is the **reviewer agent's** standards reference (see [`project-doc
 - **§8 Tooling recommendations** — adopting these is a separate `chore:` commit, not a per-slice review concern
 - **§9 Commits and review** — the commit message rules are checked by the implementer; the reviewer-checklist subset (§9.2) is duplicated in agents/review.md's review process for self-containment
 
-**Citation discipline when flagging**: when the reviewer flags an issue, it must cite the section by number (e.g. "§3.1 vocabulary drift — `Document` used at `app/indexer.py:42`, should be `Source`"). Do NOT dump the section's full prose into the report — the section number is enough for the human to look up.
+**Citation discipline when flagging**: when the reviewer flags an issue, it must cite the section by number and locate the offending code by function or symbol name (e.g. "§3.1 vocabulary drift — `Document` used in `build_index`, should be `Source`"). Avoid line-number citations (`file.py:42`) — they rot the moment the file is edited. Do NOT dump the section's full prose into the report — the section number is enough for the human to look up.
 
 **Budget**: an active review typically loads §3 + §4 + §5 + §11 eagerly (~80 lines combined) plus 0-2 conditional sections on demand. Total injection is well under 200 lines — fits cleanly in any sub-agent's context window.
 
@@ -179,24 +179,19 @@ If no — refactor the boundary before merging.
 - Beyond ~500, split **only when a clear sub-responsibility falls out**. Do not split prophylactically (PRD lists `prompt_builder.py` as a deliberate extraction so its output can be asserted in isolation without mocking the LLM — that's the bar).
 - Per **ADR-0002**: do NOT extract a pluggable `Retriever` protocol until BOTH `markdown_kb` and `vector_rag` are end-to-end working.
 
-### 2.3 Layers within `markdown_kb/app/`
+### 2.3 Module depth
 
-| Module | Depth | Owns |
-|---|---|---|
-| `main.py` | shallow | FastAPI lifecycle, `.env` loader, startup hooks |
-| `routes.py` | shallow | HTTP wiring only; no domain logic |
-| `schemas.py` | shallow | Pydantic request/response shapes; no behavior |
-| `prompt_builder.py` | shallow | SYSTEM_PROMPT + `build_prompt(question, ranked_sections)` |
-| `logger.py` | shallow | Wiki Log writer (`log_event`) |
-| `wiki_index.py` | medium | Wiki Index projection — `project_wiki_index` pure function + `write_wiki_index` filesystem wrapper |
-| `templates.py` | medium | Source classification + Wiki Page generation via `with_structured_output`; defines `_ClassificationOutput` and `_PageSynthesisOutput` structured-output schemas |
-| `indexer.py` | **deep** | Section parsing, BM25 index, persistence, concurrency, atomic write |
-| `retrieval.py` | **deep** | Query orchestration, threshold gate, error mapping, grounding check call |
-| `grounding.py` | **deep** | Post-LLM Grounding Check verifier — claim extraction, retry, fail-mode mapping; consumes the `CitableContent` Protocol (ADR-0004) so future non-`/chat` consumers (e.g. `/ingest` content verification) reuse it without code change |
-| `ingest.py` | **deep** | Ingest pipeline coordinator — Source → classify → generate → verify → write; continue-on-error batch mode; orphan deletion under `_index_lock` |
-| `wiki_writer.py` | **deep** | Wiki Page filesystem operations — atomic write, frontmatter serialization, orphan detection, slug collision resolution |
+Every module under `markdown_kb/app/` declares its Ousterhout depth on the first non-blank line of its docstring:
 
-**Deep modules own all conditional logic. Shallow modules wire them together.** Adding business logic into `routes.py`, `schemas.py`, or `main.py` is a violation.
+```python
+"""Deep module per Ousterhout. Public surface: X, Y, Z.
+...
+"""
+```
+
+The reviewer opens the source file to discover a module's depth — there is no central inventory here to fall behind reality. Adding a new module **requires** this declaration; reviewers fail any PR that omits it.
+
+**Deep modules own all conditional logic. Shallow modules wire them together.** Adding business logic into a module declared `Shallow module per Ousterhout` is a violation.
 
 ### 2.4 Forbidden cross-module patterns
 
@@ -204,19 +199,14 @@ If no — refactor the boundary before merging.
 - **No circular imports.** When `indexer.py` needs `logger.py`, the import is at the top. When the cycle is unavoidable (e.g. `parse_markdown` → `log_event`), use a function-scope import + a comment.
 - **No LangChain types leak to non-LLM modules.** `HumanMessage`, `SystemMessage`, `ChatOpenAI`, and LangChain `with_structured_output` schemas stay inside **LLM-facing modules** — defined as modules that own an LLM call site. The current LLM-facing set is `retrieval.py` and `grounding.py` (ADR-0005 may register more as future phases add `/ingest` etc.). Routes / schemas / indexer / logger / prompt_builder / wiki_index see only Python primitives and Pydantic models. The PRD lists this exactly — `prompt_builder.py` was extracted precisely so its output can be asserted *as a string* without touching LangChain types.
 
-### 2.5 Future-proofing patterns (mandatory — ADR-encoded)
+### 2.5 ADR- and PRD-encoded invariants
 
-| Pattern | Code site | ADR / PRD |
-|---|---|---|
-| `SOURCE_DIRS: list[Path]` (not a single `Path`) | `indexer.py` (module-level constant) | ADR-0003 |
-| `Section.metadata: dict` reserved even when unused | `indexer.py` (`Section` dataclass) | PRD § Section dataclass shape |
-| `wiki/log.md` committed (NOT gitignored) | `.gitignore` | PRD US #23 |
-| Pre-LLM Cannot Confirm gate before any LLM call | `retrieval.py` (pre-LLM gate) | ADR-0001 |
-| `OPENAI_INGEST_MODEL` two-layer fallback (env var → `gpt-4o-mini` default) | `templates.py` (module-level constant) | PRD #28 Q13 — collapsing to one layer breaks chat/ingest model independence |
-| Sentinel HTML comment on every generated Wiki Page (`<!-- Auto-generated by POST /ingest — manual edits will be overwritten. -->`) | `wiki_writer.py` (page serialization) | PRD #28 Q7 — removing it loses the "manual edits will be overwritten" signal for editors |
-| 7-field frontmatter schema excludes `confidence` | `schemas.py` (`WikiPageFrontmatter`) | PRD #28 Q4 — adding `confidence` prematurely violates the deferral rationale; Phase 5 `/lint` owns it |
+Architectural decisions that the codebase must preserve across phases are encoded directly in the documents that drive them:
 
-Changing any of these requires a **new ADR superseding the current one**. Reviewers must fail any PR that breaks an invariant without a paired ADR.
+- ADRs under [`project-docs/adr/`](adr/) tag each invariant with a `**Invariant**` prefix inside their `## Consequences` section.
+- PRD-encoded invariants live in [`project-docs/prd.md`](prd.md) and the phase-specific PRD issues (currently Phase 3 in GitHub issue #28).
+
+The reviewer must check that any PR which touches the code site of an invariant either preserves it or ships **a new ADR superseding the existing one**. Discovery flow: read the diff, identify the code sites it touches, then `grep -nE "Invariant" project-docs/adr/*.md` and scan the PRD for matching anchors. The reviewer fails any PR that breaks an invariant without a paired ADR.
 
 ### 2.6 Concurrency
 
@@ -237,22 +227,13 @@ Changing any of these requires a **new ADR superseding the current one**. Review
 
 ### 3.1 Vocabulary discipline (mandatory)
 
-Code identifiers MUST use the `CONTEXT.md` vocabulary verbatim. Concrete rules:
-
-| Concept | Use | Don't use |
-|---|---|---|
-| A markdown file the bot indexes | `Source` | `Document`, `Article`, `Doc` |
-| The retrieval unit | `Section` | `Chunk`, `Paragraph`, `Leaf section` |
-| The persisted inverted index | `Section Index` | `Index` (reserved for `Wiki Index`), `BM25 Index` |
-| A `filename#heading-slug` reference | `Citation` | `Source` (that's the file), `Reference` |
-| A strictly-grounded reply | `Grounded Answer` | "sourced answer", "cited answer" |
-| The literal sentinel string | `Cannot Confirm` (constant: `CANNOT_CONFIRM_PHRASE`) | Any paraphrase |
+Code identifiers MUST use the [`CONTEXT.md`](../CONTEXT.md) vocabulary verbatim. The active glossary is the single source of truth — any concept the codebase names (in class, function, variable, log kind, or comment) must already exist there.
 
 When you need a new domain concept, propose the term via `/grill-with-docs` **before** naming a class/function for it. Inventing vocabulary directly in code creates drift that's expensive to undo.
 
 ### 3.2 Reserved terms are off-limits as variable names
 
-Reserved terms in `CONTEXT.md` are **off-limits as variable names today**. The single source of truth is the `## Reserved (not yet implemented)` section in `CONTEXT.md` — read that list before naming a local variable. As of Phase 3 (after Phase 1 + Phase 2 promoted `Grounding Check`, `Wiki Log`, `Wiki Index` to active vocabulary; and Phase 3 promoted `Ingest`, `Source Template`, `Wiki Page`, `Red Link`), the still-reserved terms are: `Wiki` (the layer concept), `Hot Cache`, `Lint Pass`, `Query Rewriting`, `Conversation Store`. Using `lint_pass` or `hot_cache` as a local helper name silently consumes the namespace; reviewer will downgrade to a non-reserved synonym.
+The `## Reserved (not yet implemented)` section in [`CONTEXT.md`](../CONTEXT.md) is the single source of truth for terms that name future phases. Using one of those terms as a local helper or variable name silently consumes the namespace before the matching feature ships; the reviewer downgrades to a non-reserved synonym. Read that section before naming anything that *sounds* domain-y — promotion of a term from Reserved to active is the only path to using it in code.
 
 ### 3.3 Constants for sentinel strings
 
@@ -490,8 +471,8 @@ Each signal has a **severity** that determines the reviewer's action:
 
 ### Vocabulary drift (§3.1)
 
-- [ ] **FAIL** — A new domain term appears in code without a `CONTEXT.md` entry, OR a synonym smuggles in for an existing CONTEXT term (e.g. `Document` / `Article` / `Doc` for what should be `Source`).
-- [ ] **FIX** — A local variable name consumes a **still-reserved** CONTEXT term. The reserved list is the source of truth in `CONTEXT.md`'s `## Reserved (not yet implemented)` section — check it before flagging. As of Phase 3, still-reserved: `wiki` (layer concept), `hot_cache`, `lint_pass`, `query_rewriting`, `conversation_store`. Active vocabulary (`wiki_index`, `grounding_check`, `wiki_log`, `ingest`, `source_template`, `wiki_page`, `red_link`) is fine to use.
+- [ ] **FAIL** — A new domain term appears in code without a [`CONTEXT.md`](../CONTEXT.md) entry, OR a synonym smuggles in for an existing CONTEXT term. Check `CONTEXT.md`'s active glossary for the canonical name.
+- [ ] **FIX** — A local variable name consumes a term from `CONTEXT.md`'s `## Reserved (not yet implemented)` section. The reserved list there is the live source of truth — read it before flagging, not from memory.
 
 ### Sentinel string drift (§3.3)
 
@@ -501,10 +482,9 @@ Each signal has a **severity** that determines the reviewer's action:
 ### Architecture & dependency drift (§2)
 
 - [ ] **FAIL** — A new module imports `langchain` or `langchain_openai` outside `retrieval.py`, OR LangChain types (`HumanMessage`, `SystemMessage`, `ChatOpenAI`) leak through `retrieval.py`'s return values into other modules. (Violates §2.4.)
-- [ ] **FAIL** — Business / conditional logic appears in `routes.py`, `schemas.py`, or `main.py` (shallow modules per §2.3). Should be in a deep module.
-- [ ] **FAIL** — `SOURCE_DIRS` is reduced to a single `Path` "for simplicity" (violates ADR-0003 + §2.5).
-- [ ] **FAIL** — `Section.metadata` is removed because it's "unused" (violates PRD § Section dataclass shape + §2.5).
-- [ ] **FAIL** — Pre-LLM Cannot Confirm gate in `retrieval.py` is bypassed when score is "just barely below threshold" (violates ADR-0001 + §4.3).
+- [ ] **FAIL** — Business / conditional logic appears in a module whose docstring declares it `Shallow module per Ousterhout` (§2.3). Should be in a deep module.
+- [ ] **FAIL** — A code change breaks any `**Invariant**`-tagged line in `project-docs/adr/*.md` (or a PRD-encoded invariant) without a paired new ADR superseding it. See §2.5.
+- [ ] **FAIL** — Pre-LLM Cannot Confirm gate is bypassed when retrieval score is "just barely below threshold" (violates ADR-0001 + §4.3).
 - [ ] **FAIL** — A `Retriever` protocol / plugin layer is extracted before both `markdown_kb` and `vector_rag` are end-to-end working (premature per ADR-0002 + §2.2).
 
 ### Error handling drift (§4)
@@ -524,7 +504,7 @@ Each signal has a **severity** that determines the reviewer's action:
 ### Testing drift (§6)
 
 - [ ] **FAIL** — A test mocks `indexer.search` or any other deep-module entry point (mock the LLM, not the index; per §6.3).
-- [ ] **FAIL** — A third `@pytest.mark.live` test appears on an already-covered LLM-facing surface, OR a live test is added to a new surface without explicit PRD authorisation (one-per-surface is the policy; per §6.4 — current authorised surfaces: `/chat`, `/ingest`).
+- [ ] **FAIL** — A new `@pytest.mark.live` test appears on a surface already covered by an existing live test, OR a live test is added to a new LLM-facing surface without explicit PRD authorisation (one-per-surface is the policy; per §6.4).
 - [ ] **FAIL** — A test asserts an absolute BM25 score value (corpus-sensitive, brittle; per §6.2 — assert ranking order or shape instead).
 - [ ] **FLAG** — A test asserts specific LLM output text content beyond shape + `[Source:` marker (will break across model updates; per §6.2).
 - [ ] **FIX** — A test mutates `indexer.sections` without restoring via `monkeypatch` or explicit teardown (per §6.5).
@@ -543,7 +523,7 @@ Each signal has a **severity** that determines the reviewer's action:
 
 ### Git hygiene
 
-- [ ] **FAIL** — `wiki/log.md` is added to `.gitignore` (violates PRD US #23 + §2.5).
-- [ ] **FAIL** — An ADR-0001 / 0002 / 0003 / 0004 / 0005 invariant is broken **without** a paired new ADR superseding it.
+- [ ] **FAIL** — A PRD-encoded invariant is broken (most notable: `wiki/log.md` must remain committed, not gitignored — see `prd.md`).
+- [ ] **FAIL** — An ADR-tagged `**Invariant**` is broken **without** a paired new ADR superseding it. Locate them via `grep -nE "Invariant" project-docs/adr/*.md`.
 
 The reviewer's job is to spot these and act per the severity. The implementer's job is to not write them in the first place — reading this section before writing code is cheaper than re-doing it after a `FAIL`.
