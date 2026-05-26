@@ -60,6 +60,13 @@ STOP_WORDS = {
 # Thread-safety: callers hold _index_lock when swapping the sections list.
 _index_lock = threading.Lock()
 
+# Module-level snapshot of the last wiki index outcome from build_index().
+# Populated by build_index() after calling write_wiki_index(). The route layer
+# reads this instead of a return-value extension so existing test signatures
+# for build_index() (tuple[int, int]) remain unchanged.
+# Format: (wiki_written: bool, wiki_path: Path | None, wiki_error: str | None)
+last_wiki_index_outcome: tuple[bool, Path | None, str | None] = (False, None, None)
+
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -417,9 +424,23 @@ def build_index(docs_dir: Path = DOCS_DIR) -> tuple[int, int]:
     signature change. When docs_dir is provided (non-default), only that
     directory is indexed (used in tests).
 
+    After writing the Section Index JSON, calls write_wiki_index(sections) as a
+    best-effort side effect. The wiki write outcome (success or failure) is stored
+    in the module-level ``last_wiki_index_outcome`` variable so the route layer
+    can surface it in ``IndexResponse`` without any change to this function's
+    return signature. Wiki write failure is non-blocking — the function returns
+    normally and the Section Index is still served. On failure a
+    ``wiki_index_error`` log entry is emitted.
+
+    Design choice: module-level snapshot variable over return-value extension.
+    Rationale: existing test signatures for build_index() expect ``tuple[int, int]``
+    and are not touched by this slice. The route reads ``last_wiki_index_outcome``
+    directly after calling build_index().
+
     Returns (files_indexed, sections_indexed).
     """
-    global sections, doc_freq, avg_doc_len, files_indexed
+    global sections, doc_freq, avg_doc_len, files_indexed, last_wiki_index_outcome
+    from . import wiki_index as _wiki_index_module
     from .logger import log_event
 
     # Determine which directories to scan.
@@ -442,6 +463,15 @@ def build_index(docs_dir: Path = DOCS_DIR) -> tuple[int, int]:
         "index_built",
         f"files={files_indexed} sections={len(sections)}",
     )
+
+    # Best-effort wiki index write — non-blocking; failure stored for route layer.
+    # Called via module reference so tests can monkeypatch _wiki_index_module.write_wiki_index.
+    wiki_written, wiki_path, wiki_error = _wiki_index_module.write_wiki_index(sections)
+    last_wiki_index_outcome = (wiki_written, wiki_path, wiki_error)
+    if not wiki_written:
+        # Best-effort log — if the filesystem is the problem, this may also fail;
+        # do not catch or propagate the secondary failure.
+        log_event("wiki_index_error", f"reason={wiki_error}")
 
     return files_indexed, len(sections)
 

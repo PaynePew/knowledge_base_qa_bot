@@ -8,6 +8,9 @@ from pydantic import BaseModel
 class IndexResponse(BaseModel):
     files_indexed: int
     sections_indexed: int
+    wiki_index_written: bool = False
+    wiki_index_path: str | None = None  # absolute path string when written
+    wiki_index_error: str | None = None  # "<ErrorClass>: <message>" when not written
 
 
 class ChatRequest(BaseModel):
