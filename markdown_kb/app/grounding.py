@@ -169,17 +169,21 @@ def _build_user_message(draft: str, sections: list[CitableContent]) -> str:
 
 
 def _classify_error(exc: Exception) -> VerifierErrorType:
-    """Map an exception to a VerifierErrorType for logging and policy selection."""
+    """Map an exception to a VerifierErrorType for logging and policy selection.
+
+    Note: AuthenticationError is a subclass of APIStatusError, so it must be
+    checked first to prevent the APIStatusError branch from matching it.
+    """
     if isinstance(exc, openai.APITimeoutError):
         return VerifierErrorType.TIMEOUT
     if isinstance(exc, openai.RateLimitError):
-        return VerifierErrorType.TIMEOUT  # treated as transient like 429
-    if isinstance(exc, openai.APIStatusError):
-        if exc.status_code and exc.status_code >= 500:
-            return VerifierErrorType.SERVER_ERROR
-        return VerifierErrorType.SERVER_ERROR  # unexpected 4xx besides auth
+        return VerifierErrorType.TIMEOUT  # 429 is treated as transient
     if isinstance(exc, openai.AuthenticationError):
+        # Must come before APIStatusError (auth is a subclass of it)
         return VerifierErrorType.AUTH
+    if isinstance(exc, openai.APIStatusError):
+        # Any remaining 4xx or 5xx
+        return VerifierErrorType.SERVER_ERROR
     if isinstance(exc, (pydantic.ValidationError, ValueError)):
         return VerifierErrorType.MALFORMED_JSON
     return VerifierErrorType.SERVER_ERROR
