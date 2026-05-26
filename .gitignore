@@ -1,6 +1,11 @@
 # Built retrieval artifacts (rebuilt by POST /index)
 .kb/
 
+# wiki/ — generated artifacts and per-user runtime traces (see wiki/README.md)
+wiki/index.md
+wiki/log.md
+wiki/hot.md
+
 # Python
 __pycache__/
 *.py[cod]
