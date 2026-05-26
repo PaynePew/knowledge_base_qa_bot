@@ -144,12 +144,11 @@ def ingest_sources(
         source_pairs = [(name, docs_dir / name) for name in source_filenames]
 
     batch = IngestBatchResult()
-    # Slug collision tracking: "concepts/overview" and "entities/overview" are
-    # tracked separately so entity slugs don't collide with concept slugs.
-    used_slugs: dict[str, set[str]] = {
-        "concept": set(),
-        "entity": set(),
-    }
+    # Slug collision tracking: single global set so cross-type collisions
+    # (e.g. entity "foo" + concept "foo") are also detected.  The second
+    # source to claim a slug — regardless of type — receives the -2 suffix.
+    # This makes bare-slug citations globally unambiguous (Slice 4-3b, #54).
+    used_slugs: set[str] = set()
 
     # --- ingest_batch_started ---
     log_event(
@@ -202,7 +201,7 @@ def ingest_sources(
             if source_type == "entity":
                 source_stem = Path(source_name).stem
                 raw_slug = slugify(source_stem)
-                final_slug = resolve_slug_collision(used_slugs["entity"], raw_slug)
+                final_slug = resolve_slug_collision(used_slugs, raw_slug)
                 draft = generate_entity_page(
                     sections,
                     source_stem=source_stem,
@@ -217,7 +216,7 @@ def ingest_sources(
                 drafts = []
                 for section in sections:
                     raw_slug = slugify(section.heading)
-                    final_slug = resolve_slug_collision(used_slugs["concept"], raw_slug)
+                    final_slug = resolve_slug_collision(used_slugs, raw_slug)
                     section_draft = generate_page(section, "concept")
                     batch._llm_call_count += 1
                     # Override slug and frontmatter.id with collision-resolved value
