@@ -70,7 +70,7 @@ LF everywhere, enforced by `.gitattributes`. Windows-only scripts (`.bat`, `.cmd
   3. local (`from . import …` or `from .foo import …`)
 - Within each group, sort alphabetically.
 - Prefer **relative imports within a single package** (`from .indexer import Section`); absolute imports for cross-package.
-- Function-scope imports are allowed **only** to break circular dependencies. Always paired with a comment explaining why (see `indexer.py:166` — `from .logger import log_event` inside `parse_markdown` to avoid the import cycle).
+- Function-scope imports are allowed **only** to break circular dependencies. Always paired with a comment explaining why (see `parse_markdown` in `indexer.py` — `from .logger import log_event` inside the function body to avoid the `indexer` ↔ `logger` import cycle).
 
 ### 1.4 Naming
 
@@ -140,7 +140,7 @@ def _private_helper(...) -> ...: ...
 - **Every module:** triple-quoted docstring at the top. Intent + ADR/PRD reference.
 - **Every public function / method:** triple-quoted docstring describing intent, non-obvious args, return shape, raised exceptions.
 - **Private helpers:** one-line docstring only if the name is not self-explanatory.
-- **Rule-based functions** (e.g. `parse_markdown`): embed the rule spec inline in the docstring, numbered `1.` through `N.`, then reference rules in code with `# Rule N:` comments. See `indexer.py:122`.
+- **Rule-based functions** (e.g. `parse_markdown`): embed the rule spec inline in the docstring, numbered `1.` through `N.`, then reference rules in code with `# Rule N:` comments. See `parse_markdown` in `indexer.py`.
 - Never write a "what" docstring on a trivial helper (`# return the sum` over `return a + b` is noise).
 
 ### 1.7 Type hints
@@ -157,7 +157,7 @@ def _private_helper(...) -> ...: ...
 - A hidden invariant (`# callers hold _index_lock when swapping the sections list`).
 - A workaround for a specific bug or library quirk.
 - A reference to an ADR / PRD section / CONTEXT term that drives the design.
-- A guard against future drift (`# ADR-0003: build_index iterates this list so adding WIKI_DIR needs no signature change`).
+- A guard against future drift (`# ADR-0003: SOURCE_DIRS is a list so future WIKI_DIR can be appended without signature change`).
 
 **Never** write comments that restate the code or anchor to the current task ("added for Slice 5", "used by routes.py"). Git log and call graph already convey those.
 
@@ -188,8 +188,10 @@ If no — refactor the boundary before merging.
 | `schemas.py` | shallow | Pydantic request/response shapes; no behavior |
 | `prompt_builder.py` | shallow | SYSTEM_PROMPT + `build_prompt(question, ranked_sections)` |
 | `logger.py` | shallow | Wiki Log writer (`log_event`) |
+| `wiki_index.py` | medium | Wiki Index projection — `project_wiki_index` pure function + `write_wiki_index` filesystem wrapper |
 | `indexer.py` | **deep** | Section parsing, BM25 index, persistence, concurrency, atomic write |
-| `retrieval.py` | **deep** | Query orchestration, threshold gate, error mapping, grounding check |
+| `retrieval.py` | **deep** | Query orchestration, threshold gate, error mapping, grounding check call |
+| `grounding.py` | **deep** | Post-LLM Grounding Check verifier — claim extraction, retry, fail-mode mapping; consumes the `CitableContent` Protocol (ADR-0004) so future non-`/chat` consumers (e.g. `/ingest` content verification) reuse it without code change |
 
 **Deep modules own all conditional logic. Shallow modules wire them together.** Adding business logic into `routes.py`, `schemas.py`, or `main.py` is a violation.
 
@@ -197,16 +199,16 @@ If no — refactor the boundary before merging.
 
 - **No reaching into private state of another module.** `indexer.sections` is treated as public (and is read by `retrieval.py`); `indexer._index_lock` is not.
 - **No circular imports.** When `indexer.py` needs `logger.py`, the import is at the top. When the cycle is unavoidable (e.g. `parse_markdown` → `log_event`), use a function-scope import + a comment.
-- **No LangChain types leak past `retrieval.py`.** `HumanMessage`, `SystemMessage`, `ChatOpenAI` stay inside `retrieval.py`. Routes / schemas / indexer see only Python primitives and Pydantic models. The PRD lists this exactly — `prompt_builder.py` was extracted precisely so its output can be asserted *as a string* without touching LangChain types.
+- **No LangChain types leak to non-LLM modules.** `HumanMessage`, `SystemMessage`, `ChatOpenAI`, and LangChain `with_structured_output` schemas stay inside **LLM-facing modules** — defined as modules that own an LLM call site. The current LLM-facing set is `retrieval.py` and `grounding.py` (ADR-0005 may register more as future phases add `/ingest` etc.). Routes / schemas / indexer / logger / prompt_builder / wiki_index see only Python primitives and Pydantic models. The PRD lists this exactly — `prompt_builder.py` was extracted precisely so its output can be asserted *as a string* without touching LangChain types.
 
 ### 2.5 Future-proofing patterns (mandatory — ADR-encoded)
 
 | Pattern | Code site | ADR / PRD |
 |---|---|---|
-| `SOURCE_DIRS: list[Path]` (not a single `Path`) | `indexer.py:32` | ADR-0003 |
-| `Section.metadata: dict` reserved even when unused | `indexer.py:76` | PRD § Section dataclass shape |
+| `SOURCE_DIRS: list[Path]` (not a single `Path`) | `indexer.py` (module-level constant) | ADR-0003 |
+| `Section.metadata: dict` reserved even when unused | `indexer.py` (`Section` dataclass) | PRD § Section dataclass shape |
 | `wiki/log.md` committed (NOT gitignored) | `.gitignore` | PRD US #23 |
-| Pre-LLM Cannot Confirm gate before any LLM call | `retrieval.py:88` | ADR-0001 |
+| Pre-LLM Cannot Confirm gate before any LLM call | `retrieval.py` (pre-LLM gate) | ADR-0001 |
 
 Changing any of these requires a **new ADR superseding the current one**. Reviewers must fail any PR that breaks an invariant without a paired ADR.
 
@@ -214,7 +216,7 @@ Changing any of these requires a **new ADR superseding the current one**. Review
 
 - The index swap is the only contended operation. Hold `_index_lock` **only** when assigning to the module-level `sections` list (see `build_index` and `load_index_json` in `indexer.py`).
 - Readers do not lock. Mid-rebuild readers see the previous snapshot until the swap completes.
-- **Persistent state writes are atomic**: write to `<file>.tmp`, then `os.replace(...)`. Never write to the target file directly. See `write_index_json` (`indexer.py:326`).
+- **Persistent state writes are atomic**: write to `<file>.tmp`, then `os.replace(...)`. Never write to the target file directly. See `write_index_json` in `indexer.py`.
 - Beyond a single FastAPI worker, this model breaks. Multi-worker is **post-prototype**; will need an external lock (filesystem flock, redis, or DB). Do not refactor proactively.
 
 ### 2.7 State management
@@ -244,13 +246,13 @@ When you need a new domain concept, propose the term via `/grill-with-docs` **be
 
 ### 3.2 Reserved terms are off-limits as variable names
 
-The reserved-but-not-yet-implemented terms in `CONTEXT.md` are **off-limits as variable names today**: `Wiki`, `Wiki Index`, `Hot Cache`, `Wiki Log`, `Source Template`, `Lint Pass`, `Ingest`, `Grounding Check`, `Query Rewriting`, `Conversation Store`. Using `wiki` or `ingest` as a local helper name silently consumes the namespace.
+Reserved terms in `CONTEXT.md` are **off-limits as variable names today**. The single source of truth is the `## Reserved (not yet implemented)` section in `CONTEXT.md` — read that list before naming a local variable. As of Phase 2 (after Phase 1 + Phase 2 promoted `Grounding Check`, `Wiki Log`, `Wiki Index` to active vocabulary), the still-reserved terms are: `Wiki` (the layer concept), `Hot Cache`, `Source Template`, `Lint Pass`, `Ingest`, `Query Rewriting`, `Conversation Store`. Using `ingest` or `lint_pass` as a local helper name silently consumes the namespace; reviewer will downgrade to a non-reserved synonym.
 
 ### 3.3 Constants for sentinel strings
 
 Any literal string with semantic meaning that appears more than once gets a module-level constant:
 
-- ✅ `CANNOT_CONFIRM_PHRASE = "I cannot confirm from the knowledge base."` (`retrieval.py:138`)
+- ✅ `CANNOT_CONFIRM_PHRASE = "I cannot confirm from the knowledge base."` (in `retrieval.py`)
 - ✅ `SYSTEM_PROMPT` (`prompt_builder.py`)
 - ❌ Inline `"I cannot confirm from the knowledge base."` in tests or routes — use the constant.
 
@@ -279,7 +281,7 @@ Every branch emits a `chat_error` log entry with the right `kind=` tag. Use `rai
 Per **ADR-0001**:
 
 - Empty / sub-threshold retrieval returns the exact literal phrase with HTTP **200**.
-- The LLM is **not called** in this path (pre-LLM gate at `retrieval.py:88`).
+- The LLM is **not called** in this path (pre-LLM gate in `retrieval.py`).
 - An ungrounded LLM response gets **one** retry at `temperature=0`. If still ungrounded, replace with `CANNOT_CONFIRM_PHRASE` and clear `sources`.
 
 Adding a shortcut that bypasses the gate ("if score is just barely below threshold, send to LLM anyway") is a deliberate ADR-0001 violation. Reviewer must fail it.
@@ -450,10 +452,10 @@ For quick recognition during code review. These are documented here so a new con
 
 | Pattern | Where | Why this one |
 |---|---|---|
-| **Deep module** (Ousterhout) | `indexer.py`, `retrieval.py` | Small public surface (`build_index`, `search`, `query`); large private implementation (BM25 math, parsing rules, error mapping, grounding heuristics). |
-| **Lazy singleton** | `get_llm()`, `get_retry_llm()` (`retrieval.py:37,48`) | Avoids constructing a real OpenAI client at import time; lets tests stub via `monkeypatch` before first use. |
-| **Guard clause / early return** | Pre-LLM Cannot Confirm gate (`retrieval.py:73,88`) | ADR-0001: never hand weak context to the LLM. Two early returns before the prompt is even built. |
-| **Atomic write (tmp + rename)** | `write_index_json` (`indexer.py:326`) | Crash mid-write must not leave a half-written index for the next startup. POSIX `os.replace` is atomic on a single filesystem. |
+| **Deep module** (Ousterhout) | `indexer.py`, `retrieval.py`, `grounding.py` | Small public surface (`build_index`, `search`, `query`, `verify_grounding`); large private implementation (BM25 math, parsing rules, error mapping, grounding heuristics). |
+| **Lazy singleton** | `get_llm()`, `get_retry_llm()` in `retrieval.py` | Avoids constructing a real OpenAI client at import time; lets tests stub via `monkeypatch` before first use. |
+| **Guard clause / early return** | Pre-LLM Cannot Confirm gate in `retrieval.py` | ADR-0001: never hand weak context to the LLM. Two early returns before the prompt is even built. |
+| **Atomic write (tmp + rename)** | `write_index_json` in `indexer.py`; `write_wiki_index` in `wiki_index.py` | Crash mid-write must not leave a half-written file for the next read. POSIX `os.replace` is atomic on a single filesystem. |
 | **Append-only log** | `log_event` → `wiki/log.md` | Karpathy log discipline; survives across crashes; `grep`-able audit trail. |
 | **DI via monkeypatch** | Tests stub `get_llm` / `_llm` / `LOG_PATH` | No DI framework; tests use pytest's `monkeypatch` to swap module-level state. The functions return module globals on purpose so this is cheap. |
 | **Strategy (deferred / implicit)** | `markdown_kb/` vs `vector_rag/` behind same HTTP contract | ADR-0002 explicitly defers a `Retriever` protocol until both implementations work. The two directories are two strategies; the abstraction is *not* extracted yet. |
@@ -482,7 +484,7 @@ Each signal has a **severity** that determines the reviewer's action:
 ### Vocabulary drift (§3.1)
 
 - [ ] **FAIL** — A new domain term appears in code without a `CONTEXT.md` entry, OR a synonym smuggles in for an existing CONTEXT term (e.g. `Document` / `Article` / `Doc` for what should be `Source`).
-- [ ] **FIX** — A local variable name consumes a reserved CONTEXT term (`wiki`, `ingest`, `hot_cache`, `wiki_index`, `lint_pass`, `query_rewriting`, `conversation_store`, `grounding_check`, `source_template`).
+- [ ] **FIX** — A local variable name consumes a **still-reserved** CONTEXT term. The reserved list is the source of truth in `CONTEXT.md`'s `## Reserved (not yet implemented)` section — check it before flagging. As of Phase 2, still-reserved: `wiki` (layer concept), `hot_cache`, `source_template`, `lint_pass`, `ingest`, `query_rewriting`, `conversation_store`. Active vocabulary (`wiki_index`, `grounding_check`, `wiki_log`) is fine to use.
 
 ### Sentinel string drift (§3.3)
 
@@ -495,7 +497,7 @@ Each signal has a **severity** that determines the reviewer's action:
 - [ ] **FAIL** — Business / conditional logic appears in `routes.py`, `schemas.py`, or `main.py` (shallow modules per §2.3). Should be in a deep module.
 - [ ] **FAIL** — `SOURCE_DIRS` is reduced to a single `Path` "for simplicity" (violates ADR-0003 + §2.5).
 - [ ] **FAIL** — `Section.metadata` is removed because it's "unused" (violates PRD § Section dataclass shape + §2.5).
-- [ ] **FAIL** — Pre-LLM Cannot Confirm gate (`retrieval.py:88`) is bypassed when score is "just barely below threshold" (violates ADR-0001 + §4.3).
+- [ ] **FAIL** — Pre-LLM Cannot Confirm gate in `retrieval.py` is bypassed when score is "just barely below threshold" (violates ADR-0001 + §4.3).
 - [ ] **FAIL** — A `Retriever` protocol / plugin layer is extracted before both `markdown_kb` and `vector_rag` are end-to-end working (premature per ADR-0002 + §2.2).
 
 ### Error handling drift (§4)
