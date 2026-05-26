@@ -9,13 +9,20 @@ pipeline for one or more Sources:
     4a. concept → one WikiPageDraft per Section (1:N expansion)
     4b. entity  → one WikiPageDraft collapsing the whole Source
     5. Resolve slug collisions across Sources (-2, -3 suffix)
-    6. Write pages via wiki_writer.write_pages_for_source
-    7. Return an IngestBatchResult summarising outcomes
+    6. Preserve `created` timestamp for pages that already exist on disk
+    7. Delete orphan pages (per-Source scoped) via wiki_writer.delete_orphans
+    8. Write pages via wiki_writer.write_pages_for_source
+    9. Return an IngestBatchResult summarising outcomes with meaningful
+       pages_created / pages_updated / pages_deleted per Source
 
 Continue-on-error: a Source that throws at any stage is recorded in
 `failed_sources` but does not stop the batch (Q3 grill decision).
 
-Hardcodes still in place (per Slice #2 spec):
+Concurrency: ingest holds ``indexer._index_lock`` for the write + orphan-delete
+step so it is mutually exclusive with ``build_index()`` (Q7 grill decision).
+No per-page locking is needed for the prototype.
+
+Hardcodes still in place (per Slice #3 spec):
 - `status=live` always (Slice #4 introduces `failed_grounding`)
 - No verifier call (Slice #4 adds Grounding Check)
 - No red link rules in prompt (Slice #4)
@@ -29,11 +36,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .indexer import DOCS_DIR, parse_markdown, slugify
+from .indexer import DOCS_DIR, _index_lock, parse_markdown, slugify
 from .logger import log_event
 from .schemas import IngestSourceResult
 from .templates import classify_source, generate_entity_page, generate_page
-from .wiki_writer import resolve_slug_collision, write_pages_for_source
+from .wiki_writer import (
+    delete_orphans,
+    read_existing_frontmatter,
+    resolve_slug_collision,
+    write_pages_for_source,
+)
 
 # ---------------------------------------------------------------------------
 # Result type
@@ -95,8 +107,14 @@ def ingest_sources(
     Returns:
         IngestBatchResult with per-Source outcomes.
     """
+    from . import indexer as _indexer_module
+
     if docs_dir is None:
         docs_dir = DOCS_DIR
+
+    # Resolve wiki_dir early so orphan/created lookups can use it.
+    # Import at call time to pick up monkeypatched WIKI_DIR in tests.
+    resolved_wiki_dir: Path = wiki_dir if wiki_dir is not None else _indexer_module.WIKI_DIR
 
     # Batch mode: discover all Sources under docs_dir
     if source_filenames is None:
@@ -190,12 +208,42 @@ def ingest_sources(
             batch.failed_sources.append(source_name)
             continue
 
-        # Step 5+6: write pages
-        write_result = write_pages_for_source(
-            source_name,
-            drafts,
-            wiki_dir=wiki_dir,
-        )
+        # Step 5: Preserve `created` timestamp for pages that already exist.
+        #
+        # For each draft whose target file already exists on disk, read the
+        # existing frontmatter and carry forward the original `created` value.
+        # The `updated` value is set by the LLM/templates layer and is NOT
+        # overridden here — it represents "now" from the caller's perspective.
+        drafts_with_preserved_timestamps: list = []
+        for draft in drafts:
+            subdir_name = "entities" if draft.frontmatter.type == "entity" else "concepts"
+            page_path = resolved_wiki_dir / subdir_name / f"{draft.slug}.md"
+            existing_fm = read_existing_frontmatter(page_path)
+            if existing_fm is not None and "created" in existing_fm:
+                # Preserve the original created timestamp
+                preserved_fm = draft.frontmatter.model_copy(
+                    update={"created": existing_fm["created"]}
+                )
+                draft = draft.model_copy(update={"frontmatter": preserved_fm})
+            drafts_with_preserved_timestamps.append(draft)
+
+        # Step 6+7: Under the index lock, delete orphans then write pages.
+        #
+        # Orphan scope is per-Source: only pages derived from source_name are
+        # considered.  current_page_ids is the set of slugs in the target set.
+        current_page_ids = {d.slug for d in drafts_with_preserved_timestamps}
+
+        with _index_lock:
+            deleted = delete_orphans(
+                source_name,
+                current_page_ids,
+                wiki_dir=resolved_wiki_dir,
+            )
+            write_result = write_pages_for_source(
+                source_name,
+                drafts_with_preserved_timestamps,
+                wiki_dir=resolved_wiki_dir,
+            )
 
         if write_result.errors:
             slug, err_msg = write_result.errors[0]
@@ -208,13 +256,16 @@ def ingest_sources(
 
         log_event(
             "ingest_complete",
-            f"source={source_name} type={source_type} pages={len(write_result.pages_written)}",
+            f"source={source_name} type={source_type} pages={len(write_result.pages_written)}"
+            f" deleted={len(deleted)}",
         )
         batch.results.append(
             IngestSourceResult(
                 source=source_name,
                 pages_written=write_result.pages_written,
-                pages_created=write_result.pages_written,
+                pages_created=write_result.pages_created,
+                pages_updated=write_result.pages_updated,
+                pages_deleted=deleted,
             )
         )
 

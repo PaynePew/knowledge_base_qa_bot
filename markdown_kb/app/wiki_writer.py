@@ -13,8 +13,15 @@ the caller (`ingest.py`) via `resolve_slug_collision(existing_slugs, slug)`.
 the draft carries.  Call `resolve_slug_collision` before building drafts when
 processing multiple Sources in one batch.
 
-Orphan detection and re-ingest preservation of the `created` timestamp are
-deferred to Slice #3.
+**Re-ingest correctness** (Slice #3):
+  - `read_existing_frontmatter(path)` reads the YAML frontmatter from an
+    existing wiki page so the caller can preserve the original `created` timestamp.
+  - `delete_orphans(source, current_page_ids, wiki_dir)` removes wiki pages
+    derived from `source` whose slug is not in `current_page_ids`.  Scope is
+    strictly per-Source: only pages whose ``sources`` frontmatter field contains
+    a citation beginning with ``source#`` are candidates for deletion.
+  - `write_pages_for_source` now classifies each written page as created
+    (first write) or updated (overwrite of existing file).
 """
 
 from __future__ import annotations
@@ -38,11 +45,16 @@ class WriteResult(BaseModel):
     """Outcome of write_pages_for_source.
 
     `pages_written` lists relative paths (relative to wiki_dir) for every page
-    that was successfully created or overwritten.  `errors` lists
-    ``(slug, error_message)`` pairs for any pages that failed.
+    that was successfully created or overwritten.
+    `pages_created` lists paths for pages that were written for the first time
+    (did not exist on disk before the write).
+    `pages_updated` lists paths for pages that already existed and were overwritten.
+    `errors` lists ``(slug, error_message)`` pairs for any pages that failed.
     """
 
     pages_written: list[str]
+    pages_created: list[str]
+    pages_updated: list[str]
     errors: list[tuple[str, str]]
 
 
@@ -162,6 +174,104 @@ def resolve_slug_collision(used_slugs: set[str], slug: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Re-ingest helpers (Slice #3)
+# ---------------------------------------------------------------------------
+
+
+def read_existing_frontmatter(path: Path) -> dict | None:
+    """Read the YAML frontmatter from an existing wiki page.
+
+    Used by the ingest pipeline to retrieve the original ``created`` timestamp
+    before overwriting a page, so it can be preserved on re-ingest.
+
+    Args:
+        path: Absolute path to a wiki page ``.md`` file.
+
+    Returns:
+        A dict of frontmatter fields if the file exists and contains a valid
+        ``---``-delimited YAML block, or ``None`` if the file is missing,
+        unreadable, or has no parseable frontmatter.
+    """
+    if not path.exists():
+        return None
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+    # Skip the optional sentinel HTML comment: find the first "---" line
+    lines = content.splitlines()
+    dash_indices = [i for i, line in enumerate(lines) if line.strip() == "---"]
+    if len(dash_indices) < 2:
+        return None
+
+    fm_text = "\n".join(lines[dash_indices[0] + 1 : dash_indices[1]])
+    try:
+        parsed = yaml.safe_load(fm_text)
+    except yaml.YAMLError:
+        return None
+
+    if not isinstance(parsed, dict):
+        return None
+    return parsed
+
+
+def delete_orphans(
+    source: str,
+    current_page_ids: set[str],
+    wiki_dir: Path | None = None,
+) -> list[str]:
+    """Delete wiki pages derived from ``source`` whose slug is not in ``current_page_ids``.
+
+    Orphan scope is strictly per-Source: only pages whose ``sources`` frontmatter
+    field contains a citation beginning with ``source#`` are considered.  Pages
+    derived from other Sources are never touched.
+
+    Args:
+        source:          Bare Source filename, e.g. ``"refund_policy.md"``.
+        current_page_ids: Set of slug strings that should survive (e.g.
+                          ``{"cancellation-window", "refund-timeline"}``).
+                          Any on-disk page derived from ``source`` whose slug
+                          is NOT in this set is deleted.
+        wiki_dir:        Root wiki directory.  Defaults to ``indexer.WIKI_DIR``.
+
+    Returns:
+        List of relative paths (e.g. ``["concepts/partial-refund.md"]``) for
+        every file that was deleted.  Files that could not be deleted are
+        silently skipped (best-effort).
+    """
+    if wiki_dir is None:
+        from . import indexer
+
+        wiki_dir = indexer.WIKI_DIR
+
+    deleted: list[str] = []
+    citation_prefix = f"{source}#"
+
+    for subdir_name in ("concepts", "entities"):
+        subdir = wiki_dir / subdir_name
+        if not subdir.exists():
+            continue
+        for page_path in sorted(subdir.glob("*.md")):
+            fm = read_existing_frontmatter(page_path)
+            if fm is None:
+                continue
+            # Only consider pages whose sources list mentions this Source
+            page_sources: list = fm.get("sources", [])
+            if not any(str(s).startswith(citation_prefix) for s in page_sources):
+                continue
+            # This page belongs to the source; check if it's an orphan
+            page_slug = page_path.stem
+            if page_slug not in current_page_ids:
+                relative_path = f"{subdir_name}/{page_path.name}"
+                with contextlib.suppress(OSError):
+                    page_path.unlink()
+                deleted.append(relative_path)
+
+    return deleted
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -178,6 +288,11 @@ def write_pages_for_source(
     ``draft.frontmatter.type``.  Uses a tmp-file + ``os.replace`` for
     atomicity (CODING_STANDARD §2.6).  Parent directories are created as needed.
 
+    A page is classified as *created* when the target file does not exist before
+    the write, and as *updated* when it does.  This allows the ingest orchestrator
+    to populate ``IngestSourceResult.pages_created`` / ``pages_updated``
+    meaningfully on re-ingest (Slice #3).
+
     Args:
         source:   Bare Source filename, e.g. ``"refund_policy.md"``.
         pages:    List of WikiPageDraft objects to write.
@@ -186,8 +301,8 @@ def write_pages_for_source(
                   ``indexer.WIKI_DIR``.  Tests override this with ``tmp_path``.
 
     Returns:
-        WriteResult with ``pages_written`` (relative paths) and ``errors``
-        (per-slug failures, if any).
+        WriteResult with ``pages_written``, ``pages_created``, ``pages_updated``
+        (relative paths) and ``errors`` (per-slug failures, if any).
     """
     if wiki_dir is None:
         # Import at call time to pick up monkeypatched WIKI_DIR in tests.
@@ -196,6 +311,8 @@ def write_pages_for_source(
         wiki_dir = indexer.WIKI_DIR
 
     pages_written: list[str] = []
+    pages_created: list[str] = []
+    pages_updated: list[str] = []
     errors: list[tuple[str, str]] = []
 
     for draft in pages:
@@ -207,6 +324,10 @@ def write_pages_for_source(
 
         try:
             target_dir.mkdir(parents=True, exist_ok=True)
+
+            # Classify: created vs updated
+            is_new = not page_path.exists()
+
             text = _render_page(source, draft)
 
             # Atomic write: tmp file in same dir, then os.replace
@@ -225,8 +346,17 @@ def write_pages_for_source(
                 raise
 
             pages_written.append(relative_path)
+            if is_new:
+                pages_created.append(relative_path)
+            else:
+                pages_updated.append(relative_path)
 
         except Exception as exc:  # noqa: BLE001
             errors.append((slug, f"{type(exc).__name__}: {exc}"))
 
-    return WriteResult(pages_written=pages_written, errors=errors)
+    return WriteResult(
+        pages_written=pages_written,
+        pages_created=pages_created,
+        pages_updated=pages_updated,
+        errors=errors,
+    )
