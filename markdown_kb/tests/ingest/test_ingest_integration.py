@@ -467,6 +467,7 @@ def test_continue_on_error_one_source_fails(tmp_path, monkeypatch):
             body="Good content.",
             citation_line=f"[Source: good.md#{slug}]",
             slug=slug,
+            heading="Good Section",
         )
 
     monkeypatch.setattr(indexer_module, "WIKI_DIR", wiki_dir)

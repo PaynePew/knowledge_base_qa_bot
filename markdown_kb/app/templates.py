@@ -252,6 +252,7 @@ def generate_page(
         body=output.body,
         citation_line=f"[Source: {citation_id}]",
         slug=slug,
+        heading=section.heading,
     )
 
 
@@ -311,9 +312,17 @@ def generate_entity_page(
     # Citation line lists the source file
     citation_line = f"[Source: {source_filename}]"
 
+    # Entity pages derive their heading from the Source filename stem.
+    # Underscores and hyphens map to spaces; title-case is applied so
+    # ``acme_shop_about`` -> ``Acme Shop About``. This is still ASCII-biased
+    # (the entity case has no Section heading to fall back on), but the
+    # lossiness now lives where the input is known rather than in the writer.
+    heading = source_stem.replace("_", " ").replace("-", " ").title()
+
     return WikiPageDraft(
         frontmatter=frontmatter,
         body=output.body,
         citation_line=citation_line,
         slug=slug,
+        heading=heading,
     )

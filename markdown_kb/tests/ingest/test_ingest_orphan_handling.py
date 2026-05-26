@@ -46,8 +46,14 @@ def _make_draft(
     page_type: str = "concept",
     created: str = FIXED_TS,
     updated: str = FIXED_TS,
+    heading: str | None = None,
 ) -> WikiPageDraft:
-    """Build a minimal WikiPageDraft for testing."""
+    """Build a minimal WikiPageDraft for testing.
+
+    ``heading`` defaults to a title-cased reconstruction of the slug.
+    """
+    if heading is None:
+        heading = slug.replace("-", " ").title()
     citation_id = f"{source}#{slug}"
     fm = WikiPageFrontmatter(
         id=slug,
@@ -63,6 +69,7 @@ def _make_draft(
         body=f"Content for {slug}.",
         citation_line=f"[Source: {citation_id}]",
         slug=slug,
+        heading=heading,
     )
 
 

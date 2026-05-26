@@ -122,7 +122,7 @@ def _render_page(source: str, draft: WikiPageDraft) -> str:
         source=source,
     )
     fm_yaml = _render_frontmatter(draft)
-    heading = draft.frontmatter.id.replace("-", " ").title()
+    heading = draft.heading
 
     parts = [
         sentinel,

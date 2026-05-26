@@ -32,10 +32,18 @@ def _make_draft(
     source: str = "refund_policy.md",
     body: str = "Customers can cancel within 24 hours.",
     open_questions: list | None = None,
+    heading: str | None = None,
 ) -> WikiPageDraft:
-    """Return a fully-populated WikiPageDraft for testing."""
+    """Return a fully-populated WikiPageDraft for testing.
+
+    ``heading`` defaults to a title-cased reconstruction of the slug so the
+    rendered H1 matches the pre-Phase-3-sweep behavior for any test that
+    parses the H1 line.
+    """
     if open_questions is None:
         open_questions = []
+    if heading is None:
+        heading = slug.replace("-", " ").title()
     citation_id = f"{source}#{slug}"
     frontmatter = WikiPageFrontmatter(
         id=slug,
@@ -51,6 +59,7 @@ def _make_draft(
         body=body,
         citation_line=f"[Source: {citation_id}]",
         slug=slug,
+        heading=heading,
     )
 
 
