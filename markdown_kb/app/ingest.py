@@ -44,8 +44,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ._paths import DOCS_DIR
 from .grounding import verify
-from .indexer import DOCS_DIR, _index_lock, parse_markdown, slugify
+from .indexer import _index_lock, parse_markdown, slugify
 from .logger import log_event
 from .schemas import GroundingFailure, IngestSourceResult
 from .templates import classify_source, generate_entity_page, generate_page
