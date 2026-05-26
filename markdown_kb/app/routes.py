@@ -1,12 +1,23 @@
-"""HTTP wiring for /health, /index, /chat. No domain logic."""
+"""HTTP wiring for /health, /index, /chat, /ingest. No domain logic."""
+
+from __future__ import annotations
 
 from fastapi import APIRouter
 
 import app.indexer as _indexer
 
 from .indexer import build_index
+from .ingest import ingest_sources
 from .retrieval import query
-from .schemas import ChatRequest, ChatResponse, GroundingClaim, GroundingInfo, IndexResponse
+from .schemas import (
+    ChatRequest,
+    ChatResponse,
+    GroundingClaim,
+    GroundingInfo,
+    IndexResponse,
+    IngestRequest,
+    IngestResponse,
+)
 
 router = APIRouter()
 
@@ -79,4 +90,22 @@ def chat(req: ChatRequest) -> ChatResponse:
         answer=result["answer"],
         sources=sources,
         grounding=grounding,
+    )
+
+
+@router.post("/ingest", response_model=IngestResponse)
+def ingest(req: IngestRequest) -> IngestResponse:
+    """Ingest one Source and write a wiki synthesis page.
+
+    Shallow wrapper around `ingest_sources([req.source])`.  All domain logic
+    (parse → synthesise → write) lives in `ingest.py` (CODING_STANDARD §2.3).
+
+    Returns 200 with the IngestResponse in all cases, including when the Source
+    is not found (reflected in `failed_sources`).  Returns 400 only if no body
+    is sent — FastAPI's Pydantic validation handles that automatically.
+    """
+    batch = ingest_sources([req.source])
+    return IngestResponse(
+        results=batch.results,
+        failed_sources=batch.failed_sources,
     )
