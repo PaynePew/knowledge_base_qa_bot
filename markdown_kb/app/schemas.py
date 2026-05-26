@@ -79,8 +79,7 @@ class ChatResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-# Only "concept" in this slice; Slice #2 adds "entity".
-SourceType = Literal["concept"]
+SourceType = Literal["entity", "concept"]
 
 
 class WikiPageFrontmatter(BaseModel):
@@ -118,11 +117,14 @@ class IngestSourceResult(BaseModel):
 
     `pages_written` lists relative paths under wiki/ for the pages created
     (e.g. ["concepts/cancellation-window.md"]). Empty on failure.
+    `pages_created` is an alias of `pages_written` exposed for Slice #2+
+    semantics (meaningful list per AC).
     `error` is set when the source could not be processed.
     """
 
     source: str  # bare filename, e.g. "refund_policy.md"
     pages_written: list[str]
+    pages_created: list[str] = []  # same paths; populated by Slice #2 batch loop
     error: str | None = None
 
 
@@ -130,11 +132,11 @@ class IngestRequest(BaseModel):
     """Request body for POST /ingest.
 
     `source` is the bare filename of a single Source to ingest
-    (e.g. "refund_policy.md"). Batch mode (source=None = all docs/) is
-    deferred to Slice #2; sending no body returns HTTP 400.
+    (e.g. "refund_policy.md"). When omitted (or body omitted entirely),
+    batch mode ingests all Sources under docs/ (Slice #2).
     """
 
-    source: str
+    source: str | None = None
 
 
 class IngestResponse(BaseModel):

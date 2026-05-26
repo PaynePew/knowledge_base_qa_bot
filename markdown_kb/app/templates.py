@@ -1,15 +1,17 @@
 """LLM synthesis templates for wiki page generation.
 
-Provides `generate_page(section, source_type)` which calls the ingest LLM
-(via `get_ingest_llm`) with a `with_structured_output` binding to produce a
-`WikiPageDraft`.  The LLM call is isolated here so `ingest.py` stays a
-coordinator that never touches LangChain types directly (CODING_STANDARD §2.4).
+Provides:
+- `classify_source(content)` — LLM classifier returning SourceType
+  ("entity" | "concept").
+- `generate_page(section, source_type)` — concept-page synthesis for one
+  Section.
+- `generate_entity_page(sections, source_stem)` — entity-page synthesis
+  collapsing an entire Source into a single page.
 
-This slice hard-codes `source_type="concept"` (no classifier yet — Slice #2
-adds `classify_source` and the `entity` path).
+All LangChain types are confined to this module (CODING_STANDARD §2.4).
+LLM calls use `with_structured_output` per ADR-0005.
 
-See PRD #28 for the ingest pipeline design and Phase 3 Slice #1 issue for the
-exact frontmatter schema requirement.
+See PRD #28 for the ingest pipeline design.
 """
 
 from __future__ import annotations
@@ -52,12 +54,12 @@ def get_ingest_llm() -> ChatOpenAI:
 
 
 # ---------------------------------------------------------------------------
-# Structured output schema used by the synthesis call
+# Structured output schemas (module-private)
 # ---------------------------------------------------------------------------
 
 
 class _PageSynthesisOutput(BaseModel):
-    """Structured output schema for the concept-synthesis LLM call.
+    """Structured output schema for the concept/entity synthesis LLM call.
 
     Kept module-private — callers receive a `WikiPageDraft`, not this type.
     The `body` field holds the LLM-synthesised prose; `open_questions` captures
@@ -68,8 +70,17 @@ class _PageSynthesisOutput(BaseModel):
     open_questions: list[str]
 
 
+class _ClassifierOutput(BaseModel):
+    """Structured output schema for the source-type classifier call.
+
+    Kept module-private — callers receive a plain `SourceType` string.
+    """
+
+    type: SourceType
+
+
 # ---------------------------------------------------------------------------
-# Prompt templates
+# Prompt templates — concept
 # ---------------------------------------------------------------------------
 
 _CONCEPT_SYSTEM_PROMPT = """\
@@ -94,17 +105,91 @@ def _build_concept_user_message(section: Section) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Prompt templates — entity
+# ---------------------------------------------------------------------------
+
+_ENTITY_SYSTEM_PROMPT = """\
+You are a knowledge-base curator. Your task is to write a concise, accurate \
+synthesis wiki page for the given Source, treating it as an *entity* (a \
+product, person, place, or named thing that the KB describes as a whole).
+
+Rules:
+- Write a short, clear prose summary covering the entire Source.
+- Stay faithful to the source — do not add facts not present in the source.
+- You may use [[wikilink]] syntax to reference related concepts you know from \
+the source; prefer concrete links over vague ones.
+- In `open_questions`, list any genuinely ambiguous or unanswered aspects \
+apparent from the source. Leave the list empty if there are none.
+- Keep the body to 3–6 sentences; quality over quantity.
+"""
+
+
+def _build_entity_user_message(sections: list[Section], source_stem: str) -> str:
+    """Format all Sections of a Source as the user message for entity synthesis."""
+    parts = [f"[Entity source: {source_stem}]"]
+    for section in sections:
+        heading = " > ".join(section.heading_path)
+        parts.append(f"\n## {heading}\n\n{section.content}")
+    return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Prompt templates — classifier
+# ---------------------------------------------------------------------------
+
+_CLASSIFIER_SYSTEM_PROMPT = """\
+You are a knowledge-base classifier. Given the full Markdown content of one \
+Source document, decide whether it describes:
+- "concept": a policy, process, how-to guide, or FAQ (multiple independent \
+  topics, each section stands alone)
+- "entity": a single named thing (product, service, person, organisation, \
+  place) described from multiple angles
+
+Respond with a single JSON object: {"type": "concept"} or {"type": "entity"}.
+"""
+
+
+def _build_classifier_user_message(content: str) -> str:
+    """Format Source Markdown content as the user message for classification."""
+    return f"Classify this Source document:\n\n{content}"
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
 
+def classify_source(content: str) -> SourceType:
+    """Classify a Source document as "entity" or "concept".
+
+    Uses the ingest LLM with `with_structured_output` bound to
+    `_ClassifierOutput`.  Returns the plain SourceType string so callers
+    never touch LangChain types (CODING_STANDARD §2.4).
+
+    Args:
+        content: Full Markdown text of the Source document.
+
+    Returns:
+        "entity" or "concept".
+    """
+    llm = get_ingest_llm()
+    chain = llm.with_structured_output(_ClassifierOutput)
+    output: _ClassifierOutput = chain.invoke(
+        [
+            SystemMessage(content=_CLASSIFIER_SYSTEM_PROMPT),
+            HumanMessage(content=_build_classifier_user_message(content)),
+        ]
+    )
+    return output.type
+
+
 def generate_page(
     section: Section,
-    source_type: SourceType,  # noqa: ARG001  (only "concept" in Slice #1)
+    source_type: SourceType,
     *,
     now: datetime.datetime | None = None,
 ) -> WikiPageDraft:
-    """Generate a WikiPageDraft for one Section using the ingest LLM.
+    """Generate a WikiPageDraft for one Section (concept path).
 
     Uses LangChain `with_structured_output` bound to `_PageSynthesisOutput`
     so the body and open_questions arrive as structured fields (no brittle
@@ -113,8 +198,8 @@ def generate_page(
 
     Args:
         section:     The Section to synthesise.
-        source_type: Hardcoded to "concept" in this slice (Slice #2 adds
-                     "entity" and the classifier call).
+        source_type: "concept" (this function) or "entity" (use
+                     `generate_entity_page` for that path).
         now:         Override UTC timestamp for testing.  If None, uses
                      ``datetime.datetime.now(datetime.UTC)``.
 
@@ -140,7 +225,7 @@ def generate_page(
 
     frontmatter = WikiPageFrontmatter(
         id=slug,
-        type="concept",
+        type=source_type,
         created=ts,
         updated=ts,
         sources=[citation_id],
@@ -152,5 +237,69 @@ def generate_page(
         frontmatter=frontmatter,
         body=output.body,
         citation_line=f"[Source: {citation_id}]",
+        slug=slug,
+    )
+
+
+def generate_entity_page(
+    sections: list[Section],
+    source_stem: str,
+    source_filename: str,
+    *,
+    now: datetime.datetime | None = None,
+) -> WikiPageDraft:
+    """Generate a single WikiPageDraft collapsing all Sections of an entity Source.
+
+    Called when `classify_source` returns "entity".  Produces one page at
+    ``wiki/entities/<source_stem>.md`` (CODING_STANDARD §2.4 — no LangChain
+    types escape this module).
+
+    Args:
+        sections:        All Sections parsed from the Source.
+        source_stem:     Filename stem (no extension), used as the page slug.
+        source_filename: Bare filename (e.g. "my_entity.md"), used in
+                         frontmatter sources list and citation line.
+        now:             Override UTC timestamp for testing.
+
+    Returns:
+        A WikiPageDraft with type="entity", slug=source_stem, and all section
+        citation IDs in frontmatter.sources.
+    """
+    if now is None:
+        now = datetime.datetime.now(datetime.UTC)
+
+    ts = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    slug = slugify(source_stem)
+
+    # Build source citation list: one entry per section (same convention as concept)
+    citation_ids = [f"{source_filename}#{slugify(s.heading)}" for s in sections]
+
+    llm = get_ingest_llm()
+    chain = llm.with_structured_output(_PageSynthesisOutput)
+
+    output: _PageSynthesisOutput = chain.invoke(
+        [
+            SystemMessage(content=_ENTITY_SYSTEM_PROMPT),
+            HumanMessage(content=_build_entity_user_message(sections, source_stem)),
+        ]
+    )
+
+    frontmatter = WikiPageFrontmatter(
+        id=slug,
+        type="entity",
+        created=ts,
+        updated=ts,
+        sources=citation_ids,
+        status="live",
+        open_questions=output.open_questions,
+    )
+
+    # Citation line lists the source file
+    citation_line = f"[Source: {source_filename}]"
+
+    return WikiPageDraft(
+        frontmatter=frontmatter,
+        body=output.body,
+        citation_line=citation_line,
         slug=slug,
     )

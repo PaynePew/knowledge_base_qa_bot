@@ -1,16 +1,20 @@
 """Wiki page writer for ingest-produced synthesis pages.
 
 Provides `write_pages_for_source(source, pages, wiki_dir)` which serialises
-one or more `WikiPageDraft` objects to ``wiki/concepts/<slug>.md`` using an
-atomic tmp-file + ``os.replace`` write (same pattern as `wiki_index.py` and
-`indexer.py` — see CODING_STANDARD §2.6).
+one or more `WikiPageDraft` objects to:
+  - ``wiki/concepts/<slug>.md``  when ``draft.frontmatter.type == "concept"``
+  - ``wiki/entities/<slug>.md``  when ``draft.frontmatter.type == "entity"``
 
-This slice handles a single page per call; orphan detection and re-ingest
-preservation of the `created` timestamp are deferred to Slice #3.
+Uses atomic tmp-file + ``os.replace`` write (CODING_STANDARD §2.6).
 
-YAML frontmatter serialisation uses PyYAML (already a dep from indexer.py's
-rule-2 frontmatter parsing).  The sentinel HTML comment and the citation line
-are written directly as strings — no additional templating library needed.
+**Slug collision** across Sources within a single batch call is resolved by
+the caller (`ingest.py`) via `resolve_slug_collision(existing_slugs, slug)`.
+`write_pages_for_source` itself does NOT deduplicate — it writes whatever slug
+the draft carries.  Call `resolve_slug_collision` before building drafts when
+processing multiple Sources in one batch.
+
+Orphan detection and re-ingest preservation of the `created` timestamp are
+deferred to Slice #3.
 """
 
 from __future__ import annotations
@@ -80,7 +84,7 @@ def _render_frontmatter(draft: WikiPageDraft) -> str:
 def _render_page(source: str, draft: WikiPageDraft) -> str:
     """Render a complete wiki page markdown string from a WikiPageDraft.
 
-    Output structure (per Slice #1 spec):
+    Output structure:
         <sentinel HTML comment>
 
         ---
@@ -116,6 +120,47 @@ def _render_page(source: str, draft: WikiPageDraft) -> str:
     return "\n".join(parts) + "\n"
 
 
+def _type_subdir(page_type: str) -> str:
+    """Map a SourceType to its wiki subdirectory name."""
+    if page_type == "entity":
+        return "entities"
+    return "concepts"
+
+
+# ---------------------------------------------------------------------------
+# Slug collision helper (used by ingest.py batch loop)
+# ---------------------------------------------------------------------------
+
+
+def resolve_slug_collision(used_slugs: set[str], slug: str) -> str:
+    """Return a collision-safe slug by appending -2, -3, … suffixes.
+
+    Checks `used_slugs` (a mutable set maintained by the caller) and updates
+    it in place by adding the chosen slug before returning.
+
+    The convention matches indexer.py rule 9 and CONTEXT.md Citation format.
+
+    Args:
+        used_slugs: Set of slugs already committed (mutated in place).
+        slug:       Desired slug.
+
+    Returns:
+        The original slug if not already used, otherwise ``slug-2``,
+        ``slug-3``, etc.
+    """
+    if slug not in used_slugs:
+        used_slugs.add(slug)
+        return slug
+
+    counter = 2
+    while True:
+        candidate = f"{slug}-{counter}"
+        if candidate not in used_slugs:
+            used_slugs.add(candidate)
+            return candidate
+        counter += 1
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -128,12 +173,10 @@ def write_pages_for_source(
 ) -> WriteResult:
     """Write wiki synthesis pages for one Source atomically.
 
-    Each page in `pages` is written to ``wiki_dir/concepts/<slug>.md`` using
-    a tmp-file + ``os.replace`` for atomicity (CODING_STANDARD §2.6).  Parent
-    directories are created as needed.
-
-    This slice handles `pages` as a single-element list (the first Section of
-    the Source only — Slice #2 adds 1:N expansion).
+    Each page in `pages` is written to ``wiki_dir/<type_subdir>/<slug>.md``
+    where ``type_subdir`` is "concepts" or "entities" based on
+    ``draft.frontmatter.type``.  Uses a tmp-file + ``os.replace`` for
+    atomicity (CODING_STANDARD §2.6).  Parent directories are created as needed.
 
     Args:
         source:   Bare Source filename, e.g. ``"refund_policy.md"``.
@@ -152,22 +195,23 @@ def write_pages_for_source(
 
         wiki_dir = indexer.WIKI_DIR
 
-    concepts_dir = wiki_dir / "concepts"
     pages_written: list[str] = []
     errors: list[tuple[str, str]] = []
 
     for draft in pages:
         slug = draft.slug
-        page_path = concepts_dir / f"{slug}.md"
-        relative_path = f"concepts/{slug}.md"
+        subdir = _type_subdir(draft.frontmatter.type)
+        target_dir = wiki_dir / subdir
+        page_path = target_dir / f"{slug}.md"
+        relative_path = f"{subdir}/{slug}.md"
 
         try:
-            concepts_dir.mkdir(parents=True, exist_ok=True)
+            target_dir.mkdir(parents=True, exist_ok=True)
             text = _render_page(source, draft)
 
             # Atomic write: tmp file in same dir, then os.replace
             tmp_fd, tmp_path_str = tempfile.mkstemp(
-                dir=concepts_dir,
+                dir=target_dir,
                 suffix=".tmp",
                 prefix=f"{slug}_",
             )

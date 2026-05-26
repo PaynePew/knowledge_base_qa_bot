@@ -1,20 +1,27 @@
-"""Integration tests for POST /ingest — Slice #1: end-to-end skeleton.
+"""Integration tests for POST /ingest — Slice #1 + Slice #2.
 
 All tests use TestClient + mock LLM (no OPENAI_API_KEY required).
 The mock pattern follows the `with_structured_output` pattern established in
 grounding/test_verifier.py — patch `ChatOpenAI` in `app.templates` and return
-a fake chain whose `invoke()` returns a `_PageSynthesisOutput`-compatible
-object.
+a fake chain whose `invoke()` returns the appropriate canned output type
+depending on the schema passed to `with_structured_output`.
 
-AC coverage (issue #29):
+AC coverage (issue #29 — Slice #1):
   - POST /ingest happy path: 200, IngestResponse with one result, one page created
   - wiki/concepts/cancellation-window.md exists with correct structure
   - Atomic write: no .tmp file lingers after success
   - OPENAI_INGEST_MODEL fallback chain
   - POST /ingest with nonexistent source: 200, failed_sources populated
-  - POST /ingest with no body: 400 (FastAPI Pydantic validation)
   - All existing tests still pass (run separately)
   - Hermetic: no OPENAI_API_KEY needed
+
+AC coverage (issue #30 — Slice #2):
+  - POST /ingest with no body triggers batch mode (200, 3 results)
+  - POST /ingest with body {source: X} still works (single-source filter)
+  - Entity source produces one page in wiki/entities/<stem>.md
+  - Slug collision: two sources producing same concept slug → overview + overview-2
+  - Continue-on-error: APITimeoutError on one source → others still succeed
+  - glob("**/*.md") picks up nested fixture
 """
 
 from __future__ import annotations
@@ -49,6 +56,41 @@ class _FakeSynthesisOutput:
         self.open_questions = open_questions or []
 
 
+class _FakeClassifierOutput:
+    """Mirrors _ClassifierOutput but without importing the private class."""
+
+    type: str
+
+    def __init__(self, source_type: str = "concept"):
+        self.type = source_type
+
+
+def _make_schema_aware_fake_llm(
+    synthesis_body: str = FIXED_BODY,
+    classifier_type: str = "concept",
+) -> MagicMock:
+    """Return a fake ChatOpenAI whose with_structured_output is schema-aware.
+
+    When the classifier schema is passed, returns _FakeClassifierOutput.
+    For any other schema (synthesis), returns _FakeSynthesisOutput.
+    The distinction is made by inspecting the schema's field names.
+    """
+    from app.templates import _ClassifierOutput  # private but accessible in tests
+
+    fake_llm = MagicMock()
+
+    def _side_effect(schema):
+        chain = MagicMock()
+        if schema is _ClassifierOutput:
+            chain.invoke.return_value = _FakeClassifierOutput(classifier_type)
+        else:
+            chain.invoke.return_value = _FakeSynthesisOutput(synthesis_body)
+        return chain
+
+    fake_llm.with_structured_output.side_effect = _side_effect
+    return fake_llm
+
+
 def _make_fake_chain(body: str = FIXED_BODY) -> MagicMock:
     """Return a fake structured-output chain that returns a canned synthesis."""
     fake_chain = MagicMock()
@@ -57,7 +99,10 @@ def _make_fake_chain(body: str = FIXED_BODY) -> MagicMock:
 
 
 def _make_fake_llm(body: str = FIXED_BODY) -> MagicMock:
-    """Return a fake ChatOpenAI that delegates with_structured_output to a fake chain."""
+    """Return a simple fake ChatOpenAI (synthesis only, no classifier distinction).
+
+    For tests that only need the synthesis path and never hit classify_source.
+    """
     fake_llm = MagicMock()
     fake_chain = _make_fake_chain(body)
     fake_llm.with_structured_output.return_value = fake_chain
@@ -71,20 +116,22 @@ def _make_fake_llm(body: str = FIXED_BODY) -> MagicMock:
 
 @pytest.fixture()
 def client_with_fake_ingest_llm(tmp_path, monkeypatch):
-    """TestClient with a fake ingest LLM and redirected wiki_dir to tmp_path.
+    """TestClient with a schema-aware fake ingest LLM and redirected wiki_dir.
 
     Patches:
     - `app.templates._ingest_llm` and `app.templates.get_ingest_llm` so
-      no real OpenAI call is made.
-    - `app.wiki_writer.indexer.WIKI_DIR` redirected to tmp_path so pages
-      land in a temp directory, not the real wiki/.
+      no real OpenAI call is made.  The fake LLM is schema-aware:
+      classifier calls get _FakeClassifierOutput("concept");
+      synthesis calls get _FakeSynthesisOutput.
+    - `app.indexer.WIKI_DIR` redirected to tmp_path so pages land in
+      a temp directory, not the real wiki/.
     - `app.ingest.DOCS_DIR` uses the real docs/ directory (no mock — per
       CODING_STANDARD §6.3, we only mock the LLM, not the indexer/parser).
 
     Returns:
         (client, tmp_wiki_path) tuple.
     """
-    fake_llm = _make_fake_llm()
+    fake_llm = _make_schema_aware_fake_llm()
     monkeypatch.setattr(templates_module, "_ingest_llm", fake_llm)
     monkeypatch.setattr(templates_module, "get_ingest_llm", lambda: fake_llm)
 
@@ -99,7 +146,7 @@ def client_with_fake_ingest_llm(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# AC: POST /ingest happy path — 200, one result, one page created
+# AC (Slice #1): POST /ingest happy path — 200, one result, one page created
 # ---------------------------------------------------------------------------
 
 
@@ -120,16 +167,18 @@ def test_ingest_happy_path_returns_200(client_with_fake_ingest_llm):
 
     result = body["results"][0]
     assert result["source"] == "refund_policy.md"
-    assert len(result["pages_written"]) == 1, (
-        f"Expected 1 page written, got: {result['pages_written']}"
+    # Slice #2: concept sources produce N pages (one per section).
+    # refund_policy.md has 3 sections → 3 pages; we check at least one.
+    assert len(result["pages_written"]) >= 1, (
+        f"Expected at least 1 page written, got: {result['pages_written']}"
     )
-    assert result["pages_written"][0] == "concepts/cancellation-window.md", (
-        f"Expected concepts/cancellation-window.md, got: {result['pages_written'][0]}"
+    assert "concepts/cancellation-window.md" in result["pages_written"], (
+        f"Expected concepts/cancellation-window.md, got: {result['pages_written']}"
     )
 
 
 # ---------------------------------------------------------------------------
-# AC: wiki/concepts/cancellation-window.md exists with correct structure
+# AC (Slice #1): wiki/concepts/cancellation-window.md correct structure
 # ---------------------------------------------------------------------------
 
 
@@ -175,7 +224,7 @@ def test_ingest_creates_wiki_page_with_correct_structure(client_with_fake_ingest
 
 
 # ---------------------------------------------------------------------------
-# AC: atomic write — no .tmp file lingers
+# AC (Slice #1): atomic write — no .tmp file lingers
 # ---------------------------------------------------------------------------
 
 
@@ -193,7 +242,7 @@ def test_ingest_no_tmp_files_linger(client_with_fake_ingest_llm):
 
 
 # ---------------------------------------------------------------------------
-# AC: POST /ingest with nonexistent source returns 200 with failed_sources
+# AC (Slice #1): POST /ingest with nonexistent source returns 200 with failed_sources
 # ---------------------------------------------------------------------------
 
 
@@ -218,30 +267,265 @@ def test_ingest_nonexistent_source_returns_failed_sources(client_with_fake_inges
 
 
 # ---------------------------------------------------------------------------
-# AC: POST /ingest with no body returns 400 (FastAPI Pydantic validation)
+# AC (Slice #2): POST /ingest with no body returns 200 (batch mode)
 # ---------------------------------------------------------------------------
 
 
-def test_ingest_no_body_returns_400(client_with_fake_ingest_llm):
-    """POST /ingest with no body returns HTTP 422 (FastAPI validation error).
+def test_ingest_no_body_triggers_batch_mode(client_with_fake_ingest_llm):
+    """POST /ingest with no body triggers batch mode: 200 with 3 IngestSourceResult entries.
 
-    Design choice: we rely on FastAPI's Pydantic validation for the missing
-    body case, which returns 422 Unprocessable Entity. This satisfies the AC
-    intent (reject request without valid body) and avoids bespoke route logic.
-    Note: the AC says "400 or 200 with explicit message" — we choose 422 (the
-    RFC-correct HTTP code for schema violations) and document it here.
+    The real docs/ has 3 Sources (account_help.md, refund_policy.md,
+    shipping_faq.md).  Batch mode should process all of them and return 3
+    results entries (all classified as concept by the mock LLM).
     """
-    client, _ = client_with_fake_ingest_llm
+    client, tmp_wiki = client_with_fake_ingest_llm
 
-    resp = client.post("/ingest")  # no JSON body
+    resp = client.post("/ingest")  # no body → batch mode
 
-    assert resp.status_code in (400, 422), (
-        f"Expected 400 or 422 for missing body, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+    body = resp.json()
+    assert body["failed_sources"] == [], (
+        f"Expected no failed sources in batch mode, got: {body['failed_sources']}"
+    )
+    assert len(body["results"]) == 3, (
+        f"Expected 3 results (one per real doc), got: {len(body['results'])}"
     )
 
 
 # ---------------------------------------------------------------------------
-# AC: OPENAI_INGEST_MODEL env var fallback chain
+# AC (Slice #2): batch mode produces 9 concept pages
+# ---------------------------------------------------------------------------
+
+
+def test_ingest_batch_produces_9_concept_pages(client_with_fake_ingest_llm):
+    """Batch ingest of the 3-source corpus produces 9 concept pages."""
+    client, tmp_wiki = client_with_fake_ingest_llm
+
+    resp = client.post("/ingest")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    all_pages = [p for r in body["results"] for p in r["pages_written"]]
+    assert len(all_pages) == 9, f"Expected 9 concept pages, got {len(all_pages)}: {all_pages}"
+
+    # All pages in concepts/ subdir
+    for page in all_pages:
+        assert page.startswith("concepts/"), f"Expected concepts/ prefix: {page}"
+
+    # Spot-check a few expected slugs
+    expected = {
+        "concepts/cancellation-window.md",
+        "concepts/change-email-address.md",
+        "concepts/standard-shipping.md",
+    }
+    assert expected.issubset(set(all_pages)), (
+        f"Expected {expected} to be subset of {set(all_pages)}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# AC (Slice #2): POST /ingest with body {source: X} still works (filter)
+# ---------------------------------------------------------------------------
+
+
+def test_ingest_single_source_filter_still_works(client_with_fake_ingest_llm):
+    """POST /ingest with body {source: X} ingests only that one source."""
+    client, tmp_wiki = client_with_fake_ingest_llm
+
+    resp = client.post("/ingest", json={"source": "refund_policy.md"})
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert len(body["results"]) == 1
+    assert body["results"][0]["source"] == "refund_policy.md"
+
+
+# ---------------------------------------------------------------------------
+# AC (Slice #2): entity source → one page in wiki/entities/<stem>.md
+# ---------------------------------------------------------------------------
+
+
+def test_ingest_entity_source_produces_one_entity_page(tmp_path, monkeypatch):
+    """A Source classified as 'entity' produces one page in wiki/entities/."""
+    import app.indexer as indexer_module
+
+    # Create a minimal entity docs dir
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    entity_md = docs_dir / "my_product.md"
+    entity_md.write_text(
+        "# My Product\n\n## Overview\n\nA great product.\n\n## Features\n\nFast, reliable.\n",
+        encoding="utf-8",
+    )
+
+    wiki_dir = tmp_path / "wiki"
+
+    # Fake LLM that classifies as entity
+    fake_llm = _make_schema_aware_fake_llm(classifier_type="entity")
+    monkeypatch.setattr(templates_module, "_ingest_llm", fake_llm)
+    monkeypatch.setattr(templates_module, "get_ingest_llm", lambda: fake_llm)
+    monkeypatch.setattr(indexer_module, "WIKI_DIR", wiki_dir)
+
+    from app.ingest import ingest_sources
+
+    result = ingest_sources(["my_product.md"], docs_dir=docs_dir, wiki_dir=wiki_dir)
+
+    assert result.failed_sources == [], f"Unexpected failures: {result.failed_sources}"
+    assert len(result.results) == 1
+    source_result = result.results[0]
+    assert len(source_result.pages_written) == 1
+    # Entity page lands in entities/ subdir
+    assert source_result.pages_written[0] == "entities/my-product.md", (
+        f"Expected entities/my-product.md, got: {source_result.pages_written[0]}"
+    )
+    assert (wiki_dir / "entities" / "my-product.md").exists()
+
+
+# ---------------------------------------------------------------------------
+# AC (Slice #2): slug collision → overview + overview-2
+# ---------------------------------------------------------------------------
+
+
+def test_slug_collision_across_sources(tmp_path, monkeypatch):
+    """Two sources both producing concept slug 'overview' → overview + overview-2."""
+    import app.indexer as indexer_module
+
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+
+    # Two sources each with a single "## Overview" section
+    (docs_dir / "alpha.md").write_text("## Overview\n\nAlpha overview content.\n", encoding="utf-8")
+    (docs_dir / "beta.md").write_text("## Overview\n\nBeta overview content.\n", encoding="utf-8")
+
+    wiki_dir = tmp_path / "wiki"
+
+    fake_llm = _make_schema_aware_fake_llm(classifier_type="concept")
+    monkeypatch.setattr(templates_module, "_ingest_llm", fake_llm)
+    monkeypatch.setattr(templates_module, "get_ingest_llm", lambda: fake_llm)
+    monkeypatch.setattr(indexer_module, "WIKI_DIR", wiki_dir)
+
+    from app.ingest import ingest_sources
+
+    result = ingest_sources(["alpha.md", "beta.md"], docs_dir=docs_dir, wiki_dir=wiki_dir)
+
+    assert result.failed_sources == [], f"Unexpected failures: {result.failed_sources}"
+
+    all_pages = [p for r in result.results for p in r.pages_written]
+    assert "concepts/overview.md" in all_pages, f"Expected overview.md in {all_pages}"
+    assert "concepts/overview-2.md" in all_pages, f"Expected overview-2.md in {all_pages}"
+
+    assert (wiki_dir / "concepts" / "overview.md").exists()
+    assert (wiki_dir / "concepts" / "overview-2.md").exists()
+
+
+# ---------------------------------------------------------------------------
+# AC (Slice #2): continue-on-error — APITimeoutError on one source
+# ---------------------------------------------------------------------------
+
+
+def test_continue_on_error_one_source_fails(tmp_path, monkeypatch):
+    """APITimeoutError on one source's LLM call → that source in failed_sources,
+    other sources still succeed."""
+    import app.indexer as indexer_module
+
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+
+    (docs_dir / "good.md").write_text("## Good Section\n\nThis one is fine.\n", encoding="utf-8")
+    (docs_dir / "bad.md").write_text("## Bad Section\n\nThis one will fail.\n", encoding="utf-8")
+
+    wiki_dir = tmp_path / "wiki"
+
+    from openai import APITimeoutError
+
+    # Track calls to classify: first call (good.md) → concept; second (bad.md) → raise
+    call_counts: dict[str, int] = {"classify": 0, "generate": 0}
+
+    def _error_on_bad_classify(content: str):
+        call_counts["classify"] += 1
+        if "bad" in content.lower() or "fail" in content.lower():
+            raise APITimeoutError(
+                request=None,  # type: ignore[arg-type]
+                message="timeout",
+            )
+        return "concept"
+
+    def _fake_generate(section, source_type, **kwargs):
+
+        slug = "good-section"
+        fm = WikiPageFrontmatter(
+            id=slug,
+            type="concept",
+            created=FIXED_TS,
+            updated=FIXED_TS,
+            sources=[f"good.md#{slug}"],
+            status="live",
+            open_questions=[],
+        )
+        return WikiPageDraft(
+            frontmatter=fm,
+            body="Good content.",
+            citation_line=f"[Source: good.md#{slug}]",
+            slug=slug,
+        )
+
+    monkeypatch.setattr(indexer_module, "WIKI_DIR", wiki_dir)
+
+    # Patch the names as bound in ingest.py (not in templates.py), because
+    # ingest.py does `from .templates import classify_source, generate_page`.
+    import app.ingest as ingest_module
+
+    monkeypatch.setattr(ingest_module, "classify_source", _error_on_bad_classify)
+    monkeypatch.setattr(ingest_module, "generate_page", _fake_generate)
+
+    result = ingest_module.ingest_sources(
+        ["good.md", "bad.md"],
+        docs_dir=docs_dir,
+        wiki_dir=wiki_dir,
+    )
+
+    assert "bad.md" in result.failed_sources, (
+        f"Expected bad.md in failed_sources, got: {result.failed_sources}"
+    )
+    assert len(result.results) == 1, f"Expected 1 success result (good.md), got: {result.results}"
+    assert result.results[0].source == "good.md"
+
+
+# ---------------------------------------------------------------------------
+# AC (Slice #2): glob("**/*.md") picks up nested fixture
+# ---------------------------------------------------------------------------
+
+
+def test_glob_nested_md_files_are_picked_up(tmp_path, monkeypatch):
+    """ingest_sources(None) with a nested subfolder discovers nested .md files."""
+    import app.indexer as indexer_module
+
+    docs_dir = tmp_path / "docs"
+    sub = docs_dir / "sub"
+    sub.mkdir(parents=True)
+    (sub / "nested.md").write_text("## Nested Section\n\nNested content.\n", encoding="utf-8")
+
+    wiki_dir = tmp_path / "wiki"
+
+    fake_llm = _make_schema_aware_fake_llm(classifier_type="concept")
+    monkeypatch.setattr(templates_module, "_ingest_llm", fake_llm)
+    monkeypatch.setattr(templates_module, "get_ingest_llm", lambda: fake_llm)
+    monkeypatch.setattr(indexer_module, "WIKI_DIR", wiki_dir)
+
+    from app.ingest import ingest_sources
+
+    result = ingest_sources(None, docs_dir=docs_dir, wiki_dir=wiki_dir)
+
+    # nested.md should be discovered and processed
+    all_sources = [r.source for r in result.results] + result.failed_sources
+    assert "nested.md" in all_sources, (
+        f"Expected nested.md to be processed (found or failed), got: {all_sources}"
+    )
+    assert result.results[0].source == "nested.md"
+
+
+# ---------------------------------------------------------------------------
+# AC (Slice #1): OPENAI_INGEST_MODEL env var fallback chain
 # ---------------------------------------------------------------------------
 
 
@@ -319,7 +603,7 @@ def test_ingest_model_env_var_fallback_default(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# AC: Hermetic — verify mock LLM was used (not a real API call)
+# AC (Slice #1): Hermetic — verify mock LLM was used (not a real API call)
 # ---------------------------------------------------------------------------
 
 
