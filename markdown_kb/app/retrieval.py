@@ -1,4 +1,4 @@
-"""Retrieval layer — happy-path query() for the grounded /chat endpoint.
+"""Retrieval layer — query() for the grounded /chat endpoint.
 
 Flow:
   1. tokenize query
@@ -6,9 +6,9 @@ Flow:
   3. pre-LLM Cannot Confirm gate (ADR-0001)
   4. build_prompt with Citation markers
   5. call LLM (with error mapping for OpenAI exceptions)
-  6. light grounding check (post-LLM heuristic)
+  6. post-LLM Grounding Check via grounding.verify() (ADR-0004 layer 3)
   7. write chat log entry
-  8. return {answer, sources}
+  8. return {answer, sources, grounding_outcome}
 """
 
 from __future__ import annotations
@@ -20,7 +20,9 @@ from fastapi import HTTPException
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
+from . import grounding as grounding_module
 from . import indexer
+from .grounding import GroundingOutcome
 from .logger import log_event
 from .prompt_builder import SYSTEM_PROMPT, build_prompt
 
@@ -71,13 +73,19 @@ def query(question: str) -> dict:
     """Answer a question against the indexed corpus.
 
     Returns a dict with keys:
-        answer  — grounded text (may be "I cannot confirm from the knowledge base.")
-        sources — list of {source, heading, score, content} dicts
+        answer            — grounded text (may be "I cannot confirm from the knowledge base.")
+        sources           — list of {source, heading, score, content} dicts
+        grounding_outcome — GroundingOutcome instance (always present, never None)
 
     Pre-LLM gates (ADR-0001 — never hand weak context to the LLM):
     1. If sections is empty → not indexed yet.
-    2. If BM25 yields no results → Cannot Confirm.
-    3. If top score < threshold → Cannot Confirm.
+    2. If BM25 yields no results → Cannot Confirm (retrieval_empty).
+    3. If top score < threshold → Cannot Confirm (below_threshold).
+
+    Post-LLM gate (ADR-0004 layer 3):
+    4. grounding.verify() validates every claim against cited Sections.
+       Any unsupported claim → Cannot Confirm (claim_unsupported).
+       Verifier failure after retry → Cannot Confirm (verifier_unavailable).
     """
     if not indexer.sections:
         log_event(
@@ -87,6 +95,10 @@ def query(question: str) -> dict:
         return {
             "answer": NOT_INDEXED_MESSAGE,
             "sources": [],
+            "grounding_outcome": GroundingOutcome(
+                passed=False,
+                reason="index_missing",
+            ),
         }
 
     ranked = indexer.search(question, k=3)
@@ -94,29 +106,8 @@ def query(question: str) -> dict:
     # Determine the effective top score (0.0 when no results were returned)
     top_score = ranked[0][1] if ranked else 0.0
 
-    if top_score < _SCORE_THRESHOLD:
-        # Cannot Confirm — pre-LLM gate, no LLM call (ADR-0001)
-        # Log with reason=below_threshold regardless of whether search returned
-        # results (score 0.0 is still below any positive threshold).
-        truncated = question[:60].replace('"', "'")
-        log_event(
-            "chat_fallback",
-            f'"{truncated}" reason=below_threshold top_score={round(top_score, 3)}',
-        )
-        return {
-            "answer": CANNOT_CONFIRM_PHRASE,
-            "sources": [],
-        }
-
-    # Build sections list and prompt
-    ranked_sections = [sec for sec, _score in ranked]
-    prompt_text = build_prompt(question, ranked_sections)
-
-    answer = _call_llm_with_error_handling(question, prompt_text)
-
-    # Light grounding check: if the answer neither contains [Source: nor equals
-    # the exact Cannot Confirm phrase, retry once at temperature=0. If still
-    # ungrounded, replace with Cannot Confirm and clear sources.
+    # Build sources list from whatever retrieval returned (even if below threshold).
+    # sources is populated whenever retrieval ran — per ADR-0004 / PRD User Story 22.
     sources = [
         {
             "source": sec.id,
@@ -127,7 +118,48 @@ def query(question: str) -> dict:
         for sec, score in ranked
     ]
 
-    answer, sources = _apply_grounding_check(question, prompt_text, answer, sources)
+    if top_score < _SCORE_THRESHOLD:
+        # Cannot Confirm — pre-LLM gate, no LLM call (ADR-0001)
+        # Log with reason=below_threshold regardless of whether search returned
+        # results (score 0.0 is still below any positive threshold).
+        truncated = question[:60].replace('"', "'")
+        log_event(
+            "chat_fallback",
+            f'"{truncated}" reason=below_threshold top_score={round(top_score, 3)}',
+        )
+        # Distinguish retrieval_empty (no results) from below_threshold (results but low score).
+        # Both trigger pre-LLM gate; reason differs so callers can show appropriate fallback UX.
+        gate_reason = "retrieval_empty" if not ranked else "below_threshold"
+        return {
+            "answer": CANNOT_CONFIRM_PHRASE,
+            "sources": sources,
+            "grounding_outcome": GroundingOutcome(
+                passed=False,
+                reason=gate_reason,
+            ),
+        }
+
+    # Build sections list and prompt
+    ranked_sections = [sec for sec, _score in ranked]
+    prompt_text = build_prompt(question, ranked_sections)
+
+    draft = _call_llm_with_error_handling(question, prompt_text)
+
+    # Post-LLM Grounding Check (ADR-0004 layer 3).
+    # Replaces the previous light [Source: heuristic.  verify() never raises —
+    # all verifier failures map to grounding_outcome.reason = "verifier_unavailable".
+    outcome = grounding_module.verify(draft, ranked_sections)
+
+    if outcome.passed:
+        # Verifier approved — return the draft as-is.
+        answer = draft
+    else:
+        # Verifier rejected or unavailable — fail-closed with Cannot Confirm.
+        answer = CANNOT_CONFIRM_PHRASE
+        log_event(
+            "chat_grounding_fallback",
+            f'"{question[:60].replace(chr(34), chr(39))}" reason={outcome.reason}',
+        )
 
     # Write chat log entry
     _write_chat_log(question, ranked)
@@ -135,6 +167,7 @@ def query(question: str) -> dict:
     return {
         "answer": answer,
         "sources": sources,
+        "grounding_outcome": outcome,
     }
 
 
@@ -190,65 +223,6 @@ def _call_llm_with_error_handling(question: str, prompt_text: str) -> str:
             status_code=500,
             detail=f"LLM service error: {exc!s}",
         ) from exc
-
-
-def _is_grounded(answer: str) -> bool:
-    """Return True if the answer is grounded or is the exact Cannot Confirm phrase.
-
-    An answer is considered grounded when it:
-      - Equals the exact Cannot Confirm phrase (model followed the system prompt), OR
-      - Contains at least one [Source: token (model cited a retrieved Section).
-    """
-    if answer == CANNOT_CONFIRM_PHRASE:
-        return True
-    return "[Source:" in answer
-
-
-def _apply_grounding_check(
-    question: str,
-    prompt_text: str,
-    answer: str,
-    sources: list[dict],
-) -> tuple[str, list[dict]]:
-    """Post-LLM light grounding heuristic.
-
-    If the first answer is ungrounded (no [Source: and not Cannot Confirm):
-      1. Retry the same prompt at temperature=0 (single retry).
-      2. If the retry is still ungrounded, replace the answer with the exact
-         Cannot Confirm phrase and empty the sources list.
-      3. If the retry IS grounded, use it.
-
-    If the first answer is already grounded, return it unchanged.
-    """
-    if _is_grounded(answer):
-        return answer, sources
-
-    # Ungrounded — retry at temperature=0
-    truncated = question[:60].replace('"', "'")
-    log_event(
-        "chat_grounding_retry",
-        f'"{truncated}" reason=ungrounded_first_response',
-    )
-
-    # Use get_retry_llm() (temperature=0) so tests can inject a stub via
-    # monkeypatch; in production this is a fresh temperature=0 singleton.
-    retry_response = get_retry_llm().invoke(
-        [
-            SystemMessage(content=SYSTEM_PROMPT),
-            HumanMessage(content=prompt_text),
-        ]
-    )
-    retry_answer = retry_response.content
-
-    if _is_grounded(retry_answer):
-        return retry_answer, sources
-
-    # Both calls ungrounded — replace with Cannot Confirm
-    log_event(
-        "chat_grounding_fallback",
-        f'"{truncated}" reason=ungrounded_after_retry',
-    )
-    return CANNOT_CONFIRM_PHRASE, []
 
 
 def _write_chat_log(
