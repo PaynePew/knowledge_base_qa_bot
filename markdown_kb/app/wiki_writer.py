@@ -192,6 +192,15 @@ def read_existing_frontmatter(path: Path) -> dict | None:
     Used by the ingest pipeline to retrieve the original ``created`` timestamp
     before overwriting a page, so it can be preserved on re-ingest.
 
+    Concurrency note (Phase 3): callers in ``ingest.py`` invoke this function
+    OUTSIDE the ``_index_lock`` (the lock only wraps the orphan-delete + write
+    step). That is safe under the Phase 3 Q7 grill decision "no concurrent
+    ingests" — the only writer of wiki pages is ``ingest_sources`` and it
+    holds the lock during its mutations. If Phase 4+ introduces another wiki
+    writer or makes ``ingest_sources`` reentrant, fold this call inside the
+    lock to close the TOCTOU window between read-for-`created` and the
+    eventual atomic overwrite.
+
     Args:
         path: Absolute path to a wiki page ``.md`` file.
 
