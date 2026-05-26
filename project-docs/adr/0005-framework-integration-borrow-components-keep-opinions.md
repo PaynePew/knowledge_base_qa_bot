@@ -1,0 +1,26 @@
+# Framework integration: borrow components, keep opinions
+
+We adopt LangChain (`langchain-core`, `langchain-openai`) at the LLM-call wrapper layer only. The rest of the stack — Markdown parsing, BM25 scoring, prompt building, `.kb/index.json` persistence, FastAPI routing — stays hand-written. Future framework swap-ins are pre-decided per component and gated on explicit triggers (corpus size, hybrid retrieval activation, support for non-Markdown sources), not opportunistic refactors. LlamaIndex is not currently a dependency; specific components (`MarkdownNodeParser`, `CitationQueryEngine`, LlamaHub loaders) are reviewable additions when their triggers fire.
+
+We chose partial borrowing because the project's value is in its *opinions* (the strict grounded contract per ADR-0001, the Section retrieval unit with the body-bearing-intermediate rule, the inspectable `.kb/index.json`, the `filename#heading-slug` citation format), and these opinions resist clean expression inside framework abstractions. `MarkdownHeaderTextSplitter` does not encode our Section rules; `LangServe` mismatches the `/chat` / `/index` / `/health` endpoint contract `PROMPT.md` requires; `ChatPromptTemplate` adds a layer of indirection where prompt iteration needs to be one file away. Conversely, `ChatOpenAI` solves real production-grade concerns (retry, streaming, structured output, token counting) without imposing on our design choices — borrowing it is pure subtraction of effort. The middle ground — borrow at the leaf nodes where framework adds value, hand-write at the joints where opinion lives — produces the leanest codebase that still demonstrates judgment, and the leanest is the one easiest to grill on in an interview.
+
+## Considered Options
+
+- **Full framework adoption (LangChain `RetrievalQA` or LlamaIndex `CitationQueryEngine`).** Rejected: hides the strict grounded contract behind chain abstractions, makes prompt iteration cross-file, and would require `LangServe` to expose the API — losing control over the `/chat`, `/index`, `/health` shape `PROMPT.md` requires. Also couples our upgrade cadence to the framework's (LangChain 1.x packaging restructure in 2025 was a meaningful migration).
+- **Zero framework, full hand-roll.** Rejected: re-implementing `ChatOpenAI`'s retry / streaming / structured-output handling is real work with no design payoff. The wrapper layer is a solved problem; reinventing it dilutes attention from the parts that matter. The Q5 fail-mode design (bounded retry on verifier `timeout` / 5xx) is also vastly easier to express through `ChatOpenAI`'s built-in retry config than from scratch.
+- **Opportunistic mixing — borrow whatever feels easy at the moment.** Rejected: produces an incoherent dependency surface, with framework lock-in creeping in component by component. Pre-committing per-component swap triggers makes the integration strategy reviewable as one decision, not as drift.
+
+## Consequences
+
+- `langchain-core` and `langchain-openai` are first-class dependencies (currently pinned at 1.4.0 / 1.2.2 in `markdown_kb/pyproject.toml`). Upgrades are treated as real changes — assume yearly churn of LangChain's packaging surface.
+- Specific future triggers (these are the only framework additions we pre-bless; anything else needs a new ADR or amendment):
+  - **Adopt `rank_bm25`** when `docs/` corpus exceeds ~1,000 Sections and `bm25_score()` shows up in profiling. `BM25Retriever` (LangChain) wraps `rank_bm25` and is the easy swap path. Until then, hand-written BM25 in `indexer.py` stays.
+  - **Adopt `EnsembleRetriever` (LangChain) or `QueryFusionRetriever` (LlamaIndex)** when `vector_rag/` is activated and the hybrid retrieval layer is wanted. Matches the `inspiration.md` "Reciprocal Rank Fusion / cross-encoder rerank — phase: query" deferred pattern.
+  - **Adopt LlamaHub document loaders** when supporting non-Markdown sources (HTML, Notion export, PDF). Markdown itself stays on the hand-written parser.
+  - **Adopt `ChatOpenAI.with_structured_output(GroundingResult)`** when implementing Grounding Check (see ADR-0004 once written). Wraps the verifier call's JSON parsing + retry-on-malformed, which directly serves the Q5 fail-mode design.
+- Permanently hand-written (these are contractual, not implementation laziness):
+  - **Markdown parsing** (`indexer.py`) — encodes Section rules that no framework matches (body-bearing intermediate, slug collision suffix, heading-only leaves, `heading_path` breadcrumb).
+  - **Persistence format** (`.kb/index.json`) — `PROMPT.md` contract requires plain-text inspectability; any framework persistence (pickle, SQLite, parquet) loses this.
+  - **Prompt builder** (`prompt_builder.py`) — opinion lives here; abstraction would slow iteration. ADR-0001's strict contract is expressed in the `SYSTEM_PROMPT` literal, which must stay one `grep` away.
+  - **FastAPI routes** (`routes.py`) — avoids `LangServe` lock-in, preserves API shape control, and keeps middleware (auth, rate limiting, CORS) on standard FastAPI ground.
+- The integration story is interview-ready: the answer to "why not use LangChain?" is no longer "I haven't" but "I do, for `ChatOpenAI`; here are the four components I will swap in next, here are the four I will never swap, and here is why each."
