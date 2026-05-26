@@ -12,8 +12,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 import app.indexer as _indexer
 from app.indexer import Section
 from app.wiki_index import project_wiki_index
