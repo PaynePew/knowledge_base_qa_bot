@@ -608,12 +608,31 @@ def test_ingest_model_env_var_fallback_default(monkeypatch):
 
 
 def test_ingest_uses_mock_llm_not_real_api(client_with_fake_ingest_llm):
-    """Verify the fake LLM was invoked (proving no real API call was made)."""
+    """Verify the fake LLM was invoked (proving no real API call was made).
+
+    Also asserts the grounding verifier was mocked by the autouse conftest
+    fixture — without that, /ingest secretly hits the real OpenAI verifier
+    every test (issue #42). If this assertion ever fails, the autouse
+    fixture in markdown_kb/tests/conftest.py has been removed or weakened.
+    """
     client, tmp_wiki = client_with_fake_ingest_llm
 
     # The fixture injects _ingest_llm directly; verify it's a MagicMock
     assert isinstance(templates_module._ingest_llm, MagicMock), (
         "Expected _ingest_llm to be a MagicMock (fake) in test context"
+    )
+
+    # Regression guard (#42): conftest autouse must mock the grounding verifier
+    # too. The real grounding.verify is the free function defined in
+    # app/grounding.py; the autouse fixture replaces ingest_module.verify with
+    # a lambda that returns a claim_supported outcome.
+    import app.grounding as grounding_module
+    import app.ingest as ingest_module
+
+    assert ingest_module.verify is not grounding_module.verify, (
+        "Expected ingest_module.verify to be mocked by the conftest autouse "
+        "fixture; otherwise /ingest will make real OpenAI calls during the "
+        "supposedly hermetic suite (issue #42)."
     )
 
     resp = client.post("/ingest", json={"source": "refund_policy.md"})
