@@ -1,4 +1,6 @@
-"""Grounding Check module — schemas, CitableContent Protocol, and verify().
+"""Deep module per Ousterhout. Public surface: ``verify``, ``GroundingOutcome``, ``CitableContent`` (Protocol).
+
+Grounding Check module — schemas, CitableContent Protocol, and verify().
 
 The public interface is a single function:
 

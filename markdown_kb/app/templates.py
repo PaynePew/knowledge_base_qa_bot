@@ -1,4 +1,6 @@
-"""LLM synthesis templates for wiki page generation.
+"""Medium module per Ousterhout. Public surface: ``classify_source``, ``generate_page``, ``generate_entity_page``.
+
+LLM synthesis templates for wiki page generation.
 
 Provides:
 - `classify_source(content)` — LLM classifier returning SourceType

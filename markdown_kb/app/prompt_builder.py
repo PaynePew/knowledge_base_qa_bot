@@ -1,4 +1,6 @@
-"""Prompt builder for the grounded Q&A assistant.
+"""Shallow module per Ousterhout. Public surface: ``SYSTEM_PROMPT``, ``build_prompt``.
+
+Prompt builder for the grounded Q&A assistant.
 
 Owns the SYSTEM_PROMPT (5 numbered rules per the PROMPT.md spec) and
 build_prompt(), which assembles the CONTEXT: / QUESTION: block that is

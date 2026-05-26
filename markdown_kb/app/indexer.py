@@ -1,4 +1,6 @@
-"""Markdown Section Index builder.
+"""Deep module per Ousterhout. Public surface: ``parse_markdown``, ``build_index``, ``load_index_json``, ``search``, ``slugify``, ``Section`` (dataclass), plus the module-level ``sections`` list (read by ``retrieval.py``).
+
+Markdown Section Index builder.
 
 Parses Markdown files under SOURCE_DIRS into Sections, builds a BM25 inverted
 index in memory, and persists it as pretty-printed JSON to .kb/index.json.

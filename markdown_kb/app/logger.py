@@ -1,4 +1,6 @@
-"""Wiki Log writer — appends structured event lines to wiki/log.md.
+"""Shallow module per Ousterhout. Public surface: ``log_event``, ``LOG_PATH``.
+
+Wiki Log writer — appends structured event lines to wiki/log.md.
 
 Each line has the format:
     ## [<ISO-8601 UTC>] <kind> | <summary>

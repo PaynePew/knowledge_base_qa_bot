@@ -1,4 +1,6 @@
-"""Wiki page writer for ingest-produced synthesis pages.
+"""Deep module per Ousterhout. Public surface: ``write_pages_for_source``, ``read_existing_frontmatter``, ``delete_orphans``, ``resolve_slug_collision``.
+
+Wiki page writer for ingest-produced synthesis pages.
 
 Provides `write_pages_for_source(source, pages, wiki_dir)` which serialises
 one or more `WikiPageDraft` objects to:

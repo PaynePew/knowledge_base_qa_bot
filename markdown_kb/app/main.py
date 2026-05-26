@@ -1,4 +1,6 @@
-"""FastAPI app entrypoint. Loads .env, wires the router, rehydrates the
+"""Shallow module per Ousterhout. Public surface: ``app`` (the FastAPI instance).
+
+FastAPI app entrypoint. Loads .env, wires the router, rehydrates the
 Section Index on startup via lifespan."""
 
 from collections.abc import AsyncIterator

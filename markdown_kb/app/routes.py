@@ -1,4 +1,6 @@
-"""HTTP wiring for /health, /index, /chat, /ingest. No domain logic."""
+"""Shallow module per Ousterhout. Public surface: ``router``.
+
+HTTP wiring for /health, /index, /chat, /ingest. No domain logic."""
 
 from __future__ import annotations
 
