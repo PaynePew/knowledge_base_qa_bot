@@ -1,5 +1,7 @@
 """Pydantic request/response models for the FastAPI routes. No domain logic."""
 
+from __future__ import annotations
+
 from typing import Literal
 
 from pydantic import BaseModel
@@ -70,3 +72,78 @@ class ChatResponse(BaseModel):
     answer: str
     sources: list[SourceInfo]
     grounding: GroundingInfo
+
+
+# ---------------------------------------------------------------------------
+# /ingest schemas (Phase 3 Slice #1)
+# ---------------------------------------------------------------------------
+
+
+# Only "concept" in this slice; Slice #2 adds "entity".
+SourceType = Literal["concept"]
+
+
+class WikiPageFrontmatter(BaseModel):
+    """7-field frontmatter schema for a wiki synthesis page.
+
+    All 7 fields are required. `confidence` is intentionally deferred to
+    Phase 5 /lint (no defensible algorithm at ingest time per PRD #28 Q10).
+    """
+
+    id: str
+    type: SourceType
+    created: str  # ISO-8601 UTC string, e.g. "2026-05-26T14:30:00Z"
+    updated: str  # ISO-8601 UTC string, matches created on first write
+    sources: list[str]  # list of "filename#slug" citation strings
+    status: Literal["live", "failed_grounding"]
+    open_questions: list[str]
+
+
+class WikiPageDraft(BaseModel):
+    """A single wiki page produced by the LLM synthesis step.
+
+    Carries the full rendered body (LLM content) and the structured
+    frontmatter separately so wiki_writer.py can serialize them without
+    re-parsing the body text.
+    """
+
+    frontmatter: WikiPageFrontmatter
+    body: str  # LLM-generated prose, may contain [[wikilinks]]
+    citation_line: str  # e.g. "[Source: refund_policy.md#cancellation-window]"
+    slug: str  # e.g. "cancellation-window" — used as the output filename stem
+
+
+class IngestSourceResult(BaseModel):
+    """Per-Source outcome within an IngestResponse.
+
+    `pages_written` lists relative paths under wiki/ for the pages created
+    (e.g. ["concepts/cancellation-window.md"]). Empty on failure.
+    `error` is set when the source could not be processed.
+    """
+
+    source: str  # bare filename, e.g. "refund_policy.md"
+    pages_written: list[str]
+    error: str | None = None
+
+
+class IngestRequest(BaseModel):
+    """Request body for POST /ingest.
+
+    `source` is the bare filename of a single Source to ingest
+    (e.g. "refund_policy.md"). Batch mode (source=None = all docs/) is
+    deferred to Slice #2; sending no body returns HTTP 400.
+    """
+
+    source: str
+
+
+class IngestResponse(BaseModel):
+    """Response body for POST /ingest.
+
+    `results` lists one IngestSourceResult per successfully processed Source.
+    `failed_sources` lists bare filenames that could not be processed (Source
+    not found, parse error, etc.).
+    """
+
+    results: list[IngestSourceResult]
+    failed_sources: list[str]
