@@ -20,12 +20,9 @@ AC coverage (issue #31):
 from __future__ import annotations
 
 import threading
-import time
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-import yaml
 
 import app.templates as templates_module
 from app.schemas import WikiPageDraft, WikiPageFrontmatter
@@ -112,11 +109,9 @@ def test_scenario_a_orphan_page_deleted(tmp_path):
     write_pages_for_source("refund_policy.md", drafts_v2, wiki_dir=wiki_dir)
 
     # Orphan page is gone
-    assert (
-        (wiki_dir / "concepts" / "partial-refund.md").does_not_exist()
-        if hasattr((wiki_dir / "concepts" / "partial-refund.md"), "does_not_exist")
-        else not (wiki_dir / "concepts" / "partial-refund.md").exists()
-    ), "Expected partial-refund.md to be deleted after re-ingest"
+    assert not (wiki_dir / "concepts" / "partial-refund.md").exists(), (
+        "Expected partial-refund.md to be deleted after re-ingest"
+    )
 
     # delete_orphans returned the deleted slug path
     assert "concepts/partial-refund.md" in deleted, (
