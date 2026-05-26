@@ -119,8 +119,15 @@ def tokenize(text: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def parse_markdown(path: Path) -> list[Section]:
+def parse_markdown(path: Path, source_id: str | None = None) -> list[Section]:
     """Parse one Markdown file into Sections under the body-bearing rule.
+
+    ``source_id`` overrides the filename as the prefix in ``Section.id`` and
+    the value of ``Section.file``. Pass ``path.stem`` (bare slug, no ``.md``)
+    for wiki-derived pages so citations use the slug-based addressing scheme
+    (e.g. ``refund-policy#cancellation-window`` instead of
+    ``refund-policy.md#cancellation-window``). When omitted, the full filename
+    (``path.name``) is used — preserving the existing behaviour for docs/.
 
     See CONTEXT.md > Section for the formal definition. The 10-rule spec:
 
@@ -148,8 +155,9 @@ def parse_markdown(path: Path) -> list[Section]:
     6.  Emit a `log_event("parse_warning", ...)` whenever a non-leaf heading
         has only whitespace body and therefore produces no Section (this is
         normal for h1 file titles, but worth logging at startup).
-    7.  A Source with zero headings produces a single Section: `id=filename`
-        (no `#anchor`), `heading=filename`, `heading_path=[filename]`,
+    7.  A Source with zero headings produces a single Section: `id=source_id`
+        (or `id=filename` when source_id is None) (no `#anchor`),
+        `heading=source_id`, `heading_path=[source_id]`,
         `content=` full file body.
     8.  An empty-body leaf (heading present, body whitespace-only) is still
         emitted as a Section. Its `content` is `""`; its `tokens` come from
@@ -167,6 +175,11 @@ def parse_markdown(path: Path) -> list[Section]:
     from .logger import log_event
 
     filename = path.name
+    # source_prefix is what goes into Section.id (prefix before '#') and Section.file.
+    # When source_id is provided (wiki-derived pages), use the bare slug so citations
+    # render as 'refund-policy#cancellation-window' instead of
+    # 'refund-policy.md#cancellation-window'.
+    source_prefix = source_id if source_id is not None else filename
     raw = path.read_text(encoding="utf-8")
 
     # Rule 2: YAML frontmatter
@@ -212,9 +225,9 @@ def parse_markdown(path: Path) -> list[Section]:
         """Apply collision-safe suffix and track usage."""
         if slug not in used_slugs:
             used_slugs[slug] = 1
-            return f"{filename}#{slug}"
+            return f"{source_prefix}#{slug}"
         used_slugs[slug] += 1
-        return f"{filename}#{slug}-{used_slugs[slug]}"
+        return f"{source_prefix}#{slug}-{used_slugs[slug]}"
 
     def _emit(entry: dict) -> None:
         """Emit a Section for a closed heading if it qualifies under rule 5."""
@@ -233,7 +246,7 @@ def parse_markdown(path: Path) -> list[Section]:
             result.append(
                 Section(
                     id=sec_id,
-                    file=filename,
+                    file=source_prefix,
                     heading=heading_text,
                     heading_path=entry["path"],
                     content=content,
@@ -306,10 +319,10 @@ def parse_markdown(path: Path) -> list[Section]:
     if not found_any_heading:
         result.append(
             Section(
-                id=filename,
-                file=filename,
-                heading=filename,
-                heading_path=[filename],
+                id=source_prefix,
+                file=source_prefix,
+                heading=source_prefix,
+                heading_path=[source_prefix],
                 content=body.strip(),
                 tokens=tokenize(body),
                 metadata=dict(metadata),
@@ -450,9 +463,16 @@ def build_index(docs_dir: Path = DOCS_DIR) -> tuple[int, int]:
     scan_dirs = [docs_dir] if docs_dir is not DOCS_DIR else SOURCE_DIRS
 
     new_sections: list[Section] = []
+    # Use bare slug (stem, no .md) as source_id only for the production SOURCE_DIRS
+    # path so wiki-derived Sections cite as 'refund-policy#heading' instead of
+    # 'refund-policy.md#heading'. When caller passes an explicit docs_dir (test
+    # isolation), scan_dirs == [docs_dir] and source_id is left as None, preserving
+    # the existing filename-based addressing for docs/ content.
+    use_slug_ids = docs_dir is DOCS_DIR
     for source_dir in scan_dirs:
         for md_file in sorted(source_dir.glob("**/*.md")):
-            new_sections.extend(parse_markdown(md_file))
+            sid = md_file.stem if use_slug_ids else None
+            new_sections.extend(parse_markdown(md_file, source_id=sid))
 
     with _index_lock:
         sections = new_sections
