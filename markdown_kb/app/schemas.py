@@ -115,16 +115,21 @@ class WikiPageDraft(BaseModel):
 class IngestSourceResult(BaseModel):
     """Per-Source outcome within an IngestResponse.
 
-    `pages_written` lists relative paths under wiki/ for the pages created
-    (e.g. ["concepts/cancellation-window.md"]). Empty on failure.
-    `pages_created` is an alias of `pages_written` exposed for Slice #2+
-    semantics (meaningful list per AC).
+    `pages_written` lists relative paths under wiki/ for ALL pages that exist
+    after the ingest (created + updated). Empty on failure.
+    `pages_created` lists paths for pages written for the first time.
+    `pages_updated` lists paths for pages that already existed and were overwritten.
+    `pages_deleted` lists paths of orphan pages removed during re-ingest.
     `error` is set when the source could not be processed.
+
+    Meaningful population added in Slice #3 (orphan handling + created preservation).
     """
 
     source: str  # bare filename, e.g. "refund_policy.md"
     pages_written: list[str]
-    pages_created: list[str] = []  # same paths; populated by Slice #2 batch loop
+    pages_created: list[str] = []
+    pages_updated: list[str] = []
+    pages_deleted: list[str] = []
     error: str | None = None
 
 
