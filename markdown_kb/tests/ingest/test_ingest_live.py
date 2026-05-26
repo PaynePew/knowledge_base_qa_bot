@@ -80,13 +80,6 @@ def test_ingest_acme_shop_live(tmp_path, monkeypatch):
     monkeypatch.setattr(indexer, "WIKI_DIR", wiki_dir)
     monkeypatch.setattr(logger_module, "LOG_PATH", wiki_dir / "log.md")
 
-    # Reset the cached retrieval LLM singleton so the real ChatOpenAI is
-    # instantiated fresh with the current OPENAI_API_KEY.
-    # grounding.py creates its ChatOpenAI client fresh per call — no reset needed.
-    import app.retrieval as retrieval_module
-
-    monkeypatch.setattr(retrieval_module, "_llm", None)
-
     # Patch DOCS_DIR inside ingest_module so ingest_sources resolves
     # "acme_shop_about.md" under fake-docs/ rather than the real docs/.
     monkeypatch.setattr(ingest_module, "DOCS_DIR", _FAKE_DOCS_DIR)
