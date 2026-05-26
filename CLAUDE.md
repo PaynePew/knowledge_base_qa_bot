@@ -1,6 +1,6 @@
 # knowledge_base_qa_bot
 
-A grounded Q&A bot over a small Markdown knowledge base, designed long-term as a personal LLM Wiki along the lines of Karpathy's pattern (see [ADR-0003](project-docs/adr/0003-w2-layered-wiki-target-claude-obsidian.md)). Two retrieval strategies coexist at the root: `markdown_kb/` (active prototype, BM25 over Sections) and `vector_rag/` (post-prototype scaffold for the hybrid layer). Sample Sources live in `docs/`.
+A grounded Q&A bot over a Markdown knowledge base, designed for layered KB management — a curated synthesis layer above immutable Sources, suitable for FAQ / policy / customer-support knowledge that compounds over time. The layered architecture (see [ADR-0003](project-docs/adr/0003-w2-layered-wiki-target-claude-obsidian.md)) draws on Karpathy's LLM Wiki gist + AgriciDaniel/claude-obsidian as the pattern source for the curated layer's design. Two retrieval strategies coexist at the root: `markdown_kb/` (active prototype, BM25 over Sections) and `vector_rag/` (post-prototype scaffold for the hybrid layer). Sample Sources live in `docs/`.
 
 See `PROMPT.md` for the exercise spec + the answered design questions, `README.md` for running the app, and `CONTEXT.md` for the project's shared vocabulary.
 
