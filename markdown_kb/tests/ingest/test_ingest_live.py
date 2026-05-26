@@ -1,0 +1,149 @@
+"""Live integration smoke test for POST /ingest — Slice #5 (Phase 3 companion).
+
+Makes a real OpenAI API call to confirm that the ingest pipeline:
+  1. Classifies ``fake-docs/acme_shop_about.md`` as ``entity`` type.
+  2. Writes a well-formed Wiki Page to ``wiki/entities/acme-shop-about.md``
+     (or equivalent slug) with all 7 required frontmatter fields.
+
+Opt-in only: skipped by default; run with:
+
+    uv run pytest -m live   (from repo root)
+
+Requirements:
+    OPENAI_API_KEY must be set in the environment; the test fails with a
+    clear message if it is absent rather than silently passing or skipping.
+
+Scope decision (documented per issue #33 AC):
+    ``fake-docs/`` is scoped to ingest tests only — excluded from the
+    ``/index`` glob and the ``/chat`` endpoint.  ``docs/`` remains the
+    canonical user-facing corpus.  The live test injects ``fake-docs/`` as
+    the docs_dir so the real server's SOURCE_DIRS list is not changed.
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+import pytest
+import yaml
+from fastapi.testclient import TestClient
+
+import app.indexer as indexer
+import app.ingest as ingest_module
+import app.logger as logger_module
+
+# ---------------------------------------------------------------------------
+# Repo-root-relative paths
+# ---------------------------------------------------------------------------
+
+# fake-docs/ is two levels up from this test file:
+# markdown_kb/tests/ingest/test_ingest_live.py → repo root
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_FAKE_DOCS_DIR = _REPO_ROOT / "fake-docs"
+_ACME_SOURCE_NAME = "acme_shop_about.md"
+
+
+# ---------------------------------------------------------------------------
+# Live smoke test
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.live
+def test_ingest_acme_shop_live(tmp_path, monkeypatch):
+    """POST /ingest with acme_shop_about.md against the real OpenAI API.
+
+    Assertions are SHAPE-only:
+      - HTTP 200
+      - No failed_sources
+      - wiki/entities/acme-shop-about.md (or its slug equivalent) exists
+      - All 7 frontmatter fields present and parseable as YAML
+      - type == entity (real LLM classification)
+      - Non-empty content body
+      - No specific prose words asserted (robust across model versions)
+    """
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        pytest.fail(
+            "OPENAI_API_KEY is not set. "
+            "Export your key before running live tests: "
+            "export OPENAI_API_KEY=sk-..."
+        )
+
+    # Redirect INDEX_PATH, LOG_PATH, and WIKI_DIR to tmp so we don't pollute
+    # the real .kb/ or wiki/.
+    kb_dir = tmp_path / ".kb"
+    monkeypatch.setattr(indexer, "INDEX_PATH", kb_dir / "index.json")
+
+    wiki_dir = tmp_path / "wiki"
+    wiki_dir.mkdir(parents=True)
+    monkeypatch.setattr(indexer, "WIKI_DIR", wiki_dir)
+    monkeypatch.setattr(logger_module, "LOG_PATH", wiki_dir / "log.md")
+
+    # Reset the cached retrieval LLM singleton so the real ChatOpenAI is
+    # instantiated fresh with the current OPENAI_API_KEY.
+    # grounding.py creates its ChatOpenAI client fresh per call — no reset needed.
+    import app.retrieval as retrieval_module
+
+    monkeypatch.setattr(retrieval_module, "_llm", None)
+
+    # Patch DOCS_DIR inside ingest_module so ingest_sources resolves
+    # "acme_shop_about.md" under fake-docs/ rather than the real docs/.
+    monkeypatch.setattr(ingest_module, "DOCS_DIR", _FAKE_DOCS_DIR)
+
+    from app.main import app
+
+    client = TestClient(app)
+    resp = client.post("/ingest", json={"source": _ACME_SOURCE_NAME})
+
+    # Shape assertion 1: HTTP 200
+    assert resp.status_code == 200, f"Expected HTTP 200, got {resp.status_code}: {resp.text}"
+
+    body = resp.json()
+
+    # Shape assertion 2: no failed sources
+    assert body.get("failed_sources") == [], (
+        f"Expected no failed_sources, got: {body.get('failed_sources')!r}"
+    )
+
+    # Shape assertion 3: exactly one result
+    results = body.get("results", [])
+    assert len(results) == 1, f"Expected 1 result, got: {len(results)}"
+
+    result = results[0]
+
+    # Shape assertion 4: pages_written is non-empty
+    pages_written = result.get("pages_written", [])
+    assert len(pages_written) > 0, f"Expected at least one page written, got: {pages_written!r}"
+
+    # Shape assertion 5: the written page exists on disk
+    page_rel = pages_written[0]  # e.g. "entities/acme-shop-about.md"
+    page_path = wiki_dir / page_rel
+    assert page_path.exists(), f"Expected wiki page at {page_path}, file not found"
+
+    # Shape assertion 6: frontmatter is parseable as YAML and has all 7 fields
+    raw_content = page_path.read_text(encoding="utf-8")
+    assert raw_content.startswith("---"), (
+        f"Expected YAML frontmatter (--- delimiter), got: {raw_content[:80]!r}"
+    )
+    fm_end = raw_content.index("---", 3)
+    fm_yaml = raw_content[3:fm_end].strip()
+    frontmatter = yaml.safe_load(fm_yaml)
+    assert isinstance(frontmatter, dict), f"Frontmatter is not a dict: {frontmatter!r}"
+
+    required_fields = {"id", "type", "created", "updated", "sources", "status", "open_questions"}
+    missing = required_fields - frontmatter.keys()
+    assert not missing, f"Frontmatter missing required fields: {missing}"
+
+    # Shape assertion 7: type == entity (real LLM classification)
+    assert frontmatter["type"] == "entity", (
+        f"Expected type=entity (LLM classification of acme_shop_about.md), "
+        f"got: {frontmatter['type']!r}"
+    )
+
+    # Shape assertion 8: content body is non-empty (after frontmatter block)
+    content_body = raw_content[fm_end + 3 :].strip()
+    assert content_body, "Expected non-empty content body after frontmatter"
+
+    # Clean up in-memory state
+    indexer.sections.clear()
