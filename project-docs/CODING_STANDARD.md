@@ -316,7 +316,7 @@ If you want a debug-only channel, instead either:
 ## [<ISO-8601 UTC>] <kind> | <summary>
 ```
 
-- `kind` is `snake_case`. PRD § Log entry conventions enumerates the kinds in use; adding a new one means adding a row there.
+- `kind` is `snake_case`. [`log-kinds.md`](log-kinds.md) is the single source of truth for every `kind` value in use across all phases; adding a new one means adding a row there in the same commit.
 - `summary` is `grep`-friendly: KEY=value pairs separated by spaces; query strings double-quoted; never embed newlines.
 
 ### 5.3 Summaries are bounded
@@ -519,7 +519,7 @@ Each signal has a **severity** that determines the reviewer's action:
 - [ ] **FAIL** — `print()`, `logging.getLogger(...)`, or `sys.stderr.write(...)` lands in production code (violates §5.1 single log channel).
 - [ ] **FIX** — A new log site logs full user queries or full document content (violates §5.3 bounded summaries; truncate to 60 chars).
 - [ ] **FIX** — A new log site logs unrounded float scores (violates §5.3; use `round(score, 3)`).
-- [ ] **FAIL** — A new log `kind=` is used without a corresponding row in PRD § Log entry conventions.
+- [ ] **FAIL** — A new log `kind=` is used without a corresponding row in [`log-kinds.md`](log-kinds.md).
 
 ### Testing drift (§6)
 
