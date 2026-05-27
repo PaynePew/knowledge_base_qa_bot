@@ -32,7 +32,7 @@ from app.retrieval import CANNOT_CONFIRM_PHRASE
 
 from .conftest import FakeLLMResponse
 
-REFUND_SECTION_ID = "refund_policy.md#refund-timeline"
+REFUND_SECTION_ID = "refund-timeline#refund-timeline"
 
 # ---------------------------------------------------------------------------
 # Helpers for constructing OpenAI exceptions
@@ -320,7 +320,7 @@ def test_verifier_rejects_answer_invokes_llm_once(indexed_corpus, monkeypatch):
 
 def test_verifier_approves_answer_returned_as_is(indexed_corpus, monkeypatch):
     """When grounding.verify() returns claim_supported → draft is returned unchanged."""
-    canned_answer = "Refunds take 5-7 business days. [Source: refund_policy.md#refund-timeline]"
+    canned_answer = "Refunds take 5-7 business days. [Source: refund-timeline#refund-timeline]"
     fake_llm = CountingLLM([canned_answer])
     client = _make_client(fake_llm, monkeypatch)
 
@@ -343,7 +343,7 @@ def test_verifier_approves_answer_returned_as_is(indexed_corpus, monkeypatch):
 
 def test_verifier_approves_answer_invokes_llm_once(indexed_corpus, monkeypatch):
     """When grounding.verify() approves → main LLM invoked exactly once."""
-    canned_answer = "Refunds take 5-7 business days. [Source: refund_policy.md#refund-timeline]"
+    canned_answer = "Refunds take 5-7 business days. [Source: refund-timeline#refund-timeline]"
     fake_llm = CountingLLM([canned_answer])
     client = _make_client(fake_llm, monkeypatch)
 
