@@ -89,12 +89,18 @@ def chat(req: ChatRequest) -> ChatResponse:
         unsupported_claims=unsupported_claims,
     )
 
+    # Phase 6 Slice 6-3: pass ``derived_from`` through to the API boundary.
+    # retrieval.query populates it as a list of {source, heading} dicts (matches
+    # the CitationRef schema) or None. Pydantic validates at the ChatResponse
+    # boundary. Older retrieval responses without the key still validate
+    # because SourceInfo.derived_from defaults to None (Slice 6-1 schema).
     sources = [
         {
             "source": s["source"],
             "heading": s["heading"],
             "score": s["score"],
             "content": s["content"],
+            "derived_from": s.get("derived_from"),
         }
         for s in result["sources"]
     ]

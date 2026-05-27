@@ -16,8 +16,10 @@ Flow:
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import openai
+import yaml
 from fastapi import HTTPException
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -110,12 +112,18 @@ def query(question: str) -> dict:
 
     # Build sources list from whatever retrieval returned (even if below threshold).
     # sources is populated whenever retrieval ran — per ADR-0004 / PRD User Story 22.
+    # Phase 6 Slice 6-3: each entry carries an optional ``derived_from`` chain
+    # populated from the parent wiki page's ``frontmatter.sources``. This is
+    # response-only audit data — see _derived_from_for_section and ADR-0006
+    # §"PROMPT.md citation contract evolution" / PRD #78 Q4 for the W1 invariant
+    # rationale (the chain must NEVER appear in the LLM CONTEXT or verifier prompt).
     sources = [
         {
             "source": sec.id,
             "heading": " > ".join(sec.heading_path),
             "score": round(score, 3),
             "content": sec.content[:240],
+            "derived_from": _derived_from_for_section(sec),
         }
         for sec, score in ranked
     ]
@@ -197,6 +205,107 @@ def query(question: str) -> dict:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _derived_from_for_section(sec: indexer.Section) -> list[dict] | None:
+    """Return the docs/ citation chain for a retrieved wiki Section.
+
+    Phase 6 Slice 6-3 — closes ADR-0006 §"PROMPT.md citation contract evolution"
+    deferred to Phase 6. Reads the parent wiki page's ``frontmatter.sources``
+    and converts each ``"<docs-filename>#<heading-slug>"`` entry into a
+    ``{source, heading}`` dict (matches ``schemas.CitationRef`` shape so Pydantic
+    can validate at the route boundary without an explicit model conversion).
+
+    Return contract:
+        * Populated list — parent ``frontmatter.sources`` had entries.
+        * ``None`` — parent had ``sources: []`` (or absent / non-list), the
+          parent file is missing, or parsing parent frontmatter raised.
+          ``None`` is semantically distinct from ``[]`` per PRD #78 Q4.
+
+    Fail-soft contract: never raises. Parse failures degrade to ``None`` and
+    emit a ``parse_warning`` log entry (reuses the existing kind; no new
+    log_kinds entry per the slice constraints).
+
+    Parent-page resolution: the wiki layout is ``<wiki>/<type-subdir>/<slug>.md``
+    where ``<type-subdir>`` comes from ``Section.metadata["type"]`` (one of
+    ``"entity"``, ``"concept"``, ``"qa"``). If ``type`` is absent or unknown
+    we cannot construct the path -> degrade to ``None`` without a log entry
+    (this is a structural issue surfaced elsewhere by C10 lint / parse_warning
+    at index time).
+    """
+    metadata = sec.metadata or {}
+    page_type = metadata.get("type")
+    if page_type not in ("entity", "concept", "qa"):
+        return None
+
+    subdir_name = {"entity": "entities", "concept": "concepts", "qa": "qa"}[page_type]
+    # Read indexer.WIKI_DIR via the module so tests monkeypatching
+    # ``indexer.WIKI_DIR`` (the autouse conftest fixture does this) are
+    # honoured at query time.
+    parent_path: Path = indexer.WIKI_DIR / subdir_name / f"{sec.file}.md"
+
+    if not parent_path.exists():
+        log_event(
+            "parse_warning",
+            f"derived_from: parent wiki page missing for section={sec.id} path={parent_path.name}",
+        )
+        return None
+
+    try:
+        raw = parent_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        log_event(
+            "parse_warning",
+            f"derived_from: parent read failed for section={sec.id} exc={type(exc).__name__}",
+        )
+        return None
+
+    # Skip optional sentinel HTML comment preceding the frontmatter block.
+    lines = raw.splitlines()
+    dash_indices = [i for i, ln in enumerate(lines) if ln.strip() == "---"]
+    if len(dash_indices) < 2:
+        log_event(
+            "parse_warning",
+            f"derived_from: parent frontmatter fences missing for section={sec.id} "
+            f"path={parent_path.name}",
+        )
+        return None
+
+    fm_text = "\n".join(lines[dash_indices[0] + 1 : dash_indices[1]])
+    try:
+        parsed = yaml.safe_load(fm_text)
+    except yaml.YAMLError as exc:
+        log_event(
+            "parse_warning",
+            f"derived_from: parent frontmatter YAML invalid for section={sec.id} "
+            f"path={parent_path.name} exc={type(exc).__name__}",
+        )
+        return None
+
+    if not isinstance(parsed, dict):
+        log_event(
+            "parse_warning",
+            f"derived_from: parent frontmatter not a mapping for section={sec.id} "
+            f"path={parent_path.name}",
+        )
+        return None
+
+    sources_field = parsed.get("sources")
+    # Empty / absent / non-list -> semantic None per PRD #78 Q4.
+    if not isinstance(sources_field, list) or not sources_field:
+        return None
+
+    # Convert each "docs-filename#heading-slug" entry to a CitationRef-shaped
+    # dict. Entries that don't contain "#" or are not strings are skipped
+    # silently — surfacing them belongs to C2 red-link lint, not retrieval.
+    refs: list[dict] = []
+    for entry in sources_field:
+        if not isinstance(entry, str) or "#" not in entry:
+            continue
+        source, _, heading = entry.partition("#")
+        refs.append({"source": source, "heading": heading})
+
+    return refs or None
 
 
 def _call_llm_with_error_handling(question: str, prompt_text: str) -> str:

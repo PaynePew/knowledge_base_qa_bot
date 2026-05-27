@@ -1,0 +1,448 @@
+"""Tests for the Phase 6 Slice 6-3 ``derived_from`` citation chain.
+
+These tests cover the AC from issue #81: each retrieved wiki Section in
+``/chat`` response carries a ``derived_from`` list populated from the parent
+wiki page's ``frontmatter.sources``, mapping ``"<docs-filename>#<heading>"``
+strings to ``CitationRef(source, heading)`` objects.
+
+Critical invariants under test (closes ADR-0006 §"PROMPT.md citation contract
+evolution" + PRD #78 Q4):
+
+1. Population — when parent page has ``frontmatter.sources`` populated, each
+   entry materialises as a ``CitationRef`` on ``derived_from``.
+2. Semantic ``None`` vs ``[]`` — missing/empty parent ``sources`` produces
+   ``derived_from is None`` (not ``[]``), so callers can distinguish "wiki
+   page has no docs chain" from "we successfully read an empty chain".
+3. Fail-soft parse — malformed parent frontmatter degrades to ``None`` and
+   emits a ``parse_warning`` log (reusing the existing kind, not a new one).
+4. Prompt isolation (Q4-a / Q4-b) — ``derived_from`` never leaks into the
+   LLM CONTEXT block or the Grounding Check verifier prompt. Preserves the
+   W1 invariant that the LLM may only emit wiki-slug citations.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import app.indexer as indexer_module
+import app.logger as logger_module
+import app.retrieval as retrieval_module
+from app.grounding import GroundingClaim, GroundingOutcome, GroundingResult
+
+from .conftest import FakeLLMResponse
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _setup_wiki(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
+    """Create ``wiki/{entities,concepts,qa}`` under ``tmp_path``."""
+    wiki_dir = tmp_path / "wiki"
+    entities_dir = wiki_dir / "entities"
+    concepts_dir = wiki_dir / "concepts"
+    qa_dir = wiki_dir / "qa"
+    entities_dir.mkdir(parents=True)
+    concepts_dir.mkdir(parents=True)
+    qa_dir.mkdir(parents=True)
+    return wiki_dir, entities_dir, concepts_dir, qa_dir
+
+
+def _patch_indexer(monkeypatch, tmp_path: Path, wiki_dir: Path) -> None:
+    """Point the indexer + logger at the tmp wiki and rebuild SOURCE_DIRS."""
+    monkeypatch.setattr(indexer_module, "INDEX_PATH", tmp_path / ".kb" / "index.json")
+    monkeypatch.setattr(indexer_module, "WIKI_DIR", wiki_dir)
+    monkeypatch.setattr(logger_module, "LOG_PATH", wiki_dir / "log.md")
+    monkeypatch.setattr(
+        indexer_module,
+        "SOURCE_DIRS",
+        [wiki_dir / "entities", wiki_dir / "concepts", wiki_dir / "qa"],
+    )
+
+
+def _write_concept_page(
+    concepts_dir: Path,
+    slug: str,
+    sources_yaml: str,
+    body_keyword: str = "answer",
+) -> Path:
+    """Write a wiki/concepts/<slug>.md fixture with the given ``sources`` block.
+
+    ``sources_yaml`` is YAML for the ``sources:`` field value — e.g.
+    ``"- refund_policy.md#refund-timeline\\n  - refund_policy.md#exceptions"``
+    """
+    body = (
+        f"---\n"
+        f"id: {slug}\n"
+        f"type: concept\n"
+        f'created: "2026-05-27T00:00:00Z"\n'
+        f'updated: "2026-05-27T00:00:00Z"\n'
+        f"sources:\n{sources_yaml}\n"
+        f"status: live\n"
+        f"open_questions: []\n"
+        f"---\n\n"
+        f"# {slug.replace('-', ' ').title()}\n\n"
+        f"The {body_keyword} explanation lives here with detailed content.\n\n"
+        f"[Source: docs.md#section]\n"
+    )
+    path = concepts_dir / f"{slug}.md"
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
+def _approved_outcome(section_ids: list[str]) -> GroundingOutcome:
+    """Return a passed GroundingOutcome citing the given section IDs."""
+    return GroundingOutcome(
+        passed=True,
+        reason="claim_supported",
+        result=GroundingResult(
+            reasoning="All claims trace to cited sections.",
+            claims=[
+                GroundingClaim(
+                    text="A supported claim.",
+                    supported=True,
+                    citing_section_ids=section_ids,
+                )
+            ],
+            unsupported_claims=[],
+            passed=True,
+        ),
+        retries_attempted=0,
+    )
+
+
+class _RecordingLLM:
+    """LLM stub that returns a canned grounded answer and records messages.
+
+    Tests can inspect ``last_messages`` to confirm the prompt contained the
+    expected CONTEXT block — and crucially to assert ``derived_from`` /
+    docs-filename references never appeared there.
+    """
+
+    def __init__(self, content: str = "Some grounded answer."):
+        self.content = content
+        self.last_messages: list = []
+
+    def invoke(self, messages: list):
+        self.last_messages = messages
+        return FakeLLMResponse(content=self.content)
+
+
+# ---------------------------------------------------------------------------
+# AC 1: parent wiki page with populated frontmatter.sources -> derived_from
+#       carries one CitationRef per entry, in order.
+# ---------------------------------------------------------------------------
+
+
+def test_derived_from_populated_from_parent_sources(tmp_path, monkeypatch):
+    """Parent page ``sources: [refund_policy.md#refund-timeline,
+    refund_policy.md#exceptions]`` -> derived_from has two CitationRefs.
+    """
+    wiki_dir, _, concepts_dir, _ = _setup_wiki(tmp_path)
+    _write_concept_page(
+        concepts_dir,
+        "refund-timeline",
+        sources_yaml=("  - refund_policy.md#refund-timeline\n  - refund_policy.md#exceptions"),
+        body_keyword="refund",
+    )
+    _patch_indexer(monkeypatch, tmp_path, wiki_dir)
+    indexer_module.build_index()
+
+    fake_llm = _RecordingLLM("Refunds within 5-7 business days. [Source: refund-timeline]")
+    monkeypatch.setattr(retrieval_module, "_llm", fake_llm)
+    monkeypatch.setattr(retrieval_module, "get_llm", lambda: fake_llm)
+    monkeypatch.setattr(
+        retrieval_module.grounding_module,
+        "verify",
+        lambda draft, sections: _approved_outcome([sections[0].id]),
+    )
+    monkeypatch.setattr(retrieval_module, "_SCORE_THRESHOLD", 0.0)
+
+    result = retrieval_module.query("refund timeline")
+
+    assert result["sources"], "retrieval should return at least one source"
+    top = result["sources"][0]
+    derived = top["derived_from"]
+    assert derived is not None, "derived_from must be populated, got None"
+    assert len(derived) == 2, f"expected 2 CitationRefs, got {len(derived)}: {derived}"
+    assert (derived[0]["source"], derived[0]["heading"]) == (
+        "refund_policy.md",
+        "refund-timeline",
+    ), f"first CitationRef wrong: {derived[0]}"
+    assert (derived[1]["source"], derived[1]["heading"]) == (
+        "refund_policy.md",
+        "exceptions",
+    ), f"second CitationRef wrong: {derived[1]}"
+
+
+# ---------------------------------------------------------------------------
+# AC 2: parent wiki page with empty frontmatter.sources -> derived_from is
+#       None (semantically distinct from []).
+# ---------------------------------------------------------------------------
+
+
+def test_derived_from_none_when_parent_sources_empty(tmp_path, monkeypatch):
+    """Parent ``sources: []`` -> ``derived_from is None`` (not ``[]``).
+
+    PRD #78 Q4 distinguishes "wiki page had no chain" (None) from "we read an
+    empty chain" ([]). Empty is treated as "no chain" because the wiki page
+    has no docs/ provenance to surface.
+    """
+    wiki_dir, _, concepts_dir, _ = _setup_wiki(tmp_path)
+    # Write a concept page with empty sources via inline YAML
+    body = (
+        "---\n"
+        "id: standalone\n"
+        "type: concept\n"
+        'created: "2026-05-27T00:00:00Z"\n'
+        'updated: "2026-05-27T00:00:00Z"\n'
+        "sources: []\n"
+        "status: live\n"
+        "open_questions: []\n"
+        "---\n\n"
+        "# Standalone\n\nA standalone concept with rich content for indexing.\n"
+    )
+    (concepts_dir / "standalone.md").write_text(body, encoding="utf-8")
+
+    _patch_indexer(monkeypatch, tmp_path, wiki_dir)
+    indexer_module.build_index()
+
+    fake_llm = _RecordingLLM("Some answer. [Source: standalone]")
+    monkeypatch.setattr(retrieval_module, "_llm", fake_llm)
+    monkeypatch.setattr(retrieval_module, "get_llm", lambda: fake_llm)
+    monkeypatch.setattr(
+        retrieval_module.grounding_module,
+        "verify",
+        lambda draft, sections: _approved_outcome([sections[0].id]),
+    )
+    monkeypatch.setattr(retrieval_module, "_SCORE_THRESHOLD", 0.0)
+
+    result = retrieval_module.query("standalone concept")
+
+    assert result["sources"], "retrieval should return at least one source"
+    top = result["sources"][0]
+    assert "derived_from" in top, "derived_from key must be present in source dict"
+    assert top["derived_from"] is None, (
+        f"empty parent sources must map to derived_from=None (not []), got {top['derived_from']!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# AC 3: parent wiki page with malformed/missing frontmatter -> derived_from is
+#       None and a parse_warning log entry is emitted; no exception raised.
+# ---------------------------------------------------------------------------
+
+
+def test_derived_from_none_on_malformed_parent_frontmatter(tmp_path, monkeypatch):
+    """Parent wiki page with malformed frontmatter -> derived_from None +
+    parse_warning log; never raises (fail-soft per AC).
+
+    Strategy: index a valid page first (so retrieval has a hit). Then
+    re-write the on-disk page with malformed YAML so that retrieval-time
+    frontmatter parsing fails. The Section remains in the in-memory index
+    (its metadata was captured at build time), but the disk-read inside
+    retrieval to populate derived_from sees corrupted content.
+    """
+    wiki_dir, _, concepts_dir, _ = _setup_wiki(tmp_path)
+    page = _write_concept_page(
+        concepts_dir,
+        "ephemeral",
+        sources_yaml="  - some_source.md#initial",
+        body_keyword="ephemeral",
+    )
+    _patch_indexer(monkeypatch, tmp_path, wiki_dir)
+    indexer_module.build_index()
+
+    # Corrupt the file post-indexing: malformed YAML (missing closing fence
+    # after frontmatter, plus broken YAML structure).
+    page.write_text(
+        "---\n: not: valid yaml: structure\nkey-without-value\nthis is broken\n",
+        encoding="utf-8",
+    )
+
+    fake_llm = _RecordingLLM("An answer. [Source: ephemeral]")
+    monkeypatch.setattr(retrieval_module, "_llm", fake_llm)
+    monkeypatch.setattr(retrieval_module, "get_llm", lambda: fake_llm)
+    monkeypatch.setattr(
+        retrieval_module.grounding_module,
+        "verify",
+        lambda draft, sections: _approved_outcome([sections[0].id]),
+    )
+    monkeypatch.setattr(retrieval_module, "_SCORE_THRESHOLD", 0.0)
+
+    # Should NOT raise — fail-soft is the contract.
+    result = retrieval_module.query("ephemeral content")
+
+    assert result["sources"], "retrieval should still return a source even with corrupt parent"
+    top = result["sources"][0]
+    assert top["derived_from"] is None, (
+        f"corrupt parent frontmatter must degrade to derived_from=None, got {top['derived_from']!r}"
+    )
+
+    # parse_warning log entry must be present, citing the offending file.
+    log_path = wiki_dir / "log.md"
+    log_content = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+    parse_warnings = [
+        ln for ln in log_content.splitlines() if "parse_warning" in ln and "ephemeral" in ln
+    ]
+    assert parse_warnings, (
+        "Expected at least one parse_warning entry mentioning 'ephemeral' after "
+        f"retrieval against corrupted parent frontmatter. Full log:\n{log_content}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# AC 4: multiple retrieved sources -> each has its own derived_from list.
+# ---------------------------------------------------------------------------
+
+
+def test_each_retrieved_source_has_its_own_derived_from(tmp_path, monkeypatch):
+    """When retrieval returns multiple hits, each source carries an
+    independent ``derived_from`` (or None) derived from its own parent page.
+    """
+    wiki_dir, _, concepts_dir, _ = _setup_wiki(tmp_path)
+    _write_concept_page(
+        concepts_dir,
+        "alpha-page",
+        sources_yaml="  - alpha_doc.md#intro\n  - alpha_doc.md#details",
+        body_keyword="alpha shared keyword",
+    )
+    _write_concept_page(
+        concepts_dir,
+        "beta-page",
+        sources_yaml="  - beta_doc.md#overview",
+        body_keyword="beta shared keyword",
+    )
+    _patch_indexer(monkeypatch, tmp_path, wiki_dir)
+    indexer_module.build_index()
+
+    fake_llm = _RecordingLLM("Shared response. [Source: alpha-page]")
+    monkeypatch.setattr(retrieval_module, "_llm", fake_llm)
+    monkeypatch.setattr(retrieval_module, "get_llm", lambda: fake_llm)
+    monkeypatch.setattr(
+        retrieval_module.grounding_module,
+        "verify",
+        lambda draft, sections: _approved_outcome([sections[0].id]),
+    )
+    monkeypatch.setattr(retrieval_module, "_SCORE_THRESHOLD", 0.0)
+
+    # Use a query that matches both pages so both surface in sources[].
+    result = retrieval_module.query("shared keyword")
+
+    sources = result["sources"]
+    assert len(sources) >= 2, f"expected >= 2 hits, got: {[s['source'] for s in sources]}"
+
+    by_file: dict[str, list] = {}
+    for src in sources:
+        # source id is "<slug>#<heading>"; extract slug
+        slug = src["source"].split("#", 1)[0]
+        by_file[slug] = src["derived_from"]
+
+    assert "alpha-page" in by_file and "beta-page" in by_file, (
+        f"Expected both alpha-page and beta-page in sources, got: {list(by_file.keys())}"
+    )
+
+    alpha_chain = by_file["alpha-page"]
+    beta_chain = by_file["beta-page"]
+    assert alpha_chain is not None and len(alpha_chain) == 2, (
+        f"alpha-page derived_from must have 2 entries, got: {alpha_chain}"
+    )
+    assert {(c["source"], c["heading"]) for c in alpha_chain} == {
+        ("alpha_doc.md", "intro"),
+        ("alpha_doc.md", "details"),
+    }
+    assert beta_chain is not None and len(beta_chain) == 1, (
+        f"beta-page derived_from must have 1 entry, got: {beta_chain}"
+    )
+    assert (beta_chain[0]["source"], beta_chain[0]["heading"]) == (
+        "beta_doc.md",
+        "overview",
+    )
+
+
+# ---------------------------------------------------------------------------
+# AC 5: Prompt isolation — derived_from must NEVER appear in the LLM CONTEXT
+#       block nor in the Grounding Check verifier prompt. Captures the
+#       prompt string the LLM mock receives and asserts the docs-filename
+#       referenced in derived_from does not appear in it.
+# ---------------------------------------------------------------------------
+
+
+def test_derived_from_not_in_llm_prompt_or_verifier(tmp_path, monkeypatch):
+    """W1 invariant (ADR-0001 + ADR-0006 + PRD #78 Q4a/Q4b).
+
+    The LLM CONTEXT must contain wiki-slug citations only. The docs-filename
+    references in derived_from are response-layer audit data, not prompt
+    content. Likewise, the Grounding Check verifier sees only wiki Sections.
+
+    Strategy: stage a parent wiki page whose ``frontmatter.sources`` lists a
+    very distinctive docs filename ('top_secret_audit_only_filename.md').
+    Run /chat. Confirm:
+        (a) the chat-response ``derived_from`` contains that filename
+            (sanity — the chain is populated)
+        (b) the prompt passed to the LLM (captured by the FakeLLM) does NOT
+            contain that filename anywhere
+        (c) the prompt passed to the grounding verifier does NOT contain
+            that filename anywhere.
+    """
+    wiki_dir, _, concepts_dir, _ = _setup_wiki(tmp_path)
+    sentinel = "top_secret_audit_only_filename.md"
+    _write_concept_page(
+        concepts_dir,
+        "audit-chain",
+        sources_yaml=f"  - {sentinel}#deep-section",
+        body_keyword="audit",
+    )
+    _patch_indexer(monkeypatch, tmp_path, wiki_dir)
+    indexer_module.build_index()
+
+    fake_llm = _RecordingLLM("Audit explained. [Source: audit-chain]")
+    monkeypatch.setattr(retrieval_module, "_llm", fake_llm)
+    monkeypatch.setattr(retrieval_module, "get_llm", lambda: fake_llm)
+    monkeypatch.setattr(retrieval_module, "_SCORE_THRESHOLD", 0.0)
+
+    # Capture the prompt the verifier receives by intercepting
+    # grounding.verify and inspecting the sections it gets passed. The
+    # verifier builds its own user message from sections — we replicate
+    # that inside the spy to assert on the same text the verifier would see.
+    from app.grounding import _build_user_message
+
+    verifier_seen: dict = {"sections": None, "draft": None}
+
+    def _spy_verify(draft, sections):
+        verifier_seen["draft"] = draft
+        verifier_seen["sections"] = list(sections)
+        return _approved_outcome([sections[0].id])
+
+    monkeypatch.setattr(retrieval_module.grounding_module, "verify", _spy_verify)
+
+    result = retrieval_module.query("audit chain content")
+
+    # (a) Sanity: derived_from populated with sentinel filename
+    assert result["sources"], "retrieval should return a source"
+    derived = result["sources"][0]["derived_from"]
+    assert derived is not None and any(c["source"] == sentinel for c in derived), (
+        f"derived_from must carry the sentinel docs filename for sanity, got: {derived}"
+    )
+
+    # (b) Main LLM CONTEXT must not mention the sentinel
+    assert fake_llm.last_messages, "FakeLLM must have been invoked"
+    # Concatenate every message string the LLM saw.
+    llm_prompt_text = "\n".join(getattr(m, "content", "") for m in fake_llm.last_messages)
+    assert sentinel not in llm_prompt_text, (
+        f"derived_from docs filename ({sentinel!r}) leaked into the LLM prompt. "
+        f"This violates W1 (ADR-0001/0006) — the LLM may only emit wiki-slug "
+        f"citations. Prompt content:\n{llm_prompt_text}"
+    )
+
+    # (c) Verifier prompt must not mention the sentinel either. We rebuild
+    # the verifier user message from the sections it was passed (the same
+    # function the real verifier uses) so this stays robust to refactors of
+    # _build_user_message.
+    assert verifier_seen["sections"] is not None, "verifier must have been called"
+    verifier_user_message = _build_user_message(verifier_seen["draft"], verifier_seen["sections"])
+    assert sentinel not in verifier_user_message, (
+        f"derived_from docs filename ({sentinel!r}) leaked into the Grounding "
+        f"Check verifier prompt. derived_from is audit-only — PRD #78 Q4b. "
+        f"Verifier user message:\n{verifier_user_message}"
+    )
