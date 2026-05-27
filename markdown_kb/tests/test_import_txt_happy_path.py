@@ -5,6 +5,10 @@ AC coverage (issue #90 — Slice 7-1):
   - .txt output parsed via indexer.parse_markdown yields single Section with id=<basename>.md
   - .txt frontmatter: original_format=txt, imported_from, imported_at present
   - .txt passthrough: content preserved verbatim in body
+
+Extended in Slice 7-3 (issue #92):
+  - content_sha256 present in .txt output frontmatter
+  - status='created' on first write
 """
 
 from __future__ import annotations
@@ -80,7 +84,9 @@ def test_import_txt_frontmatter(import_env):
     assert fm["original_format"] == "txt"
     assert "simple.txt" in fm["imported_from"]
     assert "imported_at" in fm
-    assert "content_sha256" not in fm
+    # content_sha256 added in slice 7-3
+    assert "content_sha256" in fm, "content_sha256 must be present in frontmatter (slice 7-3)"
+    assert fm["content_sha256"], "content_sha256 must not be empty"
 
 
 def test_import_txt_body_passthrough(import_env):
