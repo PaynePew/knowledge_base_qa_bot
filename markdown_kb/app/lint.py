@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``run_lint``, ``_check_c11_orphan``, ``_check_c3_failed_grounding``, ``_check_c4a_slug_collision``, ``_check_c6_stale``, ``_check_c2_red_links``, ``_check_c1_coverage_gaps``, ``_canonicalise``, ``_candidate_pairs``, ``_judge_page_pair``, ``_check_c5_page_pair``, ``_load_wiki_pages``, ``get_lint_llm``.
+"""Deep module per Ousterhout. Public surface: ``run_lint``, ``_check_c11_orphan``, ``_check_c3_failed_grounding``, ``_check_c4a_slug_collision``, ``_check_c6_stale``, ``_check_c2_red_links``, ``_check_c1_coverage_gaps``, ``_canonicalise``, ``_candidate_pairs``, ``_judge_page_pair``, ``_check_c5_page_pair``, ``_load_wiki_pages``, ``get_lint_llm``, ``_check_c8_promotion_candidates``, ``_check_c9_qa_staleness``, ``_check_c10_qa_schema_validity``.
 
 Lint orchestrator — POST /lint health check for the wiki.
 
@@ -36,6 +36,33 @@ F3 filter.  Pairs are symmetrically canonicalised (sorted slug names) so each
 pair is judged exactly once.  Continue-on-error: LLM errors mid-batch retain
 prior findings.  Cost accounting via response metadata (best-effort token counts).
 
+Slice 6-5 scope (Phase 5 amendment — PRD #78)
+---------------------------------------------
+Three new read-only checks scan ``wiki/qa/*.md`` and one modifier excludes
+``type=qa`` pages from C5 pair generation:
+
+- **C5 modifier** — ``_candidate_pairs`` filters ``frontmatter.type == "qa"``
+  BEFORE F1/F3 candidate computation, preserving C5 LLM call budget and
+  preventing trivially-true ``duplicate`` findings between qa pages and their
+  source entities (PRD #78 Q1 + Q6).
+- **C8 promotion candidates** — surfaces ``status: draft`` Filed Answers ranked
+  by ``count`` desc / ``updated`` desc to ``lint-report.md`` §
+  ``## Promotion Candidates``. Capped by ``KB_LINT_PROMOTION_TOP_N`` env var
+  (default 10). Read-only — the actual draft→live mutation is owned by
+  Phase 6 ``POST /qa/{slug}/promote``.
+- **C9 qa-staleness** — for each ``status: live`` Filed Answer, compares each
+  cited entity file's mtime against ``frontmatter.updated``. Newer entities
+  surface to ``## Stale Filed Answers``. Closes Q6b "entity re-ingested, qa
+  stranded" failure mode.
+- **C10 qa-schema-validity** — sweeps ``wiki/qa/`` for invalid frontmatter
+  (``status`` outside ``{live, draft, stale, superseded}``, missing/empty
+  ``question``, ``type != "qa"``, missing/non-positive ``count``). Surfaces to
+  ``## Invalid qa Schema``. Closes Q8d "curator-typo orphan zombie" failure
+  mode (third layer of the indexer-log + filing-refuse + lint defence stack).
+
+All four amendments preserve PRD #65 Q3 read-only invariant — they read
+frontmatter and write only ``lint-report.md``, never page frontmatter.
+
 Read-only invariant
 -------------------
 ``run_lint()`` does NOT modify wiki page frontmatter.  It writes only:
@@ -62,9 +89,12 @@ Check execution order (cheapest to most expensive)
 4. C6 stale pages (stat docs/ files)
 5. C2 red links (scan wiki page bodies)
 6. C1 coverage gap (read log.md only)
-7. C5 page-pair LLM (F1∪F3 filter + LLM) — most expensive last
+7. C8 promotion candidates (read qa frontmatter)
+8. C9 qa-staleness (stat entity files vs qa updated)
+9. C10 qa-schema-validity (read qa frontmatter)
+10. C5 page-pair LLM (F1∪F3 filter + LLM) — most expensive last
 
-Authorised by PRD #65 (Phase 5), GitHub issue #66 (Slice 5-1), GitHub issue #67 (Slice 5-2), GitHub issue #68 (Slice 5-3), GitHub issue #69 (Slice 5-4), and GitHub issue #70 (Slice 5-5).
+Authorised by PRD #65 (Phase 5), GitHub issue #66 (Slice 5-1), GitHub issue #67 (Slice 5-2), GitHub issue #68 (Slice 5-3), GitHub issue #69 (Slice 5-4), GitHub issue #70 (Slice 5-5), PRD #78 (Phase 6), and GitHub issue #82 (Slice 6-5 Phase 5 amendment).
 """
 
 from __future__ import annotations
@@ -86,11 +116,14 @@ from .logger import LOG_PATH, log_event
 from .schemas import (
     CoverageGapFinding,
     FailedGroundingFinding,
+    InvalidQaSchemaFinding,
     LintFindings,
     LintResponse,
     LintSummary,
     OrphanPageFinding,
     PagePairFinding,
+    PromotionCandidateFinding,
+    QaStalenessFinding,
     RedLinkFinding,
     SlugCollisionFinding,
     StalePageFinding,
@@ -917,26 +950,38 @@ _KB_LINT_BM25_THRESHOLD_DEFAULT = 1.0
 
 
 def _load_wiki_pages(wiki_dir: Path) -> dict[str, dict]:
-    """Load all wiki pages from entities/ and concepts/ into a dict.
+    """Load all wiki pages from entities/, concepts/, and qa/ into a dict.
 
     Returns a dict mapping slug → {
         "slug": str,
         "body": str (full file text after frontmatter),
         "sources": list[str],
         "path": Path,
+        "type": str | None ("entity" | "concept" | "qa", from frontmatter),
     }
 
     Used by _candidate_pairs and _check_c5_page_pair to avoid re-parsing
-    frontmatter multiple times.
+    frontmatter multiple times. The ``type`` entry is what the Slice 6-5 C5
+    modifier reads to exclude ``type == "qa"`` pages from candidate pair
+    generation (PRD #78 Phase 5 amendment).
+
+    qa pages are included here so the C5 modifier filter sees them and drops
+    them; downstream consumers (e.g. ``_candidate_pairs``) own the filter. The
+    set returned is the entire wiki page corpus (entities/concepts/qa), not the
+    filtered subset.
     """
     pages: dict[str, dict] = {}
-    for slug, page_path in _iter_wiki_pages(wiki_dir):
+    for slug, page_path in _iter_all_wiki_pages(wiki_dir):
         fm = _parse_frontmatter(page_path)
-        sources = []
+        sources: list[str] = []
+        page_type: str | None = None
         if fm:
             raw_sources = fm.get("sources", [])
             if isinstance(raw_sources, list):
                 sources = [str(s) for s in raw_sources if s]
+            raw_type = fm.get("type")
+            if isinstance(raw_type, str):
+                page_type = raw_type
         try:
             full_text = page_path.read_text(encoding="utf-8")
         except OSError:
@@ -951,8 +996,25 @@ def _load_wiki_pages(wiki_dir: Path) -> dict[str, dict]:
             "body": body.strip(),
             "sources": sources,
             "path": page_path,
+            "type": page_type,
         }
     return pages
+
+
+def _iter_all_wiki_pages(wiki_dir: Path):
+    """Yield (slug, page_path) for every .md page under entities/, concepts/, qa/.
+
+    Distinct from ``_iter_wiki_pages`` (entities + concepts only) — used by
+    ``_load_wiki_pages`` so the C5 modifier (Slice 6-5) sees qa pages and can
+    filter them out at the pair-generation layer.
+    """
+    # Phase 6 Slice 6-5: include qa/ so the modifier filter can see and drop them.
+    for subdir_name in ("entities", "concepts", "qa"):
+        subdir = wiki_dir / subdir_name
+        if not subdir.exists():
+            continue
+        for page_path in sorted(subdir.glob("*.md")):
+            yield page_path.stem, page_path
 
 
 def _candidate_pairs(
@@ -976,6 +1038,18 @@ def _candidate_pairs(
     ``KB_LINT_BM25_TOP_K`` env var (default 3) controls per-page BM25 hits.
     ``KB_LINT_BM25_THRESHOLD`` env var (default 1.0) controls the score gate.
     Both are read at call time (not module load) to mirror KB_SCORE_THRESHOLD.
+
+    Phase 6 Slice 6-5 (C5 modifier — PRD #78)
+    -----------------------------------------
+    Pages whose ``frontmatter.type == "qa"`` are excluded from candidate pair
+    generation BEFORE F1/F3 are computed. Filed Answers are structurally
+    derivative of their source entity pages (they share the same
+    ``frontmatter.sources``), so without this filter the C5 LLM would be called
+    on every (qa, entity-source) pair only to return ``severity=duplicate``,
+    flooding ``lint-report.md`` and burning LLM tokens. Filtering at the page
+    set level means the qa pages neither appear in F1 source-intersection nor
+    as F3 BM25 queries, *and* the F3 BM25 hit-side filter rejects sections
+    whose owner is a qa page — qa is fully invisible to C5 by construction.
     """
     # Read env vars at call time
     bm25_top_k = int(os.getenv("KB_LINT_BM25_TOP_K", str(_KB_LINT_BM25_TOP_K_DEFAULT)))
@@ -983,16 +1057,22 @@ def _candidate_pairs(
         os.getenv("KB_LINT_BM25_THRESHOLD", str(_KB_LINT_BM25_THRESHOLD_DEFAULT))
     )
 
-    pairs: set[tuple[str, str]] = set()
-    slug_list = list(pages.keys())
+    # C5 modifier (Slice 6-5): drop type=qa pages from the candidate pool BEFORE
+    # F1/F3 candidate computation so the LLM call budget excludes qa pairs entirely.
+    non_qa_pages: dict[str, dict] = {
+        slug: data for slug, data in pages.items() if data.get("type") != "qa"
+    }
 
-    # F1: shared sources
+    pairs: set[tuple[str, str]] = set()
+    slug_list = list(non_qa_pages.keys())
+
+    # F1: shared sources (only among non-qa pages)
     for i, slug_a in enumerate(slug_list):
-        srcs_a = set(pages[slug_a]["sources"])
+        srcs_a = set(non_qa_pages[slug_a]["sources"])
         if not srcs_a:
             continue
         for slug_b in slug_list[i + 1 :]:
-            srcs_b = set(pages[slug_b]["sources"])
+            srcs_b = set(non_qa_pages[slug_b]["sources"])
             if srcs_a & srcs_b:
                 pair = (min(slug_a, slug_b), max(slug_a, slug_b))
                 pairs.add(pair)
@@ -1008,7 +1088,7 @@ def _candidate_pairs(
     # empty (sections list empty), F3 produces no pairs — safe degradation.
     from .indexer import search as bm25_search
 
-    for slug_a, data_a in pages.items():
+    for slug_a, data_a in non_qa_pages.items():
         body_a = data_a["body"]
         if not body_a.strip():
             continue
@@ -1023,8 +1103,10 @@ def _candidate_pairs(
             slug_b = section.file
             if slug_b == slug_a:
                 continue
-            # Only add pairs where both slugs exist in our pages dict
-            if slug_b not in pages:
+            # Only add pairs where both slugs exist in the non-qa page set —
+            # this is the hit-side half of the C5 qa filter: even if the index
+            # surfaces a qa-page section, it cannot enter the candidate pool.
+            if slug_b not in non_qa_pages:
                 continue
             pair = (min(slug_a, slug_b), max(slug_a, slug_b))
             pairs.add(pair)
@@ -1149,6 +1231,367 @@ def _check_c5_page_pair(
     _SEVERITY_ORDER = {"direct": 0, "tension": 1, "duplicate": 2, "none": 3}
     findings.sort(key=lambda f: (_SEVERITY_ORDER.get(f.severity, 99), f.page_a, f.page_b))
 
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# C8 / C9 / C10 — Phase 5 amendment for Phase 6 Filed Answers (PRD #78)
+# ---------------------------------------------------------------------------
+
+# Valid frontmatter.status values for Filed Answer pages (Slice 6-1 schema).
+# Used by C10 to validate ``status`` field; ``status`` outside this set is a
+# curator-typo orphan-zombie risk (Q8d in PRD #78).
+_VALID_QA_STATUS_VALUES: frozenset[str] = frozenset({"live", "draft", "stale", "superseded"})
+
+
+def _iter_qa_pages(wiki_dir: Path):
+    """Yield (slug, page_path) for every .md page under wiki/qa/.
+
+    Separate iterator from ``_iter_wiki_pages`` because the qa lifecycle is
+    distinct (Filed Answer lifecycle owned by PRD #78, not the entity/concept
+    ingest lifecycle) and the three Phase 5 amendment checks (C8/C9/C10) scan
+    only qa/, never entities/ or concepts/.
+    """
+    subdir = wiki_dir / "qa"
+    if not subdir.exists():
+        return
+    for page_path in sorted(subdir.glob("*.md")):
+        yield page_path.stem, page_path
+
+
+# Default cap on Promotion Candidates surfaced per /lint run.
+_KB_LINT_PROMOTION_TOP_N_DEFAULT = 10
+
+# Truncation length for Promotion Candidate question field (keeps the report
+# table column width manageable; readers can open the page for the full text).
+_PROMOTION_CANDIDATE_QUESTION_MAXLEN = 80
+
+
+def _check_c8_promotion_candidates(
+    wiki_dir: Path,
+) -> list[PromotionCandidateFinding]:
+    """Surface ``status: draft`` Filed Answers ranked by re-ask popularity.
+
+    PRD #78 Phase 5 amendment §"C8 — promotion candidates". Read-only — never
+    mutates frontmatter; the actual draft→live promotion is Phase 6's
+    ``POST /qa/{slug}/promote`` (Slice 6-4).
+
+    Algorithm:
+    1. Scan ``wiki/qa/*.md``.
+    2. Skip pages whose frontmatter cannot be parsed (defensive — C10 surfaces
+       schema breakage independently).
+    3. Skip pages whose ``status`` is not ``"draft"``.
+    4. Build PromotionCandidateFinding with ``slug``, truncated ``question``,
+       ``count``, ``age_days`` (now - created in UTC), and ``cited_count``.
+    5. Sort by ``count`` desc, then ``updated`` desc (tiebreak).
+    6. Cap at the top ``KB_LINT_PROMOTION_TOP_N`` (env var, default 10).
+
+    Returns the ranked, capped list. Empty list when no qa pages exist or no
+    drafts are present.
+    """
+    top_n = int(os.getenv("KB_LINT_PROMOTION_TOP_N", str(_KB_LINT_PROMOTION_TOP_N_DEFAULT)))
+
+    # Each candidate carries a sort tuple so we can rank, then strip back to the
+    # Finding shape for the public return.
+    candidates: list[tuple[int, str, PromotionCandidateFinding]] = []
+
+    now_utc = datetime.datetime.now(datetime.UTC)
+
+    for slug, page_path in _iter_qa_pages(wiki_dir):
+        fm = _parse_frontmatter(page_path)
+        if fm is None:
+            continue
+        if fm.get("status") != "draft":
+            continue
+
+        # Question text — truncate for the report column. Falls back to the
+        # slug if question is missing (defensive; C10 separately surfaces a
+        # missing_question finding).
+        raw_question = fm.get("question") or ""
+        question = str(raw_question).strip()
+        if not question:
+            question = f"(missing question — slug `{slug}`)"
+        if len(question) > _PROMOTION_CANDIDATE_QUESTION_MAXLEN:
+            question = question[: _PROMOTION_CANDIDATE_QUESTION_MAXLEN - 1] + "…"
+
+        # Count — coerce defensively; missing/invalid -> 1 (the schema default
+        # value, also documented in WikiPageFrontmatter).
+        raw_count = fm.get("count", 1)
+        try:
+            count = int(raw_count)
+        except (TypeError, ValueError):
+            count = 1
+
+        # Cited count — number of citation entries in frontmatter.sources.
+        raw_sources = fm.get("sources", [])
+        cited_count = len(raw_sources) if isinstance(raw_sources, list) else 0
+
+        # Age in days — now() - frontmatter.created. Missing/unparseable falls
+        # back to 0.0 (rendered as 0.0 days; non-fatal because C10 surfaces the
+        # underlying schema issue if any field is wrong).
+        age_days = 0.0
+        created_str = fm.get("created", "")
+        if created_str:
+            try:
+                created_dt = datetime.datetime.fromisoformat(
+                    str(created_str).replace("Z", "+00:00")
+                )
+                if created_dt.tzinfo is None:
+                    created_dt = created_dt.replace(tzinfo=datetime.UTC)
+                age_days = (now_utc - created_dt).total_seconds() / 86400.0
+            except ValueError:
+                age_days = 0.0
+
+        # Sort tiebreaker — frontmatter.updated as ISO string. Lexicographic
+        # comparison is correct for ISO-8601 UTC strings; missing -> empty
+        # string which sorts last.
+        updated_key = str(fm.get("updated", ""))
+
+        finding = PromotionCandidateFinding(
+            slug=slug,
+            question=question,
+            count=count,
+            age_days=round(age_days, 1),
+            cited_count=cited_count,
+        )
+        candidates.append((count, updated_key, finding))
+
+    # Rank with two stable passes (Python's sort is stable, so secondary keys
+    # propagate cleanly): first sort ascending by slug (final tiebreaker),
+    # then ascending by updated (so a desc-updated stable sort by count desc
+    # produces the AC-specified order: count desc, then updated desc).
+    # Single-pass tuple sort would require negating the string updated key,
+    # which is brittle for unequal-length ISO timestamps; two-pass is clearer.
+    candidates.sort(key=lambda t: t[2].slug)  # tertiary: slug asc
+    candidates.sort(key=lambda t: t[1], reverse=True)  # secondary: updated desc
+    candidates.sort(key=lambda t: t[0], reverse=True)  # primary: count desc
+
+    return [finding for _c, _u, finding in candidates[:top_n]]
+
+
+def _check_c9_qa_staleness(
+    wiki_dir: Path,
+) -> list[QaStalenessFinding]:
+    """Flag live Filed Answers whose cited entity pages have a newer mtime.
+
+    PRD #78 Phase 5 amendment §"C9 — qa-staleness". Read-only — surfaced to
+    ``lint-report.md`` §``## Stale Filed Answers``. Closes Q6b "entity
+    re-ingested, qa stranded" failure mode.
+
+    Algorithm:
+    1. For each ``wiki/qa/*.md`` with ``frontmatter.status == "live"``:
+       a. Parse ``frontmatter.sources``; for each citation
+          ``"<entity-slug>#<heading-slug>"`` extract the bare entity slug.
+       b. For each entity slug, locate the entity file: try
+          ``wiki/entities/<slug>.md`` first, then ``wiki/concepts/<slug>.md``.
+       c. Compare the entity file mtime against ``qa.frontmatter.updated``.
+          If entity mtime > qa updated, the citation is "stale".
+       d. If at least one citation is stale, emit a QaStalenessFinding with
+          all stale citations and the max drift in days.
+    2. Return findings sorted by ``max_drift_days`` desc, then slug asc.
+
+    Pages whose ``frontmatter.updated`` cannot be parsed are skipped (defensive;
+    C10 surfaces schema breakage separately).
+    """
+    findings: list[QaStalenessFinding] = []
+
+    qa_dir = wiki_dir / "qa"
+    if not qa_dir.exists():
+        return findings
+
+    # Build a lookup map: entity-slug -> Path (entities/ first, concepts/ second).
+    # Filed Answer citations point at wiki entity/concept slugs (per ADR-0006
+    # §Citation contract — wiki Section citations look like "<page-slug>#<heading>").
+    entity_lookup: dict[str, Path] = {}
+    for subdir_name in ("entities", "concepts"):
+        subdir = wiki_dir / subdir_name
+        if not subdir.exists():
+            continue
+        for page_path in subdir.glob("*.md"):
+            entity_slug = page_path.stem
+            # entities/ wins over concepts/ on collision (deterministic).
+            entity_lookup.setdefault(entity_slug, page_path)
+
+    for slug, page_path in _iter_qa_pages(wiki_dir):
+        fm = _parse_frontmatter(page_path)
+        if fm is None:
+            continue
+        if fm.get("status") != "live":
+            continue
+
+        updated_str = fm.get("updated", "")
+        if not updated_str:
+            continue
+        try:
+            qa_updated = datetime.datetime.fromisoformat(str(updated_str).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if qa_updated.tzinfo is None:
+            qa_updated = qa_updated.replace(tzinfo=datetime.UTC)
+
+        raw_sources = fm.get("sources", [])
+        if not isinstance(raw_sources, list) or not raw_sources:
+            continue
+
+        stale_citations: list[str] = []
+        max_drift_seconds = 0.0
+        for citation in raw_sources:
+            if not citation:
+                continue
+            citation_str = str(citation)
+            # Citation shape: "<entity-slug>#<heading-slug>" OR bare "<slug>"
+            entity_slug = citation_str.split("#", 1)[0].strip()
+            if not entity_slug:
+                continue
+            entity_path = entity_lookup.get(entity_slug)
+            if entity_path is None or not entity_path.exists():
+                # Missing entity file — not C9's concern; C9 only flags newer-mtime
+                # drift. (No C-check currently flags qa→missing-entity; that's a
+                # potential future C9.b or new check.)
+                continue
+            try:
+                entity_mtime_ts = entity_path.stat().st_mtime
+            except OSError:
+                continue
+            entity_mtime = datetime.datetime.fromtimestamp(entity_mtime_ts, tz=datetime.UTC)
+            if entity_mtime > qa_updated:
+                stale_citations.append(citation_str)
+                drift_seconds = (entity_mtime - qa_updated).total_seconds()
+                if drift_seconds > max_drift_seconds:
+                    max_drift_seconds = drift_seconds
+
+        if stale_citations:
+            findings.append(
+                QaStalenessFinding(
+                    page_slug=slug,
+                    stale_citations=stale_citations,
+                    max_drift_days=round(max_drift_seconds / 86400.0, 1),
+                )
+            )
+
+    findings.sort(key=lambda f: (-f.max_drift_days, f.page_slug))
+    return findings
+
+
+def _check_c10_qa_schema_validity(
+    wiki_dir: Path,
+) -> list[InvalidQaSchemaFinding]:
+    """Surface qa pages with schema invalidities (status, type, question, count).
+
+    PRD #78 Phase 5 amendment §"C10 — qa-schema-validity". Layer 3 of the
+    orphan-visibility defence (PRD #78 Q8d): the indexer logs invalid status,
+    the filing layer refuses to touch invalid pages, and C10 surfaces them in
+    ``lint-report.md`` where curators habitually look.
+
+    Validation rules (one finding per (page, broken property) tuple):
+    - ``status``    ∈ ``{live, draft, stale, superseded}``
+    - ``type``      == ``"qa"`` (mismatched page type under wiki/qa/)
+    - ``question``  is present and non-empty string
+    - ``count``     is present and a positive integer
+
+    Pages whose frontmatter cannot be parsed (no ``---`` fence or YAML error)
+    produce a single finding flagging ``frontmatter`` as the broken property —
+    the curator sees the page surfaces and can investigate manually.
+
+    Returns findings sorted by ``page_slug``, then ``property_name``.
+    """
+    findings: list[InvalidQaSchemaFinding] = []
+
+    for slug, page_path in _iter_qa_pages(wiki_dir):
+        fm = _parse_frontmatter(page_path)
+        if fm is None:
+            findings.append(
+                InvalidQaSchemaFinding(
+                    page_slug=slug,
+                    property_name="frontmatter",
+                    offending_value="<unparseable>",
+                )
+            )
+            continue
+
+        # status
+        if "status" not in fm:
+            findings.append(
+                InvalidQaSchemaFinding(
+                    page_slug=slug,
+                    property_name="status",
+                    offending_value="<missing>",
+                )
+            )
+        else:
+            status_val = fm.get("status")
+            if not isinstance(status_val, str) or status_val not in _VALID_QA_STATUS_VALUES:
+                findings.append(
+                    InvalidQaSchemaFinding(
+                        page_slug=slug,
+                        property_name="status",
+                        offending_value=str(status_val),
+                    )
+                )
+
+        # type
+        if "type" not in fm:
+            findings.append(
+                InvalidQaSchemaFinding(
+                    page_slug=slug,
+                    property_name="type",
+                    offending_value="<missing>",
+                )
+            )
+        else:
+            type_val = fm.get("type")
+            if type_val != "qa":
+                findings.append(
+                    InvalidQaSchemaFinding(
+                        page_slug=slug,
+                        property_name="type",
+                        offending_value=str(type_val),
+                    )
+                )
+
+        # question — required + non-empty string
+        raw_question = fm.get("question")
+        if raw_question is None:
+            findings.append(
+                InvalidQaSchemaFinding(
+                    page_slug=slug,
+                    property_name="question",
+                    offending_value="<missing>",
+                )
+            )
+        elif not isinstance(raw_question, str) or not raw_question.strip():
+            findings.append(
+                InvalidQaSchemaFinding(
+                    page_slug=slug,
+                    property_name="question",
+                    offending_value=repr(raw_question),
+                )
+            )
+
+        # count — required + positive integer
+        if "count" not in fm:
+            findings.append(
+                InvalidQaSchemaFinding(
+                    page_slug=slug,
+                    property_name="count",
+                    offending_value="<missing>",
+                )
+            )
+        else:
+            raw_count = fm.get("count")
+            valid_count = False
+            if isinstance(raw_count, int) and not isinstance(raw_count, bool) and raw_count > 0:
+                valid_count = True
+            if not valid_count:
+                findings.append(
+                    InvalidQaSchemaFinding(
+                        page_slug=slug,
+                        property_name="count",
+                        offending_value=repr(raw_count),
+                    )
+                )
+
+    findings.sort(key=lambda f: (f.page_slug, f.property_name))
     return findings
 
 
@@ -1341,6 +1784,46 @@ def _render_report_markdown(
                 lines.append(f"**`{ppf.page_a}` ↔ `{ppf.page_b}`** — {ppf.summary}")
                 lines.append("")
 
+    # ---- Phase 6 Slice 6-5 sections (PRD #78 Phase 5 amendment) ----
+    # Empty-findings → section omitted entirely, matching the existing pattern
+    # used by the Coverage Gaps / Contradictions sub-groups above. This keeps
+    # noise out of the report when the qa lifecycle is dormant.
+
+    # ## Promotion Candidates (C8)
+    if findings.promotion_candidates:
+        lines.append("## Promotion Candidates")
+        lines.append("")
+        lines.append("| Slug | Question | Count | Age (days) | Cited |")
+        lines.append("|------|----------|-------|------------|-------|")
+        for pc in findings.promotion_candidates:
+            q_cell = pc.question.replace("|", "\\|").replace("\n", " ")
+            lines.append(
+                f"| `{pc.slug}` | {q_cell} | {pc.count} | {pc.age_days:.1f} | {pc.cited_count} |"
+            )
+        lines.append("")
+
+    # ## Stale Filed Answers (C9)
+    if findings.stale_filed_answers:
+        lines.append("## Stale Filed Answers")
+        lines.append("")
+        lines.append("| Slug | Stale Entity Citations | Days Drift |")
+        lines.append("|------|------------------------|------------|")
+        for sf in findings.stale_filed_answers:
+            cites_cell = ", ".join(f"`{c}`" for c in sf.stale_citations)
+            lines.append(f"| `{sf.page_slug}` | {cites_cell} | {sf.max_drift_days:.1f} |")
+        lines.append("")
+
+    # ## Invalid qa Schema (C10)
+    if findings.invalid_qa_schemas:
+        lines.append("## Invalid qa Schema")
+        lines.append("")
+        lines.append("| Slug | Property | Offending Value |")
+        lines.append("|------|----------|-----------------|")
+        for inv in findings.invalid_qa_schemas:
+            val_cell = inv.offending_value.replace("|", "\\|").replace("\n", " ")
+            lines.append(f"| `{inv.page_slug}` | `{inv.property_name}` | {val_cell} |")
+        lines.append("")
+
     if check_errors:
         lines.append("")
         lines.append("## Check errors")
@@ -1463,6 +1946,33 @@ def run_lint(
             check_errors["c1"] = err_msg
             log_event("lint_check_error", f"check=c1 exc={err_msg}", log_path=resolved_log)
 
+        # --- C8 Promotion candidates (read-only qa scan) ---
+        promotion_candidates: list[PromotionCandidateFinding] = []
+        try:
+            promotion_candidates = _check_c8_promotion_candidates(resolved_wiki)
+        except Exception as exc:  # noqa: BLE001
+            err_msg = f"{type(exc).__name__}: {exc}"
+            check_errors["c8"] = err_msg
+            log_event("lint_check_error", f"check=c8 exc={err_msg}", log_path=resolved_log)
+
+        # --- C9 qa-staleness (read-only entity-vs-qa mtime comparison) ---
+        stale_filed_answers: list[QaStalenessFinding] = []
+        try:
+            stale_filed_answers = _check_c9_qa_staleness(resolved_wiki)
+        except Exception as exc:  # noqa: BLE001
+            err_msg = f"{type(exc).__name__}: {exc}"
+            check_errors["c9"] = err_msg
+            log_event("lint_check_error", f"check=c9 exc={err_msg}", log_path=resolved_log)
+
+        # --- C10 qa-schema-validity (read-only schema sweep) ---
+        invalid_qa_schemas: list[InvalidQaSchemaFinding] = []
+        try:
+            invalid_qa_schemas = _check_c10_qa_schema_validity(resolved_wiki)
+        except Exception as exc:  # noqa: BLE001
+            err_msg = f"{type(exc).__name__}: {exc}"
+            check_errors["c10"] = err_msg
+            log_event("lint_check_error", f"check=c10 exc={err_msg}", log_path=resolved_log)
+
         # --- C5 Page-pair contradiction detection (most expensive — last) ---
         page_pairs: list[PagePairFinding] = []
         llm_calls: int = 0
@@ -1501,6 +2011,9 @@ def run_lint(
         red_links=red_links,
         coverage_gaps=coverage_gaps,
         page_pairs=page_pairs,
+        promotion_candidates=promotion_candidates,
+        stale_filed_answers=stale_filed_answers,
+        invalid_qa_schemas=invalid_qa_schemas,
     )
     total = (
         len(orphans)
@@ -1510,6 +2023,9 @@ def run_lint(
         + len(red_links)
         + len(coverage_gaps)
         + len(page_pairs)
+        + len(promotion_candidates)
+        + len(stale_filed_answers)
+        + len(invalid_qa_schemas)
     )
     findings_by_check: dict[str, int] = {
         "c11": len(orphans),
@@ -1519,6 +2035,9 @@ def run_lint(
         "c2": len(red_links),
         "c1": len(coverage_gaps),
         "c5": len(page_pairs),
+        "c8": len(promotion_candidates),
+        "c9": len(stale_filed_answers),
+        "c10": len(invalid_qa_schemas),
     }
 
     summary = LintSummary(

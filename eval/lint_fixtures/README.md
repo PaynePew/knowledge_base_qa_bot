@@ -41,9 +41,19 @@ POST /lint → 0 findings (proves no state bleed)
 | 7 | C11 orphan | `legacy-faq` | `deleted_source.md` — does not exist |
 | 8 | C1 retrieval_empty | — | 3 log lines: "vip membership fee" |
 | 9 | C1 below_threshold | — | 2 log lines: "how long is refund" top_section=refund-timeline |
+| 10 | C8 promotion (rank 1) | `qa-vip-fee-001abc` (status: draft, count: 5) | `pricing.md#vip-pricing` |
+| 11 | C8 promotion (rank 2) | `qa-shipping-eta-002def` (status: draft, count: 2) | `shipping_info.md#timeline` |
+| 12 | C9 qa-staleness | `qa-refund-window-003ghi` (status: live, updated 2026-03-01) | cites `refund-policy-a#refund-timeline`; loader touches `wiki/concepts/refund-policy-a.md` mtime to now |
+| 13 | C10 invalid status | `qa-typo-status-004jkl` (status: `Live` — capital L) | — |
+| 14 | C5 modifier check | `qa-valid-shipping-005mno` (status: live, shares `shipping_info.md` source with concept `our-shipping`) | proves qa pages are filtered from F1/F3 candidate pairs even when sharing sources with concepts |
 
 **C2 (red links)** is not planted — `shipping` and `our-shipping` already contain
 `[[order-tracking]]` which resolves to a red link (no such page exists in the fixtures).
+
+**Filed Answer fixtures (Slice 6-5)** live under `wiki/qa/` and are scanned by the
+three Phase 5 amendment checks (C8 promotion candidates, C9 qa-staleness, C10
+qa-schema-validity). The C5 modifier (also Slice 6-5) filters them out of F1/F3
+candidate pairs *before* LLM judging.
 
 ## Production vs Fixture Separation Invariant
 
@@ -66,14 +76,20 @@ eval/lint_fixtures/
 │   ├── shipping_info.md          ← C5 duplicate partner B
 │   └── aged_policy.md            ← C6 stale demonstration source
 └── wiki/
-    └── concepts/
-        ├── refund-policy-a.md    ← C5 direct (5 business days)
-        ├── refund-policy-b.md    ← C5 direct (14 business days)
-        ├── shipping.md           ← C5 duplicate (about_us perspective)
-        ├── our-shipping.md       ← C5 duplicate (shipping_info perspective)
-        ├── aged.md               ← C6 stale (updated 2026-01-01)
-        ├── broken-page.md        ← C3 failed-grounding
-        ├── pricing.md            ← C4-a slug collision base
-        ├── pricing-2.md          ← C4-a slug collision variant
-        └── legacy-faq.md         ← C11 orphan (deleted_source.md)
+    ├── concepts/
+    │   ├── refund-policy-a.md    ← C5 direct (5 business days)
+    │   ├── refund-policy-b.md    ← C5 direct (14 business days)
+    │   ├── shipping.md           ← C5 duplicate (about_us perspective)
+    │   ├── our-shipping.md       ← C5 duplicate (shipping_info perspective)
+    │   ├── aged.md               ← C6 stale (updated 2026-01-01)
+    │   ├── broken-page.md        ← C3 failed-grounding
+    │   ├── pricing.md            ← C4-a slug collision base
+    │   ├── pricing-2.md          ← C4-a slug collision variant
+    │   └── legacy-faq.md         ← C11 orphan (deleted_source.md)
+    └── qa/
+        ├── qa-vip-fee-001abc.md         ← C8 promotion candidate (draft, count: 5 — rank 1)
+        ├── qa-shipping-eta-002def.md    ← C8 promotion candidate (draft, count: 2 — rank 2)
+        ├── qa-refund-window-003ghi.md   ← C9 qa-staleness (cites refund-policy-a; loader touches that entity)
+        ├── qa-typo-status-004jkl.md     ← C10 invalid status (`Live` capital L)
+        └── qa-valid-shipping-005mno.md  ← C5 modifier verification (status: live, valid, shares shipping_info source)
 ```

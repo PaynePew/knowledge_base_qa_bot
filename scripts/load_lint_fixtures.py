@@ -11,6 +11,9 @@ Actions:
 2. Append eval/lint_fixtures/log_entries.txt lines to wiki/log.md.
 3. Touch eval/lint_fixtures/sources/aged_policy.md mtime to current time so C6 fires
    (the aged wiki page has updated: 2026-01-01 which will be older than the touched source).
+4. Touch wiki/concepts/refund-policy-a.md mtime to current time so C9 fires for the
+   live qa fixture qa-refund-window-003ghi (which has frontmatter.updated:
+   2026-03-01T08:00:00Z and cites refund-policy-a#refund-timeline).
 
 Revert:
     git checkout wiki/ && rm -f wiki/lint-report.md
@@ -21,6 +24,11 @@ copied to docs/; they are loaded into a wiki-side structure only.
 The C6 (stale detection) check compares the source file's mtime against the wiki
 page's frontmatter.updated timestamp. The loader touches aged_policy.md to now,
 making it newer than the aged wiki page (updated: 2026-01-01).
+
+The C9 (qa-staleness) check compares the wiki entity file's mtime against the
+qa page's frontmatter.updated timestamp. The loader touches refund-policy-a.md
+(in wiki/concepts/) to now, making it newer than the qa-refund-window page
+(frontmatter.updated: 2026-03-01).
 """
 
 from __future__ import annotations
@@ -107,6 +115,26 @@ def load_fixtures(wiki_dir: Path) -> None:
     else:
         print(
             f"WARNING: aged_policy.md not found at {_AGED_SOURCE} — C6 check may not fire",
+            file=sys.stderr,
+        )
+
+    # Step 4: Touch wiki/concepts/refund-policy-a.md mtime to now so C9
+    # (qa-staleness) fires for qa-refund-window-003ghi (frontmatter.updated:
+    # 2026-03-01T08:00:00Z). The qa page cites refund-policy-a#refund-timeline;
+    # C9 compares the entity file's mtime against the qa page's frontmatter.updated.
+    import os as _os
+
+    refund_entity = wiki_dir / "concepts" / "refund-policy-a.md"
+    if refund_entity.exists():
+        now = time.time()
+        _os.utime(str(refund_entity), (now, now))
+        print(
+            "Touched wiki/concepts/refund-policy-a.md mtime to now "
+            "(triggers C9 qa-staleness for qa-refund-window-003ghi)"
+        )
+    else:
+        print(
+            f"WARNING: {refund_entity} not found — C9 check may not fire",
             file=sys.stderr,
         )
 
