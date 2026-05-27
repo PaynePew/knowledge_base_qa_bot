@@ -1,0 +1,3 @@
+Plain text content with no headings.
+Just raw text that should be passed through as-is.
+This verifies the degraded single-Section rule.

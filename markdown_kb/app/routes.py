@@ -1,6 +1,6 @@
 """Shallow module per Ousterhout. Public surface: ``router``.
 
-HTTP wiring for /health, /index, /chat, /ingest, /lint. No domain logic."""
+HTTP wiring for /health, /index, /chat, /ingest, /lint, /import. No domain logic."""
 
 from __future__ import annotations
 
@@ -9,6 +9,8 @@ from fastapi import APIRouter, HTTPException
 import app.indexer as _indexer
 
 from . import qa as qa_module
+from .importer import ImportBatchResult
+from .importer import import_sources as run_import
 from .indexer import build_index
 from .ingest import ingest_sources
 from .lint import run_lint
@@ -19,6 +21,10 @@ from .schemas import (
     FiledStatus,
     GroundingClaim,
     GroundingInfo,
+    ImportFailureSchema,
+    ImportRequest,
+    ImportResponse,
+    ImportSourceResultSchema,
     IndexResponse,
     IngestRequest,
     IngestResponse,
@@ -216,4 +222,54 @@ def ingest(req: IngestRequest | None = None) -> IngestResponse:
         results=batch.results,
         failed_sources=batch.failed_sources,
         pages_with_failed_grounding=batch.pages_with_failed_grounding,
+    )
+
+
+@router.post("/import", response_model=ImportResponse)
+def import_raw(req: ImportRequest | None = None) -> ImportResponse:
+    """Convert raw sources to Markdown docs.
+
+    - No body (or body with ``source=null``): batch mode — globs
+      ``raw/**/*.{html,txt}`` recursively and writes each to ``docs/``.
+    - Body with ``source="<filename>"``: single-source mode — converts one
+      specified file.
+
+    Shallow wrapper around ``importer.import_sources(...)`` (CODING_STANDARD
+    §2.3 — all domain logic lives in ``importer.py``).
+
+    Always returns HTTP 200 with an ``ImportResponse``.  Per-source failures
+    are recorded in ``failed_sources`` without aborting the batch.
+    """
+    source_filter = req.source if req is not None else None
+    batch: ImportBatchResult = run_import(source_filter)
+
+    return ImportResponse(
+        imported_sources=[
+            ImportSourceResultSchema(
+                raw_path=r.raw_path,
+                docs_path=r.docs_path,
+                original_format=r.original_format,
+                content_sha256=r.content_sha256,
+                status=r.status,
+            )
+            for r in batch.imported_sources
+        ],
+        skipped_sources=[
+            ImportSourceResultSchema(
+                raw_path=r.raw_path,
+                docs_path=r.docs_path,
+                original_format=r.original_format,
+                content_sha256=r.content_sha256,
+                status=r.status,
+            )
+            for r in batch.skipped_sources
+        ],
+        failed_sources=[
+            ImportFailureSchema(
+                raw_path=f.raw_path,
+                error_type=f.error_type,
+                error_message=f.error_message,
+            )
+            for f in batch.failed_sources
+        ],
     )

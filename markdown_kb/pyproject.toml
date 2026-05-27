@@ -10,6 +10,7 @@ dependencies = [
     "langchain-core==1.4.0",
     "langchain-openai==1.2.2",
     "python-dotenv>=1.2.2",
+    "markdownify>=0.11",
 ]
 
 [tool.uv]
