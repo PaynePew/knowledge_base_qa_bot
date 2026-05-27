@@ -1,6 +1,6 @@
 # Coding Standard — `knowledge_base_qa_bot`
 
-How code is shaped in this repo, what conventions hold across modules, what design patterns are in play, and what tooling enforces them. This file is **not the spec** — that lives in `PRD.md` / `ADR.md` / `CONTEXT.md`. This file is the **consistency layer** that keeps the spec implementable across slices without drifting.
+How code is shaped in this repo, what conventions hold across modules, what design patterns are in play, and what tooling enforces them. This file is **not the spec** — that lives in `project-docs/prd.md` and `project-docs/adr/*.md` / `CONTEXT.md`. This file is the **consistency layer** that keeps the spec implementable across slices without drifting.
 
 ## 0. Reading order
 
@@ -10,7 +10,7 @@ In every fresh session, read in this order before writing code:
 2. `CONTEXT.md` — vocabulary (Source, Section, Citation, Cannot Confirm, …)
 3. `project-docs/adr/*.md` — architectural decisions
 4. `project-docs/prd.md` — what we're building and why
-5. **this file** — when about to write or review code
+5. **this file** — when reviewing code
 6. `markdown_kb/tests/README.md` — when about to write or review a test
 7. `project-docs/orchestration-plan.md` — when running the implementer/reviewer loop
 
@@ -44,7 +44,7 @@ This document is the **reviewer agent's** standards reference (see [`project-doc
 - **§8 Tooling recommendations** — adopting these is a separate `chore:` commit, not a per-slice review concern
 - **§9 Commits and review** — the commit message rules are checked by the implementer; the reviewer-checklist subset (§9.2) is duplicated in agents/review.md's review process for self-containment
 
-**Citation discipline when flagging**: when the reviewer flags an issue, it must cite the section by number and locate the offending code by function or symbol name (e.g. "§3.1 vocabulary drift — `Document` used in `build_index`, should be `Source`"). Avoid line-number citations (`file.py:42`) — they rot the moment the file is edited. Do NOT dump the section's full prose into the report — the section number is enough for the human to look up.
+**Citation discipline when flagging**: when the reviewer flags an issue, it must cite the section by number and locate the offending code by function or symbol name (e.g. "§3.1 vocabulary drift — `Document` used in `build_index`, should be `Source`"). Avoid line-number citations (file:42 style) — they rot the moment the file is edited. Do NOT dump the section's full prose into the report — the section number is enough for the human to look up.
 
 **Budget**: an active review typically loads §3 + §4 + §5 + §11 eagerly (~80 lines combined) plus 0-2 conditional sections on demand. Total injection is well under 200 lines — fits cleanly in any sub-agent's context window.
 
@@ -63,28 +63,28 @@ LF everywhere, enforced by `.gitattributes`. Windows-only scripts (`.bat`, `.cmd
 
 ### 1.3 Imports
 
-- **`from __future__ import annotations` is the first import** in every `.py` file (after the module docstring). Lets `list[X]`, `dict[K, V]`, `X | None` work even when later type-resolution targets <3.10 environments. Already consistent across the codebase.
+- **`from __future__ import annotations` is the first import** in every module (after the module docstring). Lets `list[X]`, `dict[K, V]`, `X | None` work even when later type-resolution targets <3.10 environments. Already consistent across the codebase.
 - Grouping (one blank line between groups):
   1. stdlib
   2. third-party
   3. local (`from . import …` or `from .foo import …`)
 - Within each group, sort alphabetically.
 - Prefer **relative imports within a single package** (`from .indexer import Section`); absolute imports for cross-package.
-- Function-scope imports are allowed **only** to break circular dependencies. Always paired with a comment explaining why (see `parse_markdown` in `indexer.py` — `from .logger import log_event` inside the function body to avoid the `indexer` ↔ `logger` import cycle).
+- Function-scope imports are allowed **only** to break circular dependencies. Always paired with a comment explaining why the cycle exists (see §1.8 on WHY-comments and §1.6 on rule-based functions).
 
 ### 1.4 Naming
 
 | Kind | Convention | Example |
 |---|---|---|
 | Functions / variables / modules | `snake_case` | `build_index`, `ranked_sections` |
-| Classes (incl. dataclasses) | `PascalCase` | `Section`, `ChatRequest` |
+| Classes (incl. dataclasses) | `PascalCase` | `Section` (must match CONTEXT.md vocabulary) |
 | Module-level constants & singletons | `SCREAMING_SNAKE_CASE` | `SYSTEM_PROMPT`, `INDEX_PATH`, `STOP_WORDS` |
 | Module-private state / helpers | leading `_` | `_llm`, `_index_lock`, `_apply_grounding_check` |
 | Pytest fixtures | `snake_case`, descriptive | `tmp_docs`, `tmp_kb` |
 
 **Domain identifiers MUST match `CONTEXT.md` vocabulary** — see § 4.1. This is a hard rule, not a preference.
 
-### 1.5 File layout (within a `.py`)
+### 1.5 File layout (within a module)
 
 ```python
 """Module docstring (mandatory).
@@ -133,14 +133,14 @@ def public_function(...) -> ...: ...
 def _private_helper(...) -> ...: ...
 ```
 
-`# ---` divider lines are **mandatory** once a module has ≥4 logical sections. They make `grep -n "# ---"` a free table of contents. `indexer.py` is the reference example.
+`# ---` divider lines are **mandatory** once a module has ≥4 logical sections. They make `grep -n "# ---"` a free table of contents. The deep-module indexer is the reference example.
 
 ### 1.6 Docstrings (PEP 257)
 
 - **Every module:** triple-quoted docstring at the top. Intent + ADR/PRD reference.
 - **Every public function / method:** triple-quoted docstring describing intent, non-obvious args, return shape, raised exceptions.
 - **Private helpers:** one-line docstring only if the name is not self-explanatory.
-- **Rule-based functions** (e.g. `parse_markdown`): embed the rule spec inline in the docstring, numbered `1.` through `N.`, then reference rules in code with `# Rule N:` comments. See `parse_markdown` in `indexer.py`.
+- **Rule-based functions** (parsing, grounding, scoring): embed the rule spec inline in the docstring, numbered `1.` through `N.`, then reference rules in code with `# Rule N:` comments.
 - Never write a "what" docstring on a trivial helper (`# return the sum` over `return a + b` is noise).
 
 ### 1.7 Type hints
@@ -159,7 +159,7 @@ def _private_helper(...) -> ...: ...
 - A reference to an ADR / PRD section / CONTEXT term that drives the design.
 - A guard against future drift (`# ADR-0003: SOURCE_DIRS is a list so future WIKI_DIR can be appended without signature change`).
 
-**Never** write comments that restate the code or anchor to the current task ("added for Slice 5", "used by routes.py"). Git log and call graph already convey those.
+**Never** write comments that restate the code or anchor to the current task ("added for Slice 5", "used by the routes module"). Git log and call graph already convey those.
 
 ---
 
@@ -167,7 +167,7 @@ def _private_helper(...) -> ...: ...
 
 ### 2.1 Deep modules (Ousterhout)
 
-Modules are organized as **deep modules**: small public interface, large private implementation. The PRD declares `indexer.py` and `retrieval.py` as deep modules. Every new module passes the deep-module test:
+Modules are organized as **deep modules**: small public interface, large private implementation. The PRD declares the indexer and retrieval modules as deep modules. Every new module passes the deep-module test:
 
 > Could a reasonable user of this module use it correctly knowing **only** the names + signatures of its public functions, with no need to read the implementation?
 
@@ -175,13 +175,13 @@ If no — refactor the boundary before merging.
 
 ### 2.2 Module size
 
-- Up to ~500 lines per `.py` is acceptable.
-- Beyond ~500, split **only when a clear sub-responsibility falls out**. Do not split prophylactically (PRD lists `prompt_builder.py` as a deliberate extraction so its output can be asserted in isolation without mocking the LLM — that's the bar).
+- Up to ~500 lines per module is acceptable.
+- Beyond ~500, split **only when a clear sub-responsibility falls out**. Do not split prophylactically (the PRD lists the prompt-builder module as a deliberate extraction so its output can be asserted in isolation without mocking the LLM — that's the bar).
 - Per **ADR-0002**: do NOT extract a pluggable `Retriever` protocol until BOTH `markdown_kb` and `vector_rag` are end-to-end working.
 
 ### 2.3 Module depth
 
-Every module under `markdown_kb/app/` declares its Ousterhout depth on the first non-blank line of its docstring:
+Every module in the app package declares its Ousterhout depth on the first non-blank line of its docstring:
 
 ```python
 """Deep module per Ousterhout. Public surface: X, Y, Z.
@@ -195,30 +195,30 @@ The reviewer opens the source file to discover a module's depth — there is no 
 
 ### 2.4 Forbidden cross-module patterns
 
-- **No reaching into private state of another module.** `indexer.sections` is treated as public (and is read by `retrieval.py`); `indexer._index_lock` is not.
-- **No circular imports.** When `indexer.py` needs `logger.py`, the import is at the top. When the cycle is unavoidable (e.g. `parse_markdown` → `log_event`), use a function-scope import + a comment.
-- **No LangChain types leak to non-LLM modules.** `HumanMessage`, `SystemMessage`, `ChatOpenAI`, and LangChain `with_structured_output` schemas stay inside **LLM-facing modules** — defined as modules that own an LLM call site. The current LLM-facing set is `retrieval.py` and `grounding.py` (ADR-0005 may register more as future phases add `/ingest` etc.). Routes / schemas / indexer / logger / prompt_builder / wiki_index see only Python primitives and Pydantic models. The PRD lists this exactly — `prompt_builder.py` was extracted precisely so its output can be asserted *as a string* without touching LangChain types.
+- **No reaching into private state of another module.** Module-level public lists and dicts are public; private attributes (leading `_`) are not.
+- **No circular imports.** When a module needs another, the import is at the top. When the cycle is unavoidable, use a function-scope import + a comment explaining the cycle (see §1.8 on WHY-comments).
+- **No LangChain types leak to non-LLM modules.** LangChain message types, client types, and `with_structured_output` schemas stay inside **LLM-facing modules** — defined as modules that own an LLM call site. LLM-facing modules are enumerated in ADR-0005 § Consequences. Routes / schemas / indexer / logger / prompt-builder / wiki-index modules see only Python primitives and Pydantic models. The prompt-builder module was extracted precisely so its output can be asserted *as a string* without touching LangChain types.
 
 ### 2.5 ADR- and PRD-encoded invariants
 
 Architectural decisions that the codebase must preserve across phases are encoded directly in the documents that drive them:
 
 - ADRs under [`project-docs/adr/`](adr/) tag each invariant with a `**Invariant**` prefix inside their `## Consequences` section.
-- PRD-encoded invariants live in [`project-docs/prd.md`](prd.md) and the phase-specific PRD issues (currently Phase 3 in GitHub issue #28).
+- PRD-encoded invariants live in [`project-docs/prd.md`](prd.md) and the phase-specific PRD issues.
 
 The reviewer must check that any PR which touches the code site of an invariant either preserves it or ships **a new ADR superseding the existing one**. Discovery flow: read the diff, identify the code sites it touches, then `grep -nE "Invariant" project-docs/adr/*.md` and scan the PRD for matching anchors. The reviewer fails any PR that breaks an invariant without a paired ADR.
 
 ### 2.6 Concurrency
 
-- The index swap is the only contended operation. Hold `_index_lock` **only** when assigning to the module-level `sections` list (see `build_index` and `load_index_json` in `indexer.py`).
+- The index swap is the only contended operation. Hold the index lock **only** when assigning to the module-level `sections` list (see ADR-0003 § Consequences for the invariant).
 - Readers do not lock. Mid-rebuild readers see the previous snapshot until the swap completes.
-- **Persistent state writes are atomic**: write to `<file>.tmp`, then `os.replace(...)`. Never write to the target file directly. See `write_index_json` in `indexer.py`.
+- **Persistent state writes are atomic**: write to `<file>.tmp`, then `os.replace(...)`. Never write to the target file directly. The indexer and wiki-index modules carry the canonical implementation of this pattern.
 - Beyond a single FastAPI worker, this model breaks. Multi-worker is **post-prototype**; will need an external lock (filesystem flock, redis, or DB). Do not refactor proactively.
 
 ### 2.7 State management
 
-- Module-level mutable globals (`sections`, `doc_freq`, `_llm`) are **acceptable for the prototype's single-process model**. They are explicitly designed so tests can swap them via `monkeypatch`.
-- Singleton LLM clients use lazy init via `get_llm()` / `get_retry_llm()`. This lets tests stub them without instantiating a real OpenAI client.
+- Module-level mutable globals (sections list, doc-frequency map, LLM client) are **acceptable for the prototype's single-process model**. They are explicitly designed so tests can swap them via `monkeypatch`.
+- Singleton LLM clients use lazy init via getter functions. This lets tests stub them without instantiating a real OpenAI client.
 - When this codebase outgrows the single-process model, lift state onto `app.state` or a DI container. **Do not refactor today.**
 
 ---
@@ -237,11 +237,7 @@ The `## Reserved (not yet implemented)` section in [`CONTEXT.md`](../CONTEXT.md)
 
 ### 3.3 Constants for sentinel strings
 
-Any literal string with semantic meaning that appears more than once gets a module-level constant:
-
-- ✅ `CANNOT_CONFIRM_PHRASE = "I cannot confirm from the knowledge base."` (in `retrieval.py`)
-- ✅ `SYSTEM_PROMPT` (`prompt_builder.py`)
-- ❌ Inline `"I cannot confirm from the knowledge base."` in tests or routes — use the constant.
+Any literal string with semantic meaning that appears more than once gets a module-level constant. The Cannot Confirm phrase and the system-prompt string are the canonical examples — they are defined once in the module that owns them and imported everywhere else. Inline repetition of a sentinel string in tests or routes is a drift signal (see §11).
 
 ---
 
@@ -249,11 +245,11 @@ Any literal string with semantic meaning that appears more than once gets a modu
 
 ### 4.1 Fail fast on data corruption
 
-A corrupt `.kb/index.json` at startup **raises** and prevents the server from starting (`load_index_json`). Silently serving stale or wrong data is worse than not serving. Apply the same rule to every persistent-state load you add.
+A corrupt `.kb/index.json` at startup **raises** and prevents the server from starting. Silently serving stale or wrong data is worse than not serving. Apply the same rule to every persistent-state load you add.
 
 ### 4.2 OpenAI exception mapping (HTTP status)
 
-Mandatory mapping in `_call_llm_with_error_handling`:
+Mandatory mapping in the LLM error-handling wrapper (owned by the LLM-call wrapper module per ADR-0005):
 
 | Exception | HTTP | Log kind |
 |---|---|---|
@@ -265,17 +261,17 @@ Every branch emits a `chat_error` log entry with the right `kind=` tag. Use `rai
 
 ### 4.3 `Cannot Confirm` is a success, not an error
 
-Per **ADR-0001**:
+Per **ADR-0001** and **ADR-0004**:
 
-- Empty / sub-threshold retrieval returns the exact literal phrase with HTTP **200**.
-- The LLM is **not called** in this path (pre-LLM gate in `retrieval.py`).
-- An ungrounded LLM response gets **one** retry at `temperature=0`. If still ungrounded, replace with `CANNOT_CONFIRM_PHRASE` and clear `sources`.
+- Empty / sub-threshold retrieval returns the exact Cannot Confirm sentinel phrase with HTTP **200**.
+- The LLM is **not called** in this path (pre-LLM gate).
+- All Block & Replace grounding logic — what happens when the LLM response is ungrounded, how many retries, what happens to `sources` — is defined in ADR-0001 and ADR-0004 § Consequences. This file does not duplicate impl detail.
 
-Adding a shortcut that bypasses the gate ("if score is just barely below threshold, send to LLM anyway") is a deliberate ADR-0001 violation. Reviewer must fail it.
+Adding a shortcut that bypasses the pre-LLM gate ("if score is just barely below threshold, send to LLM anyway") is a deliberate ADR-0001 violation. Reviewer must fail it.
 
 ### 4.4 Validation at boundaries only
 
-- Request validation: Pydantic does it via `ChatRequest` / `IndexResponse`. **No** defensive re-validation in route handlers.
+- Request validation: Pydantic does it at the route boundary via request/response schemas. **No** defensive re-validation inside route handlers.
 - Deep-module ↔ deep-module: trust types. Don't `isinstance`-check inputs from your own codebase.
 
 ---
@@ -302,7 +298,7 @@ If you want a debug-only channel, instead either:
 
 ### 5.3 Summaries are bounded
 
-- Truncate user queries to 60 chars: `question[:60].replace('"', "'")`. This idiom is repeated in `retrieval.py` — when adding a new log site, copy it verbatim.
+- Truncate user queries to 60 chars: `question[:60].replace('"', "'")`. This idiom is established in the LLM-call wrapper module — when adding a new log site, copy it verbatim.
 - Never log API keys, full request bodies, or full document content.
 - Score values rounded to 3 decimal places: `round(score, 3)`.
 
