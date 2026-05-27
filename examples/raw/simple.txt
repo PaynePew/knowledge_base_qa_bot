@@ -1,0 +1,9 @@
+Customer Support Notes
+
+These are plain-text notes from a customer support session.
+No headings, just raw text content.
+
+Issue: Customer could not log in after password reset.
+Resolution: Cleared browser cache and cookies. Issue resolved.
+
+Follow-up: Send satisfaction survey after 24 hours.
