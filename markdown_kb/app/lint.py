@@ -345,18 +345,16 @@ def _check_c4a_slug_collision(
 
     for slug, _page_path in _iter_wiki_pages(wiki_dir):
         m = _COLLISION_SUFFIX_RE.match(slug)
-        if m:
-            base = m.group(1)
-            n = int(m.group(2))
-            if n >= 2:
-                groups.setdefault(base, {base})
-                groups[base].add(slug)
-            else:
-                # -1 suffix: not a collision-appended variant; treat slug as its own base
-                groups.setdefault(slug, {slug})
+        if m and int(m.group(2)) >= 2:
+            # Suffixed variant (`pricing-2`, `pricing-3`, ...): group under its base.
+            # Do NOT seed the group with {base} — the unsuffixed base page may not
+            # exist on disk; report only slugs that actually exist.
+            groups.setdefault(m.group(1), set()).add(slug)
         else:
-            # No suffix — register the slug as its own base (may gain members later)
-            groups.setdefault(slug, {slug})
+            # No suffix (or -1, which is not a collision-appended variant): the slug
+            # is its own base. Always add so iteration order does not affect which
+            # slugs land in a pre-existing group keyed by this same base.
+            groups.setdefault(slug, set()).add(slug)
 
     findings: list[SlugCollisionFinding] = []
     for base_slug, members in groups.items():
@@ -531,33 +529,36 @@ def run_lint(
 
     check_errors: dict[str, str] = {}
 
-    # --- C11 Orphan pages ---
-    orphans: list[OrphanPageFinding] = []
-    try:
-        with _index_lock:
+    # Hold the indexer lock for the entire check sequence so /ingest cannot mutate
+    # wiki pages mid-snapshot. Lint is read-only, so the lock is purely a
+    # consistency guard, not a write barrier on lint's side.
+    with _index_lock:
+        # --- C11 Orphan pages ---
+        orphans: list[OrphanPageFinding] = []
+        try:
             orphans = _check_c11_orphan(resolved_wiki, resolved_docs)
-    except Exception as exc:  # noqa: BLE001
-        err_msg = f"{type(exc).__name__}: {exc}"
-        check_errors["c11"] = err_msg
-        log_event("lint_check_error", f"check=c11 exc={err_msg}", log_path=resolved_log)
+        except Exception as exc:  # noqa: BLE001
+            err_msg = f"{type(exc).__name__}: {exc}"
+            check_errors["c11"] = err_msg
+            log_event("lint_check_error", f"check=c11 exc={err_msg}", log_path=resolved_log)
 
-    # --- C3 Failed-grounding sweep ---
-    failed_grounding: list[FailedGroundingFinding] = []
-    try:
-        failed_grounding = _check_c3_failed_grounding(resolved_wiki)
-    except Exception as exc:  # noqa: BLE001
-        err_msg = f"{type(exc).__name__}: {exc}"
-        check_errors["c3"] = err_msg
-        log_event("lint_check_error", f"check=c3 exc={err_msg}", log_path=resolved_log)
+        # --- C3 Failed-grounding sweep ---
+        failed_grounding: list[FailedGroundingFinding] = []
+        try:
+            failed_grounding = _check_c3_failed_grounding(resolved_wiki)
+        except Exception as exc:  # noqa: BLE001
+            err_msg = f"{type(exc).__name__}: {exc}"
+            check_errors["c3"] = err_msg
+            log_event("lint_check_error", f"check=c3 exc={err_msg}", log_path=resolved_log)
 
-    # --- C4-a Slug collision groups ---
-    slug_collisions: list[SlugCollisionFinding] = []
-    try:
-        slug_collisions = _check_c4a_slug_collision(resolved_wiki)
-    except Exception as exc:  # noqa: BLE001
-        err_msg = f"{type(exc).__name__}: {exc}"
-        check_errors["c4a"] = err_msg
-        log_event("lint_check_error", f"check=c4a exc={err_msg}", log_path=resolved_log)
+        # --- C4-a Slug collision groups ---
+        slug_collisions: list[SlugCollisionFinding] = []
+        try:
+            slug_collisions = _check_c4a_slug_collision(resolved_wiki)
+        except Exception as exc:  # noqa: BLE001
+            err_msg = f"{type(exc).__name__}: {exc}"
+            check_errors["c4a"] = err_msg
+            log_event("lint_check_error", f"check=c4a exc={err_msg}", log_path=resolved_log)
 
     # --- Aggregate findings ---
     findings = LintFindings(

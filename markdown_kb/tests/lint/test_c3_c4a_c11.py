@@ -367,6 +367,28 @@ class TestC4aSlugCollision:
         assert len(findings) == 1
         assert "pricing-10" in findings[0].pages_in_group
 
+    def test_c4a_only_suffixed_variants_no_phantom_base(self, lint_env):
+        """Two suffixed variants without the unsuffixed base must NOT report a phantom base member.
+
+        Regression: previously, `pricing-2.md` + `pricing-3.md` (no `pricing.md`)
+        produced `pages_in_group=['pricing', 'pricing-2', 'pricing-3']`, misleading
+        the curator into looking for a non-existent `pricing.md`. The fix only
+        seeds the group with slugs that actually exist on disk.
+        """
+        wiki_dir = lint_env["wiki_dir"]
+        _write_live_page(wiki_dir, "pricing-2", ["pricing.md#section"])
+        _write_live_page(wiki_dir, "pricing-3", ["pricing.md#section"])
+
+        from app.lint import _check_c4a_slug_collision
+
+        findings = _check_c4a_slug_collision(wiki_dir)
+        assert len(findings) == 1
+        f = findings[0]
+        assert f.base_slug == "pricing"
+        assert f.pages_in_group == ["pricing-2", "pricing-3"], (
+            f"phantom 'pricing' should not appear in pages_in_group: {f.pages_in_group!r}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # C3 + C4-a + C11 combined run via run_lint()
