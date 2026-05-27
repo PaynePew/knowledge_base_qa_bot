@@ -150,7 +150,7 @@ Each `/query` recomputes only the *delta* of the Wiki that changed since last qu
 ### Pattern: SHA-256 provenance binding
 **phase: ingest, phase: lint** · @Jwcjwc12, @tomjwxf, `palinode` repo
 
-Each Wiki proposition records the SHA-256 of the Source section it derives from. On `/lint`, recompute Source hashes and flag mismatches as stale (the Source changed, the Wiki page didn't update). Stronger than the current `last_updated` heuristic. **Trigger condition for adoption:** when the Wiki has > 50 pages and manual stale-tracking becomes a problem.
+Each Wiki proposition records the SHA-256 of the Source section it derives from. On `/lint`, recompute Source hashes and flag mismatches as stale (the Source changed, the Wiki page didn't update). Stronger than the current `last_updated` heuristic. **Trigger condition for adoption:** when the Wiki has > 50 curated pages (i.e. `wiki/entities/*.md` + `wiki/concepts/*.md` total count exceeds 50) AND mtime-based stale detection's false-positive rate — whitespace-only edits, mtime resets from `git checkout`, `touch` without content change — becomes a curator complaint. Both conditions must hold: page count alone without observed mtime noise does not justify the per-section hash storage and recomputation cost. The cheaper mtime-based proxy (Phase 5 C6) handles the typical case until both conditions trip.
 
 ### Pattern: Reciprocal Rank Fusion / cross-encoder rerank
 **phase: query** · @bitsofchris, @marktran0710

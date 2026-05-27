@@ -77,7 +77,7 @@ A small (~500 words) working-memory file at `wiki/hot.md` containing the most re
 _Avoid_: Working memory (overloaded with LLM-architecture terms), Session cache (overloaded with HTTP).
 
 **Lint Pass** _(future)_:
-A periodic health check over the Wiki: contradiction detection, stale claims, orphan pages, missing cross-references, gaps suggested by repeated cannot-confirm queries. Karpathy's third core operation, alongside Ingest and Query.
+A periodic health check over the Wiki: contradiction detection, stale claims, orphan pages, missing cross-references, gaps suggested by repeated cannot-confirm queries. Karpathy's third core operation, alongside Ingest and Query. Operates on the **horizontal axis** — page-vs-page consistency — which is structurally orthogonal to [[grounding-check]]'s vertical axis (page-vs-Source). Neither subsumes the other: a Wiki Page can be individually grounded yet still contradict another grounded page (e.g., two summaries that each cherry-pick different parts of the same nuanced Source). The horizontal axis is therefore Lint Pass's exclusive responsibility — Grounding Check is structurally page-isolated and cannot see it.
 _Avoid_: Sanity check (vague), Audit (compliance overtone).
 
 **Query Rewriting** _(future)_:
