@@ -2,7 +2,7 @@
 
 # Lint Report
 
-> Generated at TIMESTAMP · total findings: 8
+> Generated at TIMESTAMP · total findings: 14
 
 ## C11 Orphan pages
 
@@ -35,7 +35,7 @@
 
 | Page | Source | Source mtime | Page updated | Drift (days) | Action |
 |------|--------|-------------|--------------|-------------|--------|
-| `aged` | `aged_policy.md` | DATESTR | DATESTR | 146.3 | Source 'aged_policy.md' was modified 146.3 day(s) after wiki page 'aged' was last updated. Re-ingest the Source to synchronise the wiki page: POST /ingest {"source": "aged_policy.md"}. |
+| `aged` | `aged_policy.md` | DATESTR | DATESTR | DRIFT | Source 'aged_policy.md' was modified DRIFT day(s) after wiki page 'aged' was last updated. Re-ingest the Source to synchronise the wiki page: POST /ingest {"source": "aged_policy.md"}. |
 
 ## C2 Red links (1 backlog item)
 
@@ -61,13 +61,42 @@
   - Sample queries: "how long is refund"
   - First seen: TIMESTAMP  Last seen: TIMESTAMP
 
-## C5 Contradictions (1 findings)
+## C5 Contradictions (3 findings)
 
-### Duplicate (1)
+### Direct (1)
 
 | Page A | Page B | Page A claim | Page B claim | Suggested action |
 |--------|--------|-------------|-------------|------------------|
-| `our-shipping` | `pricing-2` | Claim from our-shipping | Claim from shipping | Resolve duplicate |
+| `refund-policy-a` | `refund-policy-b` | Claim from refund-policy-a | Claim from refund-policy-b | Resolve the direct overlap |
 
-**`our-shipping` ↔ `pricing-2`** — Mocked duplicate finding
+**`refund-policy-a` ↔ `refund-policy-b`** — Mocked direct finding between refund-policy-a and refund-policy-b
 
+### Duplicate (2)
+
+| Page A | Page B | Page A claim | Page B claim | Suggested action |
+|--------|--------|-------------|-------------|------------------|
+| `our-shipping` | `pricing-2` | Claim from our-shipping | Claim from shipping | Resolve the duplicate overlap |
+| `our-shipping` | `shipping` | Claim from our-shipping | Claim from shipping | Resolve the duplicate overlap |
+
+**`our-shipping` ↔ `pricing-2`** — Mocked duplicate finding between our-shipping and shipping
+
+**`our-shipping` ↔ `shipping`** — Mocked duplicate finding between our-shipping and shipping
+
+## Promotion Candidates
+
+| Slug | Question | Count | Age (days) | Cited |
+|------|----------|-------|------------|-------|
+| `qa-vip-fee-001abc` | What is the VIP membership fee? | 5 | AGE | 1 |
+| `qa-shipping-eta-002def` | How many business days until my order ships? | 2 | AGE | 1 |
+
+## Stale Filed Answers
+
+| Slug | Stale Entity Citations | Days Drift |
+|------|------------------------|------------|
+| `qa-refund-window-003ghi` | `refund-policy-a#refund-timeline` | DRIFT |
+
+## Invalid qa Schema
+
+| Slug | Property | Offending Value |
+|------|----------|-----------------|
+| `qa-typo-status-004jkl` | `status` | Live |
