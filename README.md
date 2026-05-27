@@ -8,7 +8,7 @@ This is a grounded Q&A service designed for **enterprise knowledge management** 
 
 Karpathy's LLM Wiki gist and [`AgriciDaniel/claude-obsidian`](https://github.com/AgriciDaniel/claude-obsidian) are the pattern source for the curated layer's design — not the project's final form. The patterns translate to enterprise contexts: Hot Cache → session-scoped agent memory; Wiki Log → audit trail; Lint Pass → KB health audit; frontmatter `confidence`/`status` → document governance.
 
-For the exercise spec and verification, see [`PROMPT.md`](PROMPT.md). For the project's shared vocabulary, see [`CONTEXT.md`](CONTEXT.md). For decisions, see [`project-docs/adr/`](project-docs/adr/).
+For the exercise spec and verification, see [`PROMPT.md`](PROMPT.md). For the project's shared vocabulary, see [`CONTEXT.md`](CONTEXT.md). For decisions, see [`project-docs/adr/`](project-docs/adr/). For the short version of why Wiki over RAG, see [`project-docs/why-wiki.md`](project-docs/why-wiki.md).
 
 ## Retrieval strategies
 
