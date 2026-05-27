@@ -1,6 +1,6 @@
 """Shallow module per Ousterhout. Public surface: ``router``.
 
-HTTP wiring for /health, /index, /chat, /ingest. No domain logic."""
+HTTP wiring for /health, /index, /chat, /ingest, /lint. No domain logic."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import app.indexer as _indexer
 
 from .indexer import build_index
 from .ingest import ingest_sources
+from .lint import run_lint
 from .retrieval import query
 from .schemas import (
     ChatRequest,
@@ -19,6 +20,7 @@ from .schemas import (
     IndexResponse,
     IngestRequest,
     IngestResponse,
+    LintResponse,
 )
 
 router = APIRouter()
@@ -93,6 +95,21 @@ def chat(req: ChatRequest) -> ChatResponse:
         sources=sources,
         grounding=grounding,
     )
+
+
+@router.post("/lint", response_model=LintResponse)
+def lint() -> LintResponse:
+    """Run the wiki lint pass and return a structured findings report.
+
+    Executes all lint checks (Slice 5-1: C11 orphan detection only) and writes
+    ``wiki/lint-report.md``.  Returns 200 with a ``LintResponse`` in all cases,
+    including when one or more checks raised (errors recorded in
+    ``LintResponse.check_errors``).
+
+    Shallow wrapper around ``lint.run_lint()``.  All domain logic lives in
+    ``lint.py`` (CODING_STANDARD §2.3).
+    """
+    return run_lint()
 
 
 @router.post("/ingest", response_model=IngestResponse)

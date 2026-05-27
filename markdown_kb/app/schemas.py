@@ -1,4 +1,4 @@
-"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``).
+"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``).
 
 Pydantic request/response models for the FastAPI routes. No domain logic."""
 
@@ -189,3 +189,63 @@ class IngestResponse(BaseModel):
     results: list[IngestSourceResult]
     failed_sources: list[str]
     pages_with_failed_grounding: list[str] = []
+
+
+# ---------------------------------------------------------------------------
+# /lint schemas (Phase 5 Slice 5-1)
+# ---------------------------------------------------------------------------
+
+
+class OrphanPageFinding(BaseModel):
+    """C11 orphan page finding: wiki page whose sources no longer exist under docs/.
+
+    A page is flagged as orphan when at least one entry in ``frontmatter.sources``
+    references a file (the portion before ``#``) that does not exist under ``docs/``
+    (including nested subdirectories).
+
+    ``suggested_action`` mentions both rename and deletion paths because C11 cannot
+    distinguish between a deleted Source and a renamed one — curator must judge.
+    """
+
+    page_slug: str
+    missing_sources: list[str]
+    suggested_action: str
+
+
+class LintFindings(BaseModel):
+    """Container for all check findings.
+
+    Slice 5-1 populates only ``orphans`` (C11).  Later slices add the remaining
+    six check fields without changing the existing field name or type.
+    """
+
+    orphans: list[OrphanPageFinding] = []
+
+
+class LintSummary(BaseModel):
+    """Aggregate metrics for a lint run.
+
+    ``findings_by_check`` maps check identifier (``"c11"``, ``"c3"``, …) to
+    finding count.  Slice 5-1 only includes ``"c11"``; later slices extend.
+    ``llm_calls`` and ``cost_usd`` are 0 in Slice 5-1 (no LLM used by C11).
+    """
+
+    total_findings: int
+    findings_by_check: dict[str, int]
+    llm_calls: int = 0
+    cost_usd: float = 0.0
+    generated_at: str  # ISO-8601 UTC string
+
+
+class LintResponse(BaseModel):
+    """Response body for POST /lint.
+
+    ``report_path`` is the relative path (from repo root) of the written
+    markdown report.  ``check_errors`` maps check id to error string when a
+    check raised under continue-on-error semantics.
+    """
+
+    report_path: str
+    findings: LintFindings
+    summary: LintSummary
+    check_errors: dict[str, str] = {}
