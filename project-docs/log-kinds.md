@@ -95,7 +95,7 @@ Authorized by GitHub issue #89 (Phase 7 PRD). Slice 7-1 (#90) introduces the thr
 | `import_source` | One raw file successfully imported to `docs/<basename>.md` | `source=<basename> docs=<docs_filename> format=<html\|txt>` |
 | `import_batch_completed` | End of `import_sources()`; emitted even when some sources failed | `imported=A skipped=B failed=C duration_ms=N` |
 | `import_error` | _(Slice 7-2)_ One raw file failed at any stage (continue-on-error semantics) | `raw=<raw_path> error_type=<one of 12 typed errors> error_message=<truncated≤200>` |
-| `import_skipped` | _(Slice 7-3)_ Re-import no-op when `content_sha256` matches existing docs frontmatter | `raw=<raw_path> docs=<docs_path> content_sha256=<hex>` |
+| `import_skipped` | Re-import no-op when `content_sha256` matches existing docs frontmatter | `raw=<raw_path> docs=<docs_path> content_sha256=<hex>` |
 
 ### `import_error` `error_type=` sub-tags (slice 7-2)
 
