@@ -602,8 +602,10 @@ class ImportSourceResultSchema(BaseModel):
     """Per-source successful import outcome.
 
     Mirrors ``importer.ImportSourceResult`` as a Pydantic model for the API
-    boundary.  ``content_sha256`` is empty string in slice 7-1 (hash chain
-    lands in slice 7-3).  ``status`` is always ``'created'`` in slice 7-1.
+    boundary.  ``content_sha256`` is the hex SHA-256 of the raw bytes
+    (populated in slice 7-3).  ``status`` is one of ``'created'`` (fresh
+    write), ``'updated'`` (hash-drift overwrite), or ``'skipped'`` (hash-match
+    no-op).
     """
 
     raw_path: str
@@ -632,11 +634,12 @@ class ImportResponse(BaseModel):
     Always returns HTTP 200 regardless of per-source failures, matching the
     ``/ingest`` and ``/lint`` always-200 contract (PRD #89 §11).
 
-    ``imported_sources`` lists outcomes for successfully converted sources.
-    ``skipped_sources`` is empty in slice 7-1 (populated in slice 7-3 for
-    hash-match skip logic).
+    ``imported_sources`` lists outcomes for successfully converted sources
+    (status ``'created'`` or ``'updated'``).
+    ``skipped_sources`` lists per-source hash-match no-ops (status
+    ``'skipped'``); populated in slice 7-3.
     ``failed_sources`` lists failures; slice 7-1 populates only
-    ``FileNotFoundError`` and ``IOError`` entries.
+    ``FileNotFoundError`` and ``IOError`` entries (full enumeration in 7-2).
     """
 
     imported_sources: list[ImportSourceResultSchema]
