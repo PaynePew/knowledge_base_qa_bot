@@ -8,6 +8,7 @@ from fastapi import APIRouter
 
 import app.indexer as _indexer
 
+from . import qa as qa_module
 from .indexer import build_index
 from .ingest import ingest_sources
 from .lint import run_lint
@@ -52,6 +53,14 @@ def chat(req: ChatRequest) -> ChatResponse:
     the GroundingOutcome to the API-exposed GroundingInfo (ADR-0004 Q8
     selective expose): passes through passed/reason/claims/unsupported_claims;
     suppresses reasoning, error_type, retries_attempted (server logs only).
+
+    Phase 6 Slice 6-2: when the Grounding Check passes, dispatch one line to
+    ``qa.maybe_file_answer(...)`` to create or touch ``wiki/qa/<slug>.md`` as
+    a side-effect (CODING_STANDARD §2.3 — all complexity lives in ``qa.py``).
+    Cannot-Confirm paths (``outcome.passed == False``) skip filing entirely so
+    failed queries never pollute the wiki. The filing result populates
+    ``ChatResponse.filed`` for caller audit; ``None`` covers Cannot-Confirm,
+    IOError fail-soft, and orphan-status touch refusal.
     """
     result = query(req.query)
     outcome = result["grounding_outcome"]
@@ -90,11 +99,42 @@ def chat(req: ChatRequest) -> ChatResponse:
         for s in result["sources"]
     ]
 
+    # Phase 6 Slice 6-2: gated side-effect — file Grounded Answers only.
+    # Cannot Confirm paths (passed=False) do NOT file: skip junk into the wiki.
+    # Adapter SectionRef satisfies the CitableContent Protocol with just the
+    # ``id`` field (qa.maybe_file_answer reads ``.id`` only); avoids leaking
+    # the indexer's full Section dataclass into route territory.
+    filed = None
+    if outcome.passed:
+        cited_refs = [_SectionRef(id=s["source"]) for s in result["sources"]]
+        filed = qa_module.maybe_file_answer(req.query, result["answer"], cited_refs)
+
     return ChatResponse(
         answer=result["answer"],
         sources=sources,
         grounding=grounding,
+        filed=filed,
     )
+
+
+class _SectionRef:
+    """Minimal CitableContent adapter for ``qa.maybe_file_answer``.
+
+    The qa module's public ``maybe_file_answer`` accepts any
+    ``CitableContent`` (Protocol — requires ``id``, ``heading_path``,
+    ``content``). The handler holds only ``result["sources"]`` (list of dicts
+    with ``source`` = the bare section id); reconstructing a full
+    ``indexer.Section`` here would force the route to import indexer's
+    dataclass for one field. This shim is the smallest viable adapter — only
+    ``id`` is set because the filing path reads no other field.
+    """
+
+    __slots__ = ("content", "heading_path", "id")
+
+    def __init__(self, id: str) -> None:
+        self.id = id
+        self.heading_path = [id]
+        self.content = ""
 
 
 @router.post("/lint", response_model=LintResponse)
