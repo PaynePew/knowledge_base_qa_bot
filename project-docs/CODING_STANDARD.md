@@ -357,8 +357,8 @@ If you want a debug-only channel, instead either:
 
 ### 7.3 Python version
 
-- Pinned to `>=3.11` via `pyproject.toml` (every member) and `.python-version` at the root.
-- Upgrading: change `.python-version`, bump `requires-python` in every member's `pyproject.toml`, run `uv sync --all-packages`, re-run pytest.
+- Pinned to `>=3.11` via `pyproject.toml` (every member) and the root version pin file.
+- Upgrading: change the root version pin file, bump `requires-python` in every member's `pyproject.toml`, run `uv sync --all-packages`, re-run pytest.
 
 ---
 
