@@ -4,7 +4,7 @@ HTTP wiring for /health, /index, /chat, /ingest, /lint. No domain logic."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 import app.indexer as _indexer
 
@@ -16,6 +16,7 @@ from .retrieval import query
 from .schemas import (
     ChatRequest,
     ChatResponse,
+    FiledStatus,
     GroundingClaim,
     GroundingInfo,
     IndexResponse,
@@ -141,6 +142,39 @@ class _SectionRef:
         self.id = id
         self.heading_path = [id]
         self.content = ""
+
+
+@router.post("/qa/{slug}/promote", response_model=FiledStatus)
+def promote_qa(slug: str) -> FiledStatus:
+    """Curator endpoint: flip ``wiki/qa/<slug>.md`` ``status: draft -> live``.
+
+    Phase 6 Slice 6-4. Closes the two-stage curation loop: filing auto-creates
+    drafts (Slice 6-2), ``/lint`` surfaces promotion candidates (Slice 6-5),
+    and this endpoint is the explicit promote action that admits the page into
+    the BM25 corpus for ``/chat`` retrieval.
+
+    Shallow wrapper around ``qa.promote(slug)`` (CODING_STANDARD §2.3 — all
+    business logic lives in ``qa.py``). Exception mapping:
+
+    - ``QaPageNotFound`` → ``404`` (slug has never been filed)
+    - ``QaPageCorrupt``  → ``500`` (orphan-visibility — surface broken state
+      to the curator rather than silently rewriting it)
+
+    Idempotent on already-live pages: re-promote returns the existing
+    ``FiledStatus`` with ``200 OK`` (no second log entry, no file write).
+    """
+    try:
+        return qa_module.promote(slug)
+    except qa_module.QaPageNotFound as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"wiki/qa/{slug}.md not found",
+        ) from exc
+    except qa_module.QaPageCorrupt as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"wiki/qa/{slug}.md has corrupt frontmatter: {exc}",
+        ) from exc
 
 
 @router.post("/lint", response_model=LintResponse)
