@@ -30,8 +30,10 @@ from ._paths import DOCS_DIR, INDEX_PATH, WIKI_DIR
 # ADR-0006 (W1): build_index scans only the curated wiki subdirs.
 # Whitelist semantics — meta-files (wiki/index.md, wiki/log.md, wiki/hot.md,
 # wiki/README.md, wiki/.archive/*) are excluded by construction because only
-# explicit subdirectories appear here. Phase 6 will append WIKI_DIR/"qa".
-SOURCE_DIRS: list[Path] = [WIKI_DIR / "entities", WIKI_DIR / "concepts"]
+# explicit subdirectories appear here. Phase 6 Slice 6-1 appends WIKI_DIR/"qa"
+# but gates entry on ``frontmatter.status == "live"`` via
+# ``_passes_index_filter`` below — see PRD #78 Q1 "Two-stage curation lifecycle".
+SOURCE_DIRS: list[Path] = [WIKI_DIR / "entities", WIKI_DIR / "concepts", WIKI_DIR / "qa"]
 
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -333,6 +335,68 @@ def parse_markdown(path: Path, source_id: str | None = None) -> list[Section]:
 
 
 # ---------------------------------------------------------------------------
+# Phase 6 Slice 6-1: qa-filter (PRD #78 Q1 + Q8d)
+# ---------------------------------------------------------------------------
+
+
+def _passes_index_filter(md_file: Path, page_sections: list[Section]) -> bool:
+    """Return True iff ``md_file``'s sections may join the BM25 corpus.
+
+    Phase 6 Two-stage curation gate (PRD #78 Q1): pages under ``wiki/qa/`` are
+    admitted only when ``frontmatter.status == "live"``. ``status == "draft"``
+    is the healthy filed-but-not-promoted state — skipped silently. Every
+    other value (capital-L typos, missing key, forward-compat values like
+    ``stale``/``superseded``) is treated as a curator-typo orphan and skipped
+    with a ``qa_invalid_status`` log entry — the indexer-layer member of the
+    three-layer orphan-visibility defence (PRD #78 §"Orphan-visibility
+    three-layer defence").
+
+    Entity and concept pages bypass the filter entirely so Phase 3 behaviour
+    is preserved without regression.
+
+    ``page_sections`` is the result of ``parse_markdown`` for ``md_file``.
+    Frontmatter is read off ``page_sections[0].metadata`` (every Section
+    carries a copy of the file's frontmatter dict). An empty ``page_sections``
+    list short-circuits to ``False`` without emitting ``qa_invalid_status`` —
+    ``parse_markdown`` has already emitted a ``parse_warning`` for that file,
+    and double-logging is exactly the noise this layer is trying to prevent.
+    """
+    # Empty parse result: parse_warning already covers it, do not double-log.
+    if not page_sections:
+        return False
+
+    # Non-qa pages (entity, concept) pass through unchanged.
+    if md_file.parent.name != "qa":
+        return True
+
+    # qa page: gate on frontmatter.status.
+    metadata = page_sections[0].metadata
+    # Empty / absent metadata (e.g. frontmatter parse failed, or no frontmatter
+    # at all on a qa page) — parse_markdown already emitted parse_warning when
+    # the YAML was malformed. Skip silently to avoid the double-log noise that
+    # PRD #78 §"Orphan-visibility three-layer defence" explicitly calls out.
+    if not metadata:
+        return False
+    status = metadata.get("status")
+
+    if status == "live":
+        return True
+    if status == "draft":
+        # Healthy intermediate state in two-stage curation; silent skip.
+        return False
+
+    # Any other value (capital-L typo, missing key, stale, superseded, ...)
+    # is an orphan from the indexer's perspective. Log + skip.
+    from .logger import log_event
+
+    log_event(
+        "qa_invalid_status",
+        f"file={md_file.name} status={status!r}",
+    )
+    return False
+
+
+# ---------------------------------------------------------------------------
 # Index build, persist, load
 # ---------------------------------------------------------------------------
 
@@ -472,7 +536,12 @@ def build_index(docs_dir: Path = DOCS_DIR) -> tuple[int, int]:
     for source_dir in scan_dirs:
         for md_file in sorted(source_dir.glob("**/*.md")):
             sid = md_file.stem if use_slug_ids else None
-            new_sections.extend(parse_markdown(md_file, source_id=sid))
+            page_sections = parse_markdown(md_file, source_id=sid)
+            # Phase 6 Slice 6-1: qa-filter gates wiki/qa/ pages on
+            # frontmatter.status == "live"; non-qa pages pass through.
+            if not _passes_index_filter(md_file, page_sections):
+                continue
+            new_sections.extend(page_sections)
 
     with _index_lock:
         sections = new_sections
