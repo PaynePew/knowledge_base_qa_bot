@@ -1,0 +1,5 @@
+## [2026-05-20T09:15:00Z] chat_fallback | "vip membership fee" reason=retrieval_empty
+## [2026-05-21T14:30:00Z] chat_fallback | "vip membership fee" reason=retrieval_empty
+## [2026-05-22T11:00:00Z] chat_fallback | "VIP membership fee" reason=retrieval_empty
+## [2026-05-23T16:45:00Z] chat_fallback | "how long is refund" reason=below_threshold top_section=refund-timeline
+## [2026-05-24T08:20:00Z] chat_fallback | "how long is refund" reason=below_threshold top_section=refund-timeline

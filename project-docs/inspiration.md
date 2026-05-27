@@ -187,6 +187,21 @@ Package the Wiki (or a slice of it) as a Claude Skill or MCP server so it can be
 
 Each Wiki page carries two layers in one file: a **machine version** (dense, token-efficient, frontmatter-rich, the form the LLM consumes) and a **human TL;DR** (paragraph or two for a human skimmer). Sections clearly delimited (`## For the agent` vs `## TL;DR`). Solves the tension between "compact for LLM context budget" and "readable for the human curator." Likely composes well with the **Frontmatter schema** deferred pattern above and with the **Source Template** vocabulary. **Trigger condition for adoption:** at first Wiki-page template design — defer the decision to commit to two layers until you have at least one real page to look at.
 
+### Pattern: Content-hash cache for contradiction LLM judgements
+**phase: lint** · Phase 5 C5 cost-control grill (2026-05-26)
+
+Cache C5 page-pair LLM judgements keyed by `(sha256(page_A_body), sha256(page_B_body))` persisted to `.kb/lint_cache.json`. On the next `/lint` run, skip the LLM call when both pages' content hashes match a previously-judged pair — the judgement is reused unchanged. Identical content cannot disagree with itself, so the cache is correct by construction; the only invalidation is a body edit on either page. Pairs `(A, B)` and `(B, A)` canonicalise via sorted slugs (mirroring the symmetric-pair short-circuit invariant already in `_candidate_pairs`). **Trigger condition for adoption:** when lint wall-clock on the production wiki exceeds 5 minutes per run, or when the corpus passes ~100 curated pages and C5 LLM cost becomes visible in the OpenAI bill.
+
+### Pattern: Two-tier LLM cascade for contradiction detection
+**phase: lint** · Phase 5 C5 cost-control grill (2026-05-26)
+
+Replace the single C5 model with a cascade: a cheap mini model (e.g. `gpt-4o-mini`) emits a 3-value judgement (`none` / `maybe` / `direct`); only `maybe` escalates to a stronger model (`gpt-4o`) for a 4-value re-judge (`none` / `tension` / `duplicate` / `direct`). The mini stage is the cost workhorse; only the genuinely-uncertain pairs pay the strong-model price. Composes with the content-hash cache (mini judgements are cached separately from strong judgements). **Trigger condition for adoption:** when the mini-only false-positive rate (curator-reported) exceeds ~30% — at that point the precision lift from the strong model on uncertain pairs is worth the extra latency budget. Until then, single-tier mini is cheaper end-to-end.
+
+### Pattern: Source freshness pre-filter for contradiction pairs
+**phase: lint** · Phase 5 C5 cost-control grill (2026-05-26)
+
+Before C5 enumerates candidate pairs, skip any pair where **neither** page's `updated` frontmatter timestamp is more recent than the last successful `/lint` run timestamp (captured from the previous `lint_completed` log entry). The premise: a pair that has not been touched on either side since the last run cannot have its judgement change. Composes downstream of the **content-hash cache** — freshness filtering is structurally redundant with hash caching for pure-content checks, but trips on a different signal (timestamp vs hash) so the two together are more robust to git-checkout-induced mtime resets than either alone. **Trigger condition for adoption:** corpus > 500 curated pages AND the content-hash cache is already in place. Below 500 pages, the candidate-pair set is small enough that filtering is not worth the bookkeeping; without the hash cache, this filter alone can miss real updates because a body edit may keep `updated` stale if the curator forgets to bump it.
+
 ---
 
 ## Considered and Rejected

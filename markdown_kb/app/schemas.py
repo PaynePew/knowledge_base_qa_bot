@@ -1,4 +1,4 @@
-"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``, ``CoverageGapFinding``).
+"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``, ``CoverageGapFinding``, ``PagePairFinding``).
 
 Pydantic request/response models for the FastAPI routes. No domain logic."""
 
@@ -339,6 +339,39 @@ class CoverageGapFinding(BaseModel):
     suggested_action: str
 
 
+class PagePairFinding(BaseModel):
+    """C5 page-pair contradiction finding: two wiki pages that may contradict each other.
+
+    The LLM emits a 4-value severity via ``with_structured_output``:
+    - ``direct``    — explicit factual disagreement (different numbers, different policies).
+                      Curator must fix.
+    - ``tension``   — same topic, scope/wording differences raising reader confusion.
+                      Curator reviews; may dismiss.
+    - ``duplicate`` — same concept covered in two pages without contradiction.
+                      Absorbs C4-b semantic-duplicate detection from Phase 3 Q5a.
+                      Curator considers merging.
+    - ``none``      — false positive surfaced by candidate filter; not a real overlap.
+
+    ``page_a`` and ``page_b`` are always in canonical sorted order (sorted slug names
+    so that ``(A, B)`` and ``(B, A)`` produce identical findings — symmetric pair
+    short-circuit invariant).
+
+    ``page_a_claim`` / ``page_b_claim`` are direct quotes from the respective page bodies.
+    ``summary`` and ``suggested_action`` are LLM-generated prose.
+
+    ``severity == "none"`` findings are filtered before returning from ``_check_c5_page_pair``
+    so only actionable findings appear in the report.
+    """
+
+    severity: Literal["direct", "tension", "duplicate", "none"]
+    page_a: str  # slug (always sorted ≤ page_b)
+    page_b: str  # slug (always sorted ≥ page_a)
+    page_a_claim: str  # direct quote from page_a body
+    page_b_claim: str  # direct quote from page_b body
+    summary: str  # LLM prose summary of the overlap/contradiction
+    suggested_action: str  # LLM-generated curator action
+
+
 class LintFindings(BaseModel):
     """Container for all check findings.
 
@@ -346,7 +379,7 @@ class LintFindings(BaseModel):
     Slice 5-2 adds ``failed_grounding`` (C3) and ``slug_collisions`` (C4-a).
     Slice 5-3 adds ``stale_pages`` (C6) and ``red_links`` (C2).
     Slice 5-4 adds ``coverage_gaps`` (C1).
-    Later slices add the remaining check fields without changing existing field names or types.
+    Slice 5-5 adds ``page_pairs`` (C5).
     """
 
     orphans: list[OrphanPageFinding] = []
@@ -355,6 +388,7 @@ class LintFindings(BaseModel):
     stale_pages: list[StalePageFinding] = []
     red_links: list[RedLinkFinding] = []
     coverage_gaps: list[CoverageGapFinding] = []
+    page_pairs: list[PagePairFinding] = []
 
 
 class LintSummary(BaseModel):
