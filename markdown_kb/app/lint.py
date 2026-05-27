@@ -1241,9 +1241,7 @@ def _check_c5_page_pair(
 # Valid frontmatter.status values for Filed Answer pages (Slice 6-1 schema).
 # Used by C10 to validate ``status`` field; ``status`` outside this set is a
 # curator-typo orphan-zombie risk (Q8d in PRD #78).
-_VALID_QA_STATUS_VALUES: frozenset[str] = frozenset(
-    {"live", "draft", "stale", "superseded"}
-)
+_VALID_QA_STATUS_VALUES: frozenset[str] = frozenset({"live", "draft", "stale", "superseded"})
 
 
 def _iter_qa_pages(wiki_dir: Path):
@@ -1291,9 +1289,7 @@ def _check_c8_promotion_candidates(
     Returns the ranked, capped list. Empty list when no qa pages exist or no
     drafts are present.
     """
-    top_n = int(
-        os.getenv("KB_LINT_PROMOTION_TOP_N", str(_KB_LINT_PROMOTION_TOP_N_DEFAULT))
-    )
+    top_n = int(os.getenv("KB_LINT_PROMOTION_TOP_N", str(_KB_LINT_PROMOTION_TOP_N_DEFAULT)))
 
     # Each candidate carries a sort tuple so we can rank, then strip back to the
     # Finding shape for the public return.
@@ -1427,9 +1423,7 @@ def _check_c9_qa_staleness(
         if not updated_str:
             continue
         try:
-            qa_updated = datetime.datetime.fromisoformat(
-                str(updated_str).replace("Z", "+00:00")
-            )
+            qa_updated = datetime.datetime.fromisoformat(str(updated_str).replace("Z", "+00:00"))
         except ValueError:
             continue
         if qa_updated.tzinfo is None:
@@ -1459,9 +1453,7 @@ def _check_c9_qa_staleness(
                 entity_mtime_ts = entity_path.stat().st_mtime
             except OSError:
                 continue
-            entity_mtime = datetime.datetime.fromtimestamp(
-                entity_mtime_ts, tz=datetime.UTC
-            )
+            entity_mtime = datetime.datetime.fromtimestamp(entity_mtime_ts, tz=datetime.UTC)
             if entity_mtime > qa_updated:
                 stale_citations.append(citation_str)
                 drift_seconds = (entity_mtime - qa_updated).total_seconds()

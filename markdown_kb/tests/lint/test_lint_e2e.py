@@ -43,7 +43,13 @@ _FIXTURES_DIR = _REPO_ROOT / "eval" / "lint_fixtures"
 
 @pytest.fixture()
 def e2e_wiki_dir(tmp_path: Path) -> Path:
-    """Copy eval/lint_fixtures/wiki/ into tmp_path/wiki/ and set up docs/."""
+    """Copy eval/lint_fixtures/wiki/ into tmp_path/wiki/ and set up docs/.
+
+    Slice 6-5 extension: after copying, touch ``wiki/concepts/refund-policy-a.md``
+    mtime to "now" so the C9 fixture (qa-refund-window-003ghi, updated
+    2026-03-01) sees its cited entity as newer-than-its-frontmatter — mirrors
+    ``scripts/load_lint_fixtures.py`` Step 4.
+    """
     wiki_dir = tmp_path / "wiki"
     fixtures_wiki = _FIXTURES_DIR / "wiki"
     shutil.copytree(str(fixtures_wiki), str(wiki_dir))
@@ -51,6 +57,13 @@ def e2e_wiki_dir(tmp_path: Path) -> Path:
     # Create wiki/entities/ and wiki/concepts/ subdirs if not present
     (wiki_dir / "entities").mkdir(exist_ok=True)
     (wiki_dir / "concepts").mkdir(exist_ok=True)
+
+    # Slice 6-5: touch refund-policy-a.md to now so C9 fires for the live qa
+    # fixture qa-refund-window-003ghi (frontmatter.updated: 2026-03-01).
+    refund_entity = wiki_dir / "concepts" / "refund-policy-a.md"
+    if refund_entity.exists():
+        now = time.time()
+        os.utime(str(refund_entity), (now, now))
 
     return wiki_dir
 
@@ -365,6 +378,73 @@ class TestLintE2EGolden:
         assert "## C2 Red links" in content
         assert "## C1 Coverage gaps" in content
         assert "## C5 Contradictions" in content
+        # Slice 6-5: Phase 5 amendment sections — non-empty findings render headers.
+        assert "## Promotion Candidates" in content
+        assert "## Stale Filed Answers" in content
+        assert "## Invalid qa Schema" in content
+
+    # ---- Slice 6-5 (Phase 5 amendment) ----
+
+    def test_c8_promotion_candidates_surfaced(self, e2e_env):
+        """C8: draft qa fixtures appear in promotion_candidates ranked by count desc."""
+        from app.lint import run_lint
+
+        result = run_lint(**e2e_env)
+        candidates = result.findings.promotion_candidates
+        slugs = [c.slug for c in candidates]
+        # Both draft fixtures (qa-vip-fee-001abc count=5, qa-shipping-eta-002def count=2)
+        # must be present; vip-fee outranks shipping-eta on count desc.
+        assert "qa-vip-fee-001abc" in slugs
+        assert "qa-shipping-eta-002def" in slugs
+        assert slugs.index("qa-vip-fee-001abc") < slugs.index("qa-shipping-eta-002def")
+
+    def test_c9_qa_staleness_surfaced(self, e2e_env):
+        """C9: qa-refund-window-003ghi flagged after entity mtime is touched newer."""
+        from app.lint import run_lint
+
+        result = run_lint(**e2e_env)
+        stale_filed = result.findings.stale_filed_answers
+        flagged_slugs = {f.page_slug for f in stale_filed}
+        assert "qa-refund-window-003ghi" in flagged_slugs, (
+            "Expected qa-refund-window-003ghi flagged by C9 (entity mtime > qa.updated); "
+            f"got {flagged_slugs}"
+        )
+
+    def test_c10_invalid_qa_schema_surfaced(self, e2e_env):
+        """C10: qa-typo-status-004jkl (status=Live capital L) surfaces an invalid-status finding."""
+        from app.lint import run_lint
+
+        result = run_lint(**e2e_env)
+        invalid = result.findings.invalid_qa_schemas
+        # Should at least carry one finding flagging the status property of the typo fixture.
+        flagged = {(f.page_slug, f.property_name) for f in invalid}
+        assert ("qa-typo-status-004jkl", "status") in flagged, (
+            "Expected status=Live to be flagged; got " + repr(flagged)
+        )
+
+    def test_c5_modifier_qa_pages_not_paired(self, e2e_env):
+        """C5 modifier: qa pages never appear in the page_pair candidate set."""
+        from app.lint import run_lint
+
+        result = run_lint(**e2e_env)
+        # No PagePairFinding may carry a qa- slug in either position.
+        for ppf in result.findings.page_pairs:
+            assert not ppf.page_a.startswith("qa-"), (
+                f"qa slug leaked into page_pair finding via page_a: {ppf.page_a}"
+            )
+            assert not ppf.page_b.startswith("qa-"), (
+                f"qa slug leaked into page_pair finding via page_b: {ppf.page_b}"
+            )
+
+    def test_summary_findings_by_check_includes_c8_c9_c10(self, e2e_env):
+        """findings_by_check covers c8, c9, c10 (Slice 6-5 extension)."""
+        from app.lint import run_lint
+
+        result = run_lint(**e2e_env)
+        keys = set(result.summary.findings_by_check.keys())
+        assert {"c8", "c9", "c10"}.issubset(keys), (
+            f"findings_by_check missing c8/c9/c10; got {keys}"
+        )
 
     def test_log_entries_written(self, e2e_env):
         """lint_started + lint_completed entries appear in log.md after run."""
