@@ -26,8 +26,8 @@ state for lint to observe.  ``/chat`` reads are not blocked.
 Continue-on-error
 -----------------
 If a check raises, the exception is caught, a ``lint_check_error`` log entry is
-written, and the error is recorded in ``LintReport.check_errors``.  Other checks
-still run.  The report is always written.
+written, and the error is recorded in ``LintResponse.check_errors``.  Other
+checks still run.  The report is always written.
 
 Check execution order (cheapest to most expensive)
 ---------------------------------------------------

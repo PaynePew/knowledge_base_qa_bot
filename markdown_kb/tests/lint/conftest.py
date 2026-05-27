@@ -3,11 +3,12 @@
 Provides:
   - tmp_wiki_dir:   a temporary wiki/ directory with entities/ + concepts/ sub-dirs
   - tmp_docs_dir:   a temporary docs/ directory (empty by default)
-  - lint_env:       monkeypatches WIKI_DIR, DOCS_DIR, LOG_PATH, and INDEX_PATH to
-                    the tmp directories so lint.run_lint() and friends never touch
-                    the real filesystem.  Composes on top of the parent conftest's
-                    autouse `_redirect_paths_to_tmp` (which patches indexer and logger);
-                    this fixture additionally patches `app.lint` once that module exists.
+  - lint_log_path:  a temporary path for lint-emitted log.md entries
+  - lint_env:       bundles the three paths into a dict so tests can splat them as
+                    kwargs to ``run_lint(...)`` without importing constants. The
+                    parent conftest's autouse ``_redirect_paths_to_tmp`` already
+                    isolates indexer/logger paths; this fixture is purely a
+                    convenience aggregator and does NOT itself monkeypatch.
 
 Pattern for subsequent slices
 ------------------------------
@@ -17,12 +18,13 @@ Pattern for subsequent slices
 2. Add a source fixture that touches a file under ``tmp_docs_dir`` so existence
    checks produce the desired result.
 3. Call ``run_lint(wiki_dir=tmp_wiki_dir, docs_dir=tmp_docs_dir, log_path=<path>)``
-   and assert on the returned ``LintReport``.
+   and assert on the returned ``LintResponse``.
 
-The ``monkeypatch.setattr(lint_module, "WIKI_DIR", tmp_wiki_dir)`` pattern mirrors
-the parent conftest's ``_redirect_paths_to_tmp``.  Import ``app.lint`` lazily inside
-the fixture body so that pre-implementation test collection does not fail (the module
-may not exist yet at collection time).
+If a future check requires monkeypatching module-level constants on ``app.lint``,
+add a dedicated fixture that takes ``monkeypatch`` and calls
+``monkeypatch.setattr(lint_module, "<ATTR>", <value>)`` — mirror the parent
+conftest's ``_redirect_paths_to_tmp`` pattern. Import ``app.lint`` lazily inside
+the fixture body if the constant may not exist at collection time.
 """
 
 from __future__ import annotations
@@ -70,15 +72,13 @@ def lint_log_path(tmp_path: Path) -> Path:
 
 
 @pytest.fixture()
-def lint_env(tmp_wiki_dir: Path, tmp_docs_dir: Path, lint_log_path: Path, monkeypatch):
-    """Wire WIKI_DIR, DOCS_DIR, and log_path into lint module defaults.
+def lint_env(tmp_wiki_dir: Path, tmp_docs_dir: Path, lint_log_path: Path) -> dict[str, Path]:
+    """Bundle the three lint path fixtures into a single kwargs dict.
 
     Returns a dict with keys ``wiki_dir``, ``docs_dir``, ``log_path`` so tests
-    can pass them as kwargs to ``run_lint(...)`` without reimporting path constants.
-
-    Subsequent slices can extend this fixture by importing additional module
-    attributes to monkeypatch (e.g. ``monkeypatch.setattr(lint_module, "DOCS_DIR", ...)``
-    once that constant is introduced).
+    can splat it into ``run_lint(**lint_env)`` without reimporting path constants.
+    Does NOT monkeypatch — the parent conftest's ``_redirect_paths_to_tmp``
+    already isolates indexer/logger globals; lint accepts these paths as kwargs.
     """
     return {
         "wiki_dir": tmp_wiki_dir,
