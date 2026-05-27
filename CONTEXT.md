@@ -52,7 +52,7 @@ source_hashes:
     raw: <content_sha256 from docs frontmatter — written by /import; null if hand-authored>
     docs_body: <sha256(source_path.read_text('utf-8').encode()) — written by /ingest>
 ```
-`raw` enables full raw→wiki chain detection by Phase 5 lint. `docs_body` enables hash-skip idempotency in `/ingest` (no LLM call when source unchanged). Empty `source_hashes` (default on Phase 6 legacy pages) means "drift state unknown" — `/ingest` does NOT skip on empty `source_hashes`.
+`raw` enables full raw→wiki chain detection by Phase 5 lint. `docs_body` enables hash-skip idempotency in `/ingest` (no LLM call when source unchanged). Empty `source_hashes` (default on Phase 6 legacy pages) means "drift state unknown" — `/ingest` does NOT skip on empty `source_hashes`. See ADR-0008.
 _Avoid_: Wiki entry (vague), Synth page (informal).
 
 **Red Link**:
