@@ -33,7 +33,6 @@ Read lazily on demand (only when relevant to the file you're touching):
 - Domain glossary: `CONTEXT.md`
 - PRD directory: GitHub issue tracker (PRDs live as issues here, not as files)
 - ADR directory: `project-docs/adr/`
-- Coding standard: `project-docs/CODING_STANDARD.md`
 - Test philosophy: `markdown_kb/tests/README.md`
 - Existing module to extend: only the specific files the AC touches
 
@@ -73,7 +72,7 @@ uv run ruff check . --fix
 uv run ruff format .
 ```
 
-There is no separate typecheck command — ruff handles structural checks; `mypy` is on the recommended-additions list (`CODING_STANDARD.md` §8.2) but not in the pipeline yet.
+There is no separate typecheck command — ruff handles structural checks; `mypy` is on the recommended-additions list but not in the pipeline yet.
 
 ## Commits
 
@@ -126,7 +125,7 @@ Apply these rules before posting COMPLETE:
 
 4. **If the venv is broken or a dependency is missing, the slice is BLOCKED.** Run `uv sync --all-packages` to repair; if that still fails, report BLOCKED with the actual error. Do NOT mark COMPLETE based on a static read of files you could not execute.
 
-5. **Tests must not depend on machine-specific paths.** Never hardcode `C:\Users\...`, `/home/runner/...`, or any developer-specific directory. Use `tmp_path` / `Path(__file__).resolve().parents[N]` for fixtures (see existing `markdown_kb/tests/conftest.py` for the established pattern).
+5. **Tests must not depend on machine-specific paths.** Never hardcode `C:\Users\...`, `/home/runner/...`, or any developer-specific directory. Use `tmp_path` / `Path(__file__).resolve().parents[N]` for fixtures (see the test-suite conftest for the established pattern).
 
 6. **If the slice touches PROMPT.md verification cases**, manually verify at least one curl example works end-to-end against `uvicorn` running locally (or document why it cannot be exercised in this run).
 
@@ -134,16 +133,14 @@ Apply these rules before posting COMPLETE:
 
 These have bitten past slices. Read once per slice and avoid:
 
-1. **Do NOT mock `indexer.search` or any deep-module entry point.** Mock only the LLM (`get_llm` / `get_retry_llm` via `monkeypatch`). Per CODING_STANDARD.md §6.3.
-2. **Do NOT paraphrase the Cannot Confirm phrase.** Use the constant `CANNOT_CONFIRM_PHRASE` defined in `markdown_kb/app/retrieval.py`. The literal string is part of the ADR-0001 contract.
-3. **Do NOT let LangChain types leak past `retrieval.py`.** `HumanMessage` / `SystemMessage` / `ChatOpenAI` stay inside `retrieval.py`. Routes / schemas / indexer see only Python primitives and Pydantic models. Per CODING_STANDARD.md §2.4.
-4. **Do NOT reduce `SOURCE_DIRS` to a single `Path`.** It is a `list` so the future Wiki layer can be appended. Per ADR-0003 + CODING_STANDARD.md §2.5.
-5. **Do NOT add a second `@pytest.mark.live` test.** One smoke test is the policy. Per CODING_STANDARD.md §6.4.
-6. **Do NOT introduce a `Document`, `Chunk`, or `Article` class.** The retrieval unit is `Section`; the source is `Source`. Per CONTEXT.md vocabulary and CODING_STANDARD.md §3.1.
-7. **Do NOT add `print()` or `logging.getLogger(...)` in production code.** Single log channel via `log_event(kind, summary)`. Per CODING_STANDARD.md §5.1.
-8. **Do NOT add a `requirements.txt`.** `uv add <pkg>` is the only sanctioned dependency-adding command. Per CODING_STANDARD.md §7.
-
-For the full drift-signal list, see `CODING_STANDARD.md` §11.
+1. **Do NOT mock any deep-module entry point** (indexer search, grounding verify, etc.). Mock only the LLM via the lazy-singleton getter functions using `monkeypatch`. ADR-0005 names the LLM-facing modules.
+2. **Do NOT paraphrase the Cannot Confirm phrase.** Import the sentinel-string constant from the module that owns it. The literal string is part of the ADR-0001 contract.
+3. **Do NOT let LangChain types leak past the LLM-call wrapper module.** LangChain message/client types stay inside LLM-facing modules (see ADR-0005 § Consequences for the enumeration). Routes, schemas, indexer, and wiki-index modules see only Python primitives and Pydantic models.
+4. **Do NOT add a second `@pytest.mark.live` test to an existing surface.** One live test per LLM-facing surface is the policy; current surfaces are enumerated in ADR-0005 § Consequences.
+5. **Do NOT introduce a `Document`, `Chunk`, or `Article` class.** The retrieval unit is `Section`; the source is `Source`. See CONTEXT.md vocabulary.
+6. **Do NOT add `print()` or `logging.getLogger(...)` in production code.** Single log channel via `log_event(kind, summary)`.
+7. **Do NOT add a `requirements.txt`.** `uv add <pkg>` is the only sanctioned dependency-adding command.
+8. **Do NOT introduce a `Retriever` protocol or plugin layer** until both retrieval workspace packages are end-to-end working (premature per ADR-0002).
 
 ## Stop conditions
 

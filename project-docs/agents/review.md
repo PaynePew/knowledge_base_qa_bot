@@ -61,12 +61,11 @@ Read the diff and commit messages. What is the implementer solving? What does th
 ### 3. Walk the §11 drift signals checklist
 
 Tick each item present in `CODING_STANDARD.md` §11 against the actual diff. Examples that have bitten this project:
-- A test mocks `indexer.search` or another deep-module entry point
+- A test mocks a deep-module entry point instead of the LLM getter functions
 - A new domain term appears in code without a `CONTEXT.md` entry
-- `langchain`/`langchain_openai` imports leak outside `retrieval.py`
-- Inline `"I cannot confirm from the knowledge base."` literal instead of `CANNOT_CONFIRM_PHRASE`
-- `SOURCE_DIRS` reduced to a single `Path`
-- A second `@pytest.mark.live` test
+- `langchain`/`langchain_openai` imports leak outside the LLM-call wrapper module
+- An inline Cannot Confirm literal appears instead of the sentinel-string constant
+- A second `@pytest.mark.live` test added to an existing surface
 - A test asserts an absolute BM25 score (not just ranking order)
 - `wiki/log.md` added to `.gitignore`
 - New dependency added by hand-editing `pyproject.toml` instead of `uv add`
