@@ -1,6 +1,7 @@
-"""Deep module per Ousterhout. Public surface: ``compute_slug``, ``normalize_question``, ``maybe_file_answer``.
+"""Deep module per Ousterhout. Public surface: ``compute_slug``, ``normalize_question``, ``maybe_file_answer``, ``promote``, ``QaPageNotFound``, ``QaPageCorrupt``.
 
 Phase 6 Slice 6-2 — Answer Filing for ``POST /chat``.
+Phase 6 Slice 6-4 — curator-driven ``promote(slug)`` flips ``status: draft -> live``.
 
 When ``/chat`` produces a Grounded Answer (``GroundingOutcome.passed == True``),
 the route layer dispatches one line to ``maybe_file_answer(...)`` which
@@ -472,3 +473,132 @@ def maybe_file_answer(
             op="touched",
             count=new_count,
         )
+
+
+# ---------------------------------------------------------------------------
+# Promote (Slice 6-4)
+# ---------------------------------------------------------------------------
+
+
+class QaPageNotFound(Exception):
+    """Raised by ``promote`` when no ``wiki/qa/<slug>.md`` exists for the slug.
+
+    Route layer maps this to ``HTTP 404`` per issue #83 AC. Not a subclass of
+    ``OSError`` / ``FileNotFoundError`` because the contract is semantic ("the
+    curator referenced a slug that has never been filed"), not a low-level
+    I/O signal — making it a distinct sentinel lets the route handler dispatch
+    cleanly without overloading exception meaning.
+    """
+
+
+class QaPageCorrupt(Exception):
+    """Raised by ``promote`` when the page exists but its frontmatter is invalid.
+
+    Triggers:
+      - Existing ``frontmatter.status`` is not in ``{"draft", "live"}`` — covers
+        curator-typo ``Live`` (capital L), forward-compat reserved values like
+        ``stale`` / ``superseded``, missing ``status`` key, etc.
+      - Frontmatter cannot be parsed at all (corrupt YAML, missing fences).
+
+    Route layer maps this to ``HTTP 500`` per issue #83 AC. The orphan-visibility
+    three-layer defence (PRD #78 §"Orphan-visibility three-layer defence") says
+    broken state must remain visible — promote must NOT silently rewrite the
+    page to a recognised status. Raising surfaces the curator typo loudly via
+    the HTTP response.
+    """
+
+
+def promote(slug: str) -> FiledStatus:
+    """Curator-driven promotion: flip ``wiki/qa/<slug>.md`` ``status: draft -> live``.
+
+    Acceptance criteria (issue #83):
+
+    - Acquires ``_filing_lock`` so promote and filing cannot interleave on
+      the same slug (same lock as ``maybe_file_answer``).
+    - Reads existing frontmatter; raises ``QaPageNotFound`` if absent.
+    - Raises ``QaPageCorrupt`` if the existing ``status`` is anything other
+      than ``{"draft", "live"}`` — the orphan-visibility defence keeps the
+      broken state visible (PRD #78 §"Orphan-visibility three-layer defence").
+    - **Idempotent**: if ``status`` is already ``live``, returns the existing
+      FiledStatus without rewriting the file and without emitting a second
+      reflect log entry.
+    - Otherwise rewrites the page atomically (tmp + ``os.replace``) with
+      ``status: "live"``, preserving body / question / count / created /
+      sources / open_questions verbatim. Refreshes ``updated`` to "now".
+    - Emits ``qa_reflect op=promoted by=curator`` log entry per PRD #78 Q5c.
+
+    Returns:
+        ``FiledStatus`` with ``status="live"``, ``op="touched"`` (promotion
+        is structurally a touch from the FiledStatus enum perspective —
+        see issue #83 AC), and the preserved ``count``.
+
+    Raises:
+        QaPageNotFound: no ``wiki/qa/<slug>.md`` on disk.
+        QaPageCorrupt: existing frontmatter has invalid / unparseable
+            ``status`` (orphan zombie). The file is left untouched so the
+            curator can inspect.
+    """
+    qa_dir = _qa_dir()
+    path = qa_dir / f"{slug}.md"
+
+    with _filing_lock:
+        if not path.exists():
+            raise QaPageNotFound(f"wiki/qa/{slug}.md not found")
+
+        existing = _read_existing_frontmatter(path)
+        if existing is None:
+            # File exists but frontmatter could not be parsed at all.
+            # Orphan-visibility defence: surface as corrupt rather than
+            # silently rewriting to a recognised shape.
+            raise QaPageCorrupt(f"wiki/qa/{slug}.md exists but its frontmatter could not be parsed")
+
+        existing_status = existing.get("status")
+        if existing_status not in {"draft", "live"}:
+            raise QaPageCorrupt(
+                f"wiki/qa/{slug}.md has invalid status={existing_status!r}; "
+                "expected 'draft' or 'live'. The page is left untouched so the "
+                "curator can inspect and repair."
+            )
+
+        # Preserve count for the FiledStatus return value (and for the live-
+        # already idempotent path).
+        try:
+            existing_count = int(existing.get("count", 1))
+        except (TypeError, ValueError):
+            existing_count = 1
+
+        # Idempotent: re-promote of a live page is a no-op. No rewrite, no log.
+        if existing_status == "live":
+            return FiledStatus(
+                slug=slug,
+                status="live",
+                op="touched",
+                count=existing_count,
+            )
+
+        # Draft -> live transition. Rebuild the full frontmatter so the YAML
+        # block stays canonical (avoids surgical mid-line edits that would
+        # break round-tripping). Body is preserved verbatim.
+        now = _utc_now_iso()
+        existing_sources = [str(s) for s in existing.get("sources", [])]
+        existing_question = existing.get("question")
+        existing_created = existing.get("created", now)
+        existing_open_questions = existing.get("open_questions") or []
+
+        fm = WikiPageFrontmatter(
+            id=existing.get("id", slug),
+            type="qa",
+            created=existing_created,
+            updated=now,
+            sources=existing_sources,
+            status="live",
+            open_questions=existing_open_questions,
+            question=existing_question,
+            count=existing_count,
+        )
+        body = _read_existing_body(path)
+        content = _render_qa_page(fm, body)
+        _atomic_write(path, content)
+
+        log_event("qa_reflect", f"slug={slug} op=promoted by=curator")
+        return FiledStatus(slug=slug, status="live", op="touched", count=existing_count)
