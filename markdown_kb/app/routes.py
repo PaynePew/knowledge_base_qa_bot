@@ -213,15 +213,17 @@ def ingest(req: IngestRequest | None = None) -> IngestResponse:
     Returns 200 with the IngestResponse in all cases, including when a Source
     is not found (reflected in ``failed_sources``).
     """
+    force = req.force if req is not None else False
     if req is None or req.source is None:
         # Batch mode: ingest all docs/
-        batch = ingest_sources(None)
+        batch = ingest_sources(None, force=force)
     else:
-        batch = ingest_sources([req.source])
+        batch = ingest_sources([req.source], force=force)
     return IngestResponse(
         results=batch.results,
         failed_sources=batch.failed_sources,
         pages_with_failed_grounding=batch.pages_with_failed_grounding,
+        skipped_sources=batch.skipped_sources,
     )
 
 

@@ -7,15 +7,19 @@ pipeline for one or more Sources:
 
     1. Resolve Source path(s) under docs/ (batch: glob("**/*.md"))
     2. Parse each Source into Sections via indexer.parse_markdown
-    3. Classify Source type via templates.classify_source
-    4a. concept → one WikiPageDraft per Section (1:N expansion)
-    4b. entity  → one WikiPageDraft collapsing the whole Source
-    5. Resolve slug collisions across Sources (-2, -3 suffix)
-    6. Preserve `created` timestamp for pages that already exist on disk
-    7. Run grounding verifier on each generated page (Slice #4 — fail-soft)
-    8. Delete orphan pages (per-Source scoped) via wiki_writer.delete_orphans
-    9. Write pages via wiki_writer.write_pages_for_source
-    10. Return an IngestBatchResult summarising outcomes with meaningful
+    3. Hash-skip check (Phase 3 amendment #93): compute docs_body_hash; if
+       existing wiki page has matching hash and force=False → skip, emit
+       ingest_skipped, add to batch.skipped_sources.
+    4. Classify Source type via templates.classify_source
+    5a. concept → one WikiPageDraft per Section (1:N expansion)
+    5b. entity  → one WikiPageDraft collapsing the whole Source
+    6. Resolve slug collisions across Sources (-2, -3 suffix)
+    7. Preserve `created` timestamp for pages that already exist on disk
+    8. Populate source_hashes frontmatter (Phase 3 amendment #93)
+    9. Run grounding verifier on each generated page (Slice #4 — fail-soft)
+    10. Delete orphan pages (per-Source scoped) via wiki_writer.delete_orphans
+    11. Write pages via wiki_writer.write_pages_for_source
+    12. Return an IngestBatchResult summarising outcomes with meaningful
         pages_created / pages_updated / pages_deleted per Source
 
 Continue-on-error: a Source that throws at any stage is recorded in
@@ -32,17 +36,36 @@ Grounding Check (Slice #4 — ADR-0004 fail-soft):
   status=failed_grounding + grounding_failure frontmatter block.
   Page id added to IngestBatchResult.pages_with_failed_grounding.
 
+Hash-Skip (Phase 3 amendment #93):
+- docs_body_hash = sha256(source_path.read_text('utf-8').encode()).hexdigest()
+  Deterministic convention: hash the UTF-8 text content (not raw bytes) to
+  match docs/ ingest semantics (Sources are always read as UTF-8 text here).
+- Skip decision matrix:
+    | wiki page exists? | source_hashes? | hash match? | force? | Behavior |
+    |---|---|---|---|---|
+    | No                | —              | —           | —      | Ingest (fresh write) |
+    | Yes               | empty/missing  | —           | —      | Ingest (unknown drift) |
+    | Yes               | present        | YES         | False  | Skip |
+    | Yes               | present        | YES         | True   | Ingest anyway |
+    | Yes               | present        | NO          | —      | Ingest (overwrite) |
+- Empty/missing source_hashes = "drift state unknown" — do NOT skip.
+  Phase 6 legacy pages have no source_hashes; empty dict is the Pydantic default.
+  NOTE: Phase 5 lint must also treat empty source_hashes as "unknown" to avoid
+  false-negative drift reports on Phase 6 legacy pages (Phase 5's responsibility).
+
 Wiki Log (Slice #4 — five new kind values):
 - ingest_batch_started / ingest_batch_completed bracket the whole batch.
 - ingest_source emitted per successful Source.
 - ingest_grounding_failed emitted per page with failed grounding.
 - ingest_error emitted per Source-level failure (replaces prior ad-hoc kinds).
+- ingest_skipped emitted per hash-match no-op (Phase 3 amendment #93).
 
 See PRD #28 for the full pipeline design.
 """
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -73,12 +96,15 @@ class IngestBatchResult:
     error, LLM call failure, or write failure).
     `pages_with_failed_grounding` lists page ids (slugs) that were written but
     failed the grounding check (status=failed_grounding).  Added in Slice #4.
+    `skipped_sources` lists IngestSourceResult entries for hash-match no-ops
+    (Phase 3 amendment #93). Empty when no hash matches were detected.
     `_llm_call_count` tracks total LLM calls for the batch_completed log entry.
     """
 
     results: list[IngestSourceResult] = field(default_factory=list)
     failed_sources: list[str] = field(default_factory=list)
     pages_with_failed_grounding: list[str] = field(default_factory=list)
+    skipped_sources: list[IngestSourceResult] = field(default_factory=list)
     _llm_call_count: int = 0
 
 
@@ -101,6 +127,81 @@ def _resolve_docs_files(docs_dir: Path) -> list[tuple[str, Path]]:
     )
 
 
+def _compute_docs_body_hash(source_path: Path) -> str:
+    """Compute SHA-256 of the source file's UTF-8 text content.
+
+    Deterministic convention (Phase 3 amendment #93): hash the UTF-8 text
+    (source_path.read_text('utf-8').encode()) so the hash is stable across
+    platforms regardless of OS line-ending differences from binary reads.
+    This is the ``docs_body_hash`` stored in ``wiki frontmatter.source_hashes``.
+    """
+    return hashlib.sha256(source_path.read_text(encoding="utf-8").encode()).hexdigest()
+
+
+def _should_skip_source(
+    source_name: str,
+    docs_body_hash: str,
+    wiki_dir: Path,
+    force: bool,
+) -> tuple[bool, list[str]]:
+    """Check whether a Source should be skipped based on hash comparison.
+
+    Decision matrix (Phase 3 amendment #93):
+    - wiki page does not exist → False (ingest fresh)
+    - wiki page exists, no source_hashes or empty → False (unknown drift, ingest)
+    - wiki page exists, hash matches, force=False → True (skip)
+    - wiki page exists, hash matches, force=True → False (force reprocess)
+    - wiki page exists, hash differs → False (overwrite)
+
+    Returns:
+        (should_skip, slugs_checked) where slugs_checked is the list of wiki
+        slugs that were inspected (used for the ingest_skipped log payload).
+
+    NOTE on Phase 5 lint: empty source_hashes is treated as "drift unknown" here
+    (do NOT skip). Phase 5 lint must apply the same logic to avoid false-negative
+    drift reports on Phase 6 legacy pages that have no source_hashes.
+    """
+    if force:
+        return False, []
+
+    slugs_checked: list[str] = []
+    # Scan both concepts/ and entities/ subdirs for pages derived from this source
+    for subdir_name in ("concepts", "entities"):
+        subdir = wiki_dir / subdir_name
+        if not subdir.exists():
+            continue
+        for page_path in sorted(subdir.glob("*.md")):
+            fm = read_existing_frontmatter(page_path)
+            if fm is None:
+                continue
+            # Only consider pages derived from this source
+            page_sources: list = fm.get("sources", [])
+            citation_prefix = f"{source_name}#"
+            if not any(str(s).startswith(citation_prefix) for s in page_sources):
+                continue
+            slug = page_path.stem
+            slugs_checked.append(slug)
+            # Read source_hashes; empty/missing = unknown drift → do NOT skip
+            source_hashes = fm.get("source_hashes", {})
+            if not source_hashes:
+                return False, slugs_checked
+            # Check if there's a hash entry for this source
+            entry = source_hashes.get(source_name)
+            if entry is None:
+                return False, slugs_checked
+            existing_docs_body = entry.get("docs_body")
+            if existing_docs_body != docs_body_hash:
+                # Hash differs → must ingest (overwrite)
+                return False, slugs_checked
+            # Hash matches for this page — continue checking others
+            # (all must match to skip)
+    # If we found at least one matching page and no mismatches → skip
+    if slugs_checked:
+        return True, slugs_checked
+    # No pages found → fresh write
+    return False, []
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -111,6 +212,7 @@ def ingest_sources(
     *,
     docs_dir: Path | None = None,
     wiki_dir: Path | None = None,
+    force: bool = False,
 ) -> IngestBatchResult:
     """Ingest one or more Sources and write synthesis pages to wiki/.
 
@@ -120,6 +222,9 @@ def ingest_sources(
             Sources found under docs_dir (glob ``"**/*.md"``).
         docs_dir: Override the docs directory (used by tests).
         wiki_dir: Override the wiki directory (used by tests).
+        force: When True, bypass hash-skip idempotency and re-ingest even if
+            the docs_body_hash matches the existing wiki frontmatter. Default
+            False. Corresponds to IngestRequest.force (Phase 3 amendment #93).
 
     Returns:
         IngestBatchResult with per-Source outcomes.
@@ -183,7 +288,32 @@ def ingest_sources(
             batch.failed_sources.append(source_name)
             continue
 
-        # Step 3: classify the Source
+        # Step 3 (Phase 3 amendment #93): compute docs_body_hash and check
+        # for hash-skip idempotency before making any LLM calls.
+        #
+        # docs_body_hash = sha256(source content as UTF-8 text).
+        # If an existing wiki page has source_hashes[source_name]["docs_body"]
+        # matching this hash AND force=False → skip (no LLM call).
+        # Empty/missing source_hashes → treat as "unknown drift" → do NOT skip.
+        docs_body_hash = _compute_docs_body_hash(source_path)
+        should_skip, slugs_checked = _should_skip_source(
+            source_name, docs_body_hash, resolved_wiki_dir, force
+        )
+        if should_skip:
+            log_event(
+                "ingest_skipped",
+                f"source={source_name} slugs_checked={slugs_checked} docs_body_hash={docs_body_hash}",
+            )
+            batch.skipped_sources.append(
+                IngestSourceResult(
+                    source=source_name,
+                    pages_written=[],
+                    status="skipped",
+                )
+            )
+            continue
+
+        # Step 4: classify the Source
         try:
             source_content = source_path.read_text(encoding="utf-8")
             source_type = classify_source(source_content)
@@ -196,7 +326,7 @@ def ingest_sources(
             batch.failed_sources.append(source_name)
             continue
 
-        # Step 4: generate draft(s)
+        # Step 5: generate draft(s)
         try:
             if source_type == "entity":
                 source_stem = Path(source_name).stem
@@ -233,7 +363,7 @@ def ingest_sources(
             batch.failed_sources.append(source_name)
             continue
 
-        # Step 5: Preserve `created` timestamp for pages that already exist.
+        # Step 6: Preserve `created` timestamp for pages that already exist.
         #
         # For each draft whose target file already exists on disk, read the
         # existing frontmatter and carry forward the original `created` value.
@@ -252,7 +382,38 @@ def ingest_sources(
                 draft = draft.model_copy(update={"frontmatter": preserved_fm})
             drafts_with_preserved_timestamps.append(draft)
 
-        # Step 6: Run grounding verifier on each draft (ADR-0004 fail-soft).
+        # Step 7 (Phase 3 amendment #93): populate source_hashes in each draft's
+        # frontmatter. This is done AFTER slug resolution and created-preservation
+        # so source_hashes carries the correct hash for the current ingest run.
+        #
+        # source_hashes[source_name] = {
+        #     "raw":       content_sha256 from docs frontmatter (or null),
+        #     "docs_body": sha256(source_path.read_text('utf-8').encode()),
+        # }
+        #
+        # `raw` is the hash written by importer.py (Phase 7-3) for the original
+        # raw bytes. Hand-authored docs that never passed through /import have no
+        # content_sha256 in their frontmatter — record null in that case.
+        #
+        # All Sections from a Source share the same docs frontmatter metadata
+        # (indexer.parse_markdown attaches the file's YAML to every Section), so
+        # reading sections[0].metadata is sufficient.
+        raw_hash: str | None = None
+        if sections:
+            raw_hash = sections[0].metadata.get("content_sha256")
+
+        source_hashes_entry: dict[str, str | None] = {
+            "raw": raw_hash,
+            "docs_body": docs_body_hash,
+        }
+        new_source_hashes: dict[str, dict[str, str | None]] = {source_name: source_hashes_entry}
+
+        drafts_with_source_hashes: list = []
+        for draft in drafts_with_preserved_timestamps:
+            updated_fm = draft.frontmatter.model_copy(update={"source_hashes": new_source_hashes})
+            drafts_with_source_hashes.append(draft.model_copy(update={"frontmatter": updated_fm}))
+
+        # Step 9: Run grounding verifier on each draft (ADR-0004 fail-soft).
         #
         # Verifier uses OPENAI_VERIFIER_MODEL (independent of OPENAI_INGEST_MODEL).
         # On claim_supported: status stays "live".
@@ -261,7 +422,7 @@ def ingest_sources(
         # CitableContent Protocol: each draft's body acts as the "draft answer";
         # sections from the source act as the "citable content".
         drafts_with_grounding: list = []
-        for draft in drafts_with_preserved_timestamps:
+        for draft in drafts_with_source_hashes:
             grounding_outcome = verify(draft.body, sections)
             if grounding_outcome.passed:
                 # claim_supported — keep status=live
@@ -297,7 +458,7 @@ def ingest_sources(
                 )
                 batch.pages_with_failed_grounding.append(draft.slug)
 
-        # Step 7+8: Under the index lock, delete orphans then write pages.
+        # Step 10+11: Under the index lock, delete orphans then write pages.
         #
         # Orphan scope is per-Source: only pages derived from source_name are
         # considered.  current_page_ids is the set of slugs in the target set.
@@ -336,6 +497,12 @@ def ingest_sources(
             f" pages_updated={len(write_result.pages_updated)}"
             f" pages_deleted={len(deleted)}",
         )
+        # Determine status for this IngestSourceResult: 'created' if any pages
+        # were freshly written, 'updated' if existing pages were overwritten.
+        # If both occurred (multi-section concept source), use 'updated' to
+        # indicate at least one page was not fresh.
+        result_status = "updated" if write_result.pages_updated else "created"
+
         batch.results.append(
             IngestSourceResult(
                 source=source_name,
@@ -343,6 +510,7 @@ def ingest_sources(
                 pages_created=write_result.pages_created,
                 pages_updated=write_result.pages_updated,
                 pages_deleted=deleted,
+                status=result_status,
             )
         )
 

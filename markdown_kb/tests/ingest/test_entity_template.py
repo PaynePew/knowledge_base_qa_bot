@@ -70,6 +70,7 @@ EXPECTED = """\
 created: '2026-05-26T14:30:00Z'
 id: my-product
 open_questions: []
+source_hashes: {}
 sources:
 - my_product.md#overview
 - my_product.md#features

@@ -62,6 +62,7 @@ EXPECTED = """\
 created: '2026-05-26T14:30:00Z'
 id: cancellation-window
 open_questions: []
+source_hashes: {}
 sources:
 - refund_policy.md#cancellation-window
 status: live
