@@ -367,7 +367,13 @@ def test_ingest_sources_pages_created_on_first_ingest(tmp_path, monkeypatch):
 
 
 def test_ingest_sources_pages_updated_on_reingest(tmp_path, monkeypatch):
-    """Re-ingest same source: pages_updated populated, pages_created empty."""
+    """Re-ingest same source with force=True: pages_updated populated, pages_created empty.
+
+    Phase 3 amendment (#93): without force=True, a second ingest of the same
+    content would be skipped (hash-match). Use force=True here to explicitly
+    test the re-ingest / pages_updated path (the orphan / created-preservation
+    logic). The hash-skip behavior itself is tested in test_ingest_hash_skip.py.
+    """
     import app.indexer as indexer_module
     from app.ingest import ingest_sources
 
@@ -387,8 +393,8 @@ def test_ingest_sources_pages_updated_on_reingest(tmp_path, monkeypatch):
     # First ingest
     ingest_sources(["refund.md"], docs_dir=docs_dir, wiki_dir=wiki_dir)
 
-    # Re-ingest same content
-    result2 = ingest_sources(["refund.md"], docs_dir=docs_dir, wiki_dir=wiki_dir)
+    # Re-ingest same content with force=True to bypass hash-skip (test pages_updated path)
+    result2 = ingest_sources(["refund.md"], docs_dir=docs_dir, wiki_dir=wiki_dir, force=True)
 
     assert result2.failed_sources == []
     src = result2.results[0]

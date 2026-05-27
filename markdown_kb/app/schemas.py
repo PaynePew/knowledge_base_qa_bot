@@ -7,7 +7,7 @@ from __future__ import annotations
 import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # ---------------------------------------------------------------------------
 # Grounding failure block (Slice #4 — fail-soft grounding check on ingest)
@@ -172,6 +172,16 @@ class WikiPageFrontmatter(BaseModel):
       Optional / None on entity and concept pages.
     - ``count`` is the re-ask counter for Filed Answers. Defaults to ``1`` so
       entity/concept construction does not need to know about the field.
+
+    Phase 3 amendment (issue #93):
+    - ``source_hashes`` is the 8th field, carrying per-source hash pairs.
+      Shape: ``{<source_filename>: {"raw": <content_sha256 | null>, "docs_body": <hex>}}``.
+      ``raw`` is the content_sha256 written by importer.py (Phase 7-3); null
+      for hand-authored docs that were never imported.
+      ``docs_body`` is SHA-256 of the source file as UTF-8 text; used by
+      ``/ingest`` for hash-skip idempotency.
+      Empty dict (default) means "drift state unknown" — do NOT skip on
+      empty source_hashes; this is the legacy state for Phase 6 pages.
     """
 
     id: str
@@ -187,6 +197,10 @@ class WikiPageFrontmatter(BaseModel):
     # keep working without modification (forward-compat schema change).
     question: str | None = None
     count: int = 1
+    # Phase 3 amendment (issue #93): 8th field — per-source hash chain.
+    # Default factory returns empty dict = "drift state unknown" (legacy Phase 6
+    # pages have no source_hashes; /ingest must NOT skip on empty source_hashes).
+    source_hashes: dict[str, dict[str, str | None]] = Field(default_factory=dict)
 
 
 class WikiPageDraft(BaseModel):
@@ -219,8 +233,11 @@ class IngestSourceResult(BaseModel):
     `pages_updated` lists paths for pages that already existed and were overwritten.
     `pages_deleted` lists paths of orphan pages removed during re-ingest.
     `error` is set when the source could not be processed.
+    `status` is one of ``'created'`` (fresh write), ``'updated'`` (hash-drift
+    overwrite), or ``'skipped'`` (hash-match no-op — Phase 3 amendment #93).
 
     Meaningful population added in Slice #3 (orphan handling + created preservation).
+    Phase 3 amendment (#93) adds `status` for skip/created/updated discrimination.
     """
 
     source: str  # bare filename, e.g. "refund_policy.md"
@@ -229,6 +246,9 @@ class IngestSourceResult(BaseModel):
     pages_updated: list[str] = []
     pages_deleted: list[str] = []
     error: str | None = None
+    # Phase 3 amendment (#93): status discriminates skip from write outcomes.
+    # Default "created" for backward compat with callers that don't set it.
+    status: Literal["created", "updated", "skipped"] = "created"
 
 
 class IngestRequest(BaseModel):
@@ -237,9 +257,14 @@ class IngestRequest(BaseModel):
     `source` is the bare filename of a single Source to ingest
     (e.g. "refund_policy.md"). When omitted (or body omitted entirely),
     batch mode ingests all Sources under docs/ (Slice #2).
+
+    `force` bypasses hash-skip idempotency (Phase 3 amendment #93). When
+    True, the source is re-ingested even if its docs_body_hash matches the
+    existing wiki frontmatter. Defaults to False.
     """
 
     source: str | None = None
+    force: bool = False
 
 
 class IngestResponse(BaseModel):
@@ -251,11 +276,14 @@ class IngestResponse(BaseModel):
     `pages_with_failed_grounding` lists page ids (slugs) of pages that were
     written but failed the grounding check (status=failed_grounding).  Added
     in Slice #4 — empty on all prior slices.
+    `skipped_sources` lists IngestSourceResult entries for hash-match no-ops
+    (Phase 3 amendment #93). Empty when no hash matches were detected.
     """
 
     results: list[IngestSourceResult]
     failed_sources: list[str]
     pages_with_failed_grounding: list[str] = []
+    skipped_sources: list[IngestSourceResult] = []
 
 
 # ---------------------------------------------------------------------------

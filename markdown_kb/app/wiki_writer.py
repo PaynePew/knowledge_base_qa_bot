@@ -84,6 +84,11 @@ def _render_frontmatter(draft: WikiPageDraft) -> str:
 
     The optional `grounding_failure` block is only included when
     ``draft.frontmatter.status == "failed_grounding"`` (Slice #4).
+
+    Phase 3 amendment (#93): the 8th field ``source_hashes`` is always
+    serialised. PyYAML handles nested dicts natively (block style).
+    An empty dict serialises as ``source_hashes: {}`` which is valid YAML
+    and round-trips correctly through ``yaml.safe_load``.
     """
     fm = draft.frontmatter
     data: dict = {
@@ -100,6 +105,9 @@ def _render_frontmatter(draft: WikiPageDraft) -> str:
             "reason": fm.grounding_failure.reason,
             "unsupported_claims": fm.grounding_failure.unsupported_claims,
         }
+    # Phase 3 amendment (#93): always serialise source_hashes (8th field).
+    # PyYAML renders nested dicts in block style; null values render as `null`.
+    data["source_hashes"] = fm.source_hashes
     return yaml.dump(data, default_flow_style=False, allow_unicode=True).rstrip()
 
 
