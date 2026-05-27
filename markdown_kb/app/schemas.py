@@ -1,4 +1,4 @@
-"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``CitationRef``, ``FiledStatus``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``, ``CoverageGapFinding``, ``PagePairFinding``, ``PromotionCandidateFinding``, ``QaStalenessFinding``, ``InvalidQaSchemaFinding``).
+"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``CitationRef``, ``FiledStatus``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``, ``CoverageGapFinding``, ``PagePairFinding``, ``PromotionCandidateFinding``, ``QaStalenessFinding``, ``InvalidQaSchemaFinding``, ``ImportRequest``, ``ImportSourceResultSchema``, ``ImportFailureSchema``, ``ImportResponse``).
 
 Pydantic request/response models for the FastAPI routes. No domain logic."""
 
@@ -580,3 +580,65 @@ class LintResponse(BaseModel):
     findings: LintFindings
     summary: LintSummary
     check_errors: dict[str, str] = {}
+
+
+# ---------------------------------------------------------------------------
+# /import schemas (Phase 7 Slice 7-1)
+# ---------------------------------------------------------------------------
+
+
+class ImportRequest(BaseModel):
+    """Request body for POST /import.
+
+    ``source`` is the bare filename (or relative sub-path) within ``raw/``
+    (e.g. ``"customer_handbook.html"``).  When omitted (or body omitted
+    entirely), batch mode processes all ``raw/**/*.{html,txt}`` files.
+    """
+
+    source: str | None = None
+
+
+class ImportSourceResultSchema(BaseModel):
+    """Per-source successful import outcome.
+
+    Mirrors ``importer.ImportSourceResult`` as a Pydantic model for the API
+    boundary.  ``content_sha256`` is empty string in slice 7-1 (hash chain
+    lands in slice 7-3).  ``status`` is always ``'created'`` in slice 7-1.
+    """
+
+    raw_path: str
+    docs_path: str
+    original_format: Literal["html", "txt"]
+    content_sha256: str = ""
+    status: Literal["created", "updated", "skipped"] = "created"
+
+
+class ImportFailureSchema(BaseModel):
+    """Per-source failure record for the API response.
+
+    ``error_type`` is one of the typed error class names (slice 7-1: only
+    ``FileNotFoundError`` and ``IOError`` are populated; the full enumeration
+    lands in slice 7-2).  ``error_message`` is truncated to 200 characters.
+    """
+
+    raw_path: str
+    error_type: str
+    error_message: str
+
+
+class ImportResponse(BaseModel):
+    """Response body for POST /import.
+
+    Always returns HTTP 200 regardless of per-source failures, matching the
+    ``/ingest`` and ``/lint`` always-200 contract (PRD #89 §11).
+
+    ``imported_sources`` lists outcomes for successfully converted sources.
+    ``skipped_sources`` is empty in slice 7-1 (populated in slice 7-3 for
+    hash-match skip logic).
+    ``failed_sources`` lists failures; slice 7-1 populates only
+    ``FileNotFoundError`` and ``IOError`` entries.
+    """
+
+    imported_sources: list[ImportSourceResultSchema]
+    skipped_sources: list[ImportSourceResultSchema] = []
+    failed_sources: list[ImportFailureSchema] = []
