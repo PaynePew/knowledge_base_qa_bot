@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``run_lint``, ``_check_c11_orphan``, ``_check_c3_failed_grounding``, ``_check_c4a_slug_collision``.
+"""Deep module per Ousterhout. Public surface: ``run_lint``, ``_check_c11_orphan``, ``_check_c3_failed_grounding``, ``_check_c4a_slug_collision``, ``_check_c6_stale``, ``_check_c2_red_links``.
 
 Lint orchestrator — POST /lint health check for the wiki.
 
@@ -14,6 +14,10 @@ Slice 5-2 scope
 C3 (failed-grounding sweep) and C4-a (slug collision groups) are added.
 Subsequent slices add the remaining checks without changing the orchestrator
 contract or the continue-on-error semantics established here.
+
+Slice 5-3 scope
+---------------
+C6 (mtime-based stale detection) and C2 (red link backlog) are wired.
 
 Read-only invariant
 -------------------
@@ -38,9 +42,11 @@ Check execution order (cheapest to most expensive)
 1. C11 orphan (read frontmatter only)
 2. C3 failed-grounding (read frontmatter only)
 3. C4-a slug collision (filename list only)
-4–7. Future slices: C6, C2, C1, C5
+4. C6 stale pages (stat docs/ files)
+5. C2 red links (scan wiki page bodies)
+6–7. Future slices: C1, C5
 
-Authorised by PRD #65 (Phase 5), GitHub issue #66 (Slice 5-1), GitHub issue #67 (Slice 5-2).
+Authorised by PRD #65 (Phase 5), GitHub issue #66 (Slice 5-1), GitHub issue #67 (Slice 5-2), and GitHub issue #68 (Slice 5-3).
 """
 
 from __future__ import annotations
@@ -49,6 +55,7 @@ import datetime
 import os
 import re
 import tempfile
+from collections import defaultdict
 from pathlib import Path
 
 import yaml
@@ -62,7 +69,9 @@ from .schemas import (
     LintResponse,
     LintSummary,
     OrphanPageFinding,
+    RedLinkFinding,
     SlugCollisionFinding,
+    StalePageFinding,
 )
 
 # Regex that matches a trailing ``-N`` suffix where N is an integer >= 2.
@@ -118,6 +127,7 @@ def _check_c11_orphan(
     findings: list[OrphanPageFinding] = []
 
     # Scan both wiki subdirs
+    # TODO: consolidate ("entities", "concepts") with ADR-0006 SOURCE_DIRS string-name companion
     for subdir_name in ("entities", "concepts"):
         subdir = wiki_dir / subdir_name
         if not subdir.exists():
@@ -224,6 +234,7 @@ def _parse_frontmatter(page_path: Path) -> dict | None:
 
 def _iter_wiki_pages(wiki_dir: Path):
     """Yield (slug, page_path) for every .md page under entities/ and concepts/."""
+    # TODO: consolidate ("entities", "concepts") with ADR-0006 SOURCE_DIRS string-name companion
     for subdir_name in ("entities", "concepts"):
         subdir = wiki_dir / subdir_name
         if not subdir.exists():
@@ -381,6 +392,223 @@ def _check_c4a_slug_collision(
 
 
 # ---------------------------------------------------------------------------
+# C6 — mtime-based stale detection
+# ---------------------------------------------------------------------------
+
+
+def _check_c6_stale(
+    wiki_dir: Path,
+    docs_dir: Path,
+) -> list[StalePageFinding]:
+    """Return stale findings for every wiki page whose Source file is newer.
+
+    A wiki page is *stale* when:
+    - ``frontmatter.sources[0]`` references a Source file that EXISTS under ``docs_dir``
+    - The Source file's filesystem mtime is later than the page's ``frontmatter.updated``
+      timestamp
+
+    Pages whose Source file does NOT exist are handled by C11 (orphan check).
+    C6 explicitly skips them to avoid double-reporting.
+
+    Algorithm:
+    1. For each wiki page in ``entities/`` and ``concepts/``:
+       a. Parse frontmatter; skip if no sources.
+       b. Take ``sources[0]``; strip ``#anchor`` to get the Source filename.
+       c. Resolve ``docs_dir / <filename>``; if the file does not exist, skip (C11's job).
+       d. Read the Source file's mtime as a UTC datetime.
+       e. Parse ``frontmatter.updated`` as a UTC datetime.
+       f. If ``source_mtime > page_updated``, emit ``StalePageFinding``.
+    2. Return findings sorted by ``drift_days`` descending.
+    """
+    findings: list[StalePageFinding] = []
+
+    # TODO: consolidate ("entities", "concepts") with ADR-0006 SOURCE_DIRS string-name companion
+    for subdir_name in ("entities", "concepts"):
+        subdir = wiki_dir / subdir_name
+        if not subdir.exists():
+            continue
+        for page_path in sorted(subdir.glob("*.md")):
+            slug = page_path.stem
+            fm = _parse_frontmatter(page_path)
+            if fm is None:
+                continue
+
+            sources = fm.get("sources", [])
+            if not isinstance(sources, list) or not sources:
+                continue
+
+            # C6 uses only the first source citation
+            first_citation = str(sources[0]) if sources[0] else ""
+            if not first_citation:
+                continue
+
+            # Strip anchor to get the Source filename
+            file_part = first_citation.split("#")[0].strip()
+            if not file_part:
+                continue
+            source_filename = Path(file_part).name
+
+            # Resolve Source file; skip if missing (C11's job)
+            source_path = docs_dir / source_filename
+            if not source_path.exists():
+                # Also try nested lookup using glob
+                matches = list(docs_dir.glob(f"**/{source_filename}"))
+                if not matches:
+                    continue
+                source_path = matches[0]
+
+            # Get Source mtime as UTC datetime
+            source_mtime_ts = source_path.stat().st_mtime
+            source_mtime = datetime.datetime.fromtimestamp(source_mtime_ts, tz=datetime.UTC)
+
+            # Parse page's updated timestamp
+            updated_str = fm.get("updated", "")
+            if not updated_str:
+                continue
+            try:
+                page_updated = datetime.datetime.fromisoformat(
+                    str(updated_str).replace("Z", "+00:00")
+                )
+            except ValueError:
+                continue
+
+            # Ensure both are timezone-aware UTC for comparison
+            if page_updated.tzinfo is None:
+                page_updated = page_updated.replace(tzinfo=datetime.UTC)
+
+            if source_mtime > page_updated:
+                drift_seconds = (source_mtime - page_updated).total_seconds()
+                drift_days = drift_seconds / 86400.0
+                findings.append(
+                    StalePageFinding(
+                        page_slug=slug,
+                        source=source_filename,
+                        source_mtime=source_mtime,
+                        page_updated=page_updated,
+                        drift_days=drift_days,
+                        suggested_action=(
+                            f"Source '{source_filename}' was modified {drift_days:.1f} day(s) after "
+                            f"wiki page '{slug}' was last updated. Re-ingest the Source to "
+                            f'synchronise the wiki page: POST /ingest {{"source": "{source_filename}"}}.'
+                        ),
+                    )
+                )
+
+    # Sort by drift_days descending
+    findings.sort(key=lambda f: f.drift_days, reverse=True)
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# C2 — Red link backlog
+# ---------------------------------------------------------------------------
+
+# Regex from the AC: captures slug portions of [[slug]] and [[slug#anchor]] and [[slug|alias]]
+_WIKILINK_RE = re.compile(r"\[\[([^\]|#]+?)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]")
+
+# Files in wiki root that must NEVER contribute red links (self-feeding loop + noise)
+_C2_EXCLUDED_FILENAMES: frozenset[str] = frozenset(
+    {
+        "lint-report.md",
+        "index.md",
+        "log.md",
+        "hot.md",
+        "README.md",
+    }
+)
+
+
+def _check_c2_red_links(
+    wiki_dir: Path,
+) -> list[RedLinkFinding]:
+    """Return red link findings for every unresolved ``[[wikilink]]`` slug.
+
+    Scans ``wiki/entities/`` and ``wiki/concepts/`` ONLY (matching ADR-0006 SOURCE_DIRS).
+    ``wiki/.archive/*`` and root-level special files are explicitly excluded.
+
+    Algorithm:
+    1. Build the set of existing page slugs from ``entities/*.md`` + ``concepts/*.md``.
+    2. For each page in those dirs, scan the page body for ``[[...]]`` patterns.
+       Skip files in ``_C2_EXCLUDED_FILENAMES`` (by basename).
+       Skip files in ``wiki/.archive/``.
+    3. For each wikilink, extract the slug portion (drop ``#anchor`` and ``|alias``).
+       If the slug is NOT in the existing slugs set, it is a red link.
+    4. Aggregate by slug: count total occurrences; track pages that reference it;
+       capture ~50-char context from the first occurrence.
+    5. Return findings sorted by ``mention_count`` descending, alphabetical by ``slug`` for ties.
+
+    Heading anchors (``[[slug#heading]]``) are captured but only the slug is checked.
+    """
+    # Build the set of known page slugs
+    existing_slugs: set[str] = set()
+    # TODO: consolidate ("entities", "concepts") with ADR-0006 SOURCE_DIRS string-name companion
+    for subdir_name in ("entities", "concepts"):
+        subdir = wiki_dir / subdir_name
+        if not subdir.exists():
+            continue
+        for page_path in subdir.glob("*.md"):
+            existing_slugs.add(page_path.stem)
+
+    # Per-slug aggregation: mention_count, referenced_by set, first context
+    slug_counts: dict[str, int] = defaultdict(int)
+    slug_pages: dict[str, set[str]] = defaultdict(set)
+    slug_first_context: dict[str, str | None] = {}
+
+    # TODO: consolidate ("entities", "concepts") with ADR-0006 SOURCE_DIRS string-name companion
+    for subdir_name in ("entities", "concepts"):
+        subdir = wiki_dir / subdir_name
+        if not subdir.exists():
+            continue
+        for page_path in sorted(subdir.glob("*.md")):
+            # Exclusion: skip files by name
+            if page_path.name in _C2_EXCLUDED_FILENAMES:
+                continue
+            # Exclusion: skip .archive/ files
+            if ".archive" in page_path.parts:
+                continue
+
+            page_slug = page_path.stem
+            try:
+                body = page_path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+
+            # Find all wikilinks in the body
+            for match in _WIKILINK_RE.finditer(body):
+                target_slug = match.group(1).strip()
+                if not target_slug:
+                    continue
+                if target_slug in existing_slugs:
+                    # Resolved — not a red link
+                    continue
+                # Unresolved red link
+                slug_counts[target_slug] += 1
+                slug_pages[target_slug].add(page_slug)
+                # Capture context from first occurrence only
+                if target_slug not in slug_first_context:
+                    start = match.start()
+                    # Take ~25 chars before and ~25 chars after the match
+                    ctx_start = max(0, start - 25)
+                    ctx_end = min(len(body), match.end() + 25)
+                    slug_first_context[target_slug] = body[ctx_start:ctx_end]
+
+    findings: list[RedLinkFinding] = []
+    for slug, count in slug_counts.items():
+        findings.append(
+            RedLinkFinding(
+                slug=slug,
+                mention_count=count,
+                referenced_by=sorted(slug_pages[slug]),
+                sample_context=slug_first_context.get(slug),
+            )
+        )
+
+    # Sort by mention_count descending, then alphabetical by slug for ties
+    findings.sort(key=lambda f: (-f.mention_count, f.slug))
+    return findings
+
+
+# ---------------------------------------------------------------------------
 # Report rendering
 # ---------------------------------------------------------------------------
 
@@ -399,6 +627,8 @@ def _render_report_markdown(
     - Contains a ``## C11 Orphan pages`` section (empty when zero findings)
     - Contains a ``## C3 Failed grounding (<N> pages)`` section
     - Contains a ``## C4 Slug collision groups (<N> groups)`` section
+    - Contains a ``## C6 Stale pages`` section with markdown table (Slice 5-3)
+    - Contains a ``## C2 Red links`` section with markdown table (Slice 5-3)
     """
     lines: list[str] = []
 
@@ -464,6 +694,42 @@ def _render_report_markdown(
         for sc in findings.slug_collisions:
             lines.append(f"**`{sc.base_slug}`** — {sc.suggested_action}")
             lines.append("")
+
+    lines.append("")
+
+    # C6 Stale pages section
+    n_stale = len(findings.stale_pages)
+    lines.append(f"## C6 Stale pages ({n_stale} page{'s' if n_stale != 1 else ''})")
+    lines.append("")
+    if not findings.stale_pages:
+        lines.append("_No stale pages found._")
+    else:
+        lines.append("| Page | Source | Source mtime | Page updated | Drift (days) | Action |")
+        lines.append("|------|--------|-------------|--------------|-------------|--------|")
+        for stale in findings.stale_pages:
+            src_mtime_str = stale.source_mtime.strftime("%Y-%m-%d")
+            pg_updated_str = stale.page_updated.strftime("%Y-%m-%d")
+            lines.append(
+                f"| `{stale.page_slug}` | `{stale.source}` | {src_mtime_str} | {pg_updated_str}"
+                f" | {stale.drift_days:.1f} | {stale.suggested_action} |"
+            )
+    lines.append("")
+
+    # C2 Red links section
+    n_red = len(findings.red_links)
+    lines.append(f"## C2 Red links ({n_red} backlog item{'s' if n_red != 1 else ''})")
+    lines.append("")
+    if not findings.red_links:
+        lines.append("_No red links found._")
+    else:
+        lines.append("| Target slug | Mentions | Referenced by | Sample context |")
+        lines.append("|-------------|---------|---------------|----------------|")
+        for rl in findings.red_links:
+            # referenced_by rendered as comma-separated [[slug]] wikilinks
+            ref_by_str = ", ".join(f"[[{s}]]" for s in rl.referenced_by)
+            ctx_str = rl.sample_context.replace("|", "\\|") if rl.sample_context else ""
+            lines.append(f"| `{rl.slug}` | {rl.mention_count} | {ref_by_str} | {ctx_str} |")
+    lines.append("")
 
     if check_errors:
         lines.append("")
@@ -560,17 +826,45 @@ def run_lint(
             check_errors["c4a"] = err_msg
             log_event("lint_check_error", f"check=c4a exc={err_msg}", log_path=resolved_log)
 
+        # --- C6 Stale pages ---
+        stale_pages: list[StalePageFinding] = []
+        try:
+            stale_pages = _check_c6_stale(resolved_wiki, resolved_docs)
+        except Exception as exc:  # noqa: BLE001
+            err_msg = f"{type(exc).__name__}: {exc}"
+            check_errors["c6"] = err_msg
+            log_event("lint_check_error", f"check=c6 exc={err_msg}", log_path=resolved_log)
+
+        # --- C2 Red links ---
+        red_links: list[RedLinkFinding] = []
+        try:
+            red_links = _check_c2_red_links(resolved_wiki)
+        except Exception as exc:  # noqa: BLE001
+            err_msg = f"{type(exc).__name__}: {exc}"
+            check_errors["c2"] = err_msg
+            log_event("lint_check_error", f"check=c2 exc={err_msg}", log_path=resolved_log)
+
     # --- Aggregate findings ---
     findings = LintFindings(
         orphans=orphans,
         failed_grounding=failed_grounding,
         slug_collisions=slug_collisions,
+        stale_pages=stale_pages,
+        red_links=red_links,
     )
-    total = len(orphans) + len(failed_grounding) + len(slug_collisions)
+    total = (
+        len(orphans)
+        + len(failed_grounding)
+        + len(slug_collisions)
+        + len(stale_pages)
+        + len(red_links)
+    )
     findings_by_check: dict[str, int] = {
         "c11": len(orphans),
         "c3": len(failed_grounding),
         "c4a": len(slug_collisions),
+        "c6": len(stale_pages),
+        "c2": len(red_links),
     }
 
     summary = LintSummary(

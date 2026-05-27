@@ -194,7 +194,7 @@ class TestRunLint:
         assert has_delete_or_remove, f"suggested_action must mention deletion path: {action!r}"
 
     def test_grounded_page_not_flagged_as_orphan(self, lint_env):
-        """A page whose source exists in docs/ must NOT appear as an orphan."""
+        """A page whose source exists in docs/ must NOT appear as an orphan (C11-specific check)."""
         wiki_dir = lint_env["wiki_dir"]
         docs_dir = lint_env["docs_dir"]
         # Create the actual source file
@@ -204,7 +204,8 @@ class TestRunLint:
         from app.lint import run_lint
 
         result = run_lint(**lint_env)
-        assert result.summary.total_findings == 0
+        # C11-specific: a page with an existing source is NOT an orphan.
+        # (C6 may flag it as stale if the source file is newer; that is correct behaviour.)
         assert result.findings.orphans == []
 
     def test_c11_only_checks_file_stem_not_anchor(self, lint_env):

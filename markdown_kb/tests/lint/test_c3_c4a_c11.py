@@ -465,10 +465,15 @@ class TestCombinedC3C4aC11:
         assert len(result.findings.failed_grounding) == 1
         assert len(result.findings.slug_collisions) == 1
 
+        # C11 / C3 / C4-a counts are verified individually above.
+        # C6 may also fire because newly-written pages have an `updated` timestamp
+        # in the past relative to the just-created source files; that is expected
+        # after Slice 5-3 wired C6 into run_lint(). We verify total >= 3 and that
+        # each of the three planted checks contributes exactly 1 finding.
         total = result.summary.total_findings
-        assert total == 3
+        assert total >= 3
 
-        # by_check includes all three
+        # by_check includes all three from this slice
         assert result.summary.findings_by_check.get("c11") == 1
         assert result.summary.findings_by_check.get("c3") == 1
         assert result.summary.findings_by_check.get("c4a") == 1
