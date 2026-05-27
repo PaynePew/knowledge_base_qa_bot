@@ -108,12 +108,11 @@ def test_run_lint_live_c5_against_real_openai(tmp_path, monkeypatch):
     indexer_module.build_index(index_path)
 
     # --- Reset the lint LLM singleton so we hit the production code path ---
-    # ``get_lint_llm()`` caches its ChatOpenAI singleton inside lint_module.
-    # Reset it so this test's monkeypatched env vars (if any) take effect and
-    # so we don't reuse a singleton accidentally populated by an earlier test
-    # in the same process.
-    if hasattr(lint_module, "_lint_llm_singleton"):
-        monkeypatch.setattr(lint_module, "_lint_llm_singleton", None)
+    # ``get_lint_llm()`` caches its ChatOpenAI singleton in the module-level
+    # ``_lint_llm`` global. Reset it so this test's env-vars (if any) take
+    # effect and so we don't reuse a singleton accidentally populated by an
+    # earlier test in the same process.
+    monkeypatch.setattr(lint_module, "_lint_llm", None)
 
     # --- Run lint against the real OpenAI API ------------------------------
     from app.lint import run_lint

@@ -4,7 +4,7 @@ type: concept
 created: "2026-03-02T10:00:00Z"
 updated: "2026-03-02T10:00:00Z"
 sources:
-  - policy_b.md#refund-timeline
+  - policy_a.md#refund-timeline
 status: live
 open_questions: []
 ---
@@ -20,4 +20,4 @@ Customers will receive a confirmation email once the refund has been issued.
 Items must be returned within 60 days of purchase. Both new and refurbished items are eligible.
 For expedited processing, contact priority-support@example.com.
 
-[Source: policy_b.md#refund-timeline]
+[Source: policy_a.md#refund-timeline]

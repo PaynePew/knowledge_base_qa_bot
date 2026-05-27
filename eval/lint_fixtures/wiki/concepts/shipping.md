@@ -4,7 +4,7 @@ type: concept
 created: "2026-03-05T10:00:00Z"
 updated: "2026-03-05T10:00:00Z"
 sources:
-  - about_us.md#shipping-at-exampleco
+  - shipping_info.md#delivery-timelines
 status: live
 open_questions: []
 ---
@@ -22,4 +22,4 @@ orders ship via DHL or FedEx International Priority. All orders include a
 tracking number sent via email once the order ships. See [[order-tracking]]
 for real-time status.
 
-[Source: about_us.md#shipping-at-exampleco]
+[Source: shipping_info.md#delivery-timelines]
