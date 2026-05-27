@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``run_lint``, ``_check_c11_orphan``, ``_check_c3_failed_grounding``, ``_check_c4a_slug_collision``, ``_check_c6_stale``, ``_check_c2_red_links``.
+"""Deep module per Ousterhout. Public surface: ``run_lint``, ``_check_c11_orphan``, ``_check_c3_failed_grounding``, ``_check_c4a_slug_collision``, ``_check_c6_stale``, ``_check_c2_red_links``, ``_check_c1_coverage_gaps``, ``_canonicalise``.
 
 Lint orchestrator — POST /lint health check for the wiki.
 
@@ -18,6 +18,13 @@ contract or the continue-on-error semantics established here.
 Slice 5-3 scope
 ---------------
 C6 (mtime-based stale detection) and C2 (red link backlog) are wired.
+
+Slice 5-4 scope
+---------------
+C1 (coverage gap aggregation from chat_fallback log) is wired.  Reads
+``wiki/log.md`` line by line, clusters ``chat_fallback`` and
+``chat_grounding_fallback`` entries by reason and canonical query key, and
+surfaces the result as a curator-actionable coverage backlog.
 
 Read-only invariant
 -------------------
@@ -44,9 +51,10 @@ Check execution order (cheapest to most expensive)
 3. C4-a slug collision (filename list only)
 4. C6 stale pages (stat docs/ files)
 5. C2 red links (scan wiki page bodies)
-6–7. Future slices: C1, C5
+6. C1 coverage gap (read log.md only)
+7. Future slices: C5
 
-Authorised by PRD #65 (Phase 5), GitHub issue #66 (Slice 5-1), GitHub issue #67 (Slice 5-2), and GitHub issue #68 (Slice 5-3).
+Authorised by PRD #65 (Phase 5), GitHub issue #66 (Slice 5-1), GitHub issue #67 (Slice 5-2), GitHub issue #68 (Slice 5-3), and GitHub issue #69 (Slice 5-4).
 """
 
 from __future__ import annotations
@@ -54,9 +62,11 @@ from __future__ import annotations
 import datetime
 import os
 import re
+import string
 import tempfile
 from collections import defaultdict
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -64,6 +74,7 @@ from ._paths import DOCS_DIR, WIKI_DIR
 from .indexer import _index_lock
 from .logger import LOG_PATH, log_event
 from .schemas import (
+    CoverageGapFinding,
     FailedGroundingFinding,
     LintFindings,
     LintResponse,
@@ -609,6 +620,244 @@ def _check_c2_red_links(
 
 
 # ---------------------------------------------------------------------------
+# C1 — Coverage gap aggregation from chat_fallback / chat_grounding_fallback log
+# ---------------------------------------------------------------------------
+
+# Regex to match a log line produced by logger.log_event:
+#   ## [<ISO-8601>] <kind> | <summary>
+_LOG_LINE_RE = re.compile(r"^## \[(?P<ts>[^\]]+)\] (?P<kind>[^ ]+) \| (?P<summary>.*)$")
+
+# Regex to extract the leading double-quoted query from a summary field.
+# Matches: "<query>" ... (query may contain single-quotes; the retrieval
+# module replaces double-quotes inside queries with single-quotes before logging)
+_SUMMARY_QUERY_RE = re.compile(r'^"(?P<query>[^"]*)"')
+
+# Log kinds consumed by C1
+_C1_KINDS = frozenset({"chat_fallback", "chat_grounding_fallback"})
+
+# Reason values that C1 handles explicitly
+_C1_HANDLED_REASONS = frozenset({"retrieval_empty", "below_threshold", "claim_unsupported"})
+
+
+def _canonicalise(q: str) -> str:
+    """Return the canonical cluster key for a query string.
+
+    Rules (per issue #69 AC):
+    - Lowercase
+    - Strip leading and trailing punctuation characters
+    - Collapse internal whitespace to single spaces
+    - Strip outer whitespace
+    - No stop-word removal
+    - No token sorting
+    """
+    # Lowercase
+    result = q.lower()
+    # Strip outer whitespace
+    result = result.strip()
+    # Strip leading/trailing punctuation (all chars in string.punctuation)
+    result = result.strip(string.punctuation)
+    # Strip any remaining outer whitespace after punctuation stripping
+    result = result.strip()
+    # Collapse internal whitespace to single spaces
+    result = re.sub(r"\s+", " ", result)
+    return result
+
+
+def _parse_kv(summary: str) -> dict[str, str]:
+    """Parse key=value pairs from a log summary string.
+
+    Supports bare values (no quotes) and ignores the leading quoted query
+    string.  Returns a dict of all key=value pairs found.
+    """
+    # Remove the leading quoted query (may contain spaces) first
+    remainder = _SUMMARY_QUERY_RE.sub("", summary).strip()
+    pairs: dict[str, str] = {}
+    for match in re.finditer(r"(\w+)=(\S+)", remainder):
+        pairs[match.group(1)] = match.group(2)
+    return pairs
+
+
+def _check_c1_coverage_gaps(log_path: Path) -> list[CoverageGapFinding]:
+    """Parse ``wiki/log.md`` and aggregate coverage gap findings.
+
+    Reads the log file line by line. Matches ``chat_fallback`` and
+    ``chat_grounding_fallback`` entries. Groups them into clusters according
+    to the per-reason cluster key table in issue #69:
+
+    - ``retrieval_empty``: key = ``_canonicalise(q)``
+    - ``below_threshold``: key = ``(_canonicalise(q), top_section)``
+    - ``claim_unsupported``: key = ``(_canonicalise(q), tuple(sorted(cited_pages)))``
+    - ``wiki_layer_empty``: skipped entirely (filtered by kind, not reason)
+
+    Env var ``KB_LINT_MIN_HITS`` (default 1): clusters with ``hit_count <
+    KB_LINT_MIN_HITS`` are excluded from the returned list.  Read at function
+    entry (not at module load) to mirror the ``KB_SCORE_THRESHOLD`` pattern.
+
+    Counter semantics:
+    - ``malformed_lines``: lines that are in a C1 kind but whose structure
+      could not be parsed (missing query field, regex non-match, parse exception).
+      If ``malformed_lines > 0`` a ``lint_check_error`` is written.
+    - ``out_of_scope_reasons``: lines parsed cleanly but whose ``reason=`` value
+      is not one C1 handles (e.g. ``not_indexed``, ``verifier_unavailable``).
+      These are silently ignored — they are legitimately not C1's concern.
+
+    Returns findings sorted:
+    - Primary: fixed group order (``retrieval_empty``, ``below_threshold``,
+      ``claim_unsupported``)
+    - Within group: ``hit_count`` descending; ties broken alphabetically by
+      ``query_canonical``
+    """
+    min_hits = int(os.getenv("KB_LINT_MIN_HITS", "1"))
+
+    if not log_path.exists():
+        return []
+
+    # Cluster accumulators keyed by (reason, cluster_key)
+    # Each value: {"hits": int, "raw_queries_seen": [str], "timestamps": [str],
+    #              "top_section": str|None, "cited_pages": list[str]|None}
+    clusters: dict[tuple[str, Any], dict[str, Any]] = {}
+
+    malformed_lines = 0
+    out_of_scope_reasons = 0
+
+    try:
+        text = log_path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        m = _LOG_LINE_RE.match(line)
+        if not m:
+            # Not a structured log line (e.g., blank header, arbitrary text); skip
+            continue
+
+        ts = m.group("ts")
+        kind = m.group("kind")
+        summary = m.group("summary")
+
+        if kind not in _C1_KINDS:
+            continue
+
+        # Extract leading quoted query
+        qm = _SUMMARY_QUERY_RE.match(summary)
+        if not qm:
+            malformed_lines += 1
+            continue
+        raw_query = qm.group("query")
+
+        # Parse key=value pairs from remainder
+        try:
+            kv = _parse_kv(summary)
+        except Exception:  # noqa: BLE001
+            malformed_lines += 1
+            continue
+
+        reason = kv.get("reason", "")
+
+        if reason not in _C1_HANDLED_REASONS:
+            # Parsed cleanly but not a reason C1 handles — not a parse failure
+            out_of_scope_reasons += 1
+            continue
+
+        canonical = _canonicalise(raw_query)
+
+        if reason == "retrieval_empty":
+            cluster_key: Any = canonical
+            top_section: str | None = None
+            cited_pages: list[str] | None = None
+
+        elif reason == "below_threshold":
+            top_section = kv.get("top_section")
+            cluster_key = (canonical, top_section)
+            cited_pages = None
+
+        else:  # claim_unsupported
+            cited_raw = kv.get("cited", "")
+            cited_list: list[str] = [c for c in cited_raw.split(",") if c] if cited_raw else []
+            cited_pages = cited_list if cited_list else None
+            cluster_key = (canonical, tuple(sorted(cited_list)))
+            top_section = None
+
+        full_key = (reason, cluster_key)
+
+        if full_key not in clusters:
+            clusters[full_key] = {
+                "reason": reason,
+                "query_canonical": canonical,
+                "hits": 0,
+                "raw_queries_seen": [],  # ordered, deduplicated up to 3
+                "raw_seen_set": set(),
+                "timestamps": [],
+                "top_section": top_section,
+                "cited_pages": cited_pages,
+            }
+
+        entry = clusters[full_key]
+        entry["hits"] += 1
+        entry["timestamps"].append(ts)
+
+        # Collect up to 3 unique raw queries
+        if len(entry["raw_queries_seen"]) < 3 and raw_query not in entry["raw_seen_set"]:
+            entry["raw_queries_seen"].append(raw_query)
+            entry["raw_seen_set"].add(raw_query)
+
+    if malformed_lines > 0:
+        log_event(
+            "lint_check_error",
+            f"check=c1 malformed_lines={malformed_lines} out_of_scope_reasons={out_of_scope_reasons} reason=malformed_log_lines",
+            log_path=log_path,
+        )
+
+    # Build CoverageGapFinding list, applying min_hits filter
+    findings: list[CoverageGapFinding] = []
+    for (_reason, _ck), entry in clusters.items():
+        if entry["hits"] < min_hits:
+            continue
+        reason = entry["reason"]
+        canonical = entry["query_canonical"]
+        raw_q = entry["raw_queries_seen"]
+        timestamps = sorted(entry["timestamps"])
+        first_seen = timestamps[0] if timestamps else ""
+        last_seen = timestamps[-1] if timestamps else ""
+
+        ts_ = entry["top_section"]
+        cp = entry["cited_pages"]
+
+        if reason == "retrieval_empty":
+            action = f"Create a new wiki page covering {canonical}"
+        elif reason == "below_threshold":
+            section_ref = ts_ or "<unknown>"
+            action = f"Extend page `[[{section_ref}]]` to cover {canonical}"
+        else:  # claim_unsupported
+            pages_str = ", ".join(cp) if cp else "<unknown>"
+            action = f"Review: KB gap or verifier issue? cited: {pages_str}"
+
+        findings.append(
+            CoverageGapFinding(
+                reason=reason,
+                query_canonical=canonical,
+                sample_raw_queries=raw_q,
+                hit_count=entry["hits"],
+                first_seen=first_seen,
+                last_seen=last_seen,
+                top_section=ts_,
+                cited_pages=cp,
+                suggested_action=action,
+            )
+        )
+
+    # Sort: fixed group order, then hit_count desc, then query_canonical asc
+    _GROUP_ORDER = {"retrieval_empty": 0, "below_threshold": 1, "claim_unsupported": 2}
+    findings.sort(key=lambda f: (_GROUP_ORDER.get(f.reason, 99), -f.hit_count, f.query_canonical))
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
 # Report rendering
 # ---------------------------------------------------------------------------
 
@@ -629,6 +878,7 @@ def _render_report_markdown(
     - Contains a ``## C4 Slug collision groups (<N> groups)`` section
     - Contains a ``## C6 Stale pages`` section with markdown table (Slice 5-3)
     - Contains a ``## C2 Red links`` section with markdown table (Slice 5-3)
+    - Contains a ``## C1 Coverage gaps`` section (empty when zero findings)
     """
     lines: list[str] = []
 
@@ -730,6 +980,36 @@ def _render_report_markdown(
             ctx_str = rl.sample_context.replace("|", "\\|") if rl.sample_context else ""
             lines.append(f"| `{rl.slug}` | {rl.mention_count} | {ref_by_str} | {ctx_str} |")
     lines.append("")
+
+    # C1 Coverage gaps section
+    n_c1 = len(findings.coverage_gaps)
+    lines.append(f"## C1 Coverage gaps ({n_c1} findings)")
+    lines.append("")
+    if not findings.coverage_gaps:
+        lines.append("_No coverage gaps found._")
+        lines.append("")
+    else:
+        # Sub-group by reason in fixed order
+        from collections import defaultdict as _dd
+
+        by_reason: dict[str, list[CoverageGapFinding]] = _dd(list)
+        for gap in findings.coverage_gaps:
+            by_reason[gap.reason].append(gap)
+
+        for reason in ("retrieval_empty", "below_threshold", "claim_unsupported"):
+            group = by_reason.get(reason, [])
+            if not group:
+                continue
+            lines.append(f"### Repeated {reason} ({len(group)})")
+            lines.append("")
+            for gap in group:
+                lines.append(f"- **`{gap.query_canonical}`** (×{gap.hit_count})")
+                lines.append(f"  - *{gap.suggested_action}*")
+                if gap.sample_raw_queries:
+                    samples = "; ".join(f'"{q}"' for q in gap.sample_raw_queries[:3])
+                    lines.append(f"  - Sample queries: {samples}")
+                lines.append(f"  - First seen: {gap.first_seen}  Last seen: {gap.last_seen}")
+                lines.append("")
 
     if check_errors:
         lines.append("")
@@ -844,6 +1124,15 @@ def run_lint(
             check_errors["c2"] = err_msg
             log_event("lint_check_error", f"check=c2 exc={err_msg}", log_path=resolved_log)
 
+        # --- C1 Coverage gaps ---
+        coverage_gaps: list[CoverageGapFinding] = []
+        try:
+            coverage_gaps = _check_c1_coverage_gaps(resolved_log)
+        except Exception as exc:  # noqa: BLE001
+            err_msg = f"{type(exc).__name__}: {exc}"
+            check_errors["c1"] = err_msg
+            log_event("lint_check_error", f"check=c1 exc={err_msg}", log_path=resolved_log)
+
     # --- Aggregate findings ---
     findings = LintFindings(
         orphans=orphans,
@@ -851,6 +1140,7 @@ def run_lint(
         slug_collisions=slug_collisions,
         stale_pages=stale_pages,
         red_links=red_links,
+        coverage_gaps=coverage_gaps,
     )
     total = (
         len(orphans)
@@ -858,6 +1148,7 @@ def run_lint(
         + len(slug_collisions)
         + len(stale_pages)
         + len(red_links)
+        + len(coverage_gaps)
     )
     findings_by_check: dict[str, int] = {
         "c11": len(orphans),
@@ -865,6 +1156,7 @@ def run_lint(
         "c4a": len(slug_collisions),
         "c6": len(stale_pages),
         "c2": len(red_links),
+        "c1": len(coverage_gaps),
     }
 
     summary = LintSummary(
