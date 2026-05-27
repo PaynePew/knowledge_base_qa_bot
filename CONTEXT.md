@@ -88,6 +88,10 @@ _Avoid_: Query expansion (a different technique that adds synonyms to a single-t
 A session-scoped store of recent turns, keyed by session id, used to feed Query Rewriting in multi-turn flows. Planned with a sliding window (~10 turns) and TTL eviction. Does not exist in the prototype.
 _Avoid_: Session store (overloaded with auth/cookie usage), Chat history (vague).
 
+**Filed Answer** _(future)_:
+A Wiki Page in `wiki/qa/*.md` produced by `POST /chat` when a Grounded Answer passes the filing gate. Closes the Two-output rule on the query side (Sources close on the ingest side via Phase 3). Carries the standard 7-field frontmatter plus a literal `question` field and inherits the `status: draft|live` lifecycle from the schema (entity/concept pages default to `live` at ingest; Filed Answers default to `draft` and only pages with `status: live` enter the BM25 corpus). The draft→live transition is the **promotion gate** — an explicit decision (human curator or `/lint`-driven rule) that separates *filing* (capture every Grounded Answer) from *consumption* (only review-approved content is retrievable). Phase 6 ships the filing path; the promotion rule lands with Phase 5 `/lint`.
+_Avoid_: Q&A page (collides casually with "Q&A bot" — the product), Saved answer (implies user-initiated save, but filing is automatic), FAQ page (FAQ is an input Source type, not the output).
+
 ## Flagged ambiguities
 
 **Slug generation for non-ASCII headings is undefined.**
