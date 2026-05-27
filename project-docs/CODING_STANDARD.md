@@ -309,9 +309,9 @@ If you want a debug-only channel, instead either:
 ### 6.1 Inverted pyramid (per `markdown_kb/tests/README.md`)
 
 - **Many** integration tests (`TestClient` + fake LLM) covering PROMPT.md verification cases.
-- **Some** component tests for `parse_markdown`, `build_index`, BM25 ranking order.
-- **Few-to-zero** unit tests on trivial helpers (`slugify`, `tokenize`).
-- **Exactly one** `@pytest.mark.live` smoke test. Opt-in only; auto-skipped via `conftest.py:pytest_collection_modifyitems`.
+- **Some** component tests for parsing, indexing, and BM25 ranking order.
+- **Few-to-zero** unit tests on trivial helpers (tokenisation, slugification).
+- **One live test per LLM-facing surface** (see §6.4). Opt-in only; auto-skipped via the conftest collection hook.
 
 ### 6.2 What to assert vs not
 
@@ -319,25 +319,25 @@ If you want a debug-only channel, instead either:
 |---|---|
 | HTTP status code | BM25 score absolute values (corpus-sensitive, brittle) |
 | Response shape (keys, types, list lengths) | LLM output text content beyond shape + `[Source:` markers |
-| Exact literal sentinel strings (`CANNOT_CONFIRM_PHRASE`, citation format) | Wall-clock timing |
+| Exact literal sentinel strings (Cannot Confirm phrase, citation format) | Wall-clock timing |
 | Section IDs, ranking order | Specific words in the model's reply |
 | Log line presence + structure | Anything that breaks across model updates |
 
 ### 6.3 Mock the LLM, not the indexer
 
-- The LLM is the **only** thing that should be replaced with a stub. Use `monkeypatch` on `get_llm` / `get_retry_llm`.
-- The indexer always runs against real fixture files under `tmp_docs`. Mocking `indexer.search` masks integration drift — fail any PR that does this.
+- The LLM is the **only** thing that should be replaced with a stub. Use `monkeypatch` on the LLM getter functions (see §2.7 on lazy singleton getters).
+- The indexer always runs against real fixture files under `tmp_docs`. Mocking a deep-module entry point masks integration drift — fail any PR that does this.
 
 ### 6.4 Live smoke discipline
 
-- **One live test per LLM-facing surface** is the policy. After Phase 3 the surfaces are: `/chat` (`test_chat_live.py`) and `/ingest` (`test_ingest_live.py`). Adding a third live test to either surface — or a new surface without explicit PRD authorisation — is scope creep; push the assertion into a mocked integration test instead.
+- **One live test per LLM-facing surface** is the policy. LLM-facing surfaces are enumerated in ADR-0005 § Consequences (updated when a new surface ships). Adding a second live test to an existing surface, or a live test to a new surface without explicit PRD authorisation, is scope creep; push the assertion into a mocked integration test instead.
 - A live test asserts **shape** (200, citation pattern present, non-empty sources, all expected frontmatter fields parseable), **never** specific words. Models update; tests outlive them.
 
 ### 6.5 Fixtures
 
-- Per-test isolation via `tmp_path`-derived fixtures (`tmp_docs`, `tmp_kb`, `tmp_wiki` in `conftest.py`).
-- Tests that mutate `indexer.sections` MUST restore it via `monkeypatch` (auto-restores) or an explicit teardown.
-- Fixture filenames under `tests/fixtures/docs/` deliberately mirror real `docs/` filenames so PROMPT.md cases translate one-to-one.
+- Per-test isolation via `tmp_path`-derived fixtures (see the test-suite conftest for the established pattern).
+- Tests that mutate the module-level sections list MUST restore it via `monkeypatch` (auto-restores) or an explicit teardown.
+- Test fixtures are hand-written, deterministic, and mirror the shape of real Sources / Wiki Pages; never LLM-generated at test time.
 
 ---
 
@@ -431,20 +431,20 @@ For slice commits per `orchestration-plan.md`, the body MUST include:
 
 ## 10. Design patterns in use
 
-For quick recognition during code review. These are documented here so a new contributor sees the pattern names attached to concrete code sites.
+For quick recognition during code review. Code-site anchors for each pattern live in the relevant ADR § Consequences — grep `**Invariant**` in `project-docs/adr/*.md` to find them.
 
-| Pattern | Where | Why this one |
-|---|---|---|
-| **Deep module** (Ousterhout) | `indexer.py`, `retrieval.py`, `grounding.py` | Small public surface (`build_index`, `search`, `query`, `verify_grounding`); large private implementation (BM25 math, parsing rules, error mapping, grounding heuristics). |
-| **Lazy singleton** | `get_llm()`, `get_retry_llm()` in `retrieval.py` | Avoids constructing a real OpenAI client at import time; lets tests stub via `monkeypatch` before first use. |
-| **Guard clause / early return** | Pre-LLM Cannot Confirm gate in `retrieval.py` | ADR-0001: never hand weak context to the LLM. Two early returns before the prompt is even built. |
-| **Atomic write (tmp + rename)** | `write_index_json` in `indexer.py`; `write_wiki_index` in `wiki_index.py` | Crash mid-write must not leave a half-written file for the next read. POSIX `os.replace` is atomic on a single filesystem. |
-| **Append-only log** | `log_event` → `wiki/log.md` | Karpathy log discipline; survives across crashes; `grep`-able audit trail. |
-| **DI via monkeypatch** | Tests stub `get_llm` / `_llm` / `LOG_PATH` | No DI framework; tests use pytest's `monkeypatch` to swap module-level state. The functions return module globals on purpose so this is cheap. |
-| **Strategy (deferred / implicit)** | `markdown_kb/` vs `vector_rag/` behind same HTTP contract | ADR-0002 explicitly defers a `Retriever` protocol until both implementations work. The two directories are two strategies; the abstraction is *not* extracted yet. |
-| **Repository / in-memory store** | `indexer.sections` + `_index_lock` | Single-process, single-writer; module-level list is the "repository." When this model breaks, the upgrade path is `app.state` or external store. |
-| **Adapter** | LangChain `ChatOpenAI` wraps the OpenAI SDK | Provides timeout/retry plumbing; isolated to `retrieval.py` so the rest of the codebase never sees LangChain types. |
-| **Structured-output adapter via `with_structured_output`** | `templates.py` — `classify_source` and `generate_page` / `generate_entity_page` | ADR-0005 pre-blessed component pattern. LLM bound to a Pydantic schema via `ChatOpenAI(...).with_structured_output(Schema)`; schema is never exposed outside the module. Both the classification call (`_ClassificationOutput`) and the synthesis call (`_PageSynthesisOutput`) use this pattern so LLM output is always validated at the boundary. |
+| Pattern | Why this one |
+|---|---|
+| **Deep module** (Ousterhout) | Small public surface; large private implementation (BM25 math, parsing rules, error mapping, grounding heuristics). The indexer, retrieval, and grounding modules are the canonical examples. |
+| **Lazy singleton** | Avoids constructing a real OpenAI client at import time; lets tests stub via `monkeypatch` before first use. LLM getter functions are the canonical sites. |
+| **Guard clause / early return** | ADR-0001: never hand weak context to the LLM. Two early returns before the prompt is even built (pre-LLM Cannot Confirm gate). |
+| **Atomic write (tmp + rename)** | Crash mid-write must not leave a half-written file for the next read. POSIX `os.replace` is atomic on a single filesystem. The indexer and wiki-index modules are the canonical sites. |
+| **Append-only log** | Karpathy log discipline; survives across crashes; `grep`-able audit trail. All events flow to `wiki/log.md` via `log_event`. |
+| **DI via monkeypatch** | No DI framework; tests use pytest's `monkeypatch` to swap module-level state. LLM getter functions and the log path are the canonical swap points. |
+| **Strategy (deferred / implicit)** | ADR-0002 explicitly defers a `Retriever` protocol until both retrieval implementations work. The two workspace packages are two strategies; the abstraction is *not* extracted yet. |
+| **Repository / in-memory store** | Single-process, single-writer; module-level list is the "repository." When this model breaks, the upgrade path is `app.state` or external store. |
+| **Adapter** | LangChain client wraps the OpenAI SDK. Provides timeout/retry plumbing; isolated to the LLM-call wrapper module so the rest of the codebase never sees LangChain types. |
+| **Structured-output adapter via `with_structured_output`** | ADR-0005 pre-blessed component pattern. LLM bound to a Pydantic schema; schema is never exposed outside the owning module. Both classification and synthesis calls use this pattern so LLM output is always validated at the boundary. |
 
 Notable patterns **rejected** (do not introduce):
 
@@ -472,12 +472,12 @@ Each signal has a **severity** that determines the reviewer's action:
 
 ### Sentinel string drift (§3.3)
 
-- [ ] **FIX** — A branch returns a paraphrase of "Cannot Confirm" instead of the constant `CANNOT_CONFIRM_PHRASE`.
-- [ ] **FIX** — An inline `"I cannot confirm from the knowledge base."` literal appears in tests or routes (use the constant).
+- [ ] **FIX** — A branch returns a paraphrase of "Cannot Confirm" instead of the sentinel-string constant defined in the LLM-call wrapper module.
+- [ ] **FIX** — An inline Cannot Confirm literal appears in tests or routes (use the constant, imported from its owning module).
 
 ### Architecture & dependency drift (§2)
 
-- [ ] **FAIL** — A new module imports `langchain` or `langchain_openai` outside `retrieval.py`, OR LangChain types (`HumanMessage`, `SystemMessage`, `ChatOpenAI`) leak through `retrieval.py`'s return values into other modules. (Violates §2.4.)
+- [ ] **FAIL** — A new module imports `langchain` or `langchain_openai` outside the LLM-call wrapper module, OR LangChain types leak through that module's return values into other modules. (Violates §2.4.)
 - [ ] **FAIL** — Business / conditional logic appears in a module whose docstring declares it `Shallow module per Ousterhout` (§2.3). Should be in a deep module.
 - [ ] **FAIL** — A code change breaks any `**Invariant**`-tagged line in `project-docs/adr/*.md` (or a PRD-encoded invariant) without a paired new ADR superseding it. See §2.5.
 - [ ] **FAIL** — Pre-LLM Cannot Confirm gate is bypassed when retrieval score is "just barely below threshold" (violates ADR-0001 + §4.3).
@@ -499,11 +499,11 @@ Each signal has a **severity** that determines the reviewer's action:
 
 ### Testing drift (§6)
 
-- [ ] **FAIL** — A test mocks `indexer.search` or any other deep-module entry point (mock the LLM, not the index; per §6.3).
+- [ ] **FAIL** — A test mocks any deep-module entry point (indexer search, grounding verify, etc.) instead of the LLM getter; per §6.3.
 - [ ] **FAIL** — A new `@pytest.mark.live` test appears on a surface already covered by an existing live test, OR a live test is added to a new LLM-facing surface without explicit PRD authorisation (one-per-surface is the policy; per §6.4).
 - [ ] **FAIL** — A test asserts an absolute BM25 score value (corpus-sensitive, brittle; per §6.2 — assert ranking order or shape instead).
 - [ ] **FLAG** — A test asserts specific LLM output text content beyond shape + `[Source:` marker (will break across model updates; per §6.2).
-- [ ] **FIX** — A test mutates `indexer.sections` without restoring via `monkeypatch` or explicit teardown (per §6.5).
+- [ ] **FIX** — A test mutates the module-level sections list without restoring via `monkeypatch` or explicit teardown (per §6.5).
 
 ### Dependencies drift (§7)
 
