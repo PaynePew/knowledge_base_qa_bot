@@ -2,7 +2,7 @@
 
 AC coverage (issue #90 — Slice 7-1):
   - POST /import (batch mode) with .html in raw/ writes docs/<basename>.md
-  - Output frontmatter has imported_from, original_format, imported_at (no content_sha256)
+  - Output frontmatter has imported_from, original_format, imported_at, content_sha256
   - HTML conversion: headings, paragraphs, lists, code, links preserved
   - HTML conversion: script, style, iframe, form, comments stripped
   - POST /import with source=<filename> processes single specified file
@@ -10,6 +10,10 @@ AC coverage (issue #90 — Slice 7-1):
   - Atomic write: no .tmp file lingers after success
   - FileNotFoundError populates failed_sources with correct error_type
   - POST /import always returns HTTP 200
+
+Extended in Slice 7-3 (issue #92):
+  - content_sha256 is present in frontmatter on first write
+  - status='created' on first write
 """
 
 from __future__ import annotations
@@ -75,7 +79,10 @@ def test_import_html_batch_creates_docs_file(import_env):
 
     result = data["imported_sources"][0]
     assert result["original_format"] == "html"
-    assert result["status"] == "created"
+    assert result["status"] == "created", "First import must have status='created'"
+    assert result["content_sha256"] != "", (
+        "content_sha256 must be populated on first import (slice 7-3)"
+    )
     assert result["raw_path"].endswith("clean_article.html")
     assert result["docs_path"].endswith("clean_article.md")
 
@@ -107,8 +114,9 @@ def test_import_html_frontmatter(import_env):
     assert "imported_at" in fm, "imported_at must be in frontmatter"
     assert fm["original_format"] == "html"
     assert "clean_article.html" in fm["imported_from"]
-    # content_sha256 NOT in this slice
-    assert "content_sha256" not in fm, "content_sha256 must NOT be in slice 7-1 output"
+    # content_sha256 added in slice 7-3
+    assert "content_sha256" in fm, "content_sha256 must be in frontmatter (slice 7-3)"
+    assert fm["content_sha256"], "content_sha256 must not be empty"
 
     # imported_at is ISO-8601 UTC
     ts = fm["imported_at"]

@@ -25,7 +25,7 @@ Phases are ordered by four criteria, in this priority:
 |---|---|---|---|---|
 | **3** | `/ingest` — Source → `wiki/entities/`, `wiki/concepts/`. LLM-assisted synthesis. Per-type Source Templates. Frontmatter schema becomes real (no longer deferred). | 12-19h | Karpathy write | Planned |
 | **4** | W2 layered retrieval — `/chat` queries `wiki/` + `docs/`. Flips `SOURCE_DIRS = [DOCS_DIR]` to `[DOCS_DIR, WIKI_DIR]` (the upgrade hook ADR-0003 already pre-installed). | 3-6h | Karpathy read | Planned |
-| **5** ⭐ | `/lint` — Lint Pass. Contradiction detection, stale claims, orphan pages, gaps from repeated cannot-confirm queries. Completes Karpathy's Ingest + Query + Lint trio. | 6-10h | Karpathy maintain | Planned |
+| **5** ⭐ | `/lint` — Lint Pass. Contradiction detection, stale claims, orphan pages, gaps from repeated cannot-confirm queries. Completes Karpathy's Ingest + Query + Lint trio. **Hard deps: (a) slice 7-3 (#92, merged) writes `content_sha256` to `docs/` frontmatter — required for "raw drifted but docs not re-imported" staleness detection without recomputing hashes online; (b) Phase 3 amendment (issue #93, TBD) writes `source_hashes` to wiki frontmatter — required for full-chain raw→wiki drift detection.** | 6-10h | Karpathy maintain | Planned |
 | **6** | Answer Filing — `/chat` answers (when high-confidence) get written back to `wiki/qa/*.md`. Closes the Two-output rule on the query side (the Source side closes in Phase 3). PROMPT.md stretch #7. | 4-8h | Karpathy Two-output | In Progress |
 | **7** | Multi-Format Import — `raw/*.txt` and `raw/*.html` normalized into `docs/*.md` via a pre-processing step (`markdownify` or equivalent), so non-Markdown Sources can enter the pipeline without losing the canonical Markdown format guarantee. PROMPT.md stretch #4. | 3-5h | input flexibility | Planned |
 | **8** | Paraphrase Comparison — revive `vector_rag/` (langchain 0.3 → 1.x), run paraphrased queries against both retrieval strategies, produce a comparison report. Empirically validates ADR-0002. PROMPT.md stretch #9. | 6-12h | retrieval comparison | Planned |
@@ -47,6 +47,7 @@ These are not preferences — they are constraints. Violating them produces brok
 | Phase 10 **must** follow Phase 4 | Hot Cache lives at `wiki/hot.md`. Same logic. |
 | Phase 8 **must** follow Phase 4 | A fair Paraphrase Comparison compares "BM25 over docs + wiki" against Vector RAG, not partial. Running it before Phase 4 produces misleading data. |
 | Phase 11 **best** after Phase 9 | Multi-turn UX needs a streaming UI to demo well. Without it, conversation memory is two endpoints, not a conversation. |
+| Phase 5 `/lint` drift checks **must** follow slice 7-3 (#92) + Phase 3 amendment (issue #93) | `content_sha256` in `docs/` frontmatter (slice 7-3) and `source_hashes` in wiki frontmatter (Phase 3 amendment) are the preconditions for full-chain raw→wiki drift detection. Without them, Phase 5 lint can only check structural invariants, not staleness. |
 
 ## Stopping points (interview-ready snapshots)
 

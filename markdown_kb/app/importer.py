@@ -10,17 +10,29 @@ path is completely disjoint from ``/ingest``.
 Pipeline per source file:
     1. Resolve source path(s): batch = glob ``raw/**/*.{html,txt}``; single =
        ``raw_dir / source_filter``.
-    2. Validate: NFC-normalize filename, reject invalid filenames and source
-       paths, check extension, existence, size, UTF-8 encoding.
-    3. Convert: ``.html`` → markdownify with semantic whitelist + strip list;
+    2. Validate (slice 7-2): NFC-normalize filename, reject invalid filenames
+       and source paths, check extension, existence, size, UTF-8 encoding,
+       hand-authored collision (docs target without ``imported_from``).
+    3. Compute SHA-256 of raw bytes (``raw_path.read_bytes()``) — slice 7-3.
+    4. Hash-skip check (slice 7-3): if docs target exists and its frontmatter
+       ``content_sha256`` matches the computed hash → skip (no markdownify,
+       no disk write).  Emit ``import_skipped`` Wiki Log event.
+    5. Convert: ``.html`` → markdownify with semantic whitelist + strip list;
        ``.txt`` → passthrough (no heading inference).
-    4. Render output: YAML frontmatter (imported_from, original_format,
-       imported_at) + converted body.
-    5. Atomic write: tempfile in same dir + ``os.replace`` + cleanup on
+    6. Render output: YAML frontmatter (imported_from, original_format,
+       imported_at, content_sha256) + converted body.
+    7. Atomic write: tempfile in same dir + ``os.replace`` + cleanup on
        exception (CODING_STANDARD §2.6).
-    6. Emit Wiki Log events: ``import_batch_started``, ``import_source``
-       (per success), ``import_error`` (per failure),
-       ``import_batch_completed``.
+    8. Emit Wiki Log events: ``import_batch_started``, ``import_source``
+       (per success — ``status=created`` for fresh, ``status=updated`` for
+       hash-drift overwrite), ``import_skipped`` (per hash-match),
+       ``import_error`` (per failure), ``import_batch_completed``.
+
+Status values for ImportSourceResult:
+    - ``'created'``: docs target did not exist; freshly written.
+    - ``'updated'``: docs target existed (import-generated) but hash differed;
+      overwritten with new content.
+    - ``'skipped'``: docs target existed and hash matched; no write performed.
 
 Error handling (slice 7-2 — full 12 typed failure modes):
     - ``InvalidFilename``        — basename contains rejected character class
@@ -40,13 +52,15 @@ Continue-on-error: one failing source does not abort the batch.
 Concurrency: inherits Phase 3 Q7 single-writer assumption — no new lock.
 ``docs/`` is the only write target; reads from ``raw/`` only.
 
-See PRD #89 (Phase 7) and issue #91 (Slice 7-2) for the full design.
+See PRD #89 (Phase 7), and slice issues #90 (7-1 scaffold), #91 (7-2 error
+handling), and #92 (7-3 hash chain) for the full design.
 """
 
 from __future__ import annotations
 
 import contextlib
 import datetime
+import hashlib
 import os
 import re
 import tempfile
@@ -56,6 +70,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+import yaml
 from bs4 import BeautifulSoup, Comment
 from markdownify import markdownify
 
@@ -141,8 +156,9 @@ class ImportSourceResult:
     ``raw_path`` is the path to the raw source (relative string for the API).
     ``docs_path`` is the output Markdown file path (relative string).
     ``original_format`` is ``'html'`` or ``'txt'``.
-    ``content_sha256`` is empty in slice 7-1/7-2 (populated in slice 7-3).
-    ``status`` is ``'created'`` in slice 7-1.
+    ``content_sha256`` is the hex SHA-256 of the raw bytes (slice 7-3).
+    ``status`` is one of ``'created'`` (fresh write), ``'updated'`` (hash-drift overwrite),
+    or ``'skipped'`` (hash-match no-op) — full enum exercised in slice 7-3.
     """
 
     raw_path: str
@@ -170,8 +186,9 @@ class ImportFailure:
 class ImportBatchResult:
     """Aggregated outcome of import_sources.
 
-    ``imported_sources`` lists one ImportSourceResult per successfully processed file.
-    ``skipped_sources`` is empty in slice 7-2 (populated in slice 7-3 for hash-match).
+    ``imported_sources`` lists one ImportSourceResult per successfully processed file
+    (status ``'created'`` or ``'updated'``).
+    ``skipped_sources`` lists ImportSourceResult per hash-match no-op (status ``'skipped'``).
     ``failed_sources`` lists ImportFailure records for files that could not be processed.
     """
 
@@ -391,8 +408,35 @@ def _process_one_source(
 ) -> None:
     """Convert one raw source and write its Markdown output to docs/.
 
-    Updates ``result`` in-place: appends to ``imported_sources`` on success or
-    to ``failed_sources`` on any typed failure.
+    Pipeline (merged 7-1/7-2/7-3 order):
+        1. Validate filename (slice 7-2): reject `#`, `/`, `:`, control chars,
+           bidi codepoints (CVE-2021-42574).
+        2. Determine format from extension (silent skip for unsupported
+           extensions in batch mode).
+        3. FilenameCollision check (slice 7-2): two batch files mapping to the
+           same docs basename — first wins.
+        4. HandAuthoredCollision check (slice 7-2): refuse to overwrite a
+           docs file that lacks ``imported_from`` (hand-authored).
+        5. EmptySource / OversizedSource checks via `stat()` (slice 7-2).
+        6. Read raw bytes (slice 7-3 requires byte-level hash); IOError on
+           read failure.
+        7. Compute SHA-256 of raw bytes (slice 7-3).
+        8. Hash-skip check (slice 7-3): if docs target exists and its
+           frontmatter ``content_sha256`` matches → append to
+           ``skipped_sources`` and return early (no markdownify, no disk
+           write). Hash compare precedes conversion for perf-correctness per
+           PRD #89 §4.
+        9. Determine status: ``'created'`` if docs doesn't exist,
+           ``'updated'`` if it does (post hash-drift).
+       10. Decode UTF-8 (slice 7-2 UnicodeDecodeError check).
+       11. Convert to Markdown (slice 7-2 MarkdownifyError check).
+       12. Render output frontmatter including ``content_sha256`` (slice 7-3).
+       13. Atomic write (slice 7-2 IOError check).
+       14. Emit ``import_source`` Wiki Log + append to ``imported_sources``.
+
+    Updates ``result`` in-place: appends to ``imported_sources`` on success,
+    ``skipped_sources`` on hash-match, or ``failed_sources`` on any typed
+    failure.
 
     ``stem`` is the NFC-normalized stem to use for the output filename.
     ``seen_docs_basenames`` tracks docs basenames already claimed in this batch
@@ -476,22 +520,56 @@ def _process_one_source(
         _emit_import_error(failure)
         return
 
-    # Read raw content — UnicodeDecodeError for non-UTF-8
+    # Read raw bytes (slice 7-3 hash is byte-level; encoding-agnostic).
+    # IOError for read failure; UnicodeDecodeError happens later at decode step.
     try:
-        raw_text = raw_path.read_text(encoding="utf-8")
-    except UnicodeDecodeError as exc:
+        raw_bytes = raw_path.read_bytes()
+    except OSError as exc:
         failure = ImportFailure(
             raw_path=str(raw_path),
-            error_type="UnicodeDecodeError",
+            error_type="IOError",
             error_message=str(exc)[:200],
         )
         result.failed_sources.append(failure)
         _emit_import_error(failure)
         return
-    except OSError as exc:
+
+    # --- Slice 7-3: compute SHA-256 over raw bytes, then hash-skip check ---
+    content_sha256 = hashlib.sha256(raw_bytes).hexdigest()
+
+    # Hash-skip check BEFORE markdownify for perf-correctness (PRD #89 §4).
+    # By this point HandAuthoredCollision has already cleared (docs either
+    # absent or has `imported_from`), so a matching hash is a true no-op.
+    if docs_path.exists():
+        existing_sha = _read_frontmatter_sha256(docs_path)
+        if existing_sha is not None and existing_sha == content_sha256:
+            log_event(
+                "import_skipped",
+                f"raw={raw_path} docs={docs_path} content_sha256={content_sha256}",
+            )
+            result.skipped_sources.append(
+                ImportSourceResult(
+                    raw_path=str(raw_path),
+                    docs_path=str(docs_path),
+                    original_format=fmt,
+                    content_sha256=content_sha256,
+                    status="skipped",
+                )
+            )
+            return
+
+    # Status for the upcoming write: 'updated' if drifted overwrite, else 'created'.
+    status: Literal["created", "updated", "skipped"] = (
+        "updated" if docs_path.exists() else "created"
+    )
+
+    # Decode UTF-8 — UnicodeDecodeError for non-UTF-8 raw bytes.
+    try:
+        raw_text = raw_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
         failure = ImportFailure(
             raw_path=str(raw_path),
-            error_type="IOError",
+            error_type="UnicodeDecodeError",
             error_message=str(exc)[:200],
         )
         result.failed_sources.append(failure)
@@ -511,8 +589,8 @@ def _process_one_source(
         _emit_import_error(failure)
         return
 
-    # Build full output with frontmatter
-    output = _render_output(md_body, raw_path, fmt)
+    # Build full output with frontmatter (incl. content_sha256 — slice 7-3)
+    output = _render_output(md_body, raw_path, fmt, content_sha256)
 
     # Atomic write — IOError for os.replace failure
     try:
@@ -537,8 +615,8 @@ def _process_one_source(
             raw_path=str(raw_path),
             docs_path=str(docs_path),
             original_format=fmt,
-            content_sha256="",  # populated in slice 7-3
-            status="created",
+            content_sha256=content_sha256,
+            status=status,
         )
     )
 
@@ -616,11 +694,12 @@ def _render_output(
     md_body: str,
     raw_path: Path,
     fmt: Literal["html", "txt"],
+    content_sha256: str,
 ) -> str:
     """Build the full docs/*.md content: YAML frontmatter + converted body.
 
-    Frontmatter fields (slice 7-1/7-2): imported_from, original_format, imported_at.
-    ``content_sha256`` is intentionally omitted until slice 7-3.
+    Frontmatter fields: imported_from, original_format, imported_at, content_sha256.
+    ``content_sha256`` is the hex SHA-256 of the raw bytes (slice 7-3).
     """
     # Compute relative raw path for the frontmatter (relative to REPO_ROOT)
     try:
@@ -632,7 +711,12 @@ def _render_output(
 
     # Quote imported_at as a string so PyYAML round-trips it as str, not datetime.
     frontmatter = (
-        f"---\nimported_from: {rel_raw}\noriginal_format: {fmt}\nimported_at: '{ts}'\n---\n"
+        f"---\n"
+        f"imported_from: {rel_raw}\n"
+        f"original_format: {fmt}\n"
+        f"imported_at: '{ts}'\n"
+        f"content_sha256: {content_sha256}\n"
+        f"---\n"
     )
     return frontmatter + "\n" + md_body + "\n"
 
@@ -686,3 +770,41 @@ def _emit_batch_completed(result: ImportBatchResult, batch_start: float) -> None
         f"failed={len(result.failed_sources)} "
         f"duration_ms={duration_ms}",
     )
+
+
+def _read_frontmatter_sha256(docs_path: Path) -> str | None:
+    """Extract ``content_sha256`` from an existing docs/*.md frontmatter block.
+
+    Returns the hex SHA-256 string if the file has a valid YAML frontmatter
+    block containing ``content_sha256``, or ``None`` if the field is absent,
+    the frontmatter is malformed, or the file cannot be read.
+
+    Used by ``_process_one_source`` to implement hash-skip: compare the stored
+    hash against the freshly computed hash before invoking markdownify.
+    Returns ``None`` (not an empty string) to distinguish "field absent" from
+    "field present but empty" — callers treat ``None`` as "no hash available,
+    must reprocess".
+    """
+    try:
+        content = docs_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+    if not content.startswith("---\n"):
+        return None
+
+    try:
+        end = content.index("---\n", 4)
+    except ValueError:
+        return None
+
+    try:
+        fm = yaml.safe_load(content[4:end])
+    except Exception:
+        return None
+
+    if not isinstance(fm, dict):
+        return None
+
+    sha = fm.get("content_sha256")
+    return str(sha) if sha is not None else None
