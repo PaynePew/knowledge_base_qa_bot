@@ -1,9 +1,10 @@
-"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``).
+"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``).
 
 Pydantic request/response models for the FastAPI routes. No domain logic."""
 
 from __future__ import annotations
 
+import datetime
 from typing import Literal
 
 from pydantic import BaseModel
@@ -246,7 +247,7 @@ class SlugCollisionFinding(BaseModel):
     ``base_slug`` is the common root (e.g. ``"pricing"`` for ``pricing``,
     ``pricing-2``, ``pricing-3``).
     ``pages_in_group`` lists all slugs in the collision group, including the
-    unsuffixed original and all suffixed variants.
+    unsuffixed original and all suffixed variants (when present on disk).
     ``suggested_action`` suggests review and merge or heading rename.
     """
 
@@ -255,17 +256,72 @@ class SlugCollisionFinding(BaseModel):
     suggested_action: str
 
 
+# ---------------------------------------------------------------------------
+# /lint schemas (Phase 5 Slice 5-3 — C6 + C2)
+# ---------------------------------------------------------------------------
+
+
+class StalePageFinding(BaseModel):
+    """C6 stale page finding: wiki page whose Source file has been modified after
+    the page's ``updated`` frontmatter timestamp.
+
+    ``source`` is the bare Source filename (e.g. ``refund_policy.md``).
+    ``source_mtime`` is the filesystem mtime of the Source file.
+    ``page_updated`` is the ``updated`` timestamp parsed from the page's frontmatter.
+    ``drift_days`` is ``(source_mtime - page_updated).total_seconds() / 86400`` —
+    positive means the Source is newer (stale page).
+    ``suggested_action`` recommends re-ingesting the page from the Source.
+
+    C6 only checks pages whose Source file exists; pages with missing sources are
+    handled exclusively by C11 (orphan check) to avoid double-reporting.
+    """
+
+    page_slug: str
+    source: str
+    source_mtime: datetime.datetime
+    page_updated: datetime.datetime
+    drift_days: float
+    suggested_action: str
+
+
+class RedLinkFinding(BaseModel):
+    """C2 red link finding: a ``[[wikilink]]`` target slug that does not resolve
+    to any existing wiki page.
+
+    ``slug`` is the unresolved target slug (anchor stripped; e.g. ``[[foo#bar]]``
+    contributes slug ``foo``).
+    ``mention_count`` is the total number of occurrences across ALL scanned wiki pages
+    (multiple occurrences in the same page each count).
+    ``referenced_by`` is the sorted list of page slugs that contain at least one mention.
+    ``sample_context`` is up to 50 characters of surrounding text from the first occurrence,
+    or ``None`` if context extraction failed.
+
+    C2 scans only ``wiki/entities/`` and ``wiki/concepts/`` (matching ADR-0006 SOURCE_DIRS).
+    The following files are explicitly excluded to prevent feedback loops / noise:
+    ``wiki/index.md``, ``wiki/log.md``, ``wiki/hot.md``, ``wiki/lint-report.md``,
+    ``wiki/README.md``, ``wiki/.archive/*``.
+    """
+
+    slug: str
+    mention_count: int
+    referenced_by: list[str]
+    sample_context: str | None = None
+
+
 class LintFindings(BaseModel):
     """Container for all check findings.
 
     Slice 5-1 populates only ``orphans`` (C11).
     Slice 5-2 adds ``failed_grounding`` (C3) and ``slug_collisions`` (C4-a).
-    Later slices add the remaining check fields without changing existing field names.
+    Slice 5-3 adds ``stale_pages`` (C6) and ``red_links`` (C2).
+    Later slices add the remaining check fields without changing existing field names or types.
     """
 
     orphans: list[OrphanPageFinding] = []
     failed_grounding: list[FailedGroundingFinding] = []
     slug_collisions: list[SlugCollisionFinding] = []
+    stale_pages: list[StalePageFinding] = []
+    red_links: list[RedLinkFinding] = []
 
 
 class LintSummary(BaseModel):
