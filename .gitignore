@@ -24,6 +24,7 @@ venv/
 .idea/
 .vscode/
 *.swp
+.tmp/
 
 # Personal local notes (codebase walkthrough lessons, scratch docs)
 .doc.local/
