@@ -852,7 +852,13 @@ def run_lint(
         stale_pages=stale_pages,
         red_links=red_links,
     )
-    total = len(orphans) + len(failed_grounding) + len(slug_collisions) + len(stale_pages) + len(red_links)
+    total = (
+        len(orphans)
+        + len(failed_grounding)
+        + len(slug_collisions)
+        + len(stale_pages)
+        + len(red_links)
+    )
     findings_by_check: dict[str, int] = {
         "c11": len(orphans),
         "c3": len(failed_grounding),
