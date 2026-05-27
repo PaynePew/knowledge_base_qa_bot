@@ -37,12 +37,14 @@ from __future__ import annotations
 import contextlib
 import datetime
 import os
+import re
 import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from bs4 import BeautifulSoup, Comment
 from markdownify import markdownify
 
 from ._paths import _REPO_ROOT, DOCS_DIR
@@ -296,8 +298,6 @@ def _convert_to_markdown(raw_text: str, fmt: Literal["html", "txt"]) -> str:
         return raw_text
 
     # Build BeautifulSoup parse and strip unwanted tags before markdownify
-    from bs4 import BeautifulSoup, Comment
-
     soup = BeautifulSoup(raw_text, "html.parser")
 
     # Strip unwanted tags and their content
@@ -319,8 +319,6 @@ def _convert_to_markdown(raw_text: str, fmt: Literal["html", "txt"]) -> str:
     md = markdownify(str(soup), heading_style="ATX", strip=_HTML_STRIP_TAGS)
 
     # Clean up excessive blank lines (markdownify can leave many)
-    import re
-
     md = re.sub(r"\n{3,}", "\n\n", md).strip()
 
     return md

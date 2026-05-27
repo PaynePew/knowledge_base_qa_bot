@@ -85,6 +85,24 @@ Authorized by GitHub issue #28 (Phase 3 PRD), § Q9.
 
 ---
 
+## `/import` route
+
+Authorized by GitHub issue #89 (Phase 7 PRD). Slice 7-1 (#90) introduces the three end-of-batch / per-source kinds below; slice 7-2 (#91) adds `import_error`, slice 7-3 (#92) adds `import_skipped`.
+
+| Kind | When fired | Summary template |
+|---|---|---|
+| `import_batch_started` | Start of an `import_sources()` call | `mode=<batch\|single> source=<filename\|*>` |
+| `import_source` | One raw file successfully imported to `docs/<basename>.md` | `source=<basename> docs=<docs_filename> format=<html\|txt>` |
+| `import_batch_completed` | End of `import_sources()`; emitted even when some sources failed | `imported=A skipped=B failed=C duration_ms=N` |
+| `import_error` | _(Slice 7-2)_ One raw file failed at any stage (continue-on-error semantics) | `raw=<raw_path> error_type=<one of 12 typed errors> error_message=<truncated≤200>` |
+| `import_skipped` | _(Slice 7-3)_ Re-import no-op when `content_sha256` matches existing docs frontmatter | `raw=<raw_path> docs=<docs_path> content_sha256=<hex>` |
+
+### `import_error` `error_type=` sub-tags (slice 7-2)
+
+Enumeration lands with slice 7-2 (#91). Placeholder values per PRD #89 §"Failure mode enumeration": `HandAuthoredCollision`, `UnicodeDecodeError`, `EmptySource`, `OversizedSource`, `UnsupportedExtension`, `FileNotFoundError`, `MarkdownifyError`, `IOError`, `InvalidFilename`, `InvalidSourcePath`, `FilenameCollision`. Slice 7-1 emits only the `FileNotFoundError` and `IOError` variants via the same logging path (no dedicated `import_error` event yet — these failures land in the response's `failed_sources` list without a separate log row in 7-1; the `import_error` row is reserved for 7-2's structured error path).
+
+---
+
 ## Phase 6 Answer Filing
 
 Authorized by GitHub issue #78 (Phase 6 PRD) §"Reflect step" (Q5) and
