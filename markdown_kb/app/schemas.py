@@ -1,4 +1,4 @@
-"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``CitationRef``, ``FiledStatus``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``, ``CoverageGapFinding``, ``PagePairFinding``).
+"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``CitationRef``, ``FiledStatus``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``, ``CoverageGapFinding``, ``PagePairFinding``, ``PromotionCandidateFinding``, ``QaStalenessFinding``, ``InvalidQaSchemaFinding``).
 
 Pydantic request/response models for the FastAPI routes. No domain logic."""
 
@@ -438,6 +438,97 @@ class PagePairFinding(BaseModel):
     suggested_action: str  # LLM-generated curator action
 
 
+# ---------------------------------------------------------------------------
+# /lint schemas (Phase 6 Slice 6-5 — C8 / C9 / C10 Phase 5 amendment)
+# ---------------------------------------------------------------------------
+
+
+class PromotionCandidateFinding(BaseModel):
+    """C8 promotion-candidate finding: a draft Filed Answer worth curator review.
+
+    Surfaced to ``lint-report.md`` §``## Promotion Candidates``. Read-only —
+    promotion itself is performed by Phase 6 ``POST /qa/{slug}/promote`` (Slice
+    6-4), preserving PRD #65 Q3 invariant (`/lint` never mutates frontmatter).
+
+    Ranking: ``count`` desc, then ``updated`` desc (tiebreak). The top
+    ``KB_LINT_PROMOTION_TOP_N`` (env var, default 10) candidates are surfaced.
+
+    ``slug``           — the qa page slug (filename stem under ``wiki/qa/``).
+    ``question``       — the verbatim user query from ``frontmatter.question``,
+                          truncated to a curator-friendly length for the report.
+    ``count``          — the re-ask counter from ``frontmatter.count`` (popularity
+                          signal).
+    ``age_days``       — days since the page was filed
+                          (``now() - frontmatter.created`` in UTC).
+    ``cited_count``    — number of citation entries in ``frontmatter.sources``
+                          (rough proxy for breadth of grounding).
+    """
+
+    slug: str
+    question: str
+    count: int
+    age_days: float
+    cited_count: int
+
+
+class QaStalenessFinding(BaseModel):
+    """C9 qa-staleness finding: a live Filed Answer whose cited entity is newer.
+
+    Each finding represents a single ``wiki/qa/<slug>.md`` page that has
+    ``status: live`` and whose ``frontmatter.sources`` references at least one
+    entity page whose filesystem mtime is newer than the qa page's
+    ``frontmatter.updated`` timestamp. The cited entities that drifted are
+    listed in ``stale_citations``; the worst (largest) drift in days is in
+    ``max_drift_days``.
+
+    Closes the "entity re-ingested, qa stranded" failure mode (PRD #78 Q6b).
+
+    Read-only — surfaced to ``lint-report.md`` §``## Stale Filed Answers``.
+
+    ``page_slug``        — the qa page slug.
+    ``stale_citations``  — the subset of ``frontmatter.sources`` entries whose
+                            entity file mtime exceeded ``frontmatter.updated``.
+    ``max_drift_days``   — the largest entity-mtime-minus-page-updated drift in
+                            days across ``stale_citations`` (positive number).
+    """
+
+    page_slug: str
+    stale_citations: list[str]
+    max_drift_days: float
+
+
+class InvalidQaSchemaFinding(BaseModel):
+    """C10 qa-schema-validity finding: a structurally invalid qa page.
+
+    One finding per (qa page, broken property) pair. Four invalidity classes
+    are checked:
+
+    - ``invalid_status``  — ``frontmatter.status`` is not in
+                              ``{live, draft, stale, superseded}`` (e.g. typo
+                              ``Live`` capital L).
+    - ``wrong_type``      — ``frontmatter.type`` is not ``"qa"`` even though the
+                              page lives under ``wiki/qa/``.
+    - ``missing_question`` — ``frontmatter.question`` is absent or empty.
+    - ``missing_count``   — ``frontmatter.count`` is absent or not a positive
+                              integer.
+
+    Closes the curator-typo orphan zombie failure mode (PRD #78 Q8d). Read-only
+    — surfaced to ``lint-report.md`` §``## Invalid qa Schema``.
+
+    ``page_slug``        — the qa page slug.
+    ``property_name``    — the invalid frontmatter property name (one of the four
+                            classes listed above; the field name itself, e.g.
+                            ``"status"``, ``"type"``, ``"question"``, ``"count"``).
+    ``offending_value``  — the value as found in the page (stringified), or a
+                            short marker like ``"<missing>"`` when the field is
+                            absent entirely.
+    """
+
+    page_slug: str
+    property_name: str
+    offending_value: str
+
+
 class LintFindings(BaseModel):
     """Container for all check findings.
 
@@ -446,6 +537,8 @@ class LintFindings(BaseModel):
     Slice 5-3 adds ``stale_pages`` (C6) and ``red_links`` (C2).
     Slice 5-4 adds ``coverage_gaps`` (C1).
     Slice 5-5 adds ``page_pairs`` (C5).
+    Slice 6-5 (Phase 5 amendment) adds ``promotion_candidates`` (C8),
+    ``stale_filed_answers`` (C9), and ``invalid_qa_schemas`` (C10).
     """
 
     orphans: list[OrphanPageFinding] = []
@@ -455,6 +548,9 @@ class LintFindings(BaseModel):
     red_links: list[RedLinkFinding] = []
     coverage_gaps: list[CoverageGapFinding] = []
     page_pairs: list[PagePairFinding] = []
+    promotion_candidates: list[PromotionCandidateFinding] = []
+    stale_filed_answers: list[QaStalenessFinding] = []
+    invalid_qa_schemas: list[InvalidQaSchemaFinding] = []
 
 
 class LintSummary(BaseModel):

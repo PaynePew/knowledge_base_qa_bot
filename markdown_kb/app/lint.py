@@ -917,26 +917,38 @@ _KB_LINT_BM25_THRESHOLD_DEFAULT = 1.0
 
 
 def _load_wiki_pages(wiki_dir: Path) -> dict[str, dict]:
-    """Load all wiki pages from entities/ and concepts/ into a dict.
+    """Load all wiki pages from entities/, concepts/, and qa/ into a dict.
 
     Returns a dict mapping slug → {
         "slug": str,
         "body": str (full file text after frontmatter),
         "sources": list[str],
         "path": Path,
+        "type": str | None ("entity" | "concept" | "qa", from frontmatter),
     }
 
     Used by _candidate_pairs and _check_c5_page_pair to avoid re-parsing
-    frontmatter multiple times.
+    frontmatter multiple times. The ``type`` entry is what the Slice 6-5 C5
+    modifier reads to exclude ``type == "qa"`` pages from candidate pair
+    generation (PRD #78 Phase 5 amendment).
+
+    qa pages are included here so the C5 modifier filter sees them and drops
+    them; downstream consumers (e.g. ``_candidate_pairs``) own the filter. The
+    set returned is the entire wiki page corpus (entities/concepts/qa), not the
+    filtered subset.
     """
     pages: dict[str, dict] = {}
-    for slug, page_path in _iter_wiki_pages(wiki_dir):
+    for slug, page_path in _iter_all_wiki_pages(wiki_dir):
         fm = _parse_frontmatter(page_path)
-        sources = []
+        sources: list[str] = []
+        page_type: str | None = None
         if fm:
             raw_sources = fm.get("sources", [])
             if isinstance(raw_sources, list):
                 sources = [str(s) for s in raw_sources if s]
+            raw_type = fm.get("type")
+            if isinstance(raw_type, str):
+                page_type = raw_type
         try:
             full_text = page_path.read_text(encoding="utf-8")
         except OSError:
@@ -951,8 +963,25 @@ def _load_wiki_pages(wiki_dir: Path) -> dict[str, dict]:
             "body": body.strip(),
             "sources": sources,
             "path": page_path,
+            "type": page_type,
         }
     return pages
+
+
+def _iter_all_wiki_pages(wiki_dir: Path):
+    """Yield (slug, page_path) for every .md page under entities/, concepts/, qa/.
+
+    Distinct from ``_iter_wiki_pages`` (entities + concepts only) — used by
+    ``_load_wiki_pages`` so the C5 modifier (Slice 6-5) sees qa pages and can
+    filter them out at the pair-generation layer.
+    """
+    # Phase 6 Slice 6-5: include qa/ so the modifier filter can see and drop them.
+    for subdir_name in ("entities", "concepts", "qa"):
+        subdir = wiki_dir / subdir_name
+        if not subdir.exists():
+            continue
+        for page_path in sorted(subdir.glob("*.md")):
+            yield page_path.stem, page_path
 
 
 def _candidate_pairs(
@@ -976,6 +1005,18 @@ def _candidate_pairs(
     ``KB_LINT_BM25_TOP_K`` env var (default 3) controls per-page BM25 hits.
     ``KB_LINT_BM25_THRESHOLD`` env var (default 1.0) controls the score gate.
     Both are read at call time (not module load) to mirror KB_SCORE_THRESHOLD.
+
+    Phase 6 Slice 6-5 (C5 modifier — PRD #78)
+    -----------------------------------------
+    Pages whose ``frontmatter.type == "qa"`` are excluded from candidate pair
+    generation BEFORE F1/F3 are computed. Filed Answers are structurally
+    derivative of their source entity pages (they share the same
+    ``frontmatter.sources``), so without this filter the C5 LLM would be called
+    on every (qa, entity-source) pair only to return ``severity=duplicate``,
+    flooding ``lint-report.md`` and burning LLM tokens. Filtering at the page
+    set level means the qa pages neither appear in F1 source-intersection nor
+    as F3 BM25 queries, *and* the F3 BM25 hit-side filter rejects sections
+    whose owner is a qa page — qa is fully invisible to C5 by construction.
     """
     # Read env vars at call time
     bm25_top_k = int(os.getenv("KB_LINT_BM25_TOP_K", str(_KB_LINT_BM25_TOP_K_DEFAULT)))
@@ -983,16 +1024,22 @@ def _candidate_pairs(
         os.getenv("KB_LINT_BM25_THRESHOLD", str(_KB_LINT_BM25_THRESHOLD_DEFAULT))
     )
 
-    pairs: set[tuple[str, str]] = set()
-    slug_list = list(pages.keys())
+    # C5 modifier (Slice 6-5): drop type=qa pages from the candidate pool BEFORE
+    # F1/F3 candidate computation so the LLM call budget excludes qa pairs entirely.
+    non_qa_pages: dict[str, dict] = {
+        slug: data for slug, data in pages.items() if data.get("type") != "qa"
+    }
 
-    # F1: shared sources
+    pairs: set[tuple[str, str]] = set()
+    slug_list = list(non_qa_pages.keys())
+
+    # F1: shared sources (only among non-qa pages)
     for i, slug_a in enumerate(slug_list):
-        srcs_a = set(pages[slug_a]["sources"])
+        srcs_a = set(non_qa_pages[slug_a]["sources"])
         if not srcs_a:
             continue
         for slug_b in slug_list[i + 1 :]:
-            srcs_b = set(pages[slug_b]["sources"])
+            srcs_b = set(non_qa_pages[slug_b]["sources"])
             if srcs_a & srcs_b:
                 pair = (min(slug_a, slug_b), max(slug_a, slug_b))
                 pairs.add(pair)
@@ -1008,7 +1055,7 @@ def _candidate_pairs(
     # empty (sections list empty), F3 produces no pairs — safe degradation.
     from .indexer import search as bm25_search
 
-    for slug_a, data_a in pages.items():
+    for slug_a, data_a in non_qa_pages.items():
         body_a = data_a["body"]
         if not body_a.strip():
             continue
@@ -1023,8 +1070,10 @@ def _candidate_pairs(
             slug_b = section.file
             if slug_b == slug_a:
                 continue
-            # Only add pairs where both slugs exist in our pages dict
-            if slug_b not in pages:
+            # Only add pairs where both slugs exist in the non-qa page set —
+            # this is the hit-side half of the C5 qa filter: even if the index
+            # surfaces a qa-page section, it cannot enter the candidate pool.
+            if slug_b not in non_qa_pages:
                 continue
             pair = (min(slug_a, slug_b), max(slug_a, slug_b))
             pairs.add(pair)
