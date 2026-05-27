@@ -1,4 +1,4 @@
-"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``, ``CoverageGapFinding``, ``PagePairFinding``).
+"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``CitationRef``, ``FiledStatus``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``, ``CoverageGapFinding``, ``PagePairFinding``).
 
 Pydantic request/response models for the FastAPI routes. No domain logic."""
 
@@ -41,11 +41,32 @@ class ChatRequest(BaseModel):
     query: str
 
 
+class CitationRef(BaseModel):
+    """One wiki -> docs citation pointer.
+
+    Mirrors the shape of a ``SourceInfo`` citation (``source``, ``heading``)
+    but omits ``score`` and ``content`` because the docs/ chain is audit-only
+    (not retrieved, not scored). Populated by Phase 6 Slice 6-3 from each
+    retrieved wiki page's ``frontmatter.sources``. Defined here in Slice 6-1
+    so the contract is locked before downstream slices land.
+    """
+
+    source: str
+    heading: str
+
+
 class SourceInfo(BaseModel):
     source: str
     heading: str
     score: float
     content: str
+    # Phase 6: one-layer wiki -> docs citation chain (closes ADR-0006 deferred
+    # item "PROMPT.md citation contract evolution"). Populated by Slice 6-3 in
+    # ``retrieval.query``; defaults to ``None`` here so existing Slice 6-1
+    # callers (no retrieval changes yet) keep working unchanged.
+    # ``None`` is semantically distinct from ``[]`` — None means the wiki page
+    # had no ``frontmatter.sources``, [] would mean an empty-but-present chain.
+    derived_from: list[CitationRef] | None = None
 
 
 class GroundingClaim(BaseModel):
@@ -90,10 +111,37 @@ class GroundingInfo(BaseModel):
     unsupported_claims: list[str] | None = None
 
 
+class FiledStatus(BaseModel):
+    """Outcome of a Phase 6 Answer Filing side-effect on ``POST /chat``.
+
+    Surfaced on ``ChatResponse.filed`` so the caller has an audit trail back
+    to the ``wiki/qa/<slug>.md`` page. ``None`` on Cannot-Confirm, on filing
+    IOError (F3 fail-soft), and on touch attempts against an invalid-status
+    orphan page (three-layer defence per PRD #78 Q8d).
+
+    Populated by Slice 6-2 ``qa.maybe_file_answer`` (``op="created"`` or
+    ``op="touched"``) and Slice 6-4 ``POST /qa/{slug}/promote``
+    (``op="promoted"`` is *not* surfaced here — promote returns its own
+    FiledStatus; this field is /chat-side only). Defined in Slice 6-1 so the
+    type contract is locked early.
+    """
+
+    slug: str
+    status: Literal["draft", "live"]
+    op: Literal["created", "touched"]
+    count: int
+
+
 class ChatResponse(BaseModel):
     answer: str
     sources: list[SourceInfo]
     grounding: GroundingInfo
+    # Phase 6 Answer Filing: populated by Slice 6-2's ``qa.maybe_file_answer``
+    # side-effect inside the /chat handler whenever the Grounded Answer passed.
+    # Defaults to ``None`` so existing tests and the Slice 6-1 codepath (no
+    # filing yet) keep working unchanged. None encodes Cannot-Confirm, filing
+    # IOError, and orphan-touch refusal.
+    filed: FiledStatus | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -101,7 +149,7 @@ class ChatResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-SourceType = Literal["entity", "concept"]
+SourceType = Literal["entity", "concept", "qa"]
 
 
 class WikiPageFrontmatter(BaseModel):
@@ -111,6 +159,19 @@ class WikiPageFrontmatter(BaseModel):
     `status == "failed_grounding"` (Slice #4 fail-soft grounding check).
     `confidence` is intentionally deferred to Phase 5 /lint (no defensible
     algorithm at ingest time per PRD #28 Q10).
+
+    Phase 6 extensions (PRD #78 Q2):
+    - ``type`` literal extends to include ``"qa"`` for Filed Answers.
+    - ``status`` literal extends to forward-compat values: ``"draft"`` (filed
+      Q&A awaiting curator promotion), ``"stale"`` and ``"superseded"``
+      (reserved; recognised so the C10 lint check has names to validate
+      against). Slice 6-1 only acts on the ``live``/``draft`` pair in the
+      indexer filter; other values are still legal in the model so the
+      filing-layer and lint-layer defences (PRD #78 Q8d) can introspect them.
+    - ``question`` carries the verbatim user query for ``type == "qa"`` pages.
+      Optional / None on entity and concept pages.
+    - ``count`` is the re-ask counter for Filed Answers. Defaults to ``1`` so
+      entity/concept construction does not need to know about the field.
     """
 
     id: str
@@ -118,9 +179,14 @@ class WikiPageFrontmatter(BaseModel):
     created: str  # ISO-8601 UTC string, e.g. "2026-05-26T14:30:00Z"
     updated: str  # ISO-8601 UTC string, matches created on first write
     sources: list[str]  # list of "filename#slug" citation strings
-    status: Literal["live", "failed_grounding"]
+    status: Literal["live", "draft", "failed_grounding", "stale", "superseded"]
     open_questions: list[str]
     grounding_failure: GroundingFailure | None = None
+    # Phase 6 (Slice 6-1): qa-page-only fields. Optional/defaulted so all
+    # existing entity/concept construction sites in templates.py and tests
+    # keep working without modification (forward-compat schema change).
+    question: str | None = None
+    count: int = 1
 
 
 class WikiPageDraft(BaseModel):
