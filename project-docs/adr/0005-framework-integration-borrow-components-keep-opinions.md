@@ -16,7 +16,12 @@ We chose partial borrowing because the project's value is in its *opinions* (the
 - Specific future triggers (these are the only framework additions we pre-bless; anything else needs a new ADR or amendment):
   - **Adopt `rank_bm25`** when `docs/` corpus exceeds ~1,000 Sections and `bm25_score()` shows up in profiling. `BM25Retriever` (LangChain) wraps `rank_bm25` and is the easy swap path. Until then, hand-written BM25 in `indexer.py` stays.
   - **Adopt `EnsembleRetriever` (LangChain) or `QueryFusionRetriever` (LlamaIndex)** when `vector_rag/` is activated and the hybrid retrieval layer is wanted. Matches the `inspiration.md` "Reciprocal Rank Fusion / cross-encoder rerank — phase: query" deferred pattern.
-  - **Adopt LlamaHub document loaders** when supporting non-Markdown sources (HTML, Notion export, PDF). Markdown itself stays on the hand-written parser.
+  - **Adopt format-appropriate converter at the leaf-node layer when supporting non-Markdown sources.** The principle is unchanged from line 5 of this ADR (`borrow at leaf nodes where framework adds value, hand-write at joints where opinion lives`). Trigger refinement: `non-Markdown source` alone is too coarse — the right framework depends on whether the framework actually produces Markdown, not just on whether the input is non-Markdown. Per-format mapping:
+    - **HTML → Markdown**: `markdownify` (single-purpose conversion lib; LlamaHub loaders output stripped text, not markdown — not applicable here). Applied in Phase 7 (PRD #89).
+    - **PDF → Markdown**: LlamaHub `PDFReader` or `pypdf` (when triggered).
+    - **Notion export → Markdown**: LlamaHub `NotionPageReader` (when triggered).
+    - **Generic binary / structured formats**: LlamaHub readers or Unstructured (when triggered).
+    Markdown itself stays on the hand-written parser.
   - **Adopt `ChatOpenAI.with_structured_output(GroundingResult)`** when implementing Grounding Check (see ADR-0004 once written). Wraps the verifier call's JSON parsing + retry-on-malformed, which directly serves the Q5 fail-mode design.
 - Permanently hand-written (these are contractual, not implementation laziness):
   - **Markdown parsing** (`indexer.py`) — encodes Section rules that no framework matches (body-bearing intermediate, slug collision suffix, heading-only leaves, `heading_path` breadcrumb).
