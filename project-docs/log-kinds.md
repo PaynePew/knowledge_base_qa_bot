@@ -85,6 +85,36 @@ Authorized by GitHub issue #28 (Phase 3 PRD), § Q9.
 
 ---
 
+## Phase 6 Answer Filing
+
+Authorized by GitHub issue #78 (Phase 6 PRD) §"Reflect step" (Q5) and
+§"Orphan-visibility three-layer defence" (Q8d). Slice 6-1 (#79) documents the
+three kinds here; the emitters arrive across slices 6-1 / 6-2 / 6-3.
+
+| Kind | When fired | Summary template |
+|---|---|---|
+| `qa_invalid_status` | `indexer._passes_index_filter` skipped a `wiki/qa/*.md` whose `frontmatter.status` was set but not in `{"draft", "live"}` — the indexer-layer member of the three-layer orphan-visibility defence (curator-typo `status: Live`, forward-compat values like `stale` / `superseded`, missing `status` key, etc.). Slice 6-1. | `file=<filename> status=<repr-of-value>` |
+| `qa_reflect` | A `wiki/qa/*.md` page was mutated by Phase 6 — emitted atomically inside the same `_filing_lock` critical section as the file write. Three `op` variants share this kind so reflective-log readers can grep `qa_reflect` once and slice by `op=`. Slices 6-2 (created/touched) and 6-3 (promoted). | `slug=<slug> op=created question="<truncated>" cited=<comma_separated_citations> count=1` _(op=created — first filing for this question)_ <br>or `slug=<slug> op=touched cited_delta=added:<list>,dropped:<list> count=<N>` (or `cited_delta=none`) _(op=touched — re-ask of an existing question; body preserved, count incremented; cited_delta is the drift signal core)_ <br>or `slug=<slug> op=promoted by=curator` _(op=promoted — `POST /qa/{slug}/promote` flipped `status: draft -> live`)_ |
+| `qa_filing_error` | `qa.maybe_file_answer` (Slice 6-2) hit an unrecoverable error during the filing critical section — IOError (disk full, permission denied), an attempted touch against an invalid-status orphan page (defence layer 2 of the three-layer defence), or a frontmatter-read failure on the touch path. F3 fail-soft: `/chat` still returns the answer and `response.filed = None`. Slice 6-2. | `slug=<slug> reason=<io_error\|orphan_status\|frontmatter_read_error> exc=<ExcClass>: <message>` |
+
+### `qa_reflect` `op=` sub-tags
+
+| Sub-op | When | Authorized by |
+|---|---|---|
+| `created` | First filing of a question (slug did not exist on disk) | PRD #78 §"Reflect step" (Q5) |
+| `touched` | Re-ask of an existing question (B2 touch semantics — body preserved, `count` and `updated` bumped) | PRD #78 §"Reflect step" (Q5) |
+| `promoted` | `POST /qa/{slug}/promote` flipped `status: draft -> live` | PRD #78 §"Two-stage curation lifecycle" (Q1) |
+
+### `qa_filing_error` `reason=` sub-tags
+
+| Sub-reason | When | Source |
+|---|---|---|
+| `io_error` | OS-level write failure (disk full, permission denied, ENOSPC, etc.) | filesystem write in `qa.maybe_file_answer` |
+| `orphan_status` | Touch attempted against a page whose existing `status` is not in `{"draft", "live"}` — the filing-layer defence refuses to bump `count` on an orphan zombie | `qa.maybe_file_answer` touch path |
+| `frontmatter_read_error` | Existing `wiki/qa/<slug>.md` could not be parsed for the touch decision (corrupt YAML, missing fences, etc.) | `qa.maybe_file_answer` touch path |
+
+---
+
 ## `/lint` route
 
 Authorized by GitHub issue #65 (Phase 5 PRD) and issue #66 (Slice 5-1).
