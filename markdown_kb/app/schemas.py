@@ -1,4 +1,4 @@
-"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``).
+"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``, ``CoverageGapFinding``).
 
 Pydantic request/response models for the FastAPI routes. No domain logic."""
 
@@ -308,12 +308,44 @@ class RedLinkFinding(BaseModel):
     sample_context: str | None = None
 
 
+# ---------------------------------------------------------------------------
+# /lint schemas (Phase 5 Slice 5-4 — C1)
+# ---------------------------------------------------------------------------
+
+
+class CoverageGapFinding(BaseModel):
+    """C1 coverage gap finding: repeated Cannot Confirm queries that signal wiki gaps.
+
+    Aggregated from ``chat_fallback`` (``retrieval_empty``, ``below_threshold``) and
+    ``chat_grounding_fallback`` (``claim_unsupported``) log entries.
+
+    ``query_canonical`` is the cluster key produced by ``_canonicalise()``.
+    ``sample_raw_queries`` holds up to the first 3 unique raw query strings seen
+    in the cluster.  ``hit_count`` is the total number of log entries in the cluster.
+    ``first_seen`` / ``last_seen`` are ISO-8601 UTC strings parsed from log timestamps.
+    ``top_section`` is only populated for ``below_threshold`` findings.
+    ``cited_pages`` is only populated for ``claim_unsupported`` findings.
+    ``suggested_action`` is the curator-actionable text derived from the reason.
+    """
+
+    reason: str  # "retrieval_empty" | "below_threshold" | "claim_unsupported"
+    query_canonical: str
+    sample_raw_queries: list[str]  # up to 3, deduplicated
+    hit_count: int
+    first_seen: str  # ISO-8601 UTC string
+    last_seen: str  # ISO-8601 UTC string
+    top_section: str | None = None  # populated for below_threshold only
+    cited_pages: list[str] | None = None  # populated for claim_unsupported only
+    suggested_action: str
+
+
 class LintFindings(BaseModel):
     """Container for all check findings.
 
     Slice 5-1 populates only ``orphans`` (C11).
     Slice 5-2 adds ``failed_grounding`` (C3) and ``slug_collisions`` (C4-a).
     Slice 5-3 adds ``stale_pages`` (C6) and ``red_links`` (C2).
+    Slice 5-4 adds ``coverage_gaps`` (C1).
     Later slices add the remaining check fields without changing existing field names or types.
     """
 
@@ -322,6 +354,7 @@ class LintFindings(BaseModel):
     slug_collisions: list[SlugCollisionFinding] = []
     stale_pages: list[StalePageFinding] = []
     red_links: list[RedLinkFinding] = []
+    coverage_gaps: list[CoverageGapFinding] = []
 
 
 class LintSummary(BaseModel):
