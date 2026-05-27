@@ -1,6 +1,10 @@
 # Built retrieval artifacts (rebuilt by POST /index)
 .kb/
 
+# raw/ — local-only import inbox (gitignored; use examples/raw/ for samples)
+# Copy examples/raw/*.html into raw/ to try POST /import without committing.
+raw/
+
 # wiki/ — generated artifacts and per-user runtime traces (see wiki/README.md)
 wiki/index.md
 wiki/lint-report.md

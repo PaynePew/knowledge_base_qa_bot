@@ -22,7 +22,9 @@ Both apps expose the same external API:
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/health` | Liveness check |
-| `POST` | `/index` | Read `docs/*.md` and build the retrieval index |
+| `POST` | `/import` | Convert `raw/**/*.{html,txt}` → `docs/*.md` with provenance frontmatter |
+| `POST` | `/ingest` | Synthesise `docs/*.md` Sources → curated `wiki/` pages (LLM) |
+| `POST` | `/index` | Build the retrieval Section Index from `wiki/entities/` + `wiki/concepts/` |
 | `POST` | `/chat` | Answer a question with grounded Sections and Citations |
 
 After calling `POST /index`, each strategy persists its retrieval artifact under `.kb/`:
@@ -58,6 +60,36 @@ uv run pytest -m live               # opt-in: real OpenAI API calls
 ```
 
 Then run the curl verification cases listed in [`PROMPT.md`](PROMPT.md).
+
+### Multi-format import demo (Phase 7)
+
+Drop HTML or plain-text files into `raw/` (gitignored local inbox) and run
+`POST /import` to convert them to Markdown docs before ingesting:
+
+```bash
+# Copy the example files into the local raw/ inbox
+cp examples/raw/*.html raw/
+cp examples/raw/*.txt raw/
+
+# Convert raw sources to docs/
+curl -s -X POST http://localhost:8000/import | jq .
+
+# Single-file mode: import only one source
+curl -s -X POST http://localhost:8000/import \
+  -H "Content-Type: application/json" \
+  -d '{"source": "clean_article.html"}' | jq .
+
+# Then run the full pipeline to make the content queryable
+curl -s -X POST http://localhost:8000/ingest | jq .
+curl -s -X POST http://localhost:8000/index | jq .
+curl -s -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What is the refund policy?"}' | jq .
+```
+
+The `raw/` directory is gitignored — place your own HTML exports or text files
+there. The `examples/raw/` directory contains sample files you can copy in to
+try the pipeline immediately.
 
 > The `vector_rag/` scaffold is intentionally **not** in the uv workspace — it pins the legacy langchain 0.3.x ecosystem, which conflicts with `markdown_kb`'s 1.x deps. When you reactivate it, either upgrade its imports to langchain 1.x and add it to `[tool.uv.workspace].members`, or run it standalone (`cd vector_rag && uv sync`).
 
@@ -100,7 +132,7 @@ The following stretch goals from `PROMPT.md` are described here for orientation.
 - **Paraphrase comparison** — deferred until `vector_rag/` is reactivated (langchain 0.3 → 1.x migration).
 - **Streaming interface** (`POST /chat/stream` via SSE) — deferred; adoption trigger: sustained user demand after interview feedback.
 - **Browser UI** showing retrieved Sections before the streamed answer — deferred; adoption trigger: same as streaming.
-- **Multi-format import** (`.txt` / `.html` → canonical Markdown in `docs/`) — deferred; adoption trigger: first non-Markdown Source in practice.
+- **Multi-format import** (`.txt` / `.html` → canonical Markdown in `docs/`) — **in progress** (Phase 7, Slice 7-1 tracer bullet shipped). `POST /import` converts `raw/**/*.{html,txt}` to `docs/*.md` with provenance frontmatter. Slices 7-2 (full error handling) and 7-3 (idempotency hash chain) follow.
 - **Alternative interfaces** (CLI, MCP server, web UI) — deferred; adoption trigger: concrete downstream consumer with interface requirements.
 
 ## Roadmap
