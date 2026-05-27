@@ -293,3 +293,128 @@ def test_chat_response_keeps_existing_keys(grounded_client):
     assert "filed" in body, "filed field must be present (None or FiledStatus)"
     assert isinstance(body["sources"], list)
     assert isinstance(body["grounding"], dict)
+
+
+# ---------------------------------------------------------------------------
+# Phase 6 Slice 6-4: POST /qa/{slug}/promote endpoint
+# ---------------------------------------------------------------------------
+#
+# Endpoint integration tests for the curator-facing promote route. Maps the
+# qa.promote function exceptions to HTTP status codes (QaPageNotFound -> 404,
+# QaPageCorrupt -> 500) per issue #83 AC. The qa.promote business logic
+# itself is covered by test_qa_promote.py.
+
+
+def test_promote_endpoint_existing_draft_returns_200(grounded_client, tmp_path):
+    """POST /qa/<existing-draft>/promote → 200 with FiledStatus body, file flipped."""
+    client, _ = grounded_client
+
+    # Seed a draft via the filing path
+    chat_resp = client.post("/chat", json={"query": "How long do refunds take?"})
+    assert chat_resp.status_code == 200
+    slug = chat_resp.json()["filed"]["slug"]
+
+    promote_resp = client.post(f"/qa/{slug}/promote")
+    assert promote_resp.status_code == 200, (
+        f"Promote of an existing draft must return 200; got {promote_resp.status_code}: "
+        f"{promote_resp.text}"
+    )
+
+    body = promote_resp.json()
+    assert body["slug"] == slug
+    assert body["status"] == "live"
+    assert body["op"] == "touched", (
+        "Promotion is structurally a touch from the FiledStatus enum perspective"
+    )
+
+    qa_path = tmp_path / "wiki" / "qa" / f"{slug}.md"
+    content = qa_path.read_text(encoding="utf-8")
+    assert "status: live" in content
+
+
+def test_promote_endpoint_missing_slug_returns_404(grounded_client):
+    """POST /qa/<missing-slug>/promote → 404 with descriptive body."""
+    client, _ = grounded_client
+    resp = client.post("/qa/this-slug-was-never-filed-zzz999/promote")
+    assert resp.status_code == 404, (
+        f"Promote of a missing slug must return 404; got {resp.status_code}: {resp.text}"
+    )
+    body = resp.json()
+    # FastAPI HTTPException puts the message under "detail"
+    assert "detail" in body
+    assert (
+        "this-slug-was-never-filed-zzz999" in body["detail"]
+        or "not found" in body["detail"].lower()
+    )
+
+
+def test_promote_endpoint_corrupt_status_returns_500(grounded_client, tmp_path):
+    """POST /qa/<corrupt-slug>/promote → 500 (orphan-visibility, do not silently fix)."""
+    client, _ = grounded_client
+
+    # Hand-plant a corrupt qa page
+    qa_dir = tmp_path / "wiki" / "qa"
+    qa_dir.mkdir(parents=True, exist_ok=True)
+    slug = "corrupt-orphan-zombie-abc123"
+    (qa_dir / f"{slug}.md").write_text(
+        "---\n"
+        f"id: {slug}\n"
+        "type: qa\n"
+        'created: "2026-05-27T00:00:00Z"\n'
+        'updated: "2026-05-27T00:00:00Z"\n'
+        "sources: []\n"
+        "status: Live\n"  # invalid capital L
+        "open_questions: []\n"
+        'question: "Garbage frontmatter"\n'
+        "count: 2\n"
+        "---\n\nbody.\n",
+        encoding="utf-8",
+    )
+
+    resp = client.post(f"/qa/{slug}/promote")
+    assert resp.status_code == 500, (
+        f"Promote of a corrupt page must return 500 (not silently fix); "
+        f"got {resp.status_code}: {resp.text}"
+    )
+    body = resp.json()
+    assert "detail" in body
+
+
+def test_promote_endpoint_already_live_idempotent(grounded_client, tmp_path):
+    """Re-promote of an already-live page returns 200, no duplicate log entry."""
+    client, _ = grounded_client
+
+    chat_resp = client.post("/chat", json={"query": "How long do refunds take?"})
+    slug = chat_resp.json()["filed"]["slug"]
+
+    first = client.post(f"/qa/{slug}/promote")
+    assert first.status_code == 200
+    assert first.json()["status"] == "live"
+
+    second = client.post(f"/qa/{slug}/promote")
+    assert second.status_code == 200, "Second promote of a live page must still 200 (idempotent)"
+    assert second.json()["status"] == "live"
+
+    log = (tmp_path / "wiki" / "log.md").read_text(encoding="utf-8")
+    promoted_lines = [ln for ln in log.splitlines() if "qa_reflect" in ln and "op=promoted" in ln]
+    assert len(promoted_lines) == 1, (
+        f"Idempotent re-promote must NOT emit a second reflect entry, got: {promoted_lines}"
+    )
+
+
+def test_promote_then_index_makes_page_retrievable(grounded_client, tmp_path):
+    """After promote + /index, the qa page is in the BM25 corpus (status:live filter)."""
+    client, _ = grounded_client
+
+    chat_resp = client.post("/chat", json={"query": "How long do refunds take?"})
+    slug = chat_resp.json()["filed"]["slug"]
+
+    promote_resp = client.post(f"/qa/{slug}/promote")
+    assert promote_resp.status_code == 200
+
+    # /index should now include the promoted qa page in the BM25 corpus
+    index_resp = client.post("/index")
+    assert index_resp.status_code == 200
+    body = index_resp.json()
+    # Sanity check — sections_indexed must be positive (file system has docs + the qa page)
+    assert body["sections_indexed"] > 0
