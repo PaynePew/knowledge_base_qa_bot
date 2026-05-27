@@ -1,4 +1,4 @@
-"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``).
+"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``).
 
 Pydantic request/response models for the FastAPI routes. No domain logic."""
 
@@ -212,14 +212,60 @@ class OrphanPageFinding(BaseModel):
     suggested_action: str
 
 
+class FailedGroundingFinding(BaseModel):
+    """C3 failed-grounding finding: wiki page written with status=failed_grounding.
+
+    Phase 3 fail-soft ingest writes these pages when the grounding verifier fails.
+    Phase 4 W1 silently filters them from /chat retrieval; C3 surfaces them for
+    curator action.
+
+    ``source`` is ``frontmatter.sources[0]`` — the primary source that was being
+    synthesised when grounding failed.
+    ``reason`` mirrors ``GroundingFailure.reason``: either ``claim_unsupported``
+    (verifier ran and rejected one or more claims) or ``verifier_unavailable``
+    (LLM call itself failed).
+    ``unsupported_claims`` is populated only for ``claim_unsupported``; empty for
+    ``verifier_unavailable`` (no claims were extracted when the verifier failed).
+    ``suggested_action`` suggests Source review and re-ingest OR page deletion.
+    """
+
+    page_slug: str
+    source: str
+    reason: Literal["claim_unsupported", "verifier_unavailable"]
+    unsupported_claims: list[str] = []
+    suggested_action: str
+
+
+class SlugCollisionFinding(BaseModel):
+    """C4-a slug-collision finding: multiple wiki pages with the same base slug.
+
+    Phase 3 ingest appends ``-2``, ``-3``, ... suffixes when a slug already exists.
+    These collisions indicate that two pages cover the same concept and should be
+    merged, or that their headings should be renamed to be more specific.
+
+    ``base_slug`` is the common root (e.g. ``"pricing"`` for ``pricing``,
+    ``pricing-2``, ``pricing-3``).
+    ``pages_in_group`` lists all slugs in the collision group, including the
+    unsuffixed original and all suffixed variants.
+    ``suggested_action`` suggests review and merge or heading rename.
+    """
+
+    base_slug: str
+    pages_in_group: list[str]
+    suggested_action: str
+
+
 class LintFindings(BaseModel):
     """Container for all check findings.
 
-    Slice 5-1 populates only ``orphans`` (C11).  Later slices add the remaining
-    six check fields without changing the existing field name or type.
+    Slice 5-1 populates only ``orphans`` (C11).
+    Slice 5-2 adds ``failed_grounding`` (C3) and ``slug_collisions`` (C4-a).
+    Later slices add the remaining check fields without changing existing field names.
     """
 
     orphans: list[OrphanPageFinding] = []
+    failed_grounding: list[FailedGroundingFinding] = []
+    slug_collisions: list[SlugCollisionFinding] = []
 
 
 class LintSummary(BaseModel):
