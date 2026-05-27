@@ -3,6 +3,7 @@
 
 # wiki/ — generated artifacts and per-user runtime traces (see wiki/README.md)
 wiki/index.md
+wiki/lint-report.md
 wiki/log.md
 wiki/hot.md
 

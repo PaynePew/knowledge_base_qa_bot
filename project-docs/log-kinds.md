@@ -85,6 +85,20 @@ Authorized by GitHub issue #28 (Phase 3 PRD), § Q9.
 
 ---
 
+## `/lint` route
+
+Authorized by GitHub issue #65 (Phase 5 PRD) and issue #66 (Slice 5-1).
+
+| Kind | When fired | Summary template |
+|---|---|---|
+| `lint_started` | `run_lint()` enters | _(no payload beyond timestamp)_ |
+| `lint_completed` | `run_lint()` exits (including when some checks failed) | `findings=N by_check=c11:A,c3:B,c4a:C,c6:D,c2:E,c1:F,c5:G llm_calls=K cost_usd=X errors=M` |
+| `lint_check_error` | An individual check raises (continue-on-error; other checks still run) | `check=<name> exc=<ExcClass>: <msg>` |
+
+No per-finding log entries — findings live in `wiki/lint-report.md` as the source of truth (deliberate noise reduction, per PRD #65 Implementation Decision §Wiki Log entries).
+
+---
+
 ## Adding a new kind
 
 1. Pick a `snake_case` name that names the **event**, not the outcome (so failures and successes can share a kind with `reason=` discrimination — see `grounding_verify` returning either `claim_supported` or `claim_unsupported` under one kind).

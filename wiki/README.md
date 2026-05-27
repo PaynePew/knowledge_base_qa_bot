@@ -6,7 +6,7 @@ This folder holds three classes of files. Only **compounding artifact** files ar
 
 | Class | Example | In git? | Editable by hand? | Produced by |
 |---|---|---|---|---|
-| Generated index | `index.md` | ❌ (gitignored) | ❌ | `POST /index` |
+| Generated index | `index.md`, `lint-report.md` | ❌ (gitignored) | ❌ | `POST /index`, `POST /lint` |
 | Runtime trace | `log.md` | ❌ (gitignored) | ❌ | server runtime (`logger.log_event`) |
 | Compounding artifact | `entities/*.md`, `concepts/*.md` | ✅ | ❌ regenerated on re-ingest; edit the Source instead | `POST /ingest` |
 
