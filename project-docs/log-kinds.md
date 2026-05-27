@@ -71,6 +71,7 @@ Authorized by GitHub issue #28 (Phase 3 PRD), § Q9.
 | `ingest_source` | One Source completed successfully (skipped on failure) | `source=<file> type=<entity\|concept> pages_created=A pages_updated=B pages_deleted=C` |
 | `ingest_error` | One Source failed at any stage (continue-on-error semantics) | `source=<file> error=<reason>` |
 | `ingest_grounding_failed` | A draft page failed the grounding verifier; page still written with `status: failed_grounding` (ADR-0004 fail-soft) | `page=<slug> reason=<outcome.reason> claims=[<list>]` |
+| `ingest_skipped` | _(Phase 3 amendment #93)_ Hash-match no-op: existing wiki page `source_hashes[source_name]["docs_body"]` matched the freshly computed docs_body_hash and `force=False`; no LLM call made | `source=<file> slugs_checked=[<list>] docs_body_hash=<hex>` |
 
 ### `ingest_error` `error=` sub-tags
 
