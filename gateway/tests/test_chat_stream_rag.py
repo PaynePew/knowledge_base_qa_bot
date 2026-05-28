@@ -159,7 +159,11 @@ def test_chat_stream_rag_no_longer_returns_501(rag_gateway_client):
 
 
 def test_chat_stream_rag_event_order(rag_gateway_client):
-    """POST /chat/stream?stack=rag emits: sources, then token(s), then done."""
+    """POST /chat/stream?stack=rag emits: sources, status, then token(s), then done.
+
+    The ``status`` liveness event (Phase 9 Slice 2, #119) is emitted on the LLM
+    path for every stack, between sources and the first token.
+    """
     resp = rag_gateway_client.post(
         "/chat/stream?stack=rag",
         json={"query": "What is the refund policy?"},
@@ -172,7 +176,9 @@ def test_chat_stream_rag_event_order(rag_gateway_client):
 
     assert types[0] == "sources", f"Expected first event 'sources', got {types[0]!r}"
     assert types[-1] == "done", f"Expected last event 'done', got {types[-1]!r}"
-    assert all(t == "token" for t in types[1:-1]), f"Middle events must all be 'token': {types}"
+    middle = types[1:-1]
+    assert middle and middle[0] == "status", f"Expected 'status' after sources: {types}"
+    assert all(t == "token" for t in middle[1:]), f"Events after status must be 'token': {types}"
 
 
 def test_chat_stream_rag_sources_event_non_empty(rag_gateway_client):

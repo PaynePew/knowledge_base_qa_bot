@@ -159,8 +159,18 @@ def stream_query(question: str) -> Iterator[dict]:
         # Pre-LLM gate fired — the partial result IS the full result.
         # Yield the final form so the caller always gets a full result on
         # the second yield.
+        #
+        # SSE uniformity (ADR-0009 / Phase 9 Slice 2): all five CC reasons must
+        # stream CANNOT_CONFIRM_PHRASE in the token events so the UI token
+        # stream is identical regardless of which gate fired.  The ``index_missing``
+        # path in _retrieve_and_gate returns NOT_INDEXED_MESSAGE (the verbose
+        # curator-targeted string); normalise to CANNOT_CONFIRM_PHRASE here so
+        # stream callers never need to branch on the reason.  query() is
+        # unaffected (it does not call this path via stream_query).
+        # The specific reason is still preserved in grounding_outcome.reason for
+        # machine consumers (done.reason in the SSE done event).
         yield {
-            "answer": gate["answer"],
+            "answer": CANNOT_CONFIRM_PHRASE,
             "sources": gate["sources"],
             "grounding_outcome": gate["grounding_outcome"],
         }

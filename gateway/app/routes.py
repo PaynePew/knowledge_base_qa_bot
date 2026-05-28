@@ -3,18 +3,26 @@
 Gateway HTTP wiring for ``POST /chat/stream``.
 
 Phase 9 Slice 1 — Wiki SSE happy-path tracer bullet (ADR-0009, ADR-0010).
-Phase 9 Slice 3 (issue #120) — RAG dispatch added; ``stack=rag`` now routes
-to ``vector_rag.app.retrieval.stream_query``.
+Phase 9 Slice 2 (issue #119) — Full SSE event contract: status event (liveness
+during the draft+verify gap), terminal error event (post-sources LLM/infra
+failure), and uniform Cannot Confirm for all five CC reasons.
+Phase 9 Slice 3 (issue #120) — RAG dispatch added; ``stack=rag`` routes to
+``vector_rag.app.retrieval.stream_query``.
 
 All streaming complexity lives in the per-stack ``stream_query()`` functions and
 the shared ``markdown_kb.app.sse.events_for_result()`` serializer; this module is
-a shallow dispatcher (CODING_STANDARD §2.3).  RAG sources carry ONLY citation id
-+ heading + content (no score, no derived_from — issue #120 spec); the shared
-serializer renders them without modification.
+a shallow dispatcher (CODING_STANDARD §2.3).  The dispatch mapping
+(``_STACK_STREAM_FN``) is the only place that knows which stream function to call
+per stack — the generator body is identical for both (ADR-0010: gateway is the
+composition layer).  RAG sources carry ONLY citation id + heading + content (no
+score, no derived_from — issue #120); the shared serializer renders them as-is.
 
-The dispatch mapping (``_STACK_STREAM_FN``) is the only place that knows which
-stream function to call for each stack — the generator body is identical for
-both (ADR-0010: gateway is the composition layer).
+SSE event contract (ADR-0009):
+  sources            — immediately after retrieval (real latency win)
+  status{phase}      — liveness between sources and first token; LLM path only
+  token(s)           — verified answer or CANNOT_CONFIRM_PHRASE; one per word
+  done{passed,reason,filed} — terminal success event (filed null for stack=rag)
+  error{detail,retryable}   — terminal failure when the LLM errors AFTER sources
 """
 
 from __future__ import annotations
@@ -30,10 +38,8 @@ from vector_rag.app.retrieval import stream_query as _rag_stream_query
 
 router = APIRouter()
 
-# Per-stack dispatch mapping.  Adding a new stack = one entry here.
-# Kept near the top of the handler (PARALLEL-WORK NOTE: #119 edits the
-# generator body below — this dict is the only change this slice makes to
-# the dispatch logic, so merge conflicts are minimised).
+# Per-stack dispatch mapping.  Adding a new stack = one entry here; the
+# generator body below is identical for every stack (ADR-0010).
 _STACK_STREAM_FN: dict[str, Callable[[str], Iterator[dict]]] = {
     "wiki": _wiki_stream_query,
     "rag": _rag_stream_query,
@@ -48,12 +54,22 @@ def chat_stream(req: ChatRequest, stack: str = "wiki") -> StreamingResponse:
 
     SSE event order (ADR-0009 verify-then-stream):
       1. ``sources`` — emitted immediately after retrieval, before any LLM call.
-         Carries the list of retrieved sources.  For ``stack=wiki``: citation id,
-         heading, content snippet, derived_from.  For ``stack=rag``: citation id,
-         heading, content snippet only (no score, no derived_from).
-      2. ``token``(s) — words of the verified answer only; no unverified draft.
-      3. ``done`` — grounding outcome (passed, reason) and optional filing status.
+         Carries the retrieved sources. For ``stack=wiki``: citation id, heading,
+         content snippet, derived_from. For ``stack=rag``: citation id, heading,
+         content snippet only (no score, no derived_from). This is the genuine
+         latency win — retrieval is ~instant; the user sees grounding context
+         while the LLM drafts (~4-7s).
+      2. ``status`` — liveness signal emitted after sources, before the first
+         token, on the LLM path only (early-exit CC paths skip this).  Payload:
+         ``{phase: "verifying"}`` — tells the UI the draft+verify step is running.
+      3. ``token``(s) — words of the verified answer only (or CANNOT_CONFIRM_PHRASE
+         on any CC path); no unverified draft ever reaches the stream.
+      4. ``done`` — grounding outcome (passed, reason) and optional filing status.
          ``done.filed`` is always null for ``stack=rag`` (RAG never files).
+         OR
+         ``error`` — terminal failure event when the LLM/infra errors AFTER the
+         sources event has been committed (HTTP 200 already sent).  Payload:
+         ``{detail, retryable}``.  No ``done`` event follows an ``error``.
 
     Args:
         req: ChatRequest body with ``query`` field.
@@ -84,10 +100,18 @@ def chat_stream(req: ChatRequest, stack: str = "wiki") -> StreamingResponse:
         This separation ensures the sources event is always emitted BEFORE
         any LLM call starts (ADR-0009 §"sources-first is real, not post-hoc").
 
-        PARALLEL-WORK NOTE (slice #119): #119 adds status/error events to this
-        generator body.  This slice keeps the body structurally identical to the
-        Slice 1 version so #119's edits apply cleanly — only the ``stream_fn``
-        binding above is new.
+        Event emission (Slices 2+3):
+          - status{phase:"verifying"} emitted after sources, before the LLM
+            call, on the LLM path only (early_exit=False).
+          - On the LLM path, _draft_and_verify raises HTTPException on LLM/infra
+            error.  We catch it here and emit a terminal error event instead of
+            propagating (HTTP 200 is already committed; no done follows).
+          - Cannot Confirm paths (early_exit=True) always stream
+            CANNOT_CONFIRM_PHRASE — stream_query normalises index_missing to
+            CANNOT_CONFIRM_PHRASE so the token stream is uniform across all 5
+            CC reasons (done.reason still carries the specific gate).
+          - ``stream_fn`` is selected per stack via _STACK_STREAM_FN; the body
+            is identical for wiki and rag (rag never files → done.filed null).
         """
         gen = stream_fn(req.query)
 
@@ -111,8 +135,23 @@ def chat_stream(req: ChatRequest, stack: str = "wiki") -> StreamingResponse:
             source_list.append(entry)
         yield encode_event("sources", {"sources": source_list})
 
+        # Emit status{phase:"verifying"} on the LLM path only (early_exit=False).
+        # Early-exit CC paths skip the LLM entirely — emitting "verifying" there
+        # would be a lie; the answer is already known from the pre-LLM gate.
+        if not partial.get("early_exit", False):
+            yield encode_event("status", {"phase": "verifying"})
+
         # Second yield: full result — emit token(s) + done.
-        full_result = next(gen)
+        # On LLM/infra error (HTTPException raised by _draft_and_verify), HTTP
+        # 200 is already committed, so we emit a terminal error event instead of
+        # propagating the exception (which would silently truncate the stream).
+        try:
+            full_result = next(gen)
+        except HTTPException as exc:
+            retryable = exc.status_code == 503
+            yield encode_event("error", {"detail": exc.detail, "retryable": retryable})
+            return
+
         # events_for_result emits sources + token(s) + done; we skip the
         # sources frame here (already emitted above) and forward the rest.
         all_frames = events_for_result(full_result)
