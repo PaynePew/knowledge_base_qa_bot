@@ -21,7 +21,7 @@ from __future__ import annotations
 import tempfile
 from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import markdown_kb.app.indexer as mk_indexer
@@ -44,11 +44,20 @@ StackRetrieval = Callable[[str, int], list[RetrievedItem]]
 
 @dataclass(frozen=True)
 class StackScores:
-    """Per-Paraphrase-Type hit_rate@k for one Retrieval Stack."""
+    """Per-Paraphrase-Type hit_rate@k and MRR for one Retrieval Stack.
+
+    ``by_type`` is the per-type hit_rate@k (mean of per-Paraphrase 1.0/0.0 hits);
+    ``mrr_by_type`` is the per-type MRR (mean of per-Paraphrase reciprocal ranks
+    of the first top-k hit). ``n_by_type`` is the Paraphrase count per type, so
+    the report can render the ``n`` column and a Paraphrase-weighted Core
+    macro-average (PRD #100).
+    """
 
     stack: str
     k: int
     by_type: dict[str, float]
+    mrr_by_type: dict[str, float] = field(default_factory=dict)
+    n_by_type: dict[str, int] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -89,16 +98,28 @@ def score_stack(
     retrieve: StackRetrieval,
     k: int = DEFAULT_K,
 ) -> StackScores:
-    """Score one Stack over all Paraphrases, aggregating hit_rate@k per type."""
+    """Score one Stack over all Paraphrases, aggregating hit_rate@k AND MRR per type."""
     metric = HitRateAtK(k=k)
     per_type_hits: dict[str, list[float]] = defaultdict(list)
+    per_type_rr: dict[str, list[float]] = defaultdict(list)
     for para, case in build_test_cases(paraphrases, retrieve, k):
         metric.measure(case)
         per_type_hits[para.paraphrase_type].append(metric.score)
+        per_type_rr[para.paraphrase_type].append(metric.reciprocal_rank)
     by_type = {
         ptype: sum(scores) / len(scores) for ptype, scores in per_type_hits.items()
     }
-    return StackScores(stack=stack_name, k=k, by_type=by_type)
+    mrr_by_type = {
+        ptype: sum(rrs) / len(rrs) for ptype, rrs in per_type_rr.items()
+    }
+    n_by_type = {ptype: len(scores) for ptype, scores in per_type_hits.items()}
+    return StackScores(
+        stack=stack_name,
+        k=k,
+        by_type=by_type,
+        mrr_by_type=mrr_by_type,
+        n_by_type=n_by_type,
+    )
 
 
 # ---------------------------------------------------------------------------
