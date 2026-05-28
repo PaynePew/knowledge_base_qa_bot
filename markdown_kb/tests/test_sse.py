@@ -158,13 +158,14 @@ def test_sources_event_excludes_score():
 
 
 def test_token_events_cover_full_answer():
-    """Joining all token texts (space-separated) reconstructs the answer."""
-    answer = "Refunds are processed within five days."
+    """Concatenating token texts reconstructs the answer exactly, including
+    newlines and repeated spaces (ADR-0009: streamed text == verified text)."""
+    answer = "Refunds are processed\n\nwithin  five days."
     result = _make_result(answer=answer)
     frames = events_for_result(result)
     parsed = _parse_frames(frames)
     tokens = [p["data"]["text"] for p in parsed if p["type"] == "token"]
-    reconstructed = " ".join(tokens)
+    reconstructed = "".join(tokens)
     assert reconstructed == answer
 
 
@@ -180,7 +181,7 @@ def test_cannot_confirm_emits_token_frames():
     frames = events_for_result(result)
     parsed = _parse_frames(frames)
     token_texts = [p["data"]["text"] for p in parsed if p["type"] == "token"]
-    reconstructed = " ".join(token_texts)
+    reconstructed = "".join(token_texts)
     assert reconstructed == CANNOT_CONFIRM_PHRASE
     # No special event type introduced (ADR-0009 uniformity)
     event_types = {p["type"] for p in parsed}

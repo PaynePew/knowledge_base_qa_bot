@@ -148,8 +148,10 @@ qform.addEventListener("submit", async (e) => {
         answerEl.textContent = "(receiving answer...)";
       } else if (eventType === "token" && sourcesReceived) {
         // Append token text (sources-first invariant: only render after sources).
+        // Tokens carry their own whitespace — concatenate directly so the
+        // rendered answer matches the verified text exactly (ADR-0009).
         answerTokens.push(data.text);
-        answerEl.textContent = answerTokens.join(" ");
+        answerEl.textContent = answerTokens.join("");
       } else if (eventType === "done") {
         doneEl.textContent = JSON.stringify(data, null, 2);
       }

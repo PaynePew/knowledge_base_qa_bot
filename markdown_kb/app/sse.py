@@ -17,6 +17,7 @@ cosmetic replay of already-verified text.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 # ---------------------------------------------------------------------------
@@ -55,9 +56,9 @@ def events_for_result(result: dict[str, Any]) -> list[str]:
        heading, content snippet, derived_from).  Always present even when
        the answer is Cannot Confirm (sources is always populated whenever
        retrieval ran; empty list on index-missing path).
-    2. ``token`` — one frame per whitespace-delimited word-group of the
-       verified answer, preserving leading/trailing space context.
-       Single-frame delivery for Cannot Confirm (the phrase is short).
+    2. ``token`` — one frame per word (each non-whitespace run plus its
+       adjacent whitespace), so concatenating all token texts reconstructs
+       the verified answer exactly (whitespace is never collapsed).
     3. ``done`` — terminal frame with ``passed``, ``reason``, and optional
        ``filed`` (populated when Answer Filing ran on this response).
 
@@ -89,13 +90,14 @@ def events_for_result(result: dict[str, Any]) -> list[str]:
     # verified answer; the answer's token-by-token delivery is a cosmetic
     # replay of already-verified text, not real-time generation").
     answer: str = result.get("answer", "")
-    # Emit one token event per space-separated word, preserving original
-    # inter-word spacing by re-joining with " ". A single-word answer
-    # produces one token event; the empty-string case emits nothing.
-    words = answer.split(" ")
-    for word in words:
-        if word:  # skip empty strings from leading/trailing spaces
-            frames.append(encode_event("token", {"text": word}))
+    # Chunk into words carrying their surrounding whitespace so the
+    # concatenation of all token texts reconstructs the verified answer
+    # EXACTLY (ADR-0009: streamed text must equal verified text — newlines,
+    # tabs, and repeated spaces are preserved, never collapsed). Each chunk
+    # is one non-whitespace run plus adjacent whitespace; the client appends
+    # token.text directly with no separator. An empty answer emits nothing.
+    for chunk in re.findall(r"\s*\S+\s*", answer):
+        frames.append(encode_event("token", {"text": chunk}))
 
     # 3. done event — grounding outcome + optional filing status.
     outcome = result["grounding_outcome"]

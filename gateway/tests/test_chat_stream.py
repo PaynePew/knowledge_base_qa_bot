@@ -200,7 +200,7 @@ def test_chat_stream_token_events_form_verified_answer(gateway_client):
     )
     events = _parse_sse_response(resp.text)
     tokens = [e["data"]["text"] for e in events if e["type"] == "token"]
-    answer = " ".join(tokens)
+    answer = "".join(tokens)
     assert "5-7 business days" in answer
 
 
