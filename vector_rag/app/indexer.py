@@ -1,7 +1,7 @@
-"""Deep module per Ousterhout. Public surface: ``Chunk``, ``build_index``, ``search``, ``DOCS_DIR``.
+"""Deep module per Ousterhout. Public surface: ``Chunk``, ``build_index``, ``search``, ``save_vector_index``, ``load_vector_index``, ``DOCS_DIR``, ``FAISS_INDEX_DIR``.
 
 Vector RAG (Stack B) retrieval core — heading-aware sectioning, recursive
-character chunking, and in-memory FAISS search.
+character chunking, FAISS search, and on-disk index persistence.
 
 Stack B is the Vector RAG arm of the Phase 8 retrieval comparison (CONTEXT.md
 § Phase 8 vocabulary, PRD #100). The corpus is the raw ``docs/`` Source layer
@@ -30,7 +30,11 @@ it may import LangChain internally).
 
 from __future__ import annotations
 
+import contextlib
+import json
 import os
+import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -45,10 +49,19 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 # only — no markdown_kb state is mutated from here.
 from markdown_kb.app.indexer import parse_markdown
 
+from .logger import log_event
+
 # ---------------------------------------------------------------------------
 # Paths and constants
 # ---------------------------------------------------------------------------
 DOCS_DIR = Path(__file__).resolve().parents[2] / "docs"
+
+# Persisted FAISS index lives under .kb/faiss_index/ (PROMPT.md verification
+# contract). The directory holds FAISS's own index.faiss + index.pkl plus our
+# metadata.json. .kb/ is gitignored — rebuilt by POST /index.
+FAISS_INDEX_DIR = Path(__file__).resolve().parents[2] / ".kb" / "faiss_index"
+METADATA_FILENAME = "metadata.json"
+
 EMBEDDING_MODEL = "text-embedding-3-small"
 CHUNK_SIZE = 500
 CHUNK_OVERLAP = 50
@@ -120,12 +133,17 @@ def get_embeddings() -> OpenAIEmbeddings:
 # Index build
 # ---------------------------------------------------------------------------
 def build_index(docs_dir: Path = DOCS_DIR) -> tuple[int, int]:
-    """Build an in-memory FAISS index over the raw Source corpus.
+    """Build a FAISS index over the raw Source corpus and persist it to disk.
 
     Sections come from ``markdown_kb.parse_markdown`` so a Chunk's ``source`` is
     a single docs Section id under the canonical slug convention. Each Section
     body is recursively character-split (500/50); a multi-sub-fact Section
     therefore yields multiple Chunks, every one tagged with that Section's id.
+
+    On a successful build the index is persisted via :func:`save_vector_index`
+    so a server restart reloads it without re-embedding (PROMPT.md contract).
+    An empty corpus clears any in-memory index but leaves a previously
+    persisted one untouched.
 
     Returns ``(files_indexed, chunks_indexed)``.
     """
@@ -139,11 +157,14 @@ def build_index(docs_dir: Path = DOCS_DIR) -> tuple[int, int]:
         vectorstore = None
         files_indexed = 0
         chunks_indexed = 0
+        log_event("index_built", "files=0 chunks=0")
         return 0, 0
 
     vectorstore = _build_faiss(documents)
     files_indexed = file_count
     chunks_indexed = len(documents)
+    save_vector_index()
+    log_event("index_built", f"files={files_indexed} chunks={chunks_indexed}")
     return files_indexed, chunks_indexed
 
 
@@ -161,6 +182,98 @@ def search(query: str, k: int = 3) -> list[Chunk]:
         return []
     scored = vectorstore.similarity_search_with_score(query, k=k)
     return [_chunk_from_document(doc) for doc, _score in scored]
+
+
+# ---------------------------------------------------------------------------
+# Persistence (PROMPT.md contract: .kb/faiss_index/ + metadata.json)
+# ---------------------------------------------------------------------------
+def save_vector_index(index_dir: Path = FAISS_INDEX_DIR) -> None:
+    """Persist the in-memory FAISS index + ``metadata.json`` atomically.
+
+    Writes the whole index directory (FAISS's ``index.faiss`` / ``index.pkl``
+    plus our ``metadata.json``) to a sibling tmp directory, then swaps it into
+    place with :func:`os.replace` (CODING_STANDARD §2.6 atomic write). A crash
+    mid-write therefore never leaves a half-written index for the next load.
+
+    ``metadata.json`` carries ``files_indexed`` / ``chunks_indexed`` and the
+    ``embedding_model`` so a reload can report the same counts and detect an
+    embedding-model mismatch without re-embedding the corpus.
+
+    No-op when there is no index to persist (``vectorstore is None``).
+    """
+    if vectorstore is None:
+        return
+
+    index_dir.parent.mkdir(parents=True, exist_ok=True)
+
+    # Build the complete directory in a sibling tmp dir, then os.replace it over
+    # the target as one atomic step. FAISS.save_local writes two files; writing
+    # them straight into index_dir would expose a torn state to a concurrent load.
+    tmp_dir = Path(tempfile.mkdtemp(dir=index_dir.parent, prefix="faiss_index_"))
+    try:
+        vectorstore.save_local(str(tmp_dir))
+        metadata = {
+            "files_indexed": files_indexed,
+            "chunks_indexed": chunks_indexed,
+            "embedding_model": EMBEDDING_MODEL,
+        }
+        (tmp_dir / METADATA_FILENAME).write_text(
+            json.dumps(metadata, indent=2) + "\n", encoding="utf-8"
+        )
+        # os.replace onto an existing directory fails on Windows, so clear the
+        # old index dir first. The window between rmtree and replace is the only
+        # non-atomic moment; it is acceptable for the single-process prototype
+        # model (CODING_STANDARD §2.6 — multi-worker is post-prototype).
+        if index_dir.exists():
+            shutil.rmtree(index_dir)
+        os.replace(tmp_dir, index_dir)
+    except Exception:
+        with contextlib.suppress(OSError):
+            shutil.rmtree(tmp_dir)
+        raise
+
+
+def load_vector_index(index_dir: Path = FAISS_INDEX_DIR) -> tuple[int, int]:
+    """Load a persisted FAISS index into the module-level state.
+
+    Returns ``(files_indexed, chunks_indexed)``. Returns ``(0, 0)`` and leaves
+    the in-memory index unset when no persisted index exists.
+
+    Fail-fast on corruption (CODING_STANDARD §4.1): a present-but-unreadable
+    index (missing ``metadata.json``, unparseable JSON, or a FAISS payload that
+    will not deserialize) raises rather than silently serving an empty index.
+    A successful load emits an ``index_loaded`` log entry.
+    """
+    global vectorstore, files_indexed, chunks_indexed
+
+    if not index_dir.exists():
+        return 0, 0
+
+    metadata_path = index_dir / METADATA_FILENAME
+    if not metadata_path.exists():
+        # Present-but-incomplete index — fail fast rather than serve empty.
+        raise RuntimeError(
+            f"persisted FAISS index at {index_dir} is missing {METADATA_FILENAME}"
+        )
+
+    # Let json.JSONDecodeError propagate — a corrupt metadata file is fail-fast.
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+
+    # FAISS.load_local deserializes a pickle (our own, written by save_local);
+    # allow_dangerous_deserialization is required by the API. Any deserialization
+    # failure propagates as fail-fast per §4.1.
+    loaded = FAISS.load_local(
+        str(index_dir),
+        get_embeddings(),
+        allow_dangerous_deserialization=True,
+    )
+
+    vectorstore = loaded
+    files_indexed = int(metadata.get("files_indexed", 0))
+    chunks_indexed = int(metadata.get("chunks_indexed", 0))
+
+    log_event("index_loaded", f"files={files_indexed} chunks={chunks_indexed}")
+    return files_indexed, chunks_indexed
 
 
 # ---------------------------------------------------------------------------
