@@ -10,12 +10,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 import markdown_kb.app.indexer as mk_indexer
 import vector_rag.app.indexer as vr_indexer
+from eval.paraphrase_comparison import spotcheck as spotcheck_mod
 from eval.paraphrase_comparison import stacks
 from eval.paraphrase_comparison.loader import load_paraphrases
 from eval.paraphrase_comparison.models import PARAPHRASE_TYPES
 from eval.paraphrase_comparison.runner import (
+    JudgeConfig,
     render_report,
     run_comparison,
     score_stack,
@@ -178,3 +182,72 @@ def test_production_isolation_repoints_source_dirs_to_fixtures(fake_vector_index
     for d in mk_indexer.SOURCE_DIRS:
         assert "paraphrase_comparison" in str(d)
     assert "paraphrase_comparison" in str(vr_indexer.DOCS_DIR)
+
+
+# ---------------------------------------------------------------------------
+# L2 Spot-check wiring into the report (issue #105)
+# ---------------------------------------------------------------------------
+class _StubJudgeClient:
+    """Always-True judge stub so the mocked run exercises the report path."""
+
+    def __init__(self):
+        self.calls = 0
+        self.messages = self
+
+    def create(self, *, model, max_tokens, system, messages):
+        import json
+
+        self.calls += 1
+
+        class _R:
+            content = [type("B", (), {"text": json.dumps({"answers": True, "reasoning": "stub"})})()]
+
+        return _R()
+
+
+def test_report_notes_how_to_enable_spotcheck_when_not_run(tmp_path, fake_vector_index):
+    # No JudgeConfig -> Spot-check skipped; the report must tell the reader how to
+    # turn it on (opt-in), not silently omit it.
+    report_path = tmp_path / "report.md"
+    run_comparison(report_path=report_path, embedding_mode="fake")
+    report = report_path.read_text(encoding="utf-8")
+    assert "## Spot-check Validation (L2, cross-family)" in report
+    assert "Not run." in report
+    assert "--judge=claude-sonnet-4-6" in report
+    # The cost log marks the judge as the opt-in step.
+    assert "not run (opt-in via `--judge`)" in report
+
+
+def test_report_renders_spotcheck_section_when_judge_runs(
+    tmp_path, fake_vector_index, monkeypatch
+):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(spotcheck_mod, "_judge_client", lambda: _StubJudgeClient())
+
+    report_path = tmp_path / "report.md"
+    run_comparison(
+        report_path=report_path,
+        embedding_mode="fake",
+        judge=JudgeConfig(judge_model="claude-sonnet-4-6"),
+    )
+    report = report_path.read_text(encoding="utf-8")
+
+    # Spot-check section reports by-zone subset size + agreement + interpretation.
+    assert "## Spot-check Validation (L2, cross-family)" in report
+    assert "claude-sonnet-4-6" in report
+    assert "Agreement with L1" in report
+    assert "Control-zone calibration" in report
+    # Disclosure (4) flips to active cross-family-validation framing when judged.
+    assert "Cross-family validation was run." in report
+    # The cost log now records the judge actually ran.
+    assert "item(s) judged" in report
+
+
+def test_run_comparison_fail_fasts_with_judge_but_no_key(tmp_path, fake_vector_index, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with pytest.raises(spotcheck_mod.JudgeUnavailableError):
+        run_comparison(
+            report_path=tmp_path / "report.md",
+            embedding_mode="fake",
+            judge=JudgeConfig(),
+        )
