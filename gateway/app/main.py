@@ -25,8 +25,9 @@ load_dotenv(find_dotenv(usecwd=True))
 from fastapi import FastAPI  # noqa: E402
 from fastapi.responses import HTMLResponse  # noqa: E402
 
-# Import and mount the markdown_kb sub-app AFTER env is loaded.
+# Import sub-apps AFTER env is loaded so retrieval singletons see OPENAI_API_KEY.
 from markdown_kb.app.main import app as _wiki_app  # noqa: E402
+from vector_rag.app.main import app as _rag_app  # noqa: E402
 
 from .routes import router  # noqa: E402
 
@@ -37,6 +38,7 @@ _UI_PATH = Path(__file__).resolve().parent.parent / "static" / "index.html"
 app = FastAPI(title="KB Gateway", version="0.1.0")
 app.include_router(router)
 app.mount("/wiki", _wiki_app)
+app.mount("/rag", _rag_app)
 
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
