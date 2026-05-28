@@ -23,6 +23,7 @@ import pytest
 import markdown_kb.app.indexer as mk_indexer
 import markdown_kb.app.logger as mk_logger
 import vector_rag.app.indexer as vr_indexer
+import vector_rag.app.logger as vr_logger
 from markdown_kb.app.indexer import tokenize
 
 
@@ -60,6 +61,17 @@ class _FakeVectorStore:
         scored.sort(key=lambda t: (-t[2],))
         return [(doc, dist) for doc, dist, _ in scored[:k]]
 
+    def save_local(self, folder_path: str, index_name: str = "index") -> None:
+        """No-op persistence stub.
+
+        vector_rag's ``build_index`` now persists the FAISS index on success
+        (issue #103); the fake is in-memory only and the comparison never
+        reloads from disk, so the save is a harmless no-op here. The autouse
+        ``_redirect_markdown_kb_paths`` fixture still repoints FAISS_INDEX_DIR
+        to tmp as a belt-and-braces guard.
+        """
+        return None
+
 
 @pytest.fixture()
 def fake_vector_index(monkeypatch):
@@ -83,6 +95,11 @@ def _redirect_markdown_kb_paths(tmp_path, monkeypatch):
     monkeypatch.setattr(mk_indexer, "INDEX_PATH", tmp_path / ".kb" / "index.json")
     monkeypatch.setattr(mk_indexer, "WIKI_DIR", tmp_path / "wiki")
     monkeypatch.setattr(mk_logger, "LOG_PATH", tmp_path / "wiki" / "log.md")
+    # vector_rag's build_index now persists to FAISS_INDEX_DIR (issue #103);
+    # redirect it (and the log) to tmp so a direct index_stack_b() call in a
+    # test never writes to production .kb/ / vector_rag/log.md.
+    monkeypatch.setattr(vr_indexer, "FAISS_INDEX_DIR", tmp_path / ".kb" / "faiss_index")
+    monkeypatch.setattr(vr_logger, "LOG_PATH", tmp_path / "vector_rag" / "log.md")
     source_dirs_snapshot = mk_indexer.SOURCE_DIRS
     docs_dir_snapshot = vr_indexer.DOCS_DIR
     yield

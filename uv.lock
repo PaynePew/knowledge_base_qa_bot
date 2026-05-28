@@ -2577,6 +2577,8 @@ dependencies = [
     { name = "langchain-openai" },
     { name = "langchain-text-splitters" },
     { name = "markdown-kb" },
+    { name = "openai" },
+    { name = "python-dotenv" },
     { name = "uvicorn" },
 ]
 
@@ -2589,6 +2591,8 @@ requires-dist = [
     { name = "langchain-openai", specifier = "==1.2.2" },
     { name = "langchain-text-splitters", specifier = ">=1.0" },
     { name = "markdown-kb", virtual = "markdown_kb" },
+    { name = "openai", specifier = "==2.38.0" },
+    { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "uvicorn", specifier = "==0.34.0" },
 ]
 

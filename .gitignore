@@ -12,6 +12,10 @@ wiki/lint-report.md
 wiki/log.md
 wiki/hot.md
 
+# vector_rag/ (Stack B) runtime trace — decoupled from markdown_kb's wiki/log.md
+# (issue #103); same append-only Wiki Log discipline, own file.
+vector_rag/log.md
+
 # Python
 __pycache__/
 *.py[cod]

@@ -13,7 +13,13 @@ The structure (`app/main.py`, `routes.py`, `schemas.py`, `indexer.py`, `retrieva
 - Both produce Citations of the form `filename#heading-slug`.
 - Stack B reads the **raw corpus** (Stack A reads the curated `wiki/` per ADR-0006 W1).
 
-The grounded `/chat` answer synthesis remains scaffold and is thickened by later Phase 8 slices. Per [ADR-0002](../project-docs/adr/0002-two-parallel-retrieval-apps.md), no pluggable `Retriever` protocol is extracted — the two apps stay independent; the Phase 8 comparison runner in `eval/paraphrase_comparison/` adapts each Stack's retrieval callable in-process.
+As of Phase 8 Slice 3 (#103) the grounded `/chat` answer path is at full parity with `markdown_kb`:
+
+- `SYSTEM_PROMPT` is Stack B's own literal of the ADR-0001 strict-grounded contract (not imported from `markdown_kb` — the apps stay decoupled; a smoke test guards against drift).
+- `/chat` runs retrieve → build_prompt → LLM answer → Grounding Check → grounded answer or Cannot Confirm. The Grounding Check adopts `markdown_kb`'s `grounding.verify()` **unchanged**, via its `CitableContent` Protocol — Stack B's `Chunk` satisfies the protocol (`id` / `heading_path` / `content`), the first real second consumer the protocol was designed for (ADR-0004 Q9).
+- The FAISS index persists to `.kb/faiss_index/` (FAISS `index.faiss` / `index.pkl` + `metadata.json`, written atomically) and reloads on startup, so a restart does not re-embed.
+
+Per [ADR-0002](../project-docs/adr/0002-two-parallel-retrieval-apps.md), no pluggable `Retriever` protocol is extracted — the two apps stay independent; the Phase 8 comparison runner in `eval/paraphrase_comparison/` adapts each Stack's retrieval callable in-process.
 
 ## Running
 
@@ -25,6 +31,5 @@ uv run uvicorn vector_rag.app.main:app  # POST /index requires OPENAI_API_KEY fo
 
 ## Not yet decided (later slices)
 
-- FAISS index persistence (currently in-memory only).
 - Whether to keep FAISS or move to a Postgres / SQLite-based vector store.
 - Hybrid retrieval (BM25 + vector rerank) — possibly the actual long-term target instead of pure vector.

@@ -12,6 +12,8 @@ dependencies = [
     "langchain-text-splitters>=1.0",
     "faiss-cpu==1.9.0.post1",
     "markdown-kb",
+    "python-dotenv>=1.2.2",
+    "openai==2.38.0",
 ]
 
 [tool.uv]

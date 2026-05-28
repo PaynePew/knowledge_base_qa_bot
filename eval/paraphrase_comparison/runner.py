@@ -26,6 +26,8 @@ from pathlib import Path
 
 import markdown_kb.app.indexer as mk_indexer
 import markdown_kb.app.logger as mk_logger
+import vector_rag.app.indexer as vr_indexer
+import vector_rag.app.logger as vr_logger
 from deepeval.test_case import LLMTestCase
 
 from . import stacks
@@ -164,7 +166,7 @@ def _run_scored(
     """Build both indexes under production isolation, then score each Stack."""
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
-        _isolate_markdown_kb(tmp_path)
+        _isolate_production_paths(tmp_path)
         stacks.index_stack_a()
         stacks.index_stack_b()
         a = score_stack("Stack A", paraphrases, stacks.stack_a_retrieval, k)
@@ -172,14 +174,18 @@ def _run_scored(
     return a, b
 
 
-def _isolate_markdown_kb(tmp_path: Path) -> None:
-    """Redirect markdown_kb's persistent-state targets to ``tmp_path``.
+def _isolate_production_paths(tmp_path: Path) -> None:
+    """Redirect both Stacks' persistent-state targets to ``tmp_path``.
 
-    SOURCE_DIRS is repointed inside ``stacks.index_stack_a``; here we redirect
-    the INDEX_PATH, WIKI_DIR, and log path so the build's atomic-write and
-    wiki-index side effects land in tmp, never in production ``.kb/`` /
-    ``wiki/``.
+    SOURCE_DIRS / DOCS_DIR are repointed inside ``stacks.index_stack_{a,b}``;
+    here we redirect every persistence + log target so the builds' atomic-write
+    side effects land in tmp, never in production ``.kb/`` / ``wiki/`` /
+    ``vector_rag/log.md``. vector_rag's ``build_index`` now persists the FAISS
+    index on success (issue #103), so its ``FAISS_INDEX_DIR`` must be isolated
+    here too.
     """
     mk_indexer.INDEX_PATH = tmp_path / ".kb" / "index.json"
     mk_indexer.WIKI_DIR = tmp_path / "wiki"
     mk_logger.LOG_PATH = tmp_path / "wiki" / "log.md"
+    vr_indexer.FAISS_INDEX_DIR = tmp_path / ".kb" / "faiss_index"
+    vr_logger.LOG_PATH = tmp_path / "vector_rag" / "log.md"
