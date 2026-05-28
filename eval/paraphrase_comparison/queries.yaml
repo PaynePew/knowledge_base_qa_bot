@@ -1,0 +1,45 @@
+# Phase 8 Paraphrase set (CONTEXT.md § Phase 8 > Paraphrase, PRD #100).
+#
+# Slice 1 (tracer) ships hand-written synonym_swap Paraphrases only. Each
+# targets one docs Gold Section and carries dual-side Key Tokens
+# (key_tokens_docs ∪ key_tokens_wiki) the C5c metric overlaps against retrieved
+# content. Later slices add the other six Paraphrase Types.
+#
+# This file is written atomically (tmp + os.replace) by tooling that mutates
+# it; it is hand-authored here.
+
+paraphrases:
+  - paraphrase_id: synonym_swap-001
+    paraphrase_type: synonym_swap
+    text: "How long do I have to send a product back for a complete refund?"
+    gold_docs_section_id: returns_policy.md#return-window
+    key_tokens_docs: [return, days, refund, packaging, receipt]
+    key_tokens_wiki: [thirty, refund, packaging, receipt, unused]
+
+  - paraphrase_id: synonym_swap-002
+    paraphrase_type: synonym_swap
+    text: "When will the reimbursement reach my card after I ship the item back?"
+    gold_docs_section_id: returns_policy.md#refund-processing-time
+    key_tokens_docs: [refund, business, days, inspection, payment]
+    key_tokens_wiki: [refund, business, days, inspection, warehouse]
+
+  - paraphrase_id: synonym_swap-003
+    paraphrase_type: synonym_swap
+    text: "What does rush shipping cost and how fast does it arrive?"
+    gold_docs_section_id: shipping_options.md#expedited-delivery
+    key_tokens_docs: [expedited, delivery, surcharge, business, days]
+    key_tokens_wiki: [expedited, delivery, surcharge, business, dollar]
+
+  - paraphrase_id: synonym_swap-004
+    paraphrase_type: synonym_swap
+    text: "Where can I find the parcel tracking code for my purchase?"
+    gold_docs_section_id: shipping_options.md#order-tracking
+    key_tokens_docs: [tracking, number, carrier, parcel, account]
+    key_tokens_wiki: [tracking, number, carrier, parcel, history]
+
+  - paraphrase_id: synonym_swap-005
+    paraphrase_type: synonym_swap
+    text: "How do I recover access when I forgot my login passphrase?"
+    gold_docs_section_id: account_management.md#password-reset
+    key_tokens_docs: [password, reset, link, email, characters]
+    key_tokens_wiki: [password, reset, link, email, characters]
