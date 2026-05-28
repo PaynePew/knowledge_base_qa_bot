@@ -178,6 +178,19 @@ def stream_query(question: str) -> Iterator[dict]:
 
     # LLM phase — draft + Grounding Check.
     result = _draft_and_verify(question, gate["ranked"], gate["sources"])
+
+    # Phase 9 Slice 4: file on grounding-pass — same behaviour as /chat.
+    # Filing happens server-side at the post-verify point, independent of
+    # client delivery (a disconnected client never causes partial/unfiled
+    # state, and a partial answer is never filed). The existing SSE serializer
+    # already reads result.get("filed") and populates done.filed.
+    # Import is deferred to avoid a circular import with qa.py.
+    from . import qa as _qa_module  # noqa: PLC0415
+
+    filed = _qa_module.dispatch_filing(question, result)
+    # Attach filing outcome to result so events_for_result() picks it up.
+    result = {**result, "filed": filed}
+
     yield result
 
 
