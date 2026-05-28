@@ -12,7 +12,7 @@
 # narrow to one high-distinctiveness sub-fact. Only those sections are sampled
 # for specificity_narrowing (sampling.sample_sections(multi_sub_fact_only=True)).
 #
-# Stats: 42 sections; 15 multi-sub-fact (~36%, inside the 30-40% target band).
+# Stats: 42 sections; 16 multi-sub-fact (~38%, inside the 30-40% target band).
 #
 # This file is hand-maintained alongside the corpus; if a corpus section's fact
 # count changes, update its `multi_sub_fact` flag here in the same commit.

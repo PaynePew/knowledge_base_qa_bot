@@ -64,7 +64,7 @@ PROBES_PATH = _PKG_ROOT / "probes.yaml"
 GENERATOR_MODEL = "gpt-4o-mini"
 TEMPERATURE = 0.7
 SEED = 42
-PER_TYPE_COUNT = 9  # Core types; total core ≈ 5 × 9 = 45 (+ probes → ~39-54 set)
+PER_TYPE_COUNT = 8  # Core types; total core = 5 × 8 = 40 (+ 10 probes → 50, within ~39-54)
 
 CORE_TYPES = tuple(CORE_TEMPLATES.keys())
 PROBE_TYPES = tuple(t for t in PARAPHRASE_TYPES if t not in CORE_TEMPLATES)
