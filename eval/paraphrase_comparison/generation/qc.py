@@ -160,9 +160,9 @@ def derive_key_tokens(
       2. Filter out tokens shorter than ``_MIN_TOKEN_LEN`` (2) — single chars
          carry no retrieval signal.
       3. Filter out pure numeric tokens (e.g. "30", "15") — numbers appear
-         identically across many sections ("30 days", "30%", "fifteen percent as
-         "15") and are unreliable section discriminators. This is the documented
-         number-token policy (issue #139 AC-4).
+         identically across many sections ("30 days", "30%") and are unreliable
+         section discriminators. This is the documented number-token policy
+         (issue #139 AC-4).
       4. Retain only tokens present in the IDF table — tokens absent from the
          corpus body cannot match against retrieved content (QC gate logic).
       5. Rank by IDF descending (higher IDF = more distinctive for this corpus).
