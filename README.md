@@ -129,7 +129,7 @@ The following stretch goals from `PROMPT.md` are described here for orientation.
 - **Score threshold and Cannot Confirm fallback** — already part of the core design (see [ADR-0001](project-docs/adr/0001-strict-grounded-answers.md)).
 - **Output validation (Grounding Check)** — **done** (Phase 1). A second structured LLM call after the draft answer verifies every claim traces back to a cited Section. Design locked in [ADR-0004](project-docs/adr/0004-post-llm-grounding-check.md).
 - **Wiki Index generation** — **done** (Phase 2). Emits `wiki/index.md` from the Section Index so humans and agents can browse topics without calling the API.
-- **Answer Filing** — **in progress** (Phase 6). High-confidence `/chat` answers are written back to `wiki/qa/*.md`, closing the Two-output rule on the query side.
+- **Answer Filing** — **done** (Phase 6). High-confidence `/chat` answers are written back to `wiki/qa/*.md`, closing the Two-output rule on the query side.
 - **Paraphrase comparison** — **done** (Phase 8). Head-to-head retrieval comparison (`hit_rate@3`, MRR) of Markdown KB vs Vector RAG across seven paraphrase types. Report in [`eval/paraphrase_comparison/report.md`](eval/paraphrase_comparison/report.md).
 - **Streaming interface** (`POST /chat/stream` via SSE) — **in progress** (Phase 9, [#116](https://github.com/PaynePew/knowledge_base_qa_bot/issues/116)).
 - **Browser UI** showing retrieved Sections before the streamed answer — **in progress** (Phase 9, [#116](https://github.com/PaynePew/knowledge_base_qa_bot/issues/116)).
