@@ -428,6 +428,54 @@ def test_post_sources_error_event_has_detail_and_retryable(
     assert "retryable" in data, f"error event must have 'retryable': {data}"
 
 
+@pytest.fixture()
+def gateway_client_llm_unmapped_error(indexed_wiki_corpus, monkeypatch):
+    """TestClient where the LLM raises a NON-HTTPException (unmapped) error.
+
+    Mirrors a misconfiguration / unexpected failure that is NOT mapped to an
+    HTTPException by the LLM wrapper — e.g. a base ``openai.OpenAIError``
+    ("Missing credentials") raised when no API key is set. After the sources
+    event (HTTP 200 committed), the stream must STILL terminate with a terminal
+    ``error`` event, never a silent truncation (ADR-0009 defense-in-depth).
+    """
+
+    def _raise_unmapped(*_args, **_kwargs):
+        raise RuntimeError("missing credentials / unexpected LLM failure")
+
+    fake = type("_UnmappedErrLLM", (), {"invoke": staticmethod(_raise_unmapped)})()
+    monkeypatch.setattr(_retrieval, "_llm", fake)
+    monkeypatch.setattr(_retrieval, "get_llm", lambda: fake)
+
+    from gateway.app.main import app as _gateway_app
+
+    return TestClient(_gateway_app)
+
+
+def test_post_sources_unmapped_error_still_emits_terminal_error(
+    gateway_client_llm_unmapped_error,
+):
+    """A non-HTTPException after sources must not silently truncate the stream.
+
+    The stream ends with a terminal ``error`` event carrying a GENERIC detail
+    (raw internals not leaked) and ``retryable: false``; no ``done`` follows.
+    """
+    resp = gateway_client_llm_unmapped_error.post(
+        "/chat/stream?stack=wiki",
+        json={"query": "What is the refund policy?"},
+    )
+    assert resp.status_code == 200
+    events = _parse_sse_response(resp.text)
+    types = [e["type"] for e in events]
+    assert types[0] == "sources"
+    assert types[-1] == "error", f"unmapped error must still terminate with 'error': {types}"
+    assert "done" not in types, f"'done' must not follow an error event: {types}"
+    err = next(e for e in events if e["type"] == "error")
+    assert "missing credentials" not in err["data"]["detail"].lower(), (
+        "generic detail must not leak the raw exception message"
+    )
+    assert err["data"]["retryable"] is False
+
+
 def test_post_sources_503_error_is_retryable(gateway_client_llm_error):
     """A 503 (transient) LLM error produces retryable=True in the error event."""
     resp = gateway_client_llm_error.post(

@@ -152,6 +152,20 @@ def chat_stream(req: ChatRequest, stack: str = "wiki") -> StreamingResponse:
             retryable = exc.status_code == 503
             yield encode_event("error", {"detail": exc.detail, "retryable": retryable})
             return
+        except Exception:  # noqa: BLE001 — intentional last-resort catch
+            # Defense in depth (ADR-0009): HTTP 200 is already committed once the
+            # sources event is sent, so ANY error during draft/verify — including
+            # unmapped or unexpected ones (e.g. an LLM client misconfiguration that
+            # raises a base openai.OpenAIError rather than a mapped HTTPException) —
+            # must surface as a terminal SSE error event, never a silently
+            # truncated stream that hangs the client. Detail is generic to avoid
+            # leaking internals; mapped transient/auth errors keep their curated
+            # detail in the HTTPException branch above.
+            yield encode_event(
+                "error",
+                {"detail": "Internal error while generating the answer.", "retryable": False},
+            )
+            return
 
         # events_for_result emits sources + token(s) + done; we skip the
         # sources frame here (already emitted above) and forward the rest.
