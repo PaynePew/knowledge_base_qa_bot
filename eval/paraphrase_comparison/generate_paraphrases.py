@@ -149,7 +149,9 @@ def generate_core(per_type_count: int = PER_TYPE_COUNT) -> list[Paraphrase]:
         for idx, sec in enumerate(sections, start=1):
             heading, docs_body = docs_bodies[sec.section_id]
             wiki_body = _concept_body(sec.concept_slug)
-            prompt = build_prompt(heading=heading, body=f"{docs_body}\n\n(Wiki phrasing: {wiki_body})")
+            prompt = build_prompt(
+                heading=heading, body=f"{docs_body}\n\n(Wiki phrasing: {wiki_body})"
+            )
             draft: ParaphraseDraft = llm.invoke(prompt)  # type: ignore[assignment]
             out.append(
                 to_paraphrase(
@@ -188,7 +190,9 @@ def render_queries_yaml(
     """Render the full queries.yaml: a metadata block + all Paraphrase entries."""
     metadata = {
         "generator_model": GENERATOR_MODEL,
-        "generated_at": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "generated_at": datetime.datetime.now(datetime.UTC).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        ),
         "seed": SEED,
         "temperature": TEMPERATURE,
         "prompt_template_version": TEMPLATE_VERSION,
@@ -229,19 +233,20 @@ def run_qc(paraphrases: list[Paraphrase]) -> list[qc.QcVerdict]:
     matchable, so the distinctiveness judgement must see both corpora.
     """
     docs_bodies = _docs_section_bodies()
-    wiki_bodies = [
-        _concept_body(s.concept_slug) for s in sampling.load_gold_sections()
-    ]
+    wiki_bodies = [_concept_body(s.concept_slug) for s in sampling.load_gold_sections()]
     idf = qc.build_idf([body for _, body in docs_bodies.values()] + wiki_bodies)
     return [
-        qc.check_key_tokens(p.paraphrase_id, sorted(p.key_tokens), idf) for p in paraphrases
+        qc.check_key_tokens(p.paraphrase_id, sorted(p.key_tokens), idf)
+        for p in paraphrases
     ]
 
 
 def _print_qc(verdicts: list[qc.QcVerdict]) -> None:
     rejected = [v for v in verdicts if v.rejected]
     flagged = [v for v in verdicts if v.flagged_tokens and not v.rejected]
-    print(f"  QC: {len(verdicts)} checked, {len(rejected)} rejected, {len(flagged)} flagged.")
+    print(
+        f"  QC: {len(verdicts)} checked, {len(rejected)} rejected, {len(flagged)} flagged."
+    )
     for v in rejected:
         print(f"    REJECT {v.paraphrase_id}: {'; '.join(v.reasons)}")
     for v in flagged:
@@ -254,7 +259,10 @@ def _print_qc(verdicts: list[qc.QcVerdict]) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Phase 8 Paraphrase generator.")
     parser.add_argument(
-        "--per-type", type=int, default=PER_TYPE_COUNT, help="Core Paraphrases per type."
+        "--per-type",
+        type=int,
+        default=PER_TYPE_COUNT,
+        help="Core Paraphrases per type.",
     )
     parser.add_argument(
         "--qc-only",
@@ -285,8 +293,12 @@ def main(argv: list[str] | None = None) -> int:
     full_set = core + probes
     # Cost is recorded by the live caller's billing; this offline-safe script does
     # not estimate it — a real run wires the token usage through here.
-    write_text_atomic(QUERIES_PATH, render_queries_yaml(full_set, cost_usd="see run log"))
-    print(f"Wrote {len(full_set)} Paraphrases to {QUERIES_PATH.name} ({len(core)} core + {len(probes)} probes).")
+    write_text_atomic(
+        QUERIES_PATH, render_queries_yaml(full_set, cost_usd="see run log")
+    )
+    print(
+        f"Wrote {len(full_set)} Paraphrases to {QUERIES_PATH.name} ({len(core)} core + {len(probes)} probes)."
+    )
     return 0
 
 

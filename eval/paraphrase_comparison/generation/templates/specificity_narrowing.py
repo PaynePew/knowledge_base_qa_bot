@@ -21,11 +21,11 @@ RULE = (
 
 ONE_SHOT = (
     'Passage: "Approved refunds are issued within five to seven business days. '
-    'Customers paying by bank transfer should allow an additional three business '
+    "Customers paying by bank transfer should allow an additional three business "
     'days because settlement times vary between banks."\n'
     'Rewritten (specificity_narrowing): "If I paid by bank transfer, how many '
     'extra days should I expect before my refund settles?"\n'
-    'generation_notes: targeted sub-fact = bank-transfer +3 business days'
+    "generation_notes: targeted sub-fact = bank-transfer +3 business days"
 )
 
 

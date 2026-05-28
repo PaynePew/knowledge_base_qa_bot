@@ -19,8 +19,8 @@ RULE = (
 ONE_SHOT = (
     'Passage: "A reset link valid for one hour is sent to that address."\n'
     'Rewritten (verbosity_expansion): "Hi, sorry to bother you — I think I '
-    'locked myself out earlier today and I am a bit confused about the process. '
-    'Once I ask for a password reset email, roughly how long does that link '
+    "locked myself out earlier today and I am a bit confused about the process. "
+    "Once I ask for a password reset email, roughly how long does that link "
     'actually stay valid before it stops working?"'
 )
 

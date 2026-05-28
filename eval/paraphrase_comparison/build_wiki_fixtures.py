@@ -144,7 +144,18 @@ def _render_entity(source: str, sections: list) -> str:
     sentinel = _SENTINEL.format(ts=FIXED_TIMESTAMP, source=source)
     section_ids = [f"{source}#{slugify(s.heading)}" for s in sections]
     fm = _frontmatter(ENTITY_SLUG, "entity", section_ids)
-    parts = [sentinel, "", "---", fm, "---", "", f"# {ENTITY_TITLE}", "", ENTITY_BLURB, ""]
+    parts = [
+        sentinel,
+        "",
+        "---",
+        fm,
+        "---",
+        "",
+        f"# {ENTITY_TITLE}",
+        "",
+        ENTITY_BLURB,
+        "",
+    ]
     for s in sections:
         sid = f"{source}#{slugify(s.heading)}"
         parts += [f"## {s.heading}", "", _reword(s.content), "", f"[Source: {sid}]", ""]
@@ -169,7 +180,9 @@ def build_offline(*, overwrite_existing: bool = False) -> tuple[int, int, int]:
     entities = 0
     preserved = 0
     for md_file in sorted(CORPUS_DIR.glob("*.md")):
-        sections = [s for s in parse_markdown(md_file, source_id=None) if s.content.strip()]
+        sections = [
+            s for s in parse_markdown(md_file, source_id=None) if s.content.strip()
+        ]
         if md_file.name in ENTITY_SOURCES:
             entity_path = entity_dir / f"{ENTITY_SLUG}.md"
             if entity_path.exists() and not overwrite_existing:

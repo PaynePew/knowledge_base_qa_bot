@@ -23,7 +23,7 @@ ONE_SHOT = (
     'balance stays available indefinitely."\n'
     'Rewritten (implicit_reference): "Does the balance ever run out if I leave it '
     'unused for a couple of years?"\n'
-    'generation_notes: stripped subject = gift card'
+    "generation_notes: stripped subject = gift card"
 )
 
 

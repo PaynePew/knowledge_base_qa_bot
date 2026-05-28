@@ -111,7 +111,11 @@ def sample_sections(
     Returns fewer than ``count`` only when the eligible pool is smaller than
     ``count``; never raises on an over-large ``count``.
     """
-    pool = [s for s in sections if s.multi_sub_fact] if multi_sub_fact_only else list(sections)
+    pool = (
+        [s for s in sections if s.multi_sub_fact]
+        if multi_sub_fact_only
+        else list(sections)
+    )
     return sha256_order(pool, seed)[:count]
 
 
