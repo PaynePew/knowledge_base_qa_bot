@@ -21,7 +21,8 @@ SSE event contract (ADR-0009):
   sources            — immediately after retrieval (real latency win)
   status{phase}      — liveness between sources and first token; LLM path only
   token(s)           — verified answer or CANNOT_CONFIRM_PHRASE; one per word
-  done{passed,reason,filed} — terminal success event (filed null for stack=rag)
+  done{grounding:{passed,reason},filed,stack} — terminal success event (PRD #116
+                       shape; filed null for stack=rag)
   error{detail,retryable}   — terminal failure when the LLM errors AFTER sources
 """
 
