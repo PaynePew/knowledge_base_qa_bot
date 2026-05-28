@@ -16,11 +16,12 @@ retrieves Chunks whose ``source`` is already a docs Section id.
 
 Production isolation (PRD #100 acceptance): ``index_stack_a`` / ``index_stack_b``
 repoint markdown_kb ``SOURCE_DIRS`` and vector_rag ``DOCS_DIR`` to the eval
-fixtures, and the caller — ``runner._isolate_markdown_kb`` (mirrored by the test
-suite's autouse conftest fixture) — redirects markdown_kb ``INDEX_PATH`` /
-``WIKI_DIR`` / log path to a tmp directory, so the build's atomic-write and
-``write_wiki_index`` side effects land in tmp and production ``wiki/`` /
-``docs/`` / ``.kb/`` are never read or written.
+fixtures, and the caller — ``runner._isolate_production_paths`` (mirrored by the
+test suite's autouse conftest fixture) — redirects markdown_kb ``INDEX_PATH`` /
+``WIKI_DIR`` / log path AND vector_rag ``FAISS_INDEX_DIR`` / log path to a tmp
+directory, so the builds' atomic-write and ``write_wiki_index`` side effects
+land in tmp and production ``wiki/`` / ``docs/`` / ``.kb/`` are never read or
+written.
 """
 
 from __future__ import annotations

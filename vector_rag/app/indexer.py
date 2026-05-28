@@ -101,8 +101,8 @@ class Chunk:
 # In-memory index state
 # ---------------------------------------------------------------------------
 # Single-process prototype model (CODING_STANDARD §2.7): module-level globals,
-# swappable by tests via monkeypatch. FAISS is held in memory; persistence is a
-# later slice.
+# swappable by tests via monkeypatch. The FAISS index is held in memory and
+# persisted to FAISS_INDEX_DIR on build (see save_vector_index).
 vectorstore: FAISS | None = None
 _embeddings: OpenAIEmbeddings | None = None
 files_indexed = 0
@@ -189,8 +189,12 @@ def search(query: str, k: int = 3) -> list[Chunk]:
 # ---------------------------------------------------------------------------
 # Persistence (PROMPT.md contract: .kb/faiss_index/ + metadata.json)
 # ---------------------------------------------------------------------------
-def save_vector_index(index_dir: Path = FAISS_INDEX_DIR) -> None:
+def save_vector_index(index_dir: Path | None = None) -> None:
     """Persist the in-memory FAISS index + ``metadata.json`` atomically.
+
+    ``index_dir`` defaults to the module-level ``FAISS_INDEX_DIR``, resolved at
+    call time so tests monkeypatching it (and the startup lifespan) see the
+    current value rather than a def-time-bound default.
 
     Writes the whole index directory (FAISS's ``index.faiss`` / ``index.pkl``
     plus our ``metadata.json``) to a sibling tmp directory, then swaps it into
@@ -205,6 +209,9 @@ def save_vector_index(index_dir: Path = FAISS_INDEX_DIR) -> None:
     """
     if vectorstore is None:
         return
+
+    if index_dir is None:
+        index_dir = FAISS_INDEX_DIR
 
     index_dir.parent.mkdir(parents=True, exist_ok=True)
 
@@ -235,8 +242,11 @@ def save_vector_index(index_dir: Path = FAISS_INDEX_DIR) -> None:
         raise
 
 
-def load_vector_index(index_dir: Path = FAISS_INDEX_DIR) -> tuple[int, int]:
+def load_vector_index(index_dir: Path | None = None) -> tuple[int, int]:
     """Load a persisted FAISS index into the module-level state.
+
+    ``index_dir`` defaults to the module-level ``FAISS_INDEX_DIR``, resolved at
+    call time (mirrors :func:`save_vector_index`).
 
     Returns ``(files_indexed, chunks_indexed)``. Returns ``(0, 0)`` and leaves
     the in-memory index unset when no persisted index exists.
@@ -248,15 +258,16 @@ def load_vector_index(index_dir: Path = FAISS_INDEX_DIR) -> tuple[int, int]:
     """
     global vectorstore, files_indexed, chunks_indexed
 
+    if index_dir is None:
+        index_dir = FAISS_INDEX_DIR
+
     if not index_dir.exists():
         return 0, 0
 
     metadata_path = index_dir / METADATA_FILENAME
     if not metadata_path.exists():
         # Present-but-incomplete index — fail fast rather than serve empty.
-        raise RuntimeError(
-            f"persisted FAISS index at {index_dir} is missing {METADATA_FILENAME}"
-        )
+        raise RuntimeError(f"persisted FAISS index at {index_dir} is missing {METADATA_FILENAME}")
 
     # Let json.JSONDecodeError propagate — a corrupt metadata file is fail-fast.
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))

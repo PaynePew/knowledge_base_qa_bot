@@ -51,9 +51,7 @@ from .logger import log_event
 # It is duplicated here (not imported) to keep the apps decoupled; the
 # SYSTEM_PROMPT drift smoke test pins both literals against markdown_kb's.
 CANNOT_CONFIRM_PHRASE = "I cannot confirm from the knowledge base."
-NOT_INDEXED_MESSAGE = (
-    "The knowledge base has not been indexed yet. Call POST /index first."
-)
+NOT_INDEXED_MESSAGE = "The knowledge base has not been indexed yet. Call POST /index first."
 
 # ---------------------------------------------------------------------------
 # System prompt — Stack B's own literal of the ADR-0001 strict-grounded contract
