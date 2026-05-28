@@ -17,6 +17,8 @@ For the exercise spec and verification, see [`PROMPT.md`](PROMPT.md). For the pr
 | Markdown KB | [`markdown_kb/`](markdown_kb/) | Parse Markdown headings into Sections, BM25 over a persisted Section Index | Active — prototype target |
 | Vector RAG | [`vector_rag/`](vector_rag/) | Split Markdown into chunks, embed with OpenAI, retrieve via FAISS | Scaffold only — post-prototype work |
 
+A head-to-head retrieval comparison of these two strategies on the same raw corpus — per-Paraphrase-Type `hit_rate@3` and MRR, charts, a cost log, and six honest-limitation disclosures — lives in [`eval/paraphrase_comparison/report.md`](eval/paraphrase_comparison/report.md) (Phase 8).
+
 Both apps expose the same external API:
 
 | Method | Endpoint | Description |

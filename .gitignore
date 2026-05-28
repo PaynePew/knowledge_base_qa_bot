@@ -1,5 +1,16 @@
-# Built retrieval artifacts (rebuilt by POST /index)
+# Built retrieval artifacts (rebuilt by POST /index). Also covers
+# .kb/faiss_index/ (Stack B's regenerable binary index, per issue #104).
 .kb/
+
+# Phase 8 retrieval comparison (eval/paraphrase_comparison/) intermediate state.
+# The committed deliverables — queries.yaml, corpus/, wiki/, report.md, and the
+# FINAL charts/*.png — are tracked (force-added). These two are NOT: the
+# per-paraphrase verdict dumps (churn during metric tuning) and the atomic-write
+# temp files. Charts are force-committed once finalised; routine regeneration
+# during iteration is otherwise ignored to avoid binary churn (PRD #100 commit
+# policy, issue #104).
+eval/paraphrase_comparison/results/*.json
+eval/paraphrase_comparison/charts/*.tmp
 
 # /raw/ — local-only import inbox (gitignored; use examples/raw/ for samples)
 # Leading / anchors the pattern to the repo root so examples/raw/ is NOT ignored.
@@ -11,6 +22,10 @@ wiki/index.md
 wiki/lint-report.md
 wiki/log.md
 wiki/hot.md
+
+# vector_rag/ (Stack B) runtime trace — decoupled from markdown_kb's wiki/log.md
+# (issue #103); same append-only Wiki Log discipline, own file.
+vector_rag/log.md
 
 # Python
 __pycache__/

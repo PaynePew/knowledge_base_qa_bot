@@ -1,0 +1,31 @@
+[project]
+name = "paraphrase-comparison"
+version = "0.1.0"
+description = "Phase 8 retrieval comparison: Stack A (Wiki+BM25) vs Stack B (Vector RAG) over hand-written Paraphrases, scored by the deterministic C5c hit metric."
+requires-python = ">=3.11"
+dependencies = [
+    "markdown-kb",
+    "vector-rag",
+    "pyyaml>=6.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+markdown-kb = { workspace = true }
+vector-rag = { workspace = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers"
+markers = [
+    "live: Opt-in live tests that make real OpenAI/embedding API calls; skipped by default.",
+]
+
+[dependency-groups]
+dev = [
+    "anthropic>=0.104.1",
+    "deepeval>=4.0.4",
+    "matplotlib>=3.10.9",
+]

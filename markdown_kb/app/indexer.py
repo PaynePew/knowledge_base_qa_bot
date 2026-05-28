@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``parse_markdown``, ``build_index``, ``load_index_json``, ``search``, ``slugify``, ``Section`` (dataclass), plus the module-level ``sections`` list (read by ``retrieval.py``).
+"""Deep module per Ousterhout. Public surface: ``parse_markdown``, ``split_frontmatter``, ``build_index``, ``load_index_json``, ``search``, ``slugify``, ``Section`` (dataclass), plus the module-level ``sections`` list (read by ``retrieval.py``).
 
 Markdown Section Index builder.
 
@@ -114,6 +114,53 @@ def slugify(text: str) -> str:
 def tokenize(text: str) -> list[str]:
     """Split text into lowercase alphanumeric tokens, removing stop words."""
     return [t for t in TOKEN_RE.findall(text.lower()) if t not in STOP_WORDS]
+
+
+def split_frontmatter(text: str) -> tuple[dict, str]:
+    """Split a leading YAML frontmatter block from a Markdown document.
+
+    Reusable form of the frontmatter-detection convention applied inline by
+    ``parse_markdown`` Rule 2. Used by the ingest classifier (issue #106) so the
+    raw Source text fed to the LLM excludes provenance frontmatter that
+    importer.py writes (``imported_from``/``original_format``/``imported_at``/
+    ``content_sha256``). Recognises that on-disk format: a document beginning
+    with ``---\\n``, its closing fence ``\\n---\\n``, and the body following.
+
+    Returns ``(metadata, body)``:
+    - metadata: parsed YAML mapping (``{}`` when absent, malformed, or PyYAML is
+      unavailable).
+    - body: the document text with the leading frontmatter block removed
+      (byte-identical to the input when no frontmatter is present, so the
+      no-frontmatter path is unaffected).
+
+    Never raises: missing closing fence, malformed YAML, and absent PyYAML all
+    fall back to ``({}, text)`` and emit a ``parse_warning`` (consistent with
+    parse_markdown's fail-soft handling).
+    """
+    from .logger import log_event
+
+    if not text.startswith("---\n"):
+        return {}, text
+
+    try:
+        import yaml  # optional; PyYAML is not yet a hard dep (Wiki layer territory)
+
+        end = text.index("\n---\n", 4)  # closing fence
+        metadata = yaml.safe_load(text[4:end]) or {}
+        return metadata, text[end + 5 :]  # skip \n---\n
+    except ImportError:
+        log_event(
+            "parse_warning",
+            "frontmatter present but PyYAML is not installed; treating as no frontmatter",
+        )
+        return {}, text
+    except (yaml.YAMLError, ValueError) as exc:
+        # yaml.YAMLError → malformed YAML; ValueError → missing closing fence
+        log_event(
+            "parse_warning",
+            f"frontmatter split failed: {type(exc).__name__}",
+        )
+        return {}, text
 
 
 # ---------------------------------------------------------------------------

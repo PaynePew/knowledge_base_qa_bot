@@ -162,6 +162,32 @@ No per-finding log entries — findings live in `wiki/lint-report.md` as the sou
 
 ---
 
+## Vector RAG (Stack B)
+
+Authorized by GitHub issue #103 (Phase 8 Slice 3). Stack B stays decoupled from
+`markdown_kb`, so it owns its own append-only log channel at `vector_rag/log.md`
+(written via `vector_rag/app/logger.py::log_event`) — the same `## [<ISO-8601 UTC>] <kind> | <summary>`
+format and the same single-channel discipline (CODING_STANDARD §5.1), just a
+separate file. The kinds reuse markdown_kb's names so log readers parse both
+channels identically; they are listed here (not duplicated under the sections
+above) because they are emitted by a different module against a different file.
+
+| Kind | When fired | Summary template |
+|---|---|---|
+| `index_built` | `vector_rag.indexer.build_index()` completed (including the empty-corpus no-op) | `files=N chunks=M` |
+| `index_loaded` | Persisted FAISS index rehydrated from `.kb/faiss_index/` on app startup | `files=N chunks=M` |
+| `chat` | Successful `/chat` response written | `"<truncated query>" top=<chunk source> count=N` |
+| `chat_fallback` | Pre-LLM gate fires (index missing, or vector search empty) | `"<truncated query>" reason=<not_indexed\|retrieval_empty>` |
+| `chat_grounding_fallback` | Post-LLM verifier returned not-passed; reply replaced with Cannot Confirm | `"<truncated query>" reason=<outcome.reason> cited=<comma_separated_chunk_sources>` |
+| `chat_error` | OpenAI exception during `/chat` or the `/index` embedding call; mapped per [`CODING_STANDARD.md`](CODING_STANDARD.md) § 4.2 | `"<truncated query>" kind=<openai_transient\|openai_auth\|openai_api> exc=<ExcClass>` (chat) or `op=index kind=<…> exc=<ExcClass>` (index embedding) |
+
+The verifier-side kinds (`grounding_verify`, `grounding_verifier_error`) are
+emitted by `markdown_kb`'s `grounding.py` — which Stack B adopts unchanged — so
+they write to `markdown_kb`'s `wiki/log.md`, not `vector_rag/log.md`. They are
+already enumerated under the Grounding Check section above and not re-listed here.
+
+---
+
 ## Adding a new kind
 
 1. Pick a `snake_case` name that names the **event**, not the outcome (so failures and successes can share a kind with `reason=` discrimination — see `grounding_verify` returning either `claim_supported` or `claim_unsupported` under one kind).
