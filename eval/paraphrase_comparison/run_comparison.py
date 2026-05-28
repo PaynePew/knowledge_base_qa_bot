@@ -106,6 +106,7 @@ def main(argv: list[str] | None = None) -> int:
         nargs="?",
         const=DEFAULT_JUDGE_MODEL,
         default=None,
+        choices=JUDGE_MODELS,
         metavar="MODEL",
         help=(
             "Enable the opt-in L2 cross-family Claude judge Spot-check. Bare flag "
