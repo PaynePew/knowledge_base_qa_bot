@@ -50,6 +50,7 @@ from .spotcheck import (
     SpotcheckResult,
     run_spotcheck,
 )
+from .statistics import TypeStatResult, compute_type_stats, holm_correct
 
 _PKG_ROOT = Path(__file__).resolve().parent
 REPORT_PATH = _PKG_ROOT / "report.md"
@@ -105,6 +106,20 @@ class StackScores:
     by_type: dict[str, float]
     mrr_by_type: dict[str, float] = field(default_factory=dict)
     n_by_type: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class CoreStats:
+    """Per-Core-Type McNemar / Wilson CI / Holm statistics for the report.
+
+    ``by_type`` maps each Core Paraphrase Type to its ``TypeStatResult``
+    (raw McNemar p, Wilson CIs, discordant-pair counts).  ``holm_p_by_type``
+    holds the Holm-corrected p-values in the same type order as
+    ``CORE_PARAPHRASE_TYPES`` — these are the reportable adjusted values.
+    """
+
+    by_type: dict[str, TypeStatResult]
+    holm_p_by_type: dict[str, float]
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +183,111 @@ def score_stack(
 
 
 # ---------------------------------------------------------------------------
+# Paired scoring — both stacks in one pass for McNemar
+# ---------------------------------------------------------------------------
+
+
+def score_paired(
+    paraphrases: list[Paraphrase],
+    retrieve_a: StackRetrieval,
+    retrieve_b: StackRetrieval,
+    k: int = DEFAULT_K,
+) -> tuple[StackScores, StackScores, CoreStats]:
+    """Score both Stacks in one pass and compute per-Core-Type McNemar statistics.
+
+    Running both stacks against the same Paraphrases in one pass ensures the
+    per-Paraphrase (hit_a, hit_b) pairs are aligned — essential for McNemar.
+    Returns ``(stack_a_scores, stack_b_scores, core_stats)``.
+    """
+    metric = HitRateAtK(k=k)
+    per_type_hits_a: dict[str, list[float]] = defaultdict(list)
+    per_type_hits_b: dict[str, list[float]] = defaultdict(list)
+    per_type_rr_a: dict[str, list[float]] = defaultdict(list)
+    per_type_rr_b: dict[str, list[float]] = defaultdict(list)
+    # Raw paired binary outcomes for McNemar (0/1 per paraphrase per type)
+    paired_hits_a: dict[str, list[int]] = defaultdict(list)
+    paired_hits_b: dict[str, list[int]] = defaultdict(list)
+
+    for para in paraphrases:
+        ptype = para.paraphrase_type
+        # Score Stack A
+        items_a = retrieve_a(para.text, k)
+        case_a = LLMTestCase(
+            input=para.text,
+            actual_output="",
+            expected_output=para.gold_docs_section_id,
+            retrieval_context=[it.source_section_id for it in items_a] or ["<none>"],
+            metadata={
+                "retrieved_items": items_a,
+                "key_tokens": sorted(para.key_tokens),
+                "paraphrase_type": ptype,
+            },
+        )
+        metric.measure(case_a)
+        hit_a = int(metric.score)
+        per_type_hits_a[ptype].append(metric.score)
+        per_type_rr_a[ptype].append(metric.reciprocal_rank)
+        # Score Stack B
+        items_b = retrieve_b(para.text, k)
+        case_b = LLMTestCase(
+            input=para.text,
+            actual_output="",
+            expected_output=para.gold_docs_section_id,
+            retrieval_context=[it.source_section_id for it in items_b] or ["<none>"],
+            metadata={
+                "retrieved_items": items_b,
+                "key_tokens": sorted(para.key_tokens),
+                "paraphrase_type": ptype,
+            },
+        )
+        metric.measure(case_b)
+        hit_b = int(metric.score)
+        per_type_hits_b[ptype].append(metric.score)
+        per_type_rr_b[ptype].append(metric.reciprocal_rank)
+        # Accumulate paired binary outcomes for McNemar (Core types only)
+        if ptype in CORE_PARAPHRASE_TYPES:
+            paired_hits_a[ptype].append(hit_a)
+            paired_hits_b[ptype].append(hit_b)
+
+    def _to_scores(
+        stack_name: str,
+        hits: dict[str, list[float]],
+        rrs: dict[str, list[float]],
+    ) -> StackScores:
+        return StackScores(
+            stack=stack_name,
+            k=k,
+            by_type={t: sum(s) / len(s) for t, s in hits.items()},
+            mrr_by_type={t: sum(r) / len(r) for t, r in rrs.items()},
+            n_by_type={t: len(s) for t, s in hits.items()},
+        )
+
+    stack_a = _to_scores("Stack A", per_type_hits_a, per_type_rr_a)
+    stack_b = _to_scores("Stack B", per_type_hits_b, per_type_rr_b)
+    core_stats = _compute_core_stats(paired_hits_a, paired_hits_b)
+    return stack_a, stack_b, core_stats
+
+
+def _compute_core_stats(
+    paired_hits_a: dict[str, list[int]],
+    paired_hits_b: dict[str, list[int]],
+) -> CoreStats:
+    """Compute per-Core-Type TypeStatResults and apply Holm correction.
+
+    Only Core Paraphrase Types contribute to the Holm correction (five tests);
+    Probe types are excluded per AC 3/4 of issue #140.
+    """
+    core_types = [t for t in CORE_PARAPHRASE_TYPES if t in paired_hits_a]
+    by_type: dict[str, TypeStatResult] = {}
+    for ptype in core_types:
+        by_type[ptype] = compute_type_stats(paired_hits_a[ptype], paired_hits_b[ptype])
+    raw_ps = [by_type[t].mcnemar_p for t in core_types]
+    corrected = holm_correct(raw_ps)
+    holm_p_by_type = {t: corrected[i] for i, t in enumerate(core_types)}
+    return CoreStats(by_type=by_type, holm_p_by_type=holm_p_by_type)
+
+
+# ---------------------------------------------------------------------------
 # Report rendering
 # ---------------------------------------------------------------------------
 def render_report(
@@ -177,15 +297,17 @@ def render_report(
     metadata: dict | None = None,
     chart_files: list[Path] | None = None,
     spotcheck: SpotcheckResult | None = None,
+    core_stats: CoreStats | None = None,
 ) -> str:
     """Render the full ``report.md`` deliverable for the retrieval comparison.
 
-    Structure (PRD #100): TL;DR → Experiment Setup (incl. cost log) → Core
-    Comparison (per-type hit_rate@k + MRR + Δ + expected + n, then a Core
-    macro-average WITH a caveat) → Structural Probes (separate table, framed as
-    expected-limit confirmation) → Spot-check Validation (only when ``--judge``
-    was run) → Limitations (the six+1 honest disclosures) → Interview Talking
-    Points appendix.
+    Structure (PRD #100 + issue #140): TL;DR → Experiment Setup (incl. cost log)
+    → Core Comparison (per-type hit_rate@k + MRR + Δ + expected + n, then
+    McNemar / Wilson CI / Holm statistical tests, then a Core macro-average WITH
+    a caveat) → Structural Probes (separate table, framed as expected-limit
+    confirmation) → Spot-check Validation (only when ``--judge`` was run) →
+    Limitations (six+1 honest disclosures + faithfulness-drift) → Interview
+    Talking Points appendix.
 
     ``embedding_mode`` annotates how Stack B's vectors were produced ("real"
     OpenAI embeddings vs a "fake" deterministic offline stand-in) so a reader
@@ -193,7 +315,10 @@ def render_report(
     ``metadata`` is the ``queries.yaml`` metadata block (read for the honest cost
     log); ``chart_files`` are the rendered PNGs to embed. ``spotcheck`` is the
     primitive-only L2 result (``None`` when the opt-in judge was not run — the
-    report then notes how to enable it).
+    report then notes how to enable it).  ``core_stats`` carries the McNemar /
+    Wilson CI / Holm results for the five Core types (``None`` falls back to
+    omitting the statistical sub-section — e.g. when called from a legacy test
+    that pre-dates this upgrade).
     """
     metadata = metadata or {}
     chart_files = chart_files or []
@@ -213,6 +338,7 @@ def render_report(
             k,
             chart_files,
             with_macro_average=True,
+            core_stats=core_stats,
         ),
         _render_family_section(
             "Structural Probes",
@@ -332,6 +458,7 @@ def _render_family_section(
     k: int,
     chart_files: list[Path],
     with_macro_average: bool,
+    core_stats: CoreStats | None = None,
 ) -> str:
     types = [t for t in family_types if t in stack_a.by_type or t in stack_b.by_type]
     if not types:
@@ -385,10 +512,58 @@ def _render_family_section(
             "the type mix is a design choice, not a representative query distribution. "
             "The per-type rows are authoritative.",
         ]
+        if core_stats is not None:
+            lines += ["", _render_statistical_tests(core_stats, k)]
 
     chart_md = _embed_family_charts(title, chart_files)
     if chart_md:
         lines += ["", chart_md]
+    return "\n".join(lines)
+
+
+def _render_statistical_tests(core_stats: CoreStats, k: int) -> str:
+    """Render the McNemar / Wilson CI / Holm sub-section for Core types.
+
+    Reports per-type: paired McNemar exact p-value (raw), Holm-corrected p-value,
+    95% Wilson CIs for each Stack's hit_rate@k, and discordant pair counts (b, c).
+    Probes are never included here (they are excluded from the correction family).
+    """
+    lines = [
+        "### Statistical Tests (Core types — paired McNemar + 95% Wilson CI)",
+        "",
+        f"Paired exact McNemar test (Stack A vs Stack B hit@{k} outcomes per "
+        f"Paraphrase); Holm correction across the 5 Core-type tests.  "
+        f"b = A-hit B-miss, c = A-miss B-hit.",
+        "",
+        "| Paraphrase Type | hit_rate (A) [95% CI] | hit_rate (B) [95% CI] | "
+        "b | c | McNemar p | Holm p | sig |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for ptype in CORE_PARAPHRASE_TYPES:
+        if ptype not in core_stats.by_type:
+            continue
+        ts = core_stats.by_type[ptype]
+        holm_p = core_stats.holm_p_by_type.get(ptype, ts.mcnemar_p)
+        sig = "✓" if holm_p < 0.05 else "—"
+        ci_a_lo, ci_a_hi = ts.ci_a
+        ci_b_lo, ci_b_hi = ts.ci_b
+        lines.append(
+            f"| {ptype} "
+            f"| {ts.hit_rate_a:.3f} [{ci_a_lo:.3f}, {ci_a_hi:.3f}] "
+            f"| {ts.hit_rate_b:.3f} [{ci_b_lo:.3f}, {ci_b_hi:.3f}] "
+            f"| {ts.b} | {ts.c} "
+            f"| {ts.mcnemar_p:.4f} "
+            f"| {holm_p:.4f} "
+            f"| {sig} |"
+        )
+    lines += [
+        "",
+        "> **Interpretation.** sig=✓ (Holm p < 0.05) means the two Stacks' "
+        "hit_rate differ significantly on that type after family-wise correction.  "
+        "Wide CIs (e.g. ±0.30) at n≈8 per type mean the current corpus is "
+        "underpowered — regenerate with ~50 Paraphrases/type to reach ±0.13.  "
+        "Probes are descriptive-only and excluded from this correction family.",
+    ]
     return "\n".join(lines)
 
 
@@ -521,9 +696,20 @@ def _render_limitations(offline: bool, judged: bool = False) -> str:
         "the same model family encodes — systematically advantaging Vector RAG. This is "
         "preserved as a disclosed, measurable finding (the hand-written probes partially "
         "correct for it), not hidden.",
+        "7. **Faithfulness-drift risk (residual).** An LLM-written query could "
+        "occasionally be mislabeled: the generator might ask about a concept that is "
+        "*mentioned* in a Section but whose primary answer lives elsewhere, so the "
+        "Gold Section assignment is technically correct yet the query text drifts away "
+        "from the canonical formulation.  Mitigations: (a) the answer key (Gold Section "
+        "id + Key Tokens) is now derived deterministically from corpus content rather "
+        "than asserted by the LLM, confining drift to the query-text layer only; "
+        "(b) the McNemar test is a *paired* comparison — any consistent drift affects "
+        "both Stacks equally and does not systematically bias the Δ verdict; "
+        "(c) the optional L2 Spot-check (Claude judge) can flag query-quality outliers "
+        "in the Marginal zone.",
     ]
     offline_disclosure = (
-        "7. **The committed numbers are OFFLINE tracer data.** With no "
+        "8. **The committed numbers are OFFLINE tracer data.** With no "
         "`OPENAI_API_KEY` in the generation environment, the Core Paraphrases are "
         "hand-authored stand-ins for gpt-4o-mini output (faithfully mirroring the "
         "deterministic sha256 section sampling and per-type rules) and Stack B's "
@@ -604,7 +790,7 @@ def run_comparison(
     charts_dir = charts_dir or (report_path.parent / "charts")
     paraphrases = load_paraphrases()
     metadata = load_metadata()
-    stack_a, stack_b, spotcheck = _run_scored(paraphrases, k, judge)
+    stack_a, stack_b, core_stats, spotcheck = _run_scored(paraphrases, k, judge)
     chart_files = charts.render_charts(stack_a, stack_b, charts_dir=charts_dir)
     write_text_atomic(
         report_path,
@@ -615,6 +801,7 @@ def run_comparison(
             metadata=metadata,
             chart_files=chart_files,
             spotcheck=spotcheck,
+            core_stats=core_stats,
         ),
     )
     return stack_a, stack_b
@@ -622,20 +809,26 @@ def run_comparison(
 
 def _run_scored(
     paraphrases: list[Paraphrase], k: int, judge: JudgeConfig | None = None
-) -> tuple[StackScores, StackScores, SpotcheckResult | None]:
+) -> tuple[StackScores, StackScores, CoreStats, SpotcheckResult | None]:
     """Build both indexes under production isolation, then score each Stack.
 
-    When ``judge`` is set, the opt-in L2 Spot-check runs here too — inside the
-    same isolation context and against the same in-process Stack retrieval
-    callables — so its zones are built from the identical L1 verdicts.
+    Uses ``score_paired`` so McNemar contingency tables are built from aligned
+    per-Paraphrase outcomes (both Stacks scored in one pass).  When ``judge`` is
+    set, the opt-in L2 Spot-check runs here too — inside the same isolation
+    context and against the same in-process Stack retrieval callables — so its
+    zones are built from the identical L1 verdicts.
     """
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         _isolate_production_paths(tmp_path)
         stacks.index_stack_a()
         stacks.index_stack_b()
-        a = score_stack("Stack A", paraphrases, stacks.stack_a_retrieval, k)
-        b = score_stack("Stack B", paraphrases, stacks.stack_b_retrieval, k)
+        a, b, core_stats = score_paired(
+            paraphrases,
+            stacks.stack_a_retrieval,
+            stacks.stack_b_retrieval,
+            k,
+        )
         spotcheck = None
         if judge is not None:
             spotcheck = run_spotcheck(
@@ -648,7 +841,7 @@ def _run_scored(
                 marginal_threshold=judge.marginal_threshold,
                 control_sample_size=judge.control_sample_size,
             )
-    return a, b, spotcheck
+    return a, b, core_stats, spotcheck
 
 
 def _isolate_production_paths(tmp_path: Path) -> None:
