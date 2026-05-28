@@ -1,45 +1,452 @@
-# Phase 8 Paraphrase set (CONTEXT.md § Phase 8 > Paraphrase, PRD #100).
+# Phase 8 Paraphrase set (CONTEXT.md § Phase 8 > Paraphrase, PRD #100, issue #102).
 #
-# Slice 1 (tracer) ships hand-written synonym_swap Paraphrases only. Each
-# targets one docs Gold Section and carries dual-side Key Tokens
-# (key_tokens_docs ∪ key_tokens_wiki) the C5c metric overlaps against retrieved
-# content. Later slices add the other six Paraphrase Types.
+# The full committed query set: 40 Core Paraphrases (5 LLM-generated types × 8)
+# + 10 hand-written Structural probes (2 types × 5) = 50 across all 7 types.
 #
-# This file is written atomically (tmp + os.replace) by tooling that mutates
-# it; it is hand-authored here.
+# OFFLINE NOTE (no OPENAI_API_KEY in this environment): the 40 Core entries are
+# HAND-AUTHORED stand-ins for what generate_paraphrases.py would produce with
+# gpt-4o-mini. They target the EXACT Gold Sections the deterministic sha256
+# sampler selects per type (so the pipeline is faithfully represented), each
+# rewritten by hand per its type's rule, with dual-side Key Tokens drawn from the
+# real docs Section and concept Wiki Page wording. The metadata block records
+# cost as `n/a (offline)` because no real LLM call was billed. Re-running the
+# generator WITH a key overwrites these with genuine LLM output.
+#
+# The two probe types (typo_fatfinger, industry_jargon) are always hand-written
+# (probes.yaml), merged in unchanged.
+#
+# This file is written atomically (tmp + os.replace) by generate_paraphrases.py;
+# it is hand-authored here for the offline contingency.
+
+metadata:
+  generator_model: gpt-4o-mini
+  generated_at: '2026-05-28T00:00:00Z'
+  seed: 42
+  temperature: 0.7
+  prompt_template_version: v1
+  corpus_snapshot_git_sha: offline-hand-authored
+  total: 50
+  cost_usd: n/a (offline)
+  note: >-
+    Core entries hand-authored offline (no OPENAI_API_KEY); they mirror the
+    deterministic sha256 section sampling and per-type rules the live generator
+    would apply. Probe types always hand-written.
 
 paraphrases:
+  # =====================================================================
+  # synonym_swap — avoid the source's salient vocabulary (lexical stress)
+  # =====================================================================
   - paraphrase_id: synonym_swap-001
     paraphrase_type: synonym_swap
-    text: "How long do I have to send a product back for a complete refund?"
-    gold_docs_section_id: returns_policy.md#return-window
-    key_tokens_docs: [return, days, refund, packaging, receipt]
-    key_tokens_wiki: [thirty, refund, packaging, receipt, unused]
+    text: "Why did my profile get frozen after a strange login somewhere?"
+    gold_docs_section_id: account_security.md#suspicious-activity
+    key_tokens_docs: [locked, verification, email, password, device]
+    key_tokens_wiki: [locked, verification, email, password, device]
+    generation_notes: "hand-authored offline stand-in; swapped login->sign-in, frozen->locked"
 
   - paraphrase_id: synonym_swap-002
     paraphrase_type: synonym_swap
-    text: "When will the reimbursement reach my card after I ship the item back?"
-    gold_docs_section_id: returns_policy.md#refund-processing-time
-    key_tokens_docs: [refund, business, days, inspection, payment]
-    key_tokens_wiki: [refund, business, days, inspection, warehouse]
+    text: "How current is the on-hand quantity shown on a listing?"
+    gold_docs_section_id: product_information.md#stock-availability
+    key_tokens_docs: [stock, count, units, waitlist, minutes]
+    key_tokens_wiki: [stock, count, units, waitlist, minutes]
+    generation_notes: "hand-authored offline stand-in; swapped inventory->quantity, refresh->current"
 
   - paraphrase_id: synonym_swap-003
     paraphrase_type: synonym_swap
-    text: "What does rush shipping cost and how fast does it arrive?"
+    text: "What's the fee for rush shipping and how quickly does it land?"
     gold_docs_section_id: shipping_options.md#expedited-delivery
     key_tokens_docs: [expedited, delivery, surcharge, business, days]
     key_tokens_wiki: [expedited, delivery, surcharge, business, dollar]
+    generation_notes: "hand-authored offline stand-in; swapped cost->fee, fast->quickly"
 
   - paraphrase_id: synonym_swap-004
     paraphrase_type: synonym_swap
-    text: "Where can I find the parcel tracking code for my purchase?"
-    gold_docs_section_id: shipping_options.md#order-tracking
-    key_tokens_docs: [tracking, number, carrier, parcel, account]
-    key_tokens_wiki: [tracking, number, carrier, parcel, history]
+    text: "Which nations can I have my parcel sent to?"
+    gold_docs_section_id: international_shipping.md#supported-countries
+    key_tokens_docs: [canada, kingdom, australia, japan, duties]
+    key_tokens_wiki: [canada, kingdom, australia, japan, duties]
+    generation_notes: "hand-authored offline stand-in; swapped countries->nations, ship->sent"
 
   - paraphrase_id: synonym_swap-005
     paraphrase_type: synonym_swap
-    text: "How do I recover access when I forgot my login passphrase?"
+    text: "What happens to my purchase if the card gets turned down?"
+    gold_docs_section_id: payment_methods.md#failed-payments
+    key_tokens_docs: [declined, pending, hours, card, cancelled]
+    key_tokens_wiki: [declined, pending, hours, card, cancelled]
+    generation_notes: "hand-authored offline stand-in; swapped payment->card, declined->turned down"
+
+  - paraphrase_id: synonym_swap-006
+    paraphrase_type: synonym_swap
+    text: "How do I switch on a second login check for my profile?"
+    gold_docs_section_id: account_security.md#two-factor-authentication
+    key_tokens_docs: [authentication, authenticator, code, device, factor]
+    key_tokens_wiki: [authentication, authenticator, code, device, factor]
+    generation_notes: "hand-authored offline stand-in; swapped enable->switch on, account->profile"
+
+  - paraphrase_id: synonym_swap-007
+    paraphrase_type: synonym_swap
+    text: "Can I halt or reschedule my recurring order without paying?"
+    gold_docs_section_id: subscription_orders.md#managing-a-subscription
+    key_tokens_docs: [subscription, paused, rescheduled, charge, cancelling]
+    key_tokens_wiki: [subscription, paused, rescheduled, charge, cancelling]
+    generation_notes: "hand-authored offline stand-in; swapped pause->halt, subscription kept as anchor"
+
+  - paraphrase_id: synonym_swap-008
+    paraphrase_type: synonym_swap
+    text: "How fast is my reserved order ready to grab from the shop?"
+    gold_docs_section_id: store_pickup.md#buy-online-pick-up-in-store
+    key_tokens_docs: [pickup, reserved, store, hours, counter]
+    key_tokens_wiki: [pickup, reserved, store, hours, counter]
+    generation_notes: "hand-authored offline stand-in; swapped collect->grab, store kept as anchor"
+
+  # =====================================================================
+  # word_reorder — keep vocabulary, restructure the sentence (syntax stress)
+  # =====================================================================
+  - paraphrase_id: word_reorder-001
+    paraphrase_type: word_reorder
+    text: "After the carrier scans the parcel, where is the tracking number emailed?"
+    gold_docs_section_id: shipping_options.md#order-tracking
+    key_tokens_docs: [tracking, number, carrier, parcel, account]
+    key_tokens_wiki: [tracking, number, carrier, parcel, history]
+    generation_notes: "hand-authored offline stand-in; fronted the carrier-scan clause"
+
+  - paraphrase_id: word_reorder-002
+    paraphrase_type: word_reorder
+    text: "Free on orders over fifty dollars — how many business days does standard delivery take?"
+    gold_docs_section_id: shipping_options.md#standard-delivery
+    key_tokens_docs: [standard, delivery, dollars, business, days]
+    key_tokens_wiki: [standard, shipment, dollars, business, days]
+    generation_notes: "hand-authored offline stand-in; fronted the free-threshold clause"
+
+  - paraphrase_id: word_reorder-003
+    paraphrase_type: word_reorder
+    text: "The email address tied to my account — from where can it be changed?"
+    gold_docs_section_id: account_management.md#update-email-address
+    key_tokens_docs: [email, address, profile, confirmation, verified]
+    key_tokens_wiki: [email, address, profile, confirmation, verified]
+    generation_notes: "hand-authored offline stand-in; fronted the object, recast as indirect question"
+
+  - paraphrase_id: word_reorder-004
+    paraphrase_type: word_reorder
+    text: "Retained for seven years — what happens to my order history when an account is closed?"
+    gold_docs_section_id: account_management.md#close-account
+    key_tokens_docs: [close, account, payment, history, retained]
+    key_tokens_wiki: [close, account, payment, history, retained]
+    generation_notes: "hand-authored offline stand-in; fronted the retention clause"
+
+  - paraphrase_id: word_reorder-005
+    paraphrase_type: word_reorder
+    text: "For a twelve-dollar surcharge, within how many business days does expedited delivery arrive?"
+    gold_docs_section_id: shipping_options.md#expedited-delivery
+    key_tokens_docs: [expedited, delivery, surcharge, business, days]
+    key_tokens_wiki: [expedited, delivery, surcharge, business, dollar]
+    generation_notes: "hand-authored offline stand-in; fronted the surcharge clause"
+
+  - paraphrase_id: word_reorder-006
+    paraphrase_type: word_reorder
+    text: "Until the items ship, is the card actually charged or only authorised?"
+    gold_docs_section_id: payment_methods.md#payment-authorization
+    key_tokens_docs: [authorise, capture, funds, hold, shipment]
+    key_tokens_wiki: [authorise, capture, funds, hold, shipment]
+    generation_notes: "hand-authored offline stand-in; fronted the until-ship clause, active->question"
+
+  - paraphrase_id: word_reorder-007
+    paraphrase_type: word_reorder
+    text: "Combined with loyalty point redemption — can a percentage-off code be?"
+    gold_docs_section_id: promo_codes.md#stacking-rules
+    key_tokens_docs: [codes, stacked, percentage, loyalty, shipping]
+    key_tokens_wiki: [codes, stacked, percentage, loyalty, shipping]
+    generation_notes: "hand-authored offline stand-in; fronted the object, inverted clause order"
+
+  - paraphrase_id: word_reorder-008
+    paraphrase_type: word_reorder
+    text: "Once packing begins, from where can an order no longer be cancelled?"
+    gold_docs_section_id: order_management.md#cancel-an-order
+    key_tokens_docs: [cancelled, packing, order, history, return]
+    key_tokens_wiki: [cancelled, packing, order, history, return]
+    generation_notes: "hand-authored offline stand-in; fronted the packing-stage clause"
+
+  # =====================================================================
+  # verbosity_expansion — same single need, padded with conversational filler
+  # =====================================================================
+  - paraphrase_id: verbosity_expansion-001
+    paraphrase_type: verbosity_expansion
+    text: "Hi there, I keep refreshing a product page and the number keeps moving — sorry if this is obvious, but how often does that live stock count actually update?"
+    gold_docs_section_id: product_information.md#stock-availability
+    key_tokens_docs: [stock, count, fifteen, minutes, units]
+    key_tokens_wiki: [stock, count, fifteen, minutes, units]
+    generation_notes: "hand-authored offline stand-in; padded with apology + framing, one need"
+
+  - paraphrase_id: verbosity_expansion-002
+    paraphrase_type: verbosity_expansion
+    text: "So I have a bit of a deadline and I'm trying to plan ahead here — if I pay the extra for the faster option, roughly how many business days until expedited delivery shows up?"
+    gold_docs_section_id: shipping_options.md#expedited-delivery
+    key_tokens_docs: [expedited, delivery, business, days, surcharge]
+    key_tokens_wiki: [expedited, delivery, business, days, surcharge]
+    generation_notes: "hand-authored offline stand-in; padded with deadline framing"
+
+  - paraphrase_id: verbosity_expansion-003
+    paraphrase_type: verbosity_expansion
+    text: "I'm always between sizes and it drives me a little crazy honestly — for the size guide, when my measurements land between two sizes, which way should I round?"
+    gold_docs_section_id: product_information.md#size-guide
+    key_tokens_docs: [size, guide, measurements, outerwear, layers]
+    key_tokens_wiki: [size, guide, measurements, outerwear, layers]
+    generation_notes: "hand-authored offline stand-in; padded with personal aside"
+
+  - paraphrase_id: verbosity_expansion-004
+    paraphrase_type: verbosity_expansion
+    text: "Quick one, hopefully — I got the confirmation email a little while ago but nothing's showing yet, so how long does tracking information usually take to populate?"
+    gold_docs_section_id: shipping_options.md#order-tracking
+    key_tokens_docs: [tracking, twelve, hours, confirmation, email]
+    key_tokens_wiki: [tracking, twelve, hours, confirmation, email]
+    generation_notes: "hand-authored offline stand-in; padded with status preamble"
+
+  - paraphrase_id: verbosity_expansion-005
+    paraphrase_type: verbosity_expansion
+    text: "Apologies if I'm missing something obvious at checkout, but I have this code and it won't go through — why would a promotional code fail to apply to my order?"
+    gold_docs_section_id: promo_codes.md#applying-a-code
+    key_tokens_docs: [code, checkout, minimum, category, restriction]
+    key_tokens_wiki: [code, checkout, minimum, category, restriction]
+    generation_notes: "hand-authored offline stand-in; padded with apology framing"
+
+  - paraphrase_id: verbosity_expansion-006
+    paraphrase_type: verbosity_expansion
+    text: "Hello! I was given one of these as a present and I'm a little unsure how it works — when I check out, how do I actually apply the gift card balance to my order?"
+    gold_docs_section_id: gift_cards.md#redeeming-a-gift-card
+    key_tokens_docs: [gift, card, balance, checkout, pin]
+    key_tokens_wiki: [gift, card, balance, checkout, pin]
+    generation_notes: "hand-authored offline stand-in; padded with gift framing"
+
+  - paraphrase_id: verbosity_expansion-007
+    paraphrase_type: verbosity_expansion
+    text: "I want to leave honest feedback but I'm not sure about the timing — after my order arrives, how long do I actually have to submit a product review?"
+    gold_docs_section_id: product_information.md#product-reviews
+    key_tokens_docs: [review, ninety, days, verified, moderation]
+    key_tokens_wiki: [review, ninety, days, verified, moderation]
+    generation_notes: "hand-authored offline stand-in; padded with intent framing"
+
+  - paraphrase_id: verbosity_expansion-008
+    paraphrase_type: verbosity_expansion
+    text: "I just got a new laptop and I'm tidying up my logins — in the security settings, how do I remove an old trusted device from the list?"
+    gold_docs_section_id: account_security.md#managing-trusted-devices
+    key_tokens_docs: [trusted, devices, security, removed, challenge]
+    key_tokens_wiki: [trusted, devices, security, removed, challenge]
+    generation_notes: "hand-authored offline stand-in; padded with new-laptop framing"
+
+  # =====================================================================
+  # specificity_narrowing — one high-distinctiveness sub-fact of a MULTI-fact section
+  # =====================================================================
+  - paraphrase_id: specificity_narrowing-001
+    paraphrase_type: specificity_narrowing
+    text: "What standing discount applies to every recurring subscription shipment?"
+    gold_docs_section_id: subscription_orders.md#setting-up-a-subscription
+    key_tokens_docs: [subscription, five, percent, discount, recurring]
+    key_tokens_wiki: [subscription, five, percent, discount, recurring]
+    generation_notes: "hand-authored offline stand-in; targeted sub-fact = 5% standing discount (not intervals)"
+
+  - paraphrase_id: specificity_narrowing-002
+    paraphrase_type: specificity_narrowing
+    text: "If a multi-item order is cancelled, can I cancel just one line or does it cancel all?"
+    gold_docs_section_id: order_management.md#cancel-an-order
+    key_tokens_docs: [cancelling, multi, item, partial, supported]
+    key_tokens_wiki: [cancelling, multi, item, partial, supported]
+    generation_notes: "hand-authored offline stand-in; targeted sub-fact = no partial cancellation (not packing window)"
+
+  - paraphrase_id: specificity_narrowing-003
+    paraphrase_type: specificity_narrowing
+    text: "For oversized freight, are import duties still collected at checkout or billed separately?"
+    gold_docs_section_id: international_shipping.md#customs-and-duties
+    key_tokens_docs: [oversized, freight, duties, customs, separately]
+    key_tokens_wiki: [oversized, freight, duties, customs, separately]
+    generation_notes: "hand-authored offline stand-in; targeted sub-fact = oversized-freight exception (not DDP default)"
+
+  - paraphrase_id: specificity_narrowing-004
+    paraphrase_type: specificity_narrowing
+    text: "At what remaining unit count does a product page show the low-stock banner?"
+    gold_docs_section_id: product_information.md#stock-availability
+    key_tokens_docs: [five, units, low, stock, banner]
+    key_tokens_wiki: [five, units, low, stock, banner]
+    generation_notes: "hand-authored offline stand-in; targeted sub-fact = <5 units low-stock banner (not refresh)"
+
+  - paraphrase_id: specificity_narrowing-005
+    paraphrase_type: specificity_narrowing
+    text: "When an order has several parcels, are the card charges combined or split per parcel?"
+    gold_docs_section_id: payment_methods.md#payment-authorization
+    key_tokens_docs: [split, shipments, capture, parcel, charges]
+    key_tokens_wiki: [split, shipments, capture, parcel, charges]
+    generation_notes: "hand-authored offline stand-in; targeted sub-fact = split-shipment per-parcel capture (not auth hold)"
+
+  - paraphrase_id: specificity_narrowing-006
+    paraphrase_type: specificity_narrowing
+    text: "How long is a declined order held in a pending state before it auto-cancels?"
+    gold_docs_section_id: payment_methods.md#failed-payments
+    key_tokens_docs: [twenty, four, hours, pending, cancelled]
+    key_tokens_wiki: [twenty, four, hours, pending, cancelled]
+    generation_notes: "hand-authored offline stand-in; targeted sub-fact = 24h pending window (not decline reasons)"
+
+  - paraphrase_id: specificity_narrowing-007
+    paraphrase_type: specificity_narrowing
+    text: "If I paid by bank transfer, how many extra business days should I expect for my refund?"
+    gold_docs_section_id: returns_policy.md#refund-processing-time
+    key_tokens_docs: [bank, transfer, additional, three, business]
+    key_tokens_wiki: [bank, transfer, extra, three, business]
+    generation_notes: "hand-authored offline stand-in; targeted sub-fact = bank-transfer +3 days (not 5-7 default)"
+
+  - paraphrase_id: specificity_narrowing-008
+    paraphrase_type: specificity_narrowing
+    text: "What restocking fee applies to large appliances returned without a defect?"
+    gold_docs_section_id: returns_policy.md#restocking-fee
+    key_tokens_docs: [fifteen, percent, restocking, appliances, defect]
+    key_tokens_wiki: [fifteen, percent, restocking, appliances, defect]
+    generation_notes: "hand-authored offline stand-in; targeted sub-fact = 15% appliance restocking fee (not standard no-fee)"
+
+  # =====================================================================
+  # implicit_reference — explicit subject stripped (topic only implied)
+  # =====================================================================
+  - paraphrase_id: implicit_reference-001
+    paraphrase_type: implicit_reference
+    text: "Does it have to be sold directly by the retailer, or can a marketplace seller's price count?"
+    gold_docs_section_id: price_matching.md#price-match-eligibility
+    key_tokens_docs: [price, retailer, marketplace, seller, public]
+    key_tokens_wiki: [price, retailer, marketplace, seller, public]
+    generation_notes: "hand-authored offline stand-in; stripped subject = price match eligibility"
+
+  - paraphrase_id: implicit_reference-002
+    paraphrase_type: implicit_reference
+    text: "How many of these am I allowed to claim within a thirty-day stretch?"
+    gold_docs_section_id: price_matching.md#requesting-a-price-match
+    key_tokens_docs: [price, match, fourteen, days, three]
+    key_tokens_wiki: [price, match, fourteen, days, three]
+    generation_notes: "hand-authored offline stand-in; stripped subject = price match requests"
+
+  - paraphrase_id: implicit_reference-003
+    paraphrase_type: implicit_reference
+    text: "Does the balance ever run out if I leave it unused for a couple of years?"
+    gold_docs_section_id: gift_cards.md#redeeming-a-gift-card
+    key_tokens_docs: [balance, expire, dormancy, fees, unused]
+    key_tokens_wiki: [balance, expire, dormancy, fees, unused]
+    generation_notes: "hand-authored offline stand-in; stripped subject = gift card"
+
+  - paraphrase_id: implicit_reference-004
+    paraphrase_type: implicit_reference
+    text: "Can I use two of them together on the same order?"
+    gold_docs_section_id: promo_codes.md#stacking-rules
+    key_tokens_docs: [codes, stacked, percentage, loyalty, shipping]
+    key_tokens_wiki: [codes, stacked, percentage, loyalty, shipping]
+    generation_notes: "hand-authored offline stand-in; stripped subject = promotional codes"
+
+  - paraphrase_id: implicit_reference-005
+    paraphrase_type: implicit_reference
+    text: "After I shut it down, how long is the history kept around?"
+    gold_docs_section_id: account_management.md#close-account
+    key_tokens_docs: [close, account, history, retained, seven]
+    key_tokens_wiki: [close, account, history, retained, seven]
+    generation_notes: "hand-authored offline stand-in; stripped subject = closed account"
+
+  - paraphrase_id: implicit_reference-006
+    paraphrase_type: implicit_reference
+    text: "It still hasn't shown up after ten days — who do I contact to trace it?"
+    gold_docs_section_id: returns_policy.md#refund-processing-time
+    key_tokens_docs: [refund, ten, business, days, support]
+    key_tokens_wiki: [refund, ten, business, days, support]
+    generation_notes: "hand-authored offline stand-in; stripped subject = delayed refund"
+
+  - paraphrase_id: implicit_reference-007
+    paraphrase_type: implicit_reference
+    text: "Can you send it to Japan, or is that one not covered yet?"
+    gold_docs_section_id: international_shipping.md#supported-countries
+    key_tokens_docs: [japan, canada, kingdom, australia, countries]
+    key_tokens_wiki: [japan, canada, kingdom, australia, countries]
+    generation_notes: "hand-authored offline stand-in; stripped subject = international shipping destinations"
+
+  - paraphrase_id: implicit_reference-008
+    paraphrase_type: implicit_reference
+    text: "If I send it back, does it have to be in the box it came in?"
+    gold_docs_section_id: returns_policy.md#return-window
+    key_tokens_docs: [return, packaging, unused, receipt, days]
+    key_tokens_wiki: [packaging, unused, receipt, thirty, refund]
+    generation_notes: "hand-authored offline stand-in; stripped subject = returned item / original packaging"
+
+  # =====================================================================
+  # Structural probes (hand-written) — merged from probes.yaml
+  # =====================================================================
+  - paraphrase_id: typo_fatfinger-001
+    paraphrase_type: typo_fatfinger
+    text: "How lnog do I have to retrun an item for a refnud?"
+    gold_docs_section_id: returns_policy.md#return-window
+    key_tokens_docs: [return, days, refund, packaging, receipt]
+    key_tokens_wiki: [thirty, refund, packaging, receipt, unused]
+    generation_notes: "hand-written probe; typos: long->lnog return->retrun refund->refnud"
+
+  - paraphrase_id: typo_fatfinger-002
+    paraphrase_type: typo_fatfinger
+    text: "What does expedietd shippng cost and how fsat is it?"
+    gold_docs_section_id: shipping_options.md#expedited-delivery
+    key_tokens_docs: [expedited, delivery, surcharge, business, days]
+    key_tokens_wiki: [expedited, delivery, surcharge, business, dollar]
+    generation_notes: "hand-written probe; typos: expedited->expedietd shipping->shippng fast->fsat"
+
+  - paraphrase_id: typo_fatfinger-003
+    paraphrase_type: typo_fatfinger
+    text: "How do I rest my passwrod if I forgto it?"
     gold_docs_section_id: account_management.md#password-reset
     key_tokens_docs: [password, reset, link, email, characters]
     key_tokens_wiki: [password, reset, link, email, characters]
+    generation_notes: "hand-written probe; typos: reset->rest password->passwrod forgot->forgto"
+
+  - paraphrase_id: typo_fatfinger-004
+    paraphrase_type: typo_fatfinger
+    text: "Where is my trakcing nubmer for the parcle?"
+    gold_docs_section_id: shipping_options.md#order-tracking
+    key_tokens_docs: [tracking, number, carrier, parcel, account]
+    key_tokens_wiki: [tracking, number, carrier, parcel, history]
+    generation_notes: "hand-written probe; typos: tracking->trakcing number->nubmer parcel->parcle"
+
+  - paraphrase_id: typo_fatfinger-005
+    paraphrase_type: typo_fatfinger
+    text: "Why was my paymnet declind at chekout?"
+    gold_docs_section_id: payment_methods.md#failed-payments
+    key_tokens_docs: [payment, declined, pending, card, expired]
+    key_tokens_wiki: [payment, declined, pending, card, expired]
+    generation_notes: "hand-written probe; typos: payment->paymnet declined->declind checkout->chekout"
+
+  - paraphrase_id: industry_jargon-001
+    paraphrase_type: industry_jargon
+    text: "What's the RMA window for a full refund?"
+    gold_docs_section_id: returns_policy.md#return-window
+    key_tokens_docs: [return, days, refund, packaging, receipt]
+    key_tokens_wiki: [thirty, refund, packaging, receipt, unused]
+    generation_notes: "hand-written probe; jargon: RMA = return merchandise authorization"
+
+  - paraphrase_id: industry_jargon-002
+    paraphrase_type: industry_jargon
+    text: "Is duty handled DDP for cross-border orders?"
+    gold_docs_section_id: international_shipping.md#customs-and-duties
+    key_tokens_docs: [duties, taxes, checkout, carrier, freight]
+    key_tokens_wiki: [duties, taxes, checkout, carrier, freight]
+    generation_notes: "hand-written probe; jargon: DDP = delivered duty paid"
+
+  - paraphrase_id: industry_jargon-003
+    paraphrase_type: industry_jargon
+    text: "Is BOPIS available and how soon is the order ready?"
+    gold_docs_section_id: store_pickup.md#buy-online-pick-up-in-store
+    key_tokens_docs: [pickup, reserved, store, hours, counter]
+    key_tokens_wiki: [pickup, reserved, store, hours, counter]
+    generation_notes: "hand-written probe; jargon: BOPIS = buy online pick up in store"
+
+  - paraphrase_id: industry_jargon-004
+    paraphrase_type: industry_jargon
+    text: "Do you support 2FA via TOTP or SMS OTP?"
+    gold_docs_section_id: account_security.md#two-factor-authentication
+    key_tokens_docs: [authentication, authenticator, code, device, factor]
+    key_tokens_wiki: [authentication, authenticator, code, device, factor]
+    generation_notes: "hand-written probe; jargon: 2FA/TOTP/OTP = two-factor authentication codes"
+
+  - paraphrase_id: industry_jargon-005
+    paraphrase_type: industry_jargon
+    text: "When does the auth hold drop if I void before fulfilment?"
+    gold_docs_section_id: payment_methods.md#payment-authorization
+    key_tokens_docs: [authorisation, hold, capture, cancelled, shipment]
+    key_tokens_wiki: [authorisation, hold, capture, cancelled, shipment]
+    generation_notes: "hand-written probe; jargon: auth hold / void = authorization release pre-capture"

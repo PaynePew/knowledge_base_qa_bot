@@ -53,7 +53,10 @@ def write_text_atomic(path: Path, content: str) -> None:
         dir=path.parent, suffix=".tmp", prefix=f"{path.stem}_"
     )
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        # newline="\n": force LF on every OS so committed artifacts honour the
+        # repo's `* eol=lf` .gitattributes (CODING_STANDARD §1.1) — Windows text
+        # mode would otherwise translate "\n" to CRLF and dirty the working tree.
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(content)
         os.replace(tmp_name, path)
     except Exception:

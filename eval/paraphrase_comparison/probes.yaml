@@ -1,0 +1,94 @@
+# Phase 8 Structural probe Paraphrases — HAND-WRITTEN (CONTEXT.md § Phase 8 >
+# Paraphrase Type). The two probe types are NOT LLM-generated: typo_fatfinger
+# (keyboard-adjacent misspellings of salient terms) and industry_jargon
+# (domain shorthand a power user would type). They are merged unchanged into the
+# committed queries.yaml by generate_paraphrases.py and reported as their own
+# per-type rows alongside the five Core types.
+#
+# Same Paraphrase schema as the Core types (loader.py reads these field names):
+# paraphrase_id, paraphrase_type, text, gold_docs_section_id, key_tokens_docs,
+# key_tokens_wiki, generation_notes. Key Tokens are the un-typo'd / de-jargoned
+# distinctive tokens, so the C5c metric still confirms the answer content.
+
+paraphrases:
+  # --- typo_fatfinger: keyboard-adjacent / transposed misspellings ---
+  - paraphrase_id: typo_fatfinger-001
+    paraphrase_type: typo_fatfinger
+    text: "How lnog do I have to retrun an item for a refnud?"
+    gold_docs_section_id: returns_policy.md#return-window
+    key_tokens_docs: [return, days, refund, packaging, receipt]
+    key_tokens_wiki: [thirty, refund, packaging, receipt, unused]
+    generation_notes: "hand-written probe; typos: long->lnog return->retrun refund->refnud"
+
+  - paraphrase_id: typo_fatfinger-002
+    paraphrase_type: typo_fatfinger
+    text: "What does expedietd shippng cost and how fsat is it?"
+    gold_docs_section_id: shipping_options.md#expedited-delivery
+    key_tokens_docs: [expedited, delivery, surcharge, business, days]
+    key_tokens_wiki: [expedited, delivery, surcharge, business, dollar]
+    generation_notes: "hand-written probe; typos: expedited->expedietd shipping->shippng fast->fsat"
+
+  - paraphrase_id: typo_fatfinger-003
+    paraphrase_type: typo_fatfinger
+    text: "How do I rest my passwrod if I forgto it?"
+    gold_docs_section_id: account_management.md#password-reset
+    key_tokens_docs: [password, reset, link, email, characters]
+    key_tokens_wiki: [password, reset, link, email, characters]
+    generation_notes: "hand-written probe; typos: reset->rest password->passwrod forgot->forgto"
+
+  - paraphrase_id: typo_fatfinger-004
+    paraphrase_type: typo_fatfinger
+    text: "Where is my trakcing nubmer for the parcle?"
+    gold_docs_section_id: shipping_options.md#order-tracking
+    key_tokens_docs: [tracking, number, carrier, parcel, account]
+    key_tokens_wiki: [tracking, number, carrier, parcel, history]
+    generation_notes: "hand-written probe; typos: tracking->trakcing number->nubmer parcel->parcle"
+
+  - paraphrase_id: typo_fatfinger-005
+    paraphrase_type: typo_fatfinger
+    text: "Why was my paymnet declind at chekout?"
+    gold_docs_section_id: payment_methods.md#failed-payments
+    key_tokens_docs: [payment, declined, pending, card, expired]
+    key_tokens_wiki: [payment, declined, pending, card, expired]
+    generation_notes: "hand-written probe; typos: payment->paymnet declined->declind checkout->chekout"
+
+  # --- industry_jargon: domain shorthand a power user / merchant would type ---
+  - paraphrase_id: industry_jargon-001
+    paraphrase_type: industry_jargon
+    text: "What's the RMA window for a full refund?"
+    gold_docs_section_id: returns_policy.md#return-window
+    key_tokens_docs: [return, days, refund, packaging, receipt]
+    key_tokens_wiki: [thirty, refund, packaging, receipt, unused]
+    generation_notes: "hand-written probe; jargon: RMA = return merchandise authorization"
+
+  - paraphrase_id: industry_jargon-002
+    paraphrase_type: industry_jargon
+    text: "Is duty handled DDP for cross-border orders?"
+    gold_docs_section_id: international_shipping.md#customs-and-duties
+    key_tokens_docs: [duties, taxes, checkout, carrier, freight]
+    key_tokens_wiki: [duties, taxes, checkout, carrier, freight]
+    generation_notes: "hand-written probe; jargon: DDP = delivered duty paid"
+
+  - paraphrase_id: industry_jargon-003
+    paraphrase_type: industry_jargon
+    text: "Is BOPIS available and how soon is the order ready?"
+    gold_docs_section_id: store_pickup.md#buy-online-pick-up-in-store
+    key_tokens_docs: [pickup, reserved, store, hours, counter]
+    key_tokens_wiki: [pickup, reserved, store, hours, counter]
+    generation_notes: "hand-written probe; jargon: BOPIS = buy online pick up in store"
+
+  - paraphrase_id: industry_jargon-004
+    paraphrase_type: industry_jargon
+    text: "Do you support 2FA via TOTP or SMS OTP?"
+    gold_docs_section_id: account_security.md#two-factor-authentication
+    key_tokens_docs: [authentication, authenticator, code, device, factor]
+    key_tokens_wiki: [authentication, authenticator, code, device, factor]
+    generation_notes: "hand-written probe; jargon: 2FA/TOTP/OTP = two-factor authentication codes"
+
+  - paraphrase_id: industry_jargon-005
+    paraphrase_type: industry_jargon
+    text: "When does the auth hold drop if I void before fulfilment?"
+    gold_docs_section_id: payment_methods.md#payment-authorization
+    key_tokens_docs: [authorisation, hold, capture, cancelled, shipment]
+    key_tokens_wiki: [authorisation, hold, capture, cancelled, shipment]
+    generation_notes: "hand-written probe; jargon: auth hold / void = authorization release pre-capture"
