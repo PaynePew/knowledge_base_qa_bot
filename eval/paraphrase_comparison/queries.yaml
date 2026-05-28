@@ -1,37 +1,40 @@
 metadata:
   generator_model: gpt-4o-mini
-  generated_at: '2026-05-28T08:42:54Z'
+  generated_at: '2026-05-28T20:44:12Z'
   seed: 42
   temperature: 0.7
   prompt_template_version: v1
-  corpus_snapshot_git_sha: 2d0346f
+  corpus_snapshot_git_sha: f70536f
   total: 50
-  cost_usd: see run log
+  cost_usd: n/a (offline re-key)
+  key_tokens_source: 'deterministic corpus IDF (issue #139)'
 paraphrases:
 - paraphrase_id: synonym_swap-001
   paraphrase_type: synonym_swap
   text: What happens if I try to log in from a place that isn't recognized?
   gold_docs_section_id: account_security.md#suspicious-activity
   key_tokens_docs:
-  - sign-in attempts
-  - unrecognised location
-  - account
-  - temporarily locked
-  - verification email
-  - address on file
-  - confirms the activity
-  - resets the password
-  - trusted device
+  - attempts
+  - unrecognised
+  - location
+  - detected
+  - temporarily
+  - verification
+  - lock
+  - clears
+  - soon
+  - confirms
   key_tokens_wiki:
-  - sign-in attempts
-  - unrecognised location
-  - account
-  - temporarily locked
-  - verification email
-  - address on file
-  - confirms the activity
-  - resets the password
-  - trusted device
+  - attempts
+  - unrecognised
+  - location
+  - detected
+  - temporarily
+  - verification
+  - lock
+  - clears
+  - soon
+  - confirms
   generation_notes: Stripped subject for general inquiry about account security.
 - paraphrase_id: synonym_swap-002
   paraphrase_type: synonym_swap
@@ -39,23 +42,27 @@ paraphrases:
     out of stock?
   gold_docs_section_id: product_information.md#stock-availability
   key_tokens_docs:
-  - product page
-  - live stock count
-  - low-stock banner
-  - restock waitlist
-  - emails
-  - inventory
-  - refresh
-  - checkout
+  - count
+  - drawn
+  - nearest
+  - fulfilment
+  - centre
+  - fewer
+  - remain
+  - displays
+  - low
+  - banner
   key_tokens_wiki:
-  - product page
-  - live stock count
-  - low-stock banner
-  - restock waitlist
-  - emails
-  - inventory
-  - refresh
-  - checkout
+  - count
+  - drawn
+  - nearest
+  - fulfilment
+  - centre
+  - fewer
+  - remain
+  - displays
+  - low
+  - banner
   generation_notes: targeted sub-fact about stock availability and actions for low
     or out of stock items.
 - paraphrase_id: synonym_swap-003
@@ -64,63 +71,54 @@ paraphrases:
     sent out today?
   gold_docs_section_id: shipping_options.md#expedited-delivery
   key_tokens_docs:
-  - expedited delivery
+  - guarantees
+  - surcharge
+  - clock
+  - morning
+  - unavailable
+  - contiguous
   - arrival
-  - two business days
-  - twelve-dollar surcharge
-  - orders
-  - placed
-  - two o'clock
   - afternoon
-  - local time
-  - ship
-  - same day
-  - later orders
-  - next morning
-  - oversized freight items
-  - destinations
-  - contiguous states
+  - local
+  - later
   key_tokens_wiki:
-  - expedited delivery
-  - promises
+  - guarantees
+  - surcharge
+  - clock
+  - morning
+  - unavailable
+  - contiguous
   - arrival
-  - two business days
-  - twelve-dollar surcharge
-  - order
-  - submitted
-  - two o'clock
   - afternoon
-  - local time
-  - shipped
-  - same day
-  - placed later
-  - dispatched
-  - next morning
-  - faster service
-  - not offered
-  - oversized freight items
-  - addresses
-  - beyond
-  - contiguous states
+  - local
+  - later
   generation_notes: Avoided key terms for expedited delivery and shipping timelines.
 - paraphrase_id: synonym_swap-004
   paraphrase_type: synonym_swap
   text: Which locations does Acme Shop deliver to?
   gold_docs_section_id: international_shipping.md#supported-countries
   key_tokens_docs:
-  - ships
-  - supported countries
-  - destinations
-  - landed cost
-  - checkout
-  - delivery
+  - canada
+  - kingdom
+  - european
+  - union
+  - australia
+  - japan
+  - countries
+  - expands
+  - periodically
+  - display
   key_tokens_wiki:
-  - ships
-  - supported countries
-  - destinations
-  - landed cost
-  - checkout
-  - shipment
+  - canada
+  - kingdom
+  - european
+  - union
+  - australia
+  - japan
+  - countries
+  - expands
+  - periodically
+  - display
   generation_notes: focused on the locations for delivery
 - paraphrase_id: synonym_swap-005
   paraphrase_type: synonym_swap
@@ -128,42 +126,27 @@ paraphrases:
     details?
   gold_docs_section_id: payment_methods.md#failed-payments
   key_tokens_docs:
-  - payment
-  - declined
-  - order
+  - held
   - pending
-  - twenty-four hours
+  - state
   - update
-  - card
-  - losing
-  - cart
-  - cancelled
-  - authorisation hold
+  - common
+  - decline
   - reasons
-  - security code
-  - expired card
-  - address
-  - match
-  - bank's records
+  - incorrect
+  - expired
+  - records
   key_tokens_wiki:
-  - payment
-  - declined
-  - order
+  - held
   - pending
-  - twenty-four hours
-  - shopper
+  - state
   - update
-  - card
-  - losing
-  - cart
-  - cancelled
-  - authorisation hold
+  - common
+  - decline
   - reasons
-  - security code
-  - expired card
-  - address
-  - match
-  - bank's records
+  - incorrect
+  - expired
+  - records
   generation_notes: 'targeted sub-fact: details on rejected payments and time frame
     for updates.'
 - paraphrase_id: synonym_swap-006
@@ -172,23 +155,27 @@ paraphrases:
     I need to verify my identity again?
   gold_docs_section_id: account_security.md#two-factor-authentication
   key_tokens_docs:
-  - two-factor authentication
-  - security section
-  - profile settings
-  - authenticator app
-  - code sent by text message
-  - new device
-  - trusted device
-  - routine sign-ins
+  - enable
+  - authentication
+  - choosing
+  - authenticator
+  - app
+  - text
+  - enabled
+  - required
+  - routine
+  - ins
   key_tokens_wiki:
-  - two-factor authentication
-  - security section
-  - profile settings
-  - authenticator app
-  - code sent by text message
-  - new device
-  - trusted device
-  - routine sign-ins
+  - enable
+  - authentication
+  - choosing
+  - authenticator
+  - app
+  - text
+  - enabled
+  - required
+  - routine
+  - ins
   generation_notes: Synonyms used for key terms like 'enable', 'security', and 'verify'.
 - paraphrase_id: synonym_swap-007
   paraphrase_type: synonym_swap
@@ -199,28 +186,24 @@ paraphrases:
   - paused
   - skipped
   - rescheduled
-  - subscriptions tab
-  - changes
-  - scheduled charge
-  - cancelling
+  - subscriptions
+  - tab
+  - made
   - stops
-  - future charges
-  - refund
-  - shipment
-  - billed
+  - changes
+  - scheduled
+  - effect
   key_tokens_wiki:
   - paused
   - skipped
   - rescheduled
-  - subscriptions tab
-  - changes
-  - scheduled charge
-  - cancelling
+  - subscriptions
+  - tab
+  - made
   - stops
-  - future charges
-  - reimbursement
-  - shipment
-  - billed
+  - changes
+  - scheduled
+  - effect
   generation_notes: Focused on options for adjusting the subscription and the timing
     of those adjustments.
 - paraphrase_id: synonym_swap-008
@@ -228,23 +211,27 @@ paraphrases:
   text: How quickly can I set aside something online and pick it up at the shop?
   gold_docs_section_id: store_pickup.md#buy-online-pick-up-in-store
   key_tokens_docs:
-  - available for pickup
-  - reserved online
-  - collected from a chosen store
-  - ready within two hours
-  - order page
-  - ready-for-pickup status
-  - sends an email
-  - waiting at the counter
+  - marked
+  - reserved
+  - online
+  - chosen
+  - ready
+  - opening
+  - sends
+  - waiting
+  - counter
+  - pickup
   key_tokens_wiki:
-  - available for pickup
-  - reserved online
-  - collected from a chosen store
-  - ready in under two hours
-  - order page
-  - ready-for-pickup status
-  - sends an email
-  - products are waiting at the counter
+  - marked
+  - reserved
+  - online
+  - chosen
+  - ready
+  - opening
+  - sends
+  - waiting
+  - counter
+  - pickup
   generation_notes: Targeting the time frame and process for reserving and picking
     up items.
 - paraphrase_id: word_reorder-001
@@ -253,25 +240,27 @@ paraphrases:
     confirmation email is sent?
   gold_docs_section_id: shipping_options.md#order-tracking
   key_tokens_docs:
-  - tracking number
-  - emailed to the customer
-  - carrier scans the parcel
-  - live tracking status
-  - order history page
-  - customer account
-  - tracking information
-  - twelve hours
-  - shipping confirmation email
+  - generates
+  - tracking
+  - scans
+  - view
+  - populate
+  - also
+  - live
+  - information
+  - emailed
+  - carrier
   key_tokens_wiki:
-  - tracking number
-  - emailed to the customer
-  - carrier scans the parcel
-  - live tracking status
-  - order history page
-  - customer account
-  - tracking details
-  - twelve hours
-  - shipping confirmation email
+  - generates
+  - tracking
+  - scans
+  - view
+  - populate
+  - also
+  - live
+  - information
+  - emailed
+  - carrier
   generation_notes: Recast as an indirect question.
 - paraphrase_id: word_reorder-002
   paraphrase_type: word_reorder
@@ -279,38 +268,54 @@ paraphrases:
     afternoons?
   gold_docs_section_id: shipping_options.md#standard-delivery
   key_tokens_docs:
-  - Standard delivery
-  - free on orders over fifty dollars
-  - three to five business days
-  - continental United States
-  - four-dollar fee
-  - weekend handling
-  - Friday afternoon
-  - processing begins the following Monday
+  - over
+  - fifty
+  - dollars
+  - continental
+  - below
+  - threshold
+  - weekend
+  - handling
+  - friday
+  - monday
   key_tokens_wiki:
-  - Standard shipment
-  - free on orders over fifty dollars
-  - three to five business days
-  - continental United States
-  - four-dollar fee
-  - weekend handling
-  - Friday afternoon
-  - begins processing the following Monday
+  - over
+  - fifty
+  - dollars
+  - continental
+  - below
+  - threshold
+  - weekend
+  - handling
+  - friday
+  - monday
   generation_notes: Recast as an indirect question focusing on processing time.
 - paraphrase_id: word_reorder-003
   paraphrase_type: word_reorder
   text: From which page can customers change the email address tied to their account?
   gold_docs_section_id: account_management.md#update-email-address
   key_tokens_docs:
-  - change
-  - email address
-  - tied to their account
-  - profile settings page
+  - tied
+  - followed
+  - previous
+  - continues
+  - notifications
+  - submitting
+  - message
+  - takes
+  - effect
+  - verified
   key_tokens_wiki:
-  - change
-  - email address
-  - tied to their account
-  - profile settings page
+  - tied
+  - followed
+  - previous
+  - continues
+  - notifications
+  - submitting
+  - message
+  - takes
+  - effect
+  - verified
   generation_notes: restructured to focus on the page for changing email
 - paraphrase_id: word_reorder-004
   paraphrase_type: word_reorder
@@ -318,15 +323,27 @@ paraphrases:
     account?
   gold_docs_section_id: account_management.md#close-account
   key_tokens_docs:
-  - close account
-  - privacy section
-  - profile settings
+  - permanently
+  - close
+  - privacy
+  - closing
+  - removes
+  - saved
+  - methods
+  - addresses
+  - retained
+  - years
   key_tokens_wiki:
-  - shopper
-  - permanently close
-  - account
-  - privacy section
-  - profile settings
+  - permanently
+  - close
+  - privacy
+  - closing
+  - removes
+  - saved
+  - methods
+  - addresses
+  - retained
+  - years
   generation_notes: restructured as an indirect question
 - paraphrase_id: word_reorder-005
   paraphrase_type: word_reorder
@@ -334,17 +351,27 @@ paraphrases:
     surcharge?
   gold_docs_section_id: shipping_options.md#expedited-delivery
   key_tokens_docs:
-  - expedited delivery
   - guarantees
+  - surcharge
+  - clock
+  - morning
+  - unavailable
+  - contiguous
   - arrival
-  - two business days
-  - twelve-dollar surcharge
+  - afternoon
+  - local
+  - later
   key_tokens_wiki:
-  - expedited delivery
-  - promises
+  - guarantees
+  - surcharge
+  - clock
+  - morning
+  - unavailable
+  - contiguous
   - arrival
-  - two business days
-  - twelve-dollar surcharge
+  - afternoon
+  - local
+  - later
   generation_notes: restructured as a direct question
 - paraphrase_id: word_reorder-006
   paraphrase_type: word_reorder
@@ -352,31 +379,27 @@ paraphrases:
     if an order is cancelled before shipment?
   gold_docs_section_id: payment_methods.md#payment-authorization
   key_tokens_docs:
-  - order
   - authorise
-  - card
-  - order total
-  - capture funds
-  - ship
-  - authorisation hold
-  - released
-  - issuing bank
-  - three to five business days
-  - cancelled
-  - before shipment
+  - funds
+  - issuing
+  - split
+  - shipments
+  - see
+  - several
+  - smaller
+  - we
+  - capture
   key_tokens_wiki:
-  - order
   - authorise
-  - card
-  - order total
-  - capture funds
-  - ship
-  - authorisation hold
-  - released
-  - issuing bank
-  - three to five business days
-  - cancelled
-  - before shipment
+  - funds
+  - issuing
+  - split
+  - shipments
+  - see
+  - several
+  - smaller
+  - we
+  - capture
   generation_notes: Recast as an indirect question.
 - paraphrase_id: word_reorder-007
   paraphrase_type: word_reorder
@@ -385,25 +408,27 @@ paraphrases:
     with each other?
   gold_docs_section_id: promo_codes.md#stacking-rules
   key_tokens_docs:
-  - Promotional codes
+  - codes
   - stacked
-  - percentage-off code
-  - combined
-  - loyalty point redemption
-  - free-shipping code
-  - exception
-  - different parts
-  - total
+  - percentage
+  - loyalty
+  - redemption
+  - discounts
+  - different
+  - parts
+  - promotional
+  - other
   key_tokens_wiki:
-  - Promotional codes
-  - cannot be stacked
-  - percentage-off code
-  - cannot be combined
-  - loyalty point redemption
-  - single percentage-off code
-  - exception
-  - different parts
-  - total
+  - codes
+  - stacked
+  - percentage
+  - loyalty
+  - redemption
+  - discounts
+  - different
+  - parts
+  - promotional
+  - other
   generation_notes: Recast as an indirect question.
 - paraphrase_id: word_reorder-008
   paraphrase_type: word_reorder
@@ -411,25 +436,27 @@ paraphrases:
     entered the packing stage?
   gold_docs_section_id: order_management.md#cancel-an-order
   key_tokens_docs:
-  - order
-  - cancelled
-  - order history page
-  - packing stage
-  - cancel button
-  - refuse delivery
-  - return
-  - multi-item order
-  - partial cancellation
+  - long
+  - cancel
+  - button
+  - disappears
+  - refuse
+  - start
+  - multi
+  - cancels
+  - partial
+  - cancellation
   key_tokens_wiki:
-  - order
-  - cancelled
-  - order history page
-  - packing stage
-  - cancel button
-  - refuse shipment
-  - return
-  - multi-item order
-  - partial cancellation
+  - long
+  - cancel
+  - button
+  - disappears
+  - refuse
+  - start
+  - multi
+  - cancels
+  - partial
+  - cancellation
   generation_notes: Recast as an indirect question, maintaining original key terms.
 - paraphrase_id: verbosity_expansion-001
   paraphrase_type: verbosity_expansion
@@ -439,19 +466,27 @@ paraphrases:
     make sure I have the most accurate information when I'm ready to make my purchase!
   gold_docs_section_id: product_information.md#stock-availability
   key_tokens_docs:
-  - product page
-  - live stock count
-  - low-stock banner
-  - restock waitlist
-  - stock figures refresh
-  - checkout
+  - count
+  - drawn
+  - nearest
+  - fulfilment
+  - centre
+  - fewer
+  - remain
+  - displays
+  - low
+  - banner
   key_tokens_wiki:
-  - product page
-  - live stock count
-  - low-stock banner
-  - restock waitlist
-  - stock figures refresh
-  - checkout
+  - count
+  - drawn
+  - nearest
+  - fulfilment
+  - centre
+  - fewer
+  - remain
+  - displays
+  - low
+  - banner
   generation_notes: Expanded question with casual conversation style.
 - paraphrase_id: verbosity_expansion-002
   paraphrase_type: verbosity_expansion
@@ -463,22 +498,27 @@ paraphrases:
     right? Thanks so much for your help!
   gold_docs_section_id: shipping_options.md#expedited-delivery
   key_tokens_docs:
-  - Expedited delivery
-  - arrival within two business days
-  - twelve-dollar surcharge
-  - orders must be placed before two o'clock
-  - same day
-  - next morning
-  - oversized freight items
-  - contiguous states
+  - guarantees
+  - surcharge
+  - clock
+  - morning
+  - unavailable
+  - contiguous
+  - arrival
+  - afternoon
+  - local
+  - later
   key_tokens_wiki:
-  - Expedited delivery
-  - arrival within two business days
-  - twelve-dollar surcharge
-  - submit before two o'clock
-  - dispatched the next morning
-  - not offered for oversized freight items
-  - addresses beyond the contiguous states
+  - guarantees
+  - surcharge
+  - clock
+  - morning
+  - unavailable
+  - contiguous
+  - arrival
+  - afternoon
+  - local
+  - later
   generation_notes: Expanded the question to include a greeting and context about
     the inquiry.
 - paraphrase_id: verbosity_expansion-003
@@ -492,15 +532,27 @@ paraphrases:
     help!
   gold_docs_section_id: product_information.md#size-guide
   key_tokens_docs:
-  - size guide
-  - measured in inches and centimetres
-  - sizing up for outerwear
-  - sizing down for fitted base layers
+  - apparel
+  - listings
+  - size
+  - guide
+  - measured
+  - inches
+  - centimetres
+  - taken
+  - garment
+  - body
   key_tokens_wiki:
-  - apparel listings
-  - size guide
-  - outerwear
-  - fitted base layers
+  - apparel
+  - listings
+  - size
+  - guide
+  - measured
+  - inches
+  - centimetres
+  - taken
+  - garment
+  - body
   generation_notes: added polite framing and context around the core question about
     the size guide.
 - paraphrase_id: verbosity_expansion-004
@@ -512,21 +564,27 @@ paraphrases:
     how that works. Thanks so much for your help!
   gold_docs_section_id: shipping_options.md#order-tracking
   key_tokens_docs:
-  - tracking number
+  - generates
+  - tracking
+  - scans
+  - view
+  - populate
+  - also
+  - live
+  - information
   - emailed
-  - carrier scans
-  - live tracking status
-  - order history page
-  - twelve hours
-  - shipping confirmation email
+  - carrier
   key_tokens_wiki:
-  - tracking number
+  - generates
+  - tracking
+  - scans
+  - view
+  - populate
+  - also
+  - live
+  - information
   - emailed
-  - carrier scans
-  - live tracking status
-  - order history page
-  - twelve hours
-  - shipping confirmation email
+  - carrier
   generation_notes: added polite framing and background context around the core question
     about tracking number and status
 - paraphrase_id: verbosity_expansion-005
@@ -539,27 +597,27 @@ paraphrases:
     be excluded? Thanks so much for your help!
   gold_docs_section_id: promo_codes.md#applying-a-code
   key_tokens_docs:
-  - promotional code
-  - checkout page
-  - one code
-  - apply per order
-  - fails to apply
-  - minimum order value
-  - category restriction
-  - excluded items
-  - cart
-  key_tokens_wiki:
-  - promotional code
+  - field
+  - per
+  - fails
+  - unmet
+  - minimum
+  - category
+  - restriction
+  - excludes
+  - promotional
   - entered
-  - dedicated field
-  - checkout page
-  - only one code
-  - applied per order
-  - fails to apply
-  - unmet minimum order value
-  - category restriction
-  - excludes products
-  - cart
+  key_tokens_wiki:
+  - field
+  - per
+  - fails
+  - unmet
+  - minimum
+  - category
+  - restriction
+  - excludes
+  - promotional
+  - entered
   generation_notes: Expanded the question to include politeness and context about
     difficulty with the promotional code.
 - paraphrase_id: verbosity_expansion-006
@@ -571,25 +629,27 @@ paraphrases:
     later? Thanks so much for your help!
   gold_docs_section_id: gift_cards.md#redeeming-a-gift-card
   key_tokens_docs:
-  - gift card
+  - entering
+  - pin
+  - above
+  - incur
+  - dormancy
+  - fees
+  - stays
+  - indefinitely
   - balance
-  - checkout
-  - card number
-  - PIN
-  - payment method
-  - expire
-  - dormancy fees
-  - unused balance
+  - charged
   key_tokens_wiki:
-  - gift card
+  - entering
+  - pin
+  - above
+  - incur
+  - dormancy
+  - fees
+  - stays
+  - indefinitely
   - balance
-  - checkout
-  - card number
-  - PIN
-  - payment method
-  - expire
-  - dormancy fees
-  - unused balance
+  - charged
   generation_notes: Expanded with conversational filler and context around the usage
     of a gift card.
 - paraphrase_id: verbosity_expansion-007
@@ -601,33 +661,27 @@ paraphrases:
     to submit a review after receiving my product?
   gold_docs_section_id: product_information.md#product-reviews
   key_tokens_docs:
-  - verified-purchase
+  - reviews
   - badge
   - weighted
-  - average rating
-  - unverified reviews
+  - heavily
+  - average
+  - rating
+  - unverified
+  - review
   - submitted
-  - ninety days
-  - delivery
-  - profanity
-  - personal information
-  - removed
-  - moderation
-  - one business day
+  - containing
   key_tokens_wiki:
-  - verified-purchase
+  - reviews
   - badge
   - weighted
-  - average rating
-  - unverified reviews
+  - heavily
+  - average
+  - rating
+  - unverified
+  - review
   - submitted
-  - ninety days
-  - shipment
-  - profanity
-  - personal information
-  - removed
-  - moderation
-  - under one business day
+  - containing
   generation_notes: Expanded on the question to include personal context and a desire
     for understanding.
 - paraphrase_id: verbosity_expansion-008
@@ -639,49 +693,81 @@ paraphrases:
     Thanks for your help!
   gold_docs_section_id: account_security.md#managing-trusted-devices
   key_tokens_docs:
-  - trusted devices
-  - security section
-  - removed individually
-  - signed out at once
-  - two-factor challenge
+  - devices
+  - appears
+  - individually
+  - signed
+  - forces
+  - challenge
+  - signs
+  - all
+  - out
+  - removing
   key_tokens_wiki:
-  - trusted devices
-  - security section
-  - removed individually
-  - signed out at once
-  - two-factor challenge
+  - devices
+  - appears
+  - individually
+  - signed
+  - forces
+  - challenge
+  - signs
+  - all
+  - out
+  - removing
   generation_notes: Expanded with polite framing and context around device management.
 - paraphrase_id: specificity_narrowing-001
   paraphrase_type: specificity_narrowing
   text: What is the discount percentage applied to subscription orders?
   gold_docs_section_id: subscription_orders.md#setting-up-a-subscription
   key_tokens_docs:
-  - eligible consumable products
-  - recurring subscription
-  - delivery intervals
-  - five percent discount
-  - regular price
-  - recurring shipment
+  - consumable
+  - products
+  - such
+  - filters
+  - batteries
+  - recurring
+  - intervals
+  - sixty
+  - eligible
+  - ninety
   key_tokens_wiki:
-  - eligible consumable products
-  - recurring subscription
-  - shipment intervals
-  - five percent discount
-  - regular price
-  - recurring shipment
+  - consumable
+  - products
+  - such
+  - filters
+  - batteries
+  - recurring
+  - intervals
+  - sixty
+  - eligible
+  - ninety
   generation_notes: targeted sub-fact = subscription orders five percent discount
 - paraphrase_id: specificity_narrowing-002
   paraphrase_type: specificity_narrowing
   text: What happens to the cancel button once the packing stage begins?
   gold_docs_section_id: order_management.md#cancel-an-order
   key_tokens_docs:
-  - cancel button
-  - packing stage
-  - order history page
+  - long
+  - cancel
+  - button
+  - disappears
+  - refuse
+  - start
+  - multi
+  - cancels
+  - partial
+  - cancellation
   key_tokens_wiki:
-  - cancel button
-  - packing stage
-  - order history page
+  - long
+  - cancel
+  - button
+  - disappears
+  - refuse
+  - start
+  - multi
+  - cancels
+  - partial
+  - cancellation
   generation_notes: targeted sub-fact = cancel button disappears after packing begins
 - paraphrase_id: specificity_narrowing-003
   paraphrase_type: specificity_narrowing
@@ -689,40 +775,54 @@ paraphrases:
     and taxes?
   gold_docs_section_id: international_shipping.md#customs-and-duties
   key_tokens_docs:
-  - import duties
-  - taxes
-  - checkout
-  - delivered-duty-paid arrangement
-  - oversized freight
-  - destination customs office
-  - billed separately
+  - import
+  - delivered
+  - duty
+  - paid
+  - arrangement
+  - bills
+  - assessed
+  - office
+  - hard
+  - estimate
   key_tokens_wiki:
-  - import duties
-  - taxes
-  - checkout
-  - delivered-duty-paid arrangement
-  - oversized freight
-  - destination customs office
-  - billed separately
+  - import
+  - delivered
+  - duty
+  - paid
+  - arrangement
+  - bills
+  - assessed
+  - office
+  - hard
+  - estimate
   generation_notes: targeted sub-fact = exception to delivered-duty-paid arrangement
 - paraphrase_id: specificity_narrowing-004
   paraphrase_type: specificity_narrowing
   text: What happens when the stock count for a product reaches zero?
   gold_docs_section_id: product_information.md#stock-availability
   key_tokens_docs:
-  - live stock count
-  - low-stock banner
-  - restock waitlist
-  - emails
-  - inventory returns
-  - refresh every fifteen minutes
+  - count
+  - drawn
+  - nearest
+  - fulfilment
+  - centre
+  - fewer
+  - remain
+  - displays
+  - low
+  - banner
   key_tokens_wiki:
-  - live stock count
-  - low-stock banner
-  - restock waitlist
-  - emails
-  - inventory returns
-  - refresh every fifteen minutes
+  - count
+  - drawn
+  - nearest
+  - fulfilment
+  - centre
+  - fewer
+  - remain
+  - displays
+  - low
+  - banner
   generation_notes: targeted sub-fact = stock count reaches zero
 - paraphrase_id: specificity_narrowing-005
   paraphrase_type: specificity_narrowing
@@ -730,34 +830,54 @@ paraphrases:
     hold to be released by my bank?
   gold_docs_section_id: payment_methods.md#payment-authorization
   key_tokens_docs:
-  - order
   - authorise
+  - funds
+  - issuing
+  - split
+  - shipments
+  - see
+  - several
+  - smaller
+  - we
   - capture
-  - cancellation
-  - three to five business days
   key_tokens_wiki:
-  - order
   - authorise
+  - funds
+  - issuing
+  - split
+  - shipments
+  - see
+  - several
+  - smaller
+  - we
   - capture
-  - cancellation
-  - three to five business days
   generation_notes: targeted sub-fact = order cancellation + 3-5 business days
 - paraphrase_id: specificity_narrowing-006
   paraphrase_type: specificity_narrowing
   text: What are the three most common reasons for a payment decline?
   gold_docs_section_id: payment_methods.md#failed-payments
   key_tokens_docs:
-  - payment
-  - declined
+  - held
   - pending
+  - state
+  - update
   - common
+  - decline
   - reasons
+  - incorrect
+  - expired
+  - records
   key_tokens_wiki:
-  - payment
-  - declined
+  - held
   - pending
+  - state
+  - update
   - common
+  - decline
   - reasons
+  - incorrect
+  - expired
+  - records
   generation_notes: targeted sub-fact = common decline reasons
 - paraphrase_id: specificity_narrowing-007
   paraphrase_type: specificity_narrowing
@@ -765,15 +885,27 @@ paraphrases:
     a returned item?
   gold_docs_section_id: returns_policy.md#refund-processing-time
   key_tokens_docs:
-  - returned item
-  - inspection team
+  - warehouse
+  - inspection
+  - team
   - verifies
-  - two business days
+  - condition
+  - refunds
+  - paying
+  - transfer
+  - allow
+  - additional
   key_tokens_wiki:
-  - returned product
-  - inspection team
-  - confirms
-  - two business days
+  - warehouse
+  - inspection
+  - team
+  - verifies
+  - condition
+  - refunds
+  - paying
+  - transfer
+  - allow
+  - additional
   generation_notes: targeted sub-fact = inspection time for returned items
 - paraphrase_id: specificity_narrowing-008
   paraphrase_type: specificity_narrowing
@@ -781,15 +913,27 @@ paraphrases:
     defect?
   gold_docs_section_id: returns_policy.md#restocking-fee
   key_tokens_docs:
-  - restocking fee
-  - large appliances
-  - fifteen percent
-  - returned without a manufacturing defect
+  - large
+  - appliances
+  - custom
+  - configured
+  - restocking
+  - manufacturing
+  - defect
+  - catalogue
+  - have
+  - electronics
   key_tokens_wiki:
-  - restocking fee
-  - large appliances
-  - fifteen percent
-  - returned without a manufacturing defect
+  - large
+  - appliances
+  - custom
+  - configured
+  - restocking
+  - manufacturing
+  - defect
+  - catalogue
+  - have
+  - electronics
   generation_notes: targeted sub-fact = large appliances +15% restocking fee
 - paraphrase_id: implicit_reference-001
   paraphrase_type: implicit_reference
@@ -797,223 +941,270 @@ paraphrases:
     list?
   gold_docs_section_id: price_matching.md#price-match-eligibility
   key_tokens_docs:
-  - Acme Shop
-  - matches
-  - lower advertised price
-  - identical in-stock item
-  - approved major retailers
-  - sold and shipped by the retailer
-  - third-party marketplace seller
-  - general public
-  - members-only
-  - clearance price
+  - lower
+  - advertised
+  - identical
+  - short
+  - retailers
+  - competing
+  - sold
+  - shipped
+  - retailer
+  - third
   key_tokens_wiki:
-  - Acme Shop
-  - matches
-  - lower advertised price
-  - identical in-stock product
-  - approved major retailers
-  - sold and shipped by the retailer
-  - third-party marketplace seller
-  - general public
-  - members-only
-  - clearance price
+  - lower
+  - advertised
+  - identical
+  - short
+  - retailers
+  - competing
+  - sold
+  - shipped
+  - retailer
+  - third
   generation_notes: stripped subject = price match eligibility
 - paraphrase_id: implicit_reference-002
   paraphrase_type: implicit_reference
   text: How do I get the difference refunded if I find a lower price?
   gold_docs_section_id: price_matching.md#requesting-a-price-match
   key_tokens_docs:
-  - price match
-  - fourteen days
-  - competitor's listing
-  - approved match
+  - competitor
+  - listing
   - refunded
   - difference
-  - original payment method
   - limited
-  - three approved price matches
-  - thirty-day period
-  - discourage reselling
+  - discourage
+  - reselling
+  - match
+  - requested
+  - fourteen
   key_tokens_wiki:
-  - price match
-  - fourteen days
-  - order
-  - competitor's listing
-  - approved match
+  - competitor
+  - listing
   - refunded
   - difference
-  - original payment method
-  - shopper
   - limited
-  - three approved price matches
-  - thirty-day period
-  - discourage reselling
+  - discourage
+  - reselling
+  - match
+  - requested
+  - fourteen
   generation_notes: stripped subject = price match
 - paraphrase_id: implicit_reference-003
   paraphrase_type: implicit_reference
   text: How do I use the balance at checkout if it’s not enough to cover the total?
   gold_docs_section_id: gift_cards.md#redeeming-a-gift-card
   key_tokens_docs:
-  - gift card balance
-  - checkout
-  - entering the card number and PIN
-  - order total
-  - second payment method
+  - entering
+  - pin
+  - above
+  - incur
+  - dormancy
+  - fees
+  - stays
+  - indefinitely
+  - balance
+  - charged
   key_tokens_wiki:
-  - gift card balance
-  - applied at checkout
-  - card number
-  - PIN
-  - order total
-  - second payment method
+  - entering
+  - pin
+  - above
+  - incur
+  - dormancy
+  - fees
+  - stays
+  - indefinitely
+  - balance
+  - charged
   generation_notes: stripped subject = gift card
 - paraphrase_id: implicit_reference-004
   paraphrase_type: implicit_reference
   text: Can different types of discounts be used together on an order?
   gold_docs_section_id: promo_codes.md#stacking-rules
   key_tokens_docs:
-  - Promotional codes
-  - cannot be stacked
-  - percentage-off code
-  - loyalty point redemption
-  - free-shipping code
-  - combined
-  - different parts
+  - codes
+  - stacked
+  - percentage
+  - loyalty
+  - redemption
+  - discounts
+  - different
+  - parts
+  - promotional
+  - other
   key_tokens_wiki:
-  - Promotional codes
-  - cannot be stacked
-  - percentage-off code
-  - loyalty point redemption
-  - free-shipping code
-  - combined
-  - different parts
+  - codes
+  - stacked
+  - percentage
+  - loyalty
+  - redemption
+  - discounts
+  - different
+  - parts
+  - promotional
+  - other
   generation_notes: stripped subject = promotional codes
 - paraphrase_id: implicit_reference-005
   paraphrase_type: implicit_reference
   text: What happens to saved payment methods and order history when it's closed?
   gold_docs_section_id: account_management.md#close-account
   key_tokens_docs:
-  - close account
-  - privacy section
-  - saved payment methods
-  - shipping addresses
-  - order history
-  - seven years
-  - tax and warranty obligations
+  - permanently
+  - close
+  - privacy
+  - closing
+  - removes
+  - saved
+  - methods
+  - addresses
+  - retained
+  - years
   key_tokens_wiki:
-  - close account
-  - privacy section
-  - saved payment methods
-  - delivery addresses
-  - order history
-  - seven years
-  - tax and warranty obligations
+  - permanently
+  - close
+  - privacy
+  - closing
+  - removes
+  - saved
+  - methods
+  - addresses
+  - retained
+  - years
   generation_notes: stripped subject = account
 - paraphrase_id: implicit_reference-006
   paraphrase_type: implicit_reference
   text: How long will it take for the refund to show up after the item is returned?
   gold_docs_section_id: returns_policy.md#refund-processing-time
   key_tokens_docs:
-  - returned item
-  - warehouse
-  - inspection team
-  - approved refunds
-  - original payment method
-  - business days
-  - contact support
-  key_tokens_wiki:
-  - returned product
   - warehouse
   - inspection
-  - approved refunds
-  - original payment method
-  - business days
-  - reach out to support
+  - team
+  - verifies
+  - condition
+  - refunds
+  - paying
+  - transfer
+  - allow
+  - additional
+  key_tokens_wiki:
+  - warehouse
+  - inspection
+  - team
+  - verifies
+  - condition
+  - refunds
+  - paying
+  - transfer
+  - allow
+  - additional
   generation_notes: stripped subject = refund
 - paraphrase_id: implicit_reference-007
   paraphrase_type: implicit_reference
   text: Which countries can receive shipments?
   gold_docs_section_id: international_shipping.md#supported-countries
   key_tokens_docs:
-  - Acme Shop
-  - ships
-  - Canada
-  - United Kingdom
-  - European Union
-  - Australia
-  - Japan
-  - supported countries
-  - landed cost
-  - checkout
-  - delivery
+  - canada
+  - kingdom
+  - european
+  - union
+  - australia
+  - japan
+  - countries
+  - expands
+  - periodically
+  - display
   key_tokens_wiki:
-  - Acme Shop
-  - ships
-  - Canada
-  - United Kingdom
-  - European Union
-  - Australia
-  - Japan
-  - supported countries
-  - landed cost
-  - checkout
-  - shipment
+  - canada
+  - kingdom
+  - european
+  - union
+  - australia
+  - japan
+  - countries
+  - expands
+  - periodically
+  - display
   generation_notes: stripped subject = countries
 - paraphrase_id: implicit_reference-008
   paraphrase_type: implicit_reference
   text: What happens if I try to return something after 30 days?
   gold_docs_section_id: returns_policy.md#return-window
   key_tokens_docs:
-  - return
-  - items
-  - full refund
-  - 30 days
-  - original packaging
-  - original receipt
-  - store credit
+  - accompanied
+  - handled
+  - case
+  - basis
+  - cash
+  - most
+  - full
+  - its
+  - packaging
+  - receipt
   key_tokens_wiki:
-  - products
-  - thirty days
-  - complete refund
-  - unused
-  - original packaging
-  - original receipt
-  - store credit
+  - accompanied
+  - handled
+  - case
+  - basis
+  - cash
+  - most
+  - full
+  - its
+  - packaging
+  - receipt
   generation_notes: stripped subject = item
 - paraphrase_id: typo_fatfinger-001
   paraphrase_type: typo_fatfinger
   text: How lnog do I have to retrun an item for a refnud?
   gold_docs_section_id: returns_policy.md#return-window
   key_tokens_docs:
-  - return
-  - days
-  - refund
+  - accompanied
+  - handled
+  - case
+  - basis
+  - cash
+  - most
+  - full
+  - its
   - packaging
   - receipt
   key_tokens_wiki:
-  - thirty
-  - refund
+  - accompanied
+  - handled
+  - case
+  - basis
+  - cash
+  - most
+  - full
+  - its
   - packaging
   - receipt
-  - unused
   generation_notes: 'hand-written probe; typos: long->lnog return->retrun refund->refnud'
 - paraphrase_id: typo_fatfinger-002
   paraphrase_type: typo_fatfinger
   text: What does expedietd shippng cost and how fsat is it?
   gold_docs_section_id: shipping_options.md#expedited-delivery
   key_tokens_docs:
-  - expedited
-  - delivery
+  - guarantees
   - surcharge
-  - business
-  - days
+  - clock
+  - morning
+  - unavailable
+  - contiguous
+  - arrival
+  - afternoon
+  - local
+  - later
   key_tokens_wiki:
-  - expedited
-  - delivery
+  - guarantees
   - surcharge
-  - business
-  - dollar
+  - clock
+  - morning
+  - unavailable
+  - contiguous
+  - arrival
+  - afternoon
+  - local
+  - later
   generation_notes: 'hand-written probe; typos: expedited->expedietd shipping->shippng
     fast->fsat'
 - paraphrase_id: typo_fatfinger-003
@@ -1021,34 +1212,54 @@ paraphrases:
   text: How do I rest my passwrod if I forgto it?
   gold_docs_section_id: account_management.md#password-reset
   key_tokens_docs:
-  - password
   - reset
-  - link
-  - email
+  - forgotten
+  - forgot
+  - screen
+  - enter
+  - valid
+  - lets
+  - contain
   - characters
+  - symbol
   key_tokens_wiki:
-  - password
   - reset
-  - link
-  - email
+  - forgotten
+  - forgot
+  - screen
+  - enter
+  - valid
+  - lets
+  - contain
   - characters
+  - symbol
   generation_notes: 'hand-written probe; typos: reset->rest password->passwrod forgot->forgto'
 - paraphrase_id: typo_fatfinger-004
   paraphrase_type: typo_fatfinger
   text: Where is my trakcing nubmer for the parcle?
   gold_docs_section_id: shipping_options.md#order-tracking
   key_tokens_docs:
+  - generates
   - tracking
-  - number
+  - scans
+  - view
+  - populate
+  - also
+  - live
+  - information
+  - emailed
   - carrier
-  - parcel
-  - account
   key_tokens_wiki:
+  - generates
   - tracking
-  - number
+  - scans
+  - view
+  - populate
+  - also
+  - live
+  - information
+  - emailed
   - carrier
-  - parcel
-  - history
   generation_notes: 'hand-written probe; typos: tracking->trakcing number->nubmer
     parcel->parcle'
 - paraphrase_id: typo_fatfinger-005
@@ -1056,17 +1267,27 @@ paraphrases:
   text: Why was my paymnet declind at chekout?
   gold_docs_section_id: payment_methods.md#failed-payments
   key_tokens_docs:
-  - payment
-  - declined
+  - held
   - pending
-  - card
+  - state
+  - update
+  - common
+  - decline
+  - reasons
+  - incorrect
   - expired
+  - records
   key_tokens_wiki:
-  - payment
-  - declined
+  - held
   - pending
-  - card
+  - state
+  - update
+  - common
+  - decline
+  - reasons
+  - incorrect
   - expired
+  - records
   generation_notes: 'hand-written probe; typos: payment->paymnet declined->declind
     checkout->chekout'
 - paraphrase_id: industry_jargon-001
@@ -1074,68 +1295,108 @@ paraphrases:
   text: What's the RMA window for a full refund?
   gold_docs_section_id: returns_policy.md#return-window
   key_tokens_docs:
-  - return
-  - days
-  - refund
+  - accompanied
+  - handled
+  - case
+  - basis
+  - cash
+  - most
+  - full
+  - its
   - packaging
   - receipt
   key_tokens_wiki:
-  - thirty
-  - refund
+  - accompanied
+  - handled
+  - case
+  - basis
+  - cash
+  - most
+  - full
+  - its
   - packaging
   - receipt
-  - unused
   generation_notes: 'hand-written probe; jargon: RMA = return merchandise authorization'
 - paraphrase_id: industry_jargon-002
   paraphrase_type: industry_jargon
   text: Is duty handled DDP for cross-border orders?
   gold_docs_section_id: international_shipping.md#customs-and-duties
   key_tokens_docs:
-  - duties
-  - taxes
-  - checkout
-  - carrier
-  - freight
+  - import
+  - delivered
+  - duty
+  - paid
+  - arrangement
+  - bills
+  - assessed
+  - office
+  - hard
+  - estimate
   key_tokens_wiki:
-  - duties
-  - taxes
-  - checkout
-  - carrier
-  - freight
+  - import
+  - delivered
+  - duty
+  - paid
+  - arrangement
+  - bills
+  - assessed
+  - office
+  - hard
+  - estimate
   generation_notes: 'hand-written probe; jargon: DDP = delivered duty paid'
 - paraphrase_id: industry_jargon-003
   paraphrase_type: industry_jargon
   text: Is BOPIS available and how soon is the order ready?
   gold_docs_section_id: store_pickup.md#buy-online-pick-up-in-store
   key_tokens_docs:
-  - pickup
+  - marked
   - reserved
-  - store
-  - hours
+  - online
+  - chosen
+  - ready
+  - opening
+  - sends
+  - waiting
   - counter
+  - pickup
   key_tokens_wiki:
-  - pickup
+  - marked
   - reserved
-  - store
-  - hours
+  - online
+  - chosen
+  - ready
+  - opening
+  - sends
+  - waiting
   - counter
+  - pickup
   generation_notes: 'hand-written probe; jargon: BOPIS = buy online pick up in store'
 - paraphrase_id: industry_jargon-004
   paraphrase_type: industry_jargon
   text: Do you support 2FA via TOTP or SMS OTP?
   gold_docs_section_id: account_security.md#two-factor-authentication
   key_tokens_docs:
+  - enable
   - authentication
+  - choosing
   - authenticator
-  - code
-  - device
-  - factor
+  - app
+  - text
+  - enabled
+  - required
+  - routine
+  - ins
   key_tokens_wiki:
+  - enable
   - authentication
+  - choosing
   - authenticator
-  - code
-  - device
-  - factor
+  - app
+  - text
+  - enabled
+  - required
+  - routine
+  - ins
   generation_notes: 'hand-written probe; jargon: 2FA/TOTP/OTP = two-factor authentication
     codes'
 - paraphrase_id: industry_jargon-005
@@ -1143,16 +1404,26 @@ paraphrases:
   text: When does the auth hold drop if I void before fulfilment?
   gold_docs_section_id: payment_methods.md#payment-authorization
   key_tokens_docs:
-  - authorisation
-  - hold
+  - authorise
+  - funds
+  - issuing
+  - split
+  - shipments
+  - see
+  - several
+  - smaller
+  - we
   - capture
-  - cancelled
-  - shipment
   key_tokens_wiki:
-  - authorisation
-  - hold
+  - authorise
+  - funds
+  - issuing
+  - split
+  - shipments
+  - see
+  - several
+  - smaller
+  - we
   - capture
-  - cancelled
-  - shipment
   generation_notes: 'hand-written probe; jargon: auth hold / void = authorization
     release pre-capture'

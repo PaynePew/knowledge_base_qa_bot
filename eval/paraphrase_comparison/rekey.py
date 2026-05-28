@@ -20,15 +20,17 @@ prints a brief summary. It can also be called programmatically in tests via
 from __future__ import annotations
 
 import argparse
+import datetime
+import subprocess
 import sys
 from dataclasses import replace
 from pathlib import Path
 
+import yaml
 from markdown_kb.app.indexer import parse_markdown, slugify
 
 from .generation.qc import build_idf, derive_key_tokens
-from .generate_paraphrases import render_queries_yaml
-from .loader import QUERIES_PATH, load_paraphrases, write_text_atomic
+from .loader import QUERIES_PATH, load_paraphrases, load_metadata, write_text_atomic
 from .models import Paraphrase
 
 _PKG_ROOT = Path(__file__).resolve().parent
@@ -129,12 +131,67 @@ def rekey_queries(
             file=sys.stderr,
         )
 
-    # Re-use the existing YAML renderer; cost_usd is "n/a (offline re-key)" for
-    # this non-LLM pass so the metadata block is honest (issue #104 cost-honesty).
+    # Preserve original metadata, add rekey_pass provenance note (issue #104
+    # cost-honesty: the re-key pass does not call the LLM so cost is n/a).
+    original_meta = load_metadata(queries_path)
     write_text_atomic(
-        queries_path, render_queries_yaml(rekeyed, cost_usd="n/a (offline re-key)")
+        queries_path,
+        _render_rekeyed_yaml(rekeyed, original_meta=original_meta),
     )
     return rekeyed
+
+
+def _corpus_snapshot_sha(pkg_root: Path) -> str:
+    """Return the current git HEAD short sha, or 'unknown' on failure."""
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"], cwd=str(pkg_root), text=True
+        ).strip()
+    except (subprocess.CalledProcessError, OSError):
+        return "unknown"
+
+
+def _render_rekeyed_yaml(
+    paraphrases: list[Paraphrase],
+    *,
+    original_meta: dict,
+) -> str:
+    """Render queries.yaml after a re-key pass.
+
+    Preserves original generation metadata (generator_model, seed, temperature,
+    prompt_template_version) and overwrites the dynamic fields (generated_at,
+    corpus_snapshot_git_sha, total, cost_usd) to reflect the re-key pass.
+    A ``key_tokens_source`` field is added to record that Key Tokens are now
+    derived from corpus IDF rather than the LLM — provenance for reviewers.
+    """
+    metadata = {
+        **original_meta,
+        "generated_at": datetime.datetime.now(datetime.UTC).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        ),
+        "corpus_snapshot_git_sha": _corpus_snapshot_sha(_PKG_ROOT),
+        "total": len(paraphrases),
+        "cost_usd": "n/a (offline re-key)",
+        "key_tokens_source": "deterministic corpus IDF (issue #139)",
+    }
+    entries = [
+        {
+            "paraphrase_id": p.paraphrase_id,
+            "paraphrase_type": p.paraphrase_type,
+            "text": p.text,
+            "gold_docs_section_id": p.gold_docs_section_id,
+            "key_tokens_docs": list(p.key_tokens_docs),
+            "key_tokens_wiki": list(p.key_tokens_wiki),
+            **({"generation_notes": p.generation_notes} if p.generation_notes else {}),
+        }
+        for p in paraphrases
+    ]
+    return yaml.dump(
+        {"metadata": metadata, "paraphrases": entries},
+        sort_keys=False,
+        default_flow_style=False,
+        allow_unicode=True,
+    )
 
 
 # ---------------------------------------------------------------------------
