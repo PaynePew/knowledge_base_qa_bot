@@ -1,0 +1,175 @@
+# Gold Section inventory for Phase 8 Paraphrase generation (PRD #100, issue #102).
+#
+# The committed source of truth the generator's deterministic sampler reads
+# (generation/sampling.py). One entry per docs Gold Section eligible to source a
+# Paraphrase — i.e. every concept-type section. The single entity Source
+# (warranty.md -> wiki/entities/acme-shop.md) is deliberately ABSENT: entity
+# pages are excluded as Paraphrase sources (CONTEXT.md § Phase 8 > Gold Section).
+#
+# `concept_slug` is the 1:1 concept Wiki Page slug `/ingest` synthesised for the
+# section (= slugify(heading)). `multi_sub_fact: true` marks a section carrying
+# several distinct retrievable facts, so a `specificity_narrowing` Paraphrase can
+# narrow to one high-distinctiveness sub-fact. Only those sections are sampled
+# for specificity_narrowing (sampling.sample_sections(multi_sub_fact_only=True)).
+#
+# Stats: 42 sections; 15 multi-sub-fact (~36%, inside the 30-40% target band).
+#
+# This file is hand-maintained alongside the corpus; if a corpus section's fact
+# count changes, update its `multi_sub_fact` flag here in the same commit.
+
+gold_sections:
+  # --- returns_policy.md ---
+  - section_id: returns_policy.md#return-window
+    concept_slug: return-window
+    multi_sub_fact: true
+  - section_id: returns_policy.md#refund-processing-time
+    concept_slug: refund-processing-time
+    multi_sub_fact: true
+  - section_id: returns_policy.md#restocking-fee
+    concept_slug: restocking-fee
+    multi_sub_fact: true
+
+  # --- shipping_options.md ---
+  - section_id: shipping_options.md#standard-delivery
+    concept_slug: standard-delivery
+    multi_sub_fact: true
+  - section_id: shipping_options.md#expedited-delivery
+    concept_slug: expedited-delivery
+    multi_sub_fact: true
+  - section_id: shipping_options.md#order-tracking
+    concept_slug: order-tracking
+    multi_sub_fact: false
+
+  # --- account_management.md ---
+  - section_id: account_management.md#password-reset
+    concept_slug: password-reset
+    multi_sub_fact: false
+  - section_id: account_management.md#update-email-address
+    concept_slug: update-email-address
+    multi_sub_fact: false
+  - section_id: account_management.md#close-account
+    concept_slug: close-account
+    multi_sub_fact: true
+
+  # --- account_security.md ---
+  - section_id: account_security.md#two-factor-authentication
+    concept_slug: two-factor-authentication
+    multi_sub_fact: false
+  - section_id: account_security.md#suspicious-activity
+    concept_slug: suspicious-activity
+    multi_sub_fact: false
+  - section_id: account_security.md#managing-trusted-devices
+    concept_slug: managing-trusted-devices
+    multi_sub_fact: false
+
+  # --- payment_methods.md ---
+  - section_id: payment_methods.md#accepted-cards
+    concept_slug: accepted-cards
+    multi_sub_fact: false
+  - section_id: payment_methods.md#payment-authorization
+    concept_slug: payment-authorization
+    multi_sub_fact: true
+  - section_id: payment_methods.md#failed-payments
+    concept_slug: failed-payments
+    multi_sub_fact: true
+
+  # --- loyalty_program.md ---
+  - section_id: loyalty_program.md#earning-points
+    concept_slug: earning-points
+    multi_sub_fact: true
+  - section_id: loyalty_program.md#redeeming-points
+    concept_slug: redeeming-points
+    multi_sub_fact: true
+  - section_id: loyalty_program.md#membership-tiers
+    concept_slug: membership-tiers
+    multi_sub_fact: true
+
+  # --- order_management.md ---
+  - section_id: order_management.md#cancel-an-order
+    concept_slug: cancel-an-order
+    multi_sub_fact: true
+  - section_id: order_management.md#change-shipping-address
+    concept_slug: change-shipping-address
+    multi_sub_fact: false
+  - section_id: order_management.md#combine-orders
+    concept_slug: combine-orders
+    multi_sub_fact: false
+  - section_id: order_management.md#backordered-items
+    concept_slug: backordered-items
+    multi_sub_fact: false
+
+  # --- product_information.md ---
+  - section_id: product_information.md#stock-availability
+    concept_slug: stock-availability
+    multi_sub_fact: true
+  - section_id: product_information.md#product-reviews
+    concept_slug: product-reviews
+    multi_sub_fact: false
+  - section_id: product_information.md#size-guide
+    concept_slug: size-guide
+    multi_sub_fact: false
+
+  # --- gift_cards.md ---
+  - section_id: gift_cards.md#purchase-and-delivery
+    concept_slug: purchase-and-delivery
+    multi_sub_fact: false
+  - section_id: gift_cards.md#redeeming-a-gift-card
+    concept_slug: redeeming-a-gift-card
+    multi_sub_fact: false
+  - section_id: gift_cards.md#lost-gift-cards
+    concept_slug: lost-gift-cards
+    multi_sub_fact: false
+
+  # --- international_shipping.md ---
+  - section_id: international_shipping.md#supported-countries
+    concept_slug: supported-countries
+    multi_sub_fact: false
+  - section_id: international_shipping.md#customs-and-duties
+    concept_slug: customs-and-duties
+    multi_sub_fact: true
+  - section_id: international_shipping.md#international-delivery-times
+    concept_slug: international-delivery-times
+    multi_sub_fact: false
+
+  # --- subscription_orders.md ---
+  - section_id: subscription_orders.md#setting-up-a-subscription
+    concept_slug: setting-up-a-subscription
+    multi_sub_fact: true
+  - section_id: subscription_orders.md#managing-a-subscription
+    concept_slug: managing-a-subscription
+    multi_sub_fact: false
+  - section_id: subscription_orders.md#subscription-pricing-changes
+    concept_slug: subscription-pricing-changes
+    multi_sub_fact: false
+
+  # --- price_matching.md ---
+  - section_id: price_matching.md#price-match-eligibility
+    concept_slug: price-match-eligibility
+    multi_sub_fact: false
+  - section_id: price_matching.md#requesting-a-price-match
+    concept_slug: requesting-a-price-match
+    multi_sub_fact: false
+
+  # --- promo_codes.md ---
+  - section_id: promo_codes.md#applying-a-code
+    concept_slug: applying-a-code
+    multi_sub_fact: false
+  - section_id: promo_codes.md#stacking-rules
+    concept_slug: stacking-rules
+    multi_sub_fact: false
+
+  # --- store_pickup.md ---
+  - section_id: store_pickup.md#buy-online-pick-up-in-store
+    concept_slug: buy-online-pick-up-in-store
+    multi_sub_fact: false
+  - section_id: store_pickup.md#pickup-identification
+    concept_slug: pickup-identification
+    multi_sub_fact: false
+
+  # --- damaged_items.md ---
+  - section_id: damaged_items.md#reporting-damage
+    concept_slug: reporting-damage
+    multi_sub_fact: false
+  - section_id: damaged_items.md#replacement-process
+    concept_slug: replacement-process
+    multi_sub_fact: false
