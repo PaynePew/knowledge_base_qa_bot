@@ -25,6 +25,7 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import matplotlib
 
@@ -34,7 +35,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402  (must follow the backend selection)
 
 from .models import CORE_PARAPHRASE_TYPES, PROBE_PARAPHRASE_TYPES
-from .runner import StackScores
+
+if TYPE_CHECKING:
+    # Import only for type-checking: runner imports charts at runtime, so a
+    # runtime import here would be circular. `from __future__ import annotations`
+    # keeps the StackScores annotations as strings, so no runtime import needed.
+    from .runner import StackScores
 
 _PKG_ROOT = Path(__file__).resolve().parent
 CHARTS_DIR = _PKG_ROOT / "charts"
