@@ -4,6 +4,10 @@ Phase 9 Slice 1 — AC: "The SSE serializer is a pure function covered by
 hermetic unit tests; the event sequence is covered by an endpoint test with
 a mocked LLM (no OPENAI_API_KEY)."
 
+Phase 9 Slice 2 — AC: status event (between sources and first token), terminal
+error event (post-sources LLM failure, no done follows), and uniform Cannot
+Confirm for all five reasons (sources → token(phrase) → done{passed:false}).
+
 Tests assert the SSE event sequence:
   sources (non-empty, Wiki source shape) → token(s) → done{passed, reason}
 
@@ -21,6 +25,7 @@ import markdown_kb.app.indexer as _indexer
 import markdown_kb.app.logger as _logger
 import markdown_kb.app.retrieval as _retrieval
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from markdown_kb.app.grounding import GroundingClaim, GroundingOutcome, GroundingResult
 from markdown_kb.app.retrieval import CANNOT_CONFIRM_PHRASE
@@ -143,7 +148,12 @@ def _parse_sse_response(content: str) -> list[dict]:
 
 
 def test_chat_stream_wiki_event_order(gateway_client):
-    """POST /chat/stream?stack=wiki emits: sources, then token(s), then done."""
+    """POST /chat/stream?stack=wiki emits: sources → status → token(s) → done.
+
+    Phase 9 Slice 2 adds a ``status`` event between sources and the first token
+    (liveness signal during the draft+verify gap). The event order is:
+      sources, status, token(s)..., done.
+    """
     resp = gateway_client.post(
         "/chat/stream?stack=wiki",
         json={"query": "What is the refund policy?"},
@@ -156,7 +166,12 @@ def test_chat_stream_wiki_event_order(gateway_client):
 
     assert types[0] == "sources", f"Expected first event to be 'sources', got {types[0]!r}"
     assert types[-1] == "done", f"Expected last event to be 'done', got {types[-1]!r}"
-    assert all(t == "token" for t in types[1:-1]), f"Middle events should all be 'token': {types}"
+    # Middle events: one status followed by token(s).
+    middle = types[1:-1]
+    assert middle[0] == "status", f"First middle event must be 'status': {types}"
+    assert all(t == "token" for t in middle[1:]), (
+        f"All events after status must be 'token': {types}"
+    )
 
 
 def test_chat_stream_sources_event_non_empty(gateway_client):
@@ -273,3 +288,231 @@ def test_chat_stream_rag_stack_returns_501(gateway_client):
         json={"query": "test"},
     )
     assert resp.status_code == 501
+
+
+# ---------------------------------------------------------------------------
+# Phase 9 Slice 2: status event (AC #1)
+# ---------------------------------------------------------------------------
+
+
+def test_chat_stream_emits_status_event_between_sources_and_tokens(gateway_client):
+    """A status event is emitted between sources and the first token event.
+
+    ADR-0009: the draft+verify gap (4-7s) must emit a liveness signal so the
+    user knows the system has not stalled. The status event carries
+    ``{phase: "verifying"}`` or similar — tests assert position only.
+    """
+    resp = gateway_client.post(
+        "/chat/stream?stack=wiki",
+        json={"query": "What is the refund policy?"},
+    )
+    assert resp.status_code == 200
+    events = _parse_sse_response(resp.text)
+    types = [e["type"] for e in events]
+
+    assert "status" in types, f"Expected a 'status' event in {types}"
+    status_idx = types.index("status")
+    sources_idx = types.index("sources")
+    first_token_idx = next((i for i, t in enumerate(types) if t == "token"), None)
+
+    assert sources_idx < status_idx, "sources must precede status"
+    assert first_token_idx is not None, "Expected at least one token event"
+    assert status_idx < first_token_idx, "status must precede first token"
+
+
+def test_chat_stream_status_event_has_phase_field(gateway_client):
+    """The status event payload carries a ``phase`` field (liveness descriptor)."""
+    resp = gateway_client.post(
+        "/chat/stream?stack=wiki",
+        json={"query": "What is the refund policy?"},
+    )
+    events = _parse_sse_response(resp.text)
+    status_events = [e for e in events if e["type"] == "status"]
+    assert status_events, "Expected at least one status event"
+    assert "phase" in status_events[0]["data"], (
+        f"status event data must contain 'phase': {status_events[0]['data']}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 9 Slice 2: terminal error event after sources (AC #2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def gateway_client_llm_error(indexed_wiki_corpus, monkeypatch):
+    """TestClient where the LLM raises a 503 HTTPException (post-sources error).
+
+    Simulates an LLM/infra failure that occurs after the sources event has
+    already been emitted (HTTP 200 committed). The stream must terminate with
+    a terminal ``error`` event instead of a ``done`` event.
+    """
+
+    def _raise_503(*_args, **_kwargs):
+        raise HTTPException(
+            status_code=503,
+            detail="LLM service temporarily unavailable, please retry.",
+        )
+
+    fake_llm_error = type("_ErrLLM", (), {"invoke": staticmethod(_raise_503)})()
+    monkeypatch.setattr(_retrieval, "_llm", fake_llm_error)
+    monkeypatch.setattr(_retrieval, "get_llm", lambda: fake_llm_error)
+
+    from gateway.app.main import app as _gateway_app
+
+    return TestClient(_gateway_app)
+
+
+def test_post_sources_error_emits_terminal_error_event(
+    gateway_client_llm_error,
+):
+    """An LLM error after sources emits a terminal SSE ``error`` event.
+
+    HTTP 200 has already been committed (sources event sent), so the failure
+    cannot be expressed as an HTTP status code.  The stream must end with an
+    SSE ``error`` event carrying ``{detail, retryable}``.  No ``done`` event
+    follows (ADR-0009).
+    """
+    resp = gateway_client_llm_error.post(
+        "/chat/stream?stack=wiki",
+        json={"query": "What is the refund policy?"},
+    )
+    assert resp.status_code == 200, "HTTP 200 is committed before sources"
+    events = _parse_sse_response(resp.text)
+    types = [e["type"] for e in events]
+
+    # Must start with sources
+    assert types[0] == "sources", f"Expected sources first, got {types[0]!r}"
+    # Must end with error
+    assert types[-1] == "error", f"Expected terminal 'error' event, got {types[-1]!r}"
+    # No done event after error
+    assert "done" not in types, f"'done' must not follow an error event: {types}"
+
+
+def test_post_sources_error_event_has_detail_and_retryable(
+    gateway_client_llm_error,
+):
+    """The terminal error event payload carries ``detail`` and ``retryable`` fields."""
+    resp = gateway_client_llm_error.post(
+        "/chat/stream?stack=wiki",
+        json={"query": "What is the refund policy?"},
+    )
+    events = _parse_sse_response(resp.text)
+    error_event = next((e for e in events if e["type"] == "error"), None)
+    assert error_event is not None, "Expected an error event"
+    data = error_event["data"]
+    assert "detail" in data, f"error event must have 'detail': {data}"
+    assert "retryable" in data, f"error event must have 'retryable': {data}"
+
+
+def test_post_sources_503_error_is_retryable(gateway_client_llm_error):
+    """A 503 (transient) LLM error produces retryable=True in the error event."""
+    resp = gateway_client_llm_error.post(
+        "/chat/stream?stack=wiki",
+        json={"query": "What is the refund policy?"},
+    )
+    events = _parse_sse_response(resp.text)
+    error_event = next((e for e in events if e["type"] == "error"), None)
+    assert error_event is not None
+    assert error_event["data"]["retryable"] is True
+
+
+# ---------------------------------------------------------------------------
+# Phase 9 Slice 2: uniform Cannot Confirm for all 5 reasons (AC #3 + #4)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def gateway_client_cc(indexed_wiki_corpus, monkeypatch, request):
+    """Parametrised fixture: returns a (TestClient, query_text) tuple primed for
+    the requested Cannot Confirm reason.
+
+    Uses request.param to receive the reason string from the parametrize marker.
+    """
+    reason = request.param
+
+    # Import once at fixture setup time (markdown_kb is in sys.modules by then).
+    from gateway.app.main import app as _gateway_app
+
+    if reason == "index_missing":
+        # Clear the section index so _retrieve_and_gate fires index_missing.
+        _indexer.sections.clear()
+        query_text = "any question"
+    elif reason == "retrieval_empty":
+        # Single stop word; BM25 returns [] for stop-word-only queries.
+        query_text = "a"
+    elif reason == "below_threshold":
+        # Gibberish ensures all BM25 scores fall below _SCORE_THRESHOLD (0.5).
+        query_text = "zzzzxxxxxqqqqqwwwwwvvvvv"
+    elif reason == "claim_unsupported":
+        fake_llm = _FakeLLM()
+        monkeypatch.setattr(_retrieval, "_llm", fake_llm)
+        monkeypatch.setattr(_retrieval, "get_llm", lambda: fake_llm)
+        monkeypatch.setattr(
+            _retrieval.grounding_module,
+            "verify",
+            lambda draft, sections: GroundingOutcome(passed=False, reason="claim_unsupported"),
+        )
+        query_text = "What is the refund policy?"
+    elif reason == "verifier_unavailable":
+        fake_llm = _FakeLLM()
+        monkeypatch.setattr(_retrieval, "_llm", fake_llm)
+        monkeypatch.setattr(_retrieval, "get_llm", lambda: fake_llm)
+        monkeypatch.setattr(
+            _retrieval.grounding_module,
+            "verify",
+            lambda draft, sections: GroundingOutcome(passed=False, reason="verifier_unavailable"),
+        )
+        query_text = "What is the refund policy?"
+    else:
+        raise ValueError(f"Unknown CC reason: {reason!r}")
+
+    return TestClient(_gateway_app), query_text
+
+
+@pytest.mark.parametrize(
+    "gateway_client_cc",
+    [
+        "index_missing",
+        "retrieval_empty",
+        "below_threshold",
+        "claim_unsupported",
+        "verifier_unavailable",
+    ],
+    indirect=True,
+)
+def test_cannot_confirm_uniform_event_sequence(gateway_client_cc):
+    """Each CC reason streams: sources → token(phrase) → done{passed:false, reason}.
+
+    No special ``cannot_confirm`` event type is ever emitted (ADR-0009).
+    No filing occurs on any CC path (no ``done.filed`` populated).
+    """
+    client, query_text = gateway_client_cc
+    # Recover the reason from the fixture param via the client — the fixture
+    # stores the reason in the query_text side-band, so we extract it from
+    # the done event instead.
+    resp = client.post("/chat/stream?stack=wiki", json={"query": query_text})
+    events = _parse_sse_response(resp.text)
+    types = [e["type"] for e in events]
+    reason = events[-1]["data"].get("reason", "unknown") if events else "no events"
+
+    # Sequence: sources first, done last, tokens in between
+    assert types[0] == "sources", f"[{reason}] expected sources first: {types}"
+    assert types[-1] == "done", f"[{reason}] expected done last: {types}"
+    # No special event type
+    assert "cannot_confirm" not in types, (
+        f"[{reason}] no cannot_confirm event type (ADR-0009): {types}"
+    )
+    # Token events reconstruct CANNOT_CONFIRM_PHRASE
+    token_texts = [e["data"]["text"] for e in events if e["type"] == "token"]
+    reconstructed = "".join(token_texts)
+    assert reconstructed == CANNOT_CONFIRM_PHRASE, (
+        f"[{reason}] tokens must spell CANNOT_CONFIRM_PHRASE; got: {reconstructed!r}"
+    )
+    # done carries passed=False
+    done_data = events[-1]["data"]
+    assert done_data["passed"] is False, f"[{reason}] done.passed must be False"
+    # No filing on CC paths
+    assert done_data.get("filed") is None, (
+        f"[{reason}] done.filed must be None on CC paths: {done_data['filed']}"
+    )
