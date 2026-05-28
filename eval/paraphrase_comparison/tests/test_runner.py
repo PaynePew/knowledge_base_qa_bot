@@ -1,9 +1,9 @@
 """In-process comparison runner tests (external behaviour only, CODING_STANDARD §0.2).
 
 Asserts that both Retrieval Stacks are driven in one process (no HTTP), that the
-report carries a synonym_swap per-type row (Stack A vs Stack B hit_rate@3), and
-that running the comparison never touches production ``wiki/`` / ``docs/`` /
-``.kb/``.
+report carries a per-type row for ALL seven Paraphrase Types (Stack A vs Stack B
+hit_rate@3), and that running the comparison never touches production ``wiki/`` /
+``docs/`` / ``.kb/``.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ import markdown_kb.app.indexer as mk_indexer
 import vector_rag.app.indexer as vr_indexer
 from eval.paraphrase_comparison import stacks
 from eval.paraphrase_comparison.loader import load_paraphrases
+from eval.paraphrase_comparison.models import PARAPHRASE_TYPES
 from eval.paraphrase_comparison.runner import (
     render_report,
     run_comparison,
@@ -26,27 +27,46 @@ PROD_WIKI_INDEX = REPO_ROOT / "wiki" / "index.md"
 PROD_LOG = REPO_ROOT / "wiki" / "log.md"
 
 
-def test_queries_yaml_holds_synonym_swap_paraphrases():
+def test_queries_yaml_holds_full_seven_type_set():
     paraphrases = load_paraphrases()
-    assert 3 <= len(paraphrases) <= 7
-    assert all(p.paraphrase_type == "synonym_swap" for p in paraphrases)
+    # Full Slice 2 set: ~39-54 Paraphrases across all seven types.
+    assert 39 <= len(paraphrases) <= 54
+    assert {p.paraphrase_type for p in paraphrases} == set(PARAPHRASE_TYPES)
+    ids = [p.paraphrase_id for p in paraphrases]
+    assert len(ids) == len(set(ids)), "paraphrase_id must be unique"
     for p in paraphrases:
         assert p.gold_docs_section_id.count("#") == 1
         assert p.key_tokens_docs
         assert p.key_tokens_wiki
 
 
-def test_run_comparison_produces_synonym_swap_row(tmp_path, fake_vector_index):
+def test_specificity_narrowing_targets_multi_sub_fact_sections():
+    # specificity_narrowing may only target multi-sub-fact Gold Sections; cross-
+    # check each such Paraphrase's gold against the committed inventory's flag.
+    from eval.paraphrase_comparison.generation.sampling import load_gold_sections
+
+    multi = {s.section_id for s in load_gold_sections() if s.multi_sub_fact}
+    spec = [
+        p for p in load_paraphrases() if p.paraphrase_type == "specificity_narrowing"
+    ]
+    assert spec, "expected specificity_narrowing Paraphrases in the set"
+    for p in spec:
+        assert p.gold_docs_section_id in multi
+
+
+def test_run_comparison_produces_a_row_per_type(tmp_path, fake_vector_index):
     report_path = tmp_path / "report.md"
     stack_a, stack_b = run_comparison(report_path=report_path, embedding_mode="fake")
 
-    assert "synonym_swap" in stack_a.by_type
-    assert "synonym_swap" in stack_b.by_type
+    for ptype in PARAPHRASE_TYPES:
+        assert ptype in stack_a.by_type
+        assert ptype in stack_b.by_type
 
     report = report_path.read_text(encoding="utf-8")
     assert "Stack A hit_rate@3" in report
     assert "Stack B hit_rate@3" in report
-    assert "| synonym_swap |" in report
+    for ptype in PARAPHRASE_TYPES:
+        assert f"| {ptype} |" in report
 
 
 def test_both_stacks_run_in_process_and_return_resolved_docs_ids(fake_vector_index):
