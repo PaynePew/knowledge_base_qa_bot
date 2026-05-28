@@ -235,15 +235,28 @@ def test_chat_stream_done_event_passed_true(gateway_client):
     assert done["data"]["stack"] == "wiki"
 
 
-def test_chat_stream_debug_page_loads(gateway_client):
-    """GET / returns the debug HTML page."""
+def test_ui_page_loads(gateway_client):
+    """GET / returns the Gateway UI (production UI — Slice 6 #122).
+
+    Asserts §12 invariants: fetch+ReadableStream (§12.2), textContent-only
+    rendering (§12.4), no EventSource (GET-only — §12.2).
+    """
     resp = gateway_client.get("/")
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
-    # Minimal content checks — textContent usage (§12.4), fetch (§12.2).
+    # §12.2: must use fetch(), not EventSource instantiation.
+    # 'EventSource' may appear in comments (explaining why it is NOT used)
+    # but `new EventSource` must not appear.
     assert "fetch(" in resp.text
+    assert "new EventSource" not in resp.text, "Must not instantiate EventSource (GET-only; §12.2)"
+    # §12.4: LLM/server content via textContent (never innerHTML assignment)
+    # 'innerHTML' may appear in comments/guard strings but must never be an assignment target.
     assert "textContent" in resp.text
-    assert "EventSource" not in resp.text, "Must not use EventSource (GET-only; §12.2)"
+    assert ".innerHTML =" not in resp.text and ".innerHTML=" not in resp.text, (
+        "innerHTML assignment is banned per §12.4"
+    )
+    # §12.2: SSE parser function present (the unit-testable pure fn)
+    assert "createSSEParser" in resp.text
 
 
 # ---------------------------------------------------------------------------
@@ -506,8 +519,7 @@ def test_cannot_confirm_uniform_event_sequence(gateway_client_cc):
     types = [e["type"] for e in events]
     # done.grounding.reason carries the specific CC gate (PRD #116 shape)
     reason = (
-        events[-1]["data"].get("grounding", {}).get("reason", "unknown")
-        if events else "no events"
+        events[-1]["data"].get("grounding", {}).get("reason", "unknown") if events else "no events"
     )
 
     # Sequence: sources first, done last, tokens in between

@@ -47,9 +47,7 @@ def encode_event(event_type: str, data: dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def events_for_result(
-    result: dict[str, Any], *, stack: str | None = None
-) -> list[str]:
+def events_for_result(result: dict[str, Any], *, stack: str | None = None) -> list[str]:
     """Convert a ``query()`` result dict into an ordered list of SSE frames.
 
     Pure function.  Mirrors the verify-then-stream protocol (ADR-0009):
