@@ -75,9 +75,7 @@ def render_charts(
         ("probes", PROBE_PARAPHRASE_TYPES),
     ]
     for family, all_types in families:
-        types = [
-            t for t in all_types if t in stack_a.by_type or t in stack_b.by_type
-        ]
+        types = [t for t in all_types if t in stack_a.by_type or t in stack_b.by_type]
         if not types:
             continue
         written.append(
@@ -183,7 +181,9 @@ def _diverging_delta(
 # ---------------------------------------------------------------------------
 def _savefig_atomic(fig, path: Path) -> Path:
     """Save ``fig`` to ``path`` via tmp + ``os.replace`` (CODING_STANDARD §2.6)."""
-    fd, tmp_name = tempfile.mkstemp(dir=path.parent, suffix=".tmp", prefix=f"{path.stem}_")
+    fd, tmp_name = tempfile.mkstemp(
+        dir=path.parent, suffix=".tmp", prefix=f"{path.stem}_"
+    )
     os.close(fd)  # matplotlib opens the file itself; we only needed a unique name
     try:
         fig.savefig(tmp_name, format="png", dpi=120)

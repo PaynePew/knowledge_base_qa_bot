@@ -78,7 +78,7 @@ _JUDGE_SYSTEM_PROMPT = (
     "You are a strict retrieval-quality judge. You are given a user QUESTION and "
     "a passage of retrieved CONTENT. Decide ONLY whether the CONTENT actually "
     "answers the QUESTION — not whether it is on a vaguely related topic. Reply "
-    "with a JSON object {\"answers\": true|false, \"reasoning\": \"<one sentence>\"}."
+    'with a JSON object {"answers": true|false, "reasoning": "<one sentence>"}.'
 )
 _JUDGE_MAX_TOKENS = 256
 
@@ -254,7 +254,9 @@ def build_spotcheck_subset(
     # qualifies for multiple zones is judged once but counts toward each.
     by_key: dict[tuple[str, str], dict] = {}
 
-    def _add(v: _ParaphraseVerdict, stack: str, item: RetrievedItem, hit: bool, zone: str):
+    def _add(
+        v: _ParaphraseVerdict, stack: str, item: RetrievedItem, hit: bool, zone: str
+    ):
         key = (v.paraphrase.paraphrase_id, stack)
         entry = by_key.setdefault(
             key,
@@ -320,7 +322,8 @@ def _control_items(
     """
     rng = random.Random(seed)
     clear_hits = [
-        v for v in verdicts
+        v
+        for v in verdicts
         if v.b_item is not None and v.b_hit and v.b_overlap > marginal_threshold
     ]
     clear_misses = [v for v in verdicts if v.b_item is not None and not v.b_hit]
@@ -465,7 +468,7 @@ def _judge_one(client, judge_model: str, item: SpotcheckItem) -> JudgeVerdict:
     user = (
         f"QUESTION:\n{item.query}\n\n"
         f"CONTENT:\n{item.content}\n\n"
-        'Does the CONTENT answer the QUESTION? Reply with the JSON object only.'
+        "Does the CONTENT answer the QUESTION? Reply with the JSON object only."
     )
     response = client.messages.create(
         model=judge_model,
@@ -508,4 +511,6 @@ def _parse_verdict(text: str) -> JudgeVerdict:
             reasoning=str(data.get("reasoning", "")).strip(),
         )
     except (ValueError, AttributeError):
-        return JudgeVerdict(answers=False, reasoning=f"unparseable judge reply: {text[:120]}")
+        return JudgeVerdict(
+            answers=False, reasoning=f"unparseable judge reply: {text[:120]}"
+        )
