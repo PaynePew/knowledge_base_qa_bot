@@ -44,6 +44,13 @@ def _install_fake_embeddings() -> None:
             scored.sort(key=lambda t: -t[1])
             return [(d, 1.0 / (1.0 + o)) for d, o in scored[:k]]
 
+        def save_local(self, folder_path: str, index_name: str = "index") -> None:
+            # vector_rag.build_index persists on success (issue #103); the fake is
+            # in-memory only and the comparison never reloads, so persistence is a
+            # harmless no-op. _isolate_production_paths still repoints FAISS_INDEX_DIR
+            # to tmp, so even a real save would never touch production .kb/.
+            return None
+
     vr_indexer._build_faiss = lambda documents: _FakeVectorStore(documents)
 
 

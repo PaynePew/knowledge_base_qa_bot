@@ -1,4 +1,4 @@
-"""Shallow module per Ousterhout. Public surface: ``Paraphrase``, ``RetrievedItem``, ``PARAPHRASE_TYPES``.
+"""Shallow module per Ousterhout. Public surface: ``Paraphrase``, ``RetrievedItem``, ``PARAPHRASE_TYPES``, ``CORE_PARAPHRASE_TYPES``, ``PROBE_PARAPHRASE_TYPES``.
 
 Domain data shapes for the Phase 8 retrieval comparison (CONTEXT.md § Phase 8
 vocabulary, PRD #100). These are plain data carriers; all comparison logic
@@ -25,6 +25,24 @@ ParaphraseType = Literal[
     "industry_jargon",
 ]
 PARAPHRASE_TYPES: tuple[str, ...] = get_args(ParaphraseType)
+
+# CONTEXT.md § Phase 8 > Paraphrase Type — the two families. Core types are
+# LLM-generated natural rewrites; Structural probes are hand-written to exercise
+# a known architectural limit. PRD #100 forbids a naive cross-type aggregate, so
+# the report (and charts) draw and aggregate these families SEPARATELY: a Core
+# macro-average (with caveat) is the only aggregate; probes are framed as
+# expected-limit confirmation, never folded into a headline number.
+CORE_PARAPHRASE_TYPES: tuple[str, ...] = (
+    "synonym_swap",
+    "word_reorder",
+    "verbosity_expansion",
+    "specificity_narrowing",
+    "implicit_reference",
+)
+PROBE_PARAPHRASE_TYPES: tuple[str, ...] = (
+    "typo_fatfinger",
+    "industry_jargon",
+)
 
 
 @dataclass(frozen=True)

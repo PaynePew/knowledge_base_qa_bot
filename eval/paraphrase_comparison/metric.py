@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``HitRateAtK``, ``is_hit``.
+"""Deep module per Ousterhout. Public surface: ``HitRateAtK``, ``is_hit``, ``hit_at_k``, ``reciprocal_rank_at_k``.
 
 C5c deterministic hit metric for the Phase 8 retrieval comparison (CONTEXT.md
 § Phase 8 > Key Tokens, PRD #100). This is the L1 metric — the source of the
@@ -22,6 +22,13 @@ miss.
 at a time (1.0 hit / 0.0 miss over the top-k retrieved items). The per-type
 hit_rate@k headline is the mean of these per-Paraphrase scores, computed by the
 runner.
+
+Alongside hit_rate@k the metric also exposes the **reciprocal rank** of the
+first hit within the top-k (``reciprocal_rank_at_k``): 1/rank where rank is the
+1-based position of the first hitting item, or 0.0 if no top-k item hits. The
+per-type **MRR** (PRD #100) is the mean of these per-Paraphrase reciprocal
+ranks, computed by the runner. RR rewards ranking quality (a hit at rank 1 beats
+the same hit at rank 3); hit_rate@k only sees the binary "any hit in top-k".
 """
 
 from __future__ import annotations
@@ -75,6 +82,26 @@ def hit_at_k(
     return 1.0 if any(is_hit(it, gold_section_id, wanted) for it in items[:k]) else 0.0
 
 
+def reciprocal_rank_at_k(
+    items: list[RetrievedItem],
+    gold_section_id: str,
+    key_tokens: Iterable[str],
+    k: int = DEFAULT_K,
+) -> float:
+    """Reciprocal rank of the first hit in the top-``k`` (1/rank), else 0.0.
+
+    ``rank`` is the 1-based position of the first item satisfying both C5c
+    conditions; a hit at rank 1 scores 1.0, rank 2 scores 0.5, rank 3 scores
+    ~0.333. No top-k hit scores 0.0. The per-Paraphrase reciprocal rank averaged
+    over a Paraphrase Type is that type's MRR (PRD #100).
+    """
+    wanted = list(key_tokens)
+    for rank, item in enumerate(items[:k], start=1):
+        if is_hit(item, gold_section_id, wanted):
+            return 1.0 / rank
+    return 0.0
+
+
 # ---------------------------------------------------------------------------
 # DeepEval BaseMetric wrapper
 # ---------------------------------------------------------------------------
@@ -91,6 +118,12 @@ class HitRateAtK(BaseMetric):
 
     The metric is the headline (L1) source per PRD #100 — no model is invoked,
     so the verdict is reproducible offline.
+
+    ``score`` carries hit_rate@k (DeepEval's success semantics key off it);
+    ``reciprocal_rank`` carries the parallel RR-at-k of the same retrieval, read
+    by the runner to aggregate per-type MRR. Both are recomputed on every
+    ``measure`` call from the identical (items, gold, key_tokens) inputs, so they
+    can never disagree about whether a hit occurred.
     """
 
     _required_params: list[SingleTurnParams] = [
@@ -103,6 +136,7 @@ class HitRateAtK(BaseMetric):
         self.threshold = 1.0
         self.async_mode = False
         self.score = 0.0
+        self.reciprocal_rank = 0.0
         self.success = False
         self.reason: str | None = None
         self.error: str | None = None
@@ -114,6 +148,9 @@ class HitRateAtK(BaseMetric):
         key_tokens: list[str] = list(meta.get("key_tokens", []))
 
         self.score = hit_at_k(items, gold_section_id, key_tokens, k=self.k)
+        self.reciprocal_rank = reciprocal_rank_at_k(
+            items, gold_section_id, key_tokens, k=self.k
+        )
         self.success = self.score >= self.threshold
         self.reason = (
             f"hit@{self.k}=1: a top-{self.k} item matched gold "

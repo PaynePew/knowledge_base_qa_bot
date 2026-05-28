@@ -1,4 +1,4 @@
-"""Shallow module per Ousterhout. Public surface: ``load_paraphrases``, ``write_text_atomic``, ``QUERIES_PATH``.
+"""Shallow module per Ousterhout. Public surface: ``load_paraphrases``, ``load_metadata``, ``write_text_atomic``, ``QUERIES_PATH``.
 
 Read/write helpers for the Phase 8 Paraphrase set and report (PRD #100).
 
@@ -44,6 +44,17 @@ def load_paraphrases(path: Path = QUERIES_PATH) -> list[Paraphrase]:
             )
         )
     return paraphrases
+
+
+def load_metadata(path: Path = QUERIES_PATH) -> dict:
+    """Return the ``queries.yaml`` ``metadata`` block (generator, seed, cost, …).
+
+    Returns an empty dict if the block is absent. The report's cost log reads
+    ``cost_usd`` from here verbatim so an offline ``n/a (offline)`` value is
+    surfaced honestly rather than fabricated (issue #104 cost-honesty note).
+    """
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return dict(data.get("metadata", {}))
 
 
 def write_text_atomic(path: Path, content: str) -> None:

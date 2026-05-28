@@ -26,4 +26,5 @@ markers = [
 [dependency-groups]
 dev = [
     "deepeval>=4.0.4",
+    "matplotlib>=3.10.9",
 ]

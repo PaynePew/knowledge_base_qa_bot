@@ -61,12 +61,48 @@ def test_run_comparison_produces_a_row_per_type(tmp_path, fake_vector_index):
     for ptype in PARAPHRASE_TYPES:
         assert ptype in stack_a.by_type
         assert ptype in stack_b.by_type
+        # MRR is aggregated alongside hit_rate@k for every type.
+        assert ptype in stack_a.mrr_by_type
+        assert ptype in stack_b.mrr_by_type
 
     report = report_path.read_text(encoding="utf-8")
-    assert "Stack A hit_rate@3" in report
-    assert "Stack B hit_rate@3" in report
+    # Full per-type table columns (PRD #100): hit_rate@3 + MRR for both Stacks.
+    assert "hit_rate@3 (A)" in report
+    assert "hit_rate@3 (B)" in report
+    assert "MRR (A)" in report
+    assert "MRR (B)" in report
+    assert "Δ (B−A)" in report
     for ptype in PARAPHRASE_TYPES:
         assert f"| {ptype} |" in report
+
+
+def test_run_comparison_separates_core_from_probes(tmp_path, fake_vector_index):
+    report_path = tmp_path / "report.md"
+    run_comparison(report_path=report_path, embedding_mode="fake")
+    report = report_path.read_text(encoding="utf-8")
+
+    # Core and Structural-probe types live in distinct sections; the only
+    # aggregate is a caveated Core macro-average (no naive cross-type aggregate).
+    assert "## Core Comparison" in report
+    assert "## Structural Probes" in report
+    assert "Core macro-average" in report
+    assert "Caveat" in report
+    # All six honest disclosures + the offline-data disclosure are present.
+    assert "## Limitations" in report
+    assert "OFFLINE tracer data" in report
+    assert "## Appendix — Interview Talking Points" in report
+
+
+def test_run_comparison_writes_chart_pngs(tmp_path, fake_vector_index):
+    report_path = tmp_path / "report.md"
+    charts_dir = tmp_path / "charts"
+    run_comparison(report_path=report_path, embedding_mode="fake")
+
+    pngs = list(charts_dir.glob("*.png"))
+    assert pngs, "expected chart PNGs written to the report's charts/ sibling"
+    names = {p.name for p in pngs}
+    assert any(n.startswith("core_") for n in names)
+    assert any(n.startswith("probes_") for n in names)
 
 
 def test_both_stacks_run_in_process_and_return_resolved_docs_ids(fake_vector_index):
@@ -103,13 +139,15 @@ def test_scored_hit_rate_is_a_fraction(fake_vector_index):
     assert 0.0 <= rate <= 1.0
 
 
-def test_render_report_records_embedding_mode():
+def test_render_report_records_embedding_mode(fake_vector_index):
     paraphrases = load_paraphrases()
     stacks.index_stack_a()
     a = score_stack("Stack A", paraphrases, stacks.stack_a_retrieval, k=3)
     b = score_stack("Stack B", paraphrases, lambda q, k: [], k=3)
     report = render_report(a, b, embedding_mode="fake")
-    assert "embedding mode: **fake**" in report
+    assert "embedding mode**: **fake**" in report
+    # The offline banner must warn a reader these are not the real experiment.
+    assert "OFFLINE TRACER NUMBERS" in report
 
 
 def test_running_comparison_does_not_touch_production_paths(
