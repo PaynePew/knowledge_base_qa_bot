@@ -27,6 +27,8 @@ import argparse
 import os
 import sys
 
+from dotenv import find_dotenv, load_dotenv
+
 from .runner import JudgeConfig, run_comparison
 from .spotcheck import (
     DEFAULT_CONTROL_SAMPLE_SIZE,
@@ -133,6 +135,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Clear-hit/clear-miss count for the Control zone (default 5).",
     )
     args = parser.parse_args(argv)
+    load_dotenv(find_dotenv(usecwd=True))  # pick up OPENAI_API_KEY from a repo-root .env
 
     fake = args.fake_embeddings or not os.getenv("OPENAI_API_KEY")
     mode = "fake" if fake else "real"

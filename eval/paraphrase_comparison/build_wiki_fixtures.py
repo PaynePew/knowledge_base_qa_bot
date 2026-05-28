@@ -8,7 +8,8 @@ The Phase 8 comparison's Stack A surface is the committed wiki output of a real
 ``POST /ingest`` run over ``corpus/`` (CONTEXT.md § Phase 8 > Retrieval Stack).
 That run is LLM-synthesised. When OPENAI_API_KEY is present this script invokes
 the production ``markdown_kb.app.ingest.ingest_sources`` against the eval corpus
-(production-isolated to a tmp wiki, then copied into the committed fixture dir).
+(production-isolated: INDEX_PATH/LOG_PATH redirected to tmp; synthesis pages
+written directly into this package's ``wiki/``, replacing any prior pages).
 
 When the key is ABSENT (the offline default for this environment), it falls back
 to a deterministic OFFLINE synthesiser that emits byte-identical-format pages
@@ -26,8 +27,12 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import sys
+import tempfile
 from pathlib import Path
+
+from dotenv import find_dotenv, load_dotenv
 
 from markdown_kb.app.indexer import parse_markdown, slugify
 
@@ -205,17 +210,50 @@ def build_offline(*, overwrite_existing: bool = False) -> tuple[int, int, int]:
     return concepts, entities, preserved
 
 
+def _build_online() -> tuple[int, int]:
+    """Real /ingest path: synthesise the wiki via markdown_kb's production ingest.
+
+    Production-isolated — redirects markdown_kb INDEX_PATH/LOG_PATH to a tmp dir so
+    the run never touches production ``.kb/`` or ``wiki/log.md``; writes synthesis
+    pages only into this package's ``WIKI_DIR`` (clearing prior pages first).
+    Requires OPENAI_API_KEY (gpt-4o-mini synthesis). Raises if any Source fails.
+    """
+    import markdown_kb.app.indexer as _idx
+    import markdown_kb.app.logger as _lg
+    from markdown_kb.app import ingest as _ingest
+
+    iso = Path(tempfile.mkdtemp(prefix="wiki_ingest_iso_"))
+    _idx.INDEX_PATH = iso / "index.json"
+    _lg.LOG_PATH = iso / "log.md"
+    if WIKI_DIR.exists():
+        shutil.rmtree(WIKI_DIR)
+    res = _ingest.ingest_sources(None, docs_dir=CORPUS_DIR, wiki_dir=WIKI_DIR, force=True)
+    if res.failed_sources:
+        raise RuntimeError(f"/ingest failed for Sources: {res.failed_sources}")
+    concepts = len(list((WIKI_DIR / "concepts").glob("*.md")))
+    entities = len(list((WIKI_DIR / "entities").glob("*.md")))
+    return concepts, entities
+
+
 def main(argv: list[str] | None = None) -> int:
-    if os.getenv("OPENAI_API_KEY"):
+    load_dotenv(find_dotenv(usecwd=True))  # pick up OPENAI_API_KEY from a repo-root .env
+    args = argv if argv is not None else sys.argv[1:]
+    offline = "--offline" in args
+    overwrite = "--overwrite" in args
+
+    if os.getenv("OPENAI_API_KEY") and not offline:
+        concepts, entities = _build_online()
+        print(f"Wiki fixtures (REAL /ingest): wrote {concepts} concept + {entities} entity page(s).")
+        return 0
+
+    if not offline:
         print(
-            "OPENAI_API_KEY present, but this offline builder only synthesises the "
-            "deterministic stand-in. Run a real POST /ingest over corpus/ to produce "
-            "LLM-synthesised pages, then copy them into wiki/."
+            "OPENAI_API_KEY absent — using the offline deterministic stand-in. "
+            "Provide a key (or pass --offline to force this) for a real /ingest."
         )
-    overwrite = "--overwrite" in (argv or sys.argv[1:])
     concepts, entities, preserved = build_offline(overwrite_existing=overwrite)
     print(
-        f"Wiki fixtures (offline): wrote {concepts} concept + {entities} entity page(s), "
+        f"Wiki fixtures (offline stand-in): wrote {concepts} concept + {entities} entity page(s), "
         f"preserved {preserved} existing."
     )
     return 0

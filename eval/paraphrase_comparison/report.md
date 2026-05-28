@@ -2,30 +2,27 @@
 
 Phase 8 retrieval comparison (PRD #100): does Karpathy's curated-Wiki layer (**Stack A** — LLM-synthesised `wiki/` + BM25) out-retrieve a traditional Vector RAG pipeline (**Stack B** — chunk + embed + FAISS) fed the **same** raw corpus? Scored at the retrieval layer only by the deterministic C5c hit metric (source-match AND dual-side Key-Token overlap). K=3.
 
-> ⚠️ **OFFLINE TRACER NUMBERS.** Every score below was produced WITHOUT `OPENAI_API_KEY`: the Core Paraphrases are hand-authored offline stand-ins (not gpt-4o-mini output) and Stack B's vectors come from a deterministic token-overlap stand-in, NOT real `text-embedding-3-small` embeddings. These numbers exercise the pipeline end-to-end but are **not the real experiment**. Re-run with `OPENAI_API_KEY` (and a regenerated `queries.yaml`) for headline figures.
-
-
 ## TL;DR
 
-On this 16-Source Acme Shop corpus, the Core macro-average hit_rate@3 is **Stack A 0.825** vs **Stack B 0.750** (offline tracer numbers). The per-type breakdown is the real signal — the macro-average is a researcher-chosen type mix and is reported only with the caveat below. Structural probes are reported separately and framed as expected-limit confirmation, never folded into a headline number.
+On this 16-Source Acme Shop corpus, the Core macro-average hit_rate@3 is **Stack A 0.600** vs **Stack B 0.750** (L1 (deterministic) numbers). The per-type breakdown is the real signal — the macro-average is a researcher-chosen type mix and is reported only with the caveat below. Structural probes are reported separately and framed as expected-limit confirmation, never folded into a headline number.
 
 ## Experiment Setup
 
 - **Corpus**: 16 raw Acme Shop Sources (`corpus/`), fed identically to both Stacks. Stack A runs `/ingest` over them into `wiki/{entities,concepts}/` then BM25; Stack B chunks + embeds the raw Sources into FAISS and never runs `/ingest`. This isolates curated-synthesis-then-keyword vs raw-chunk-then-vector as the single variable.
-- **Paraphrases**: `queries.yaml` (generator `gpt-4o-mini`, seed `42`, corpus snapshot `offline-hand-authored`). 40 Core (5 LLM types × 8) + 10 hand-written Structural probes (2 types × 5).
+- **Paraphrases**: `queries.yaml` (generator `gpt-4o-mini`, seed `42`, corpus snapshot `2d0346f`). 40 Core (5 LLM types × 8) + 10 hand-written Structural probes (2 types × 5).
 - **Metric**: C5c L1 deterministic — hit_rate@3 and MRR. A hit requires the retrieved unit's source to equal the Gold Section AND its content to share at least one dual-side Key Token, so a correct-id-wrong-content chunk is a miss.
-- **Stack B embedding mode**: **fake** (`fake` = deterministic offline stand-in when `OPENAI_API_KEY` is absent; `real` = OpenAI `text-embedding-3-small`).
+- **Stack B embedding mode**: **real** (`fake` = deterministic offline stand-in when `OPENAI_API_KEY` is absent; `real` = OpenAI `text-embedding-3-small`).
 
 ### Cost log
 
 | Item | Cost |
 |---|---|
-| Paraphrase generation (Core, gpt-4o-mini) | `n/a (offline)` |
+| Paraphrase generation (Core, gpt-4o-mini) | `see run log` |
 | L2 cross-family judge Spot-check | not run (opt-in via `--judge`) |
 | Stack A index-time LLM synthesis (`/ingest`) | one-shot at ingest; **zero** per-query cost |
 | Stack B index-time embedding | per-chunk at index; **per-query** embedding cost at retrieval |
 
-The committed query set was generated **offline** (`cost_usd: n/a (offline)` in `queries.yaml`), so no dollar figure is fabricated here. The cost-structure asymmetry above is the real takeaway: Stack A pays a one-shot LLM synthesis cost and then retrieves for free; Stack B pays a per-chunk embedding cost at index time AND a per-query embedding cost forever. At this corpus scale Stack A's zero-marginal-query-cost is a concrete operational advantage.
+The dollar figure above is the actual billed generation cost.
 
 ## Core Comparison
 
@@ -33,13 +30,13 @@ The five LLM-generated natural-rewrite types. Read each Δ against the stated `e
 
 | Paraphrase Type | hit_rate@3 (A) | hit_rate@3 (B) | MRR (A) | MRR (B) | Δ (B−A) | expected | n |
 |---|---|---|---|---|---|---|---|
-| synonym_swap | 0.375 | 0.250 | 0.292 | 0.250 | -0.125 | B (semantic) | 8 |
-| word_reorder | 0.875 | 1.000 | 0.875 | 1.000 | +0.125 | either (bag-of-words robust) | 8 |
-| verbosity_expansion | 1.000 | 0.750 | 0.938 | 0.625 | -0.250 | A (extra keywords aid BM25) | 8 |
-| specificity_narrowing | 1.000 | 1.000 | 1.000 | 1.000 | +0.000 | B (sub-fact targeting) | 8 |
-| implicit_reference | 0.875 | 0.750 | 0.729 | 0.688 | -0.125 | B (semantic) | 8 |
+| synonym_swap | 0.375 | 0.750 | 0.250 | 0.750 | +0.375 | B (semantic) | 8 |
+| word_reorder | 0.750 | 0.750 | 0.750 | 0.750 | +0.000 | either (bag-of-words robust) | 8 |
+| verbosity_expansion | 0.750 | 0.750 | 0.750 | 0.750 | +0.000 | A (extra keywords aid BM25) | 8 |
+| specificity_narrowing | 0.375 | 0.625 | 0.312 | 0.625 | +0.250 | B (sub-fact targeting) | 8 |
+| implicit_reference | 0.750 | 0.875 | 0.688 | 0.875 | +0.125 | B (semantic) | 8 |
 
-**Core macro-average** (unweighted mean across the 5 Core types): hit_rate@3 Stack A **0.825** vs Stack B **0.750**; MRR Stack A **0.767** vs Stack B **0.713**.
+**Core macro-average** (unweighted mean across the 5 Core types): hit_rate@3 Stack A **0.600** vs Stack B **0.750**; MRR Stack A **0.550** vs Stack B **0.750**.
 
 > **Caveat (PRD #100).** This macro-average is reported ONLY as an unweighted mean over a researcher-chosen set of Core types. It is NOT a naive cross-type aggregate and must not be read as 'which stack wins' — the type mix is a design choice, not a representative query distribution. The per-type rows are authoritative.
 
@@ -55,8 +52,8 @@ The two hand-written probe types, each rigged to exercise a known architectural 
 
 | Paraphrase Type | hit_rate@3 (A) | hit_rate@3 (B) | MRR (A) | MRR (B) | Δ (B−A) | expected | n |
 |---|---|---|---|---|---|---|---|
-| typo_fatfinger | 0.200 | 0.000 | 0.100 | 0.000 | -0.200 | A (BM25 token tolerance) — probe | 5 |
-| industry_jargon | 0.800 | 1.000 | 0.700 | 0.667 | +0.200 | B (semantic) — probe | 5 |
+| typo_fatfinger | 0.000 | 1.000 | 0.000 | 1.000 | +1.000 | A (BM25 token tolerance) — probe | 5 |
+| industry_jargon | 1.000 | 1.000 | 0.800 | 0.900 | +0.000 | B (semantic) — probe | 5 |
 
 ### Charts
 
@@ -84,7 +81,6 @@ These biases are surfaced as findings, not buried — calling them out is the po
 4. **Spot-check family caveat.** The optional L2 judge (Claude) is chosen to be cross-family from the OpenAI embedding so it does not share a blind spot with Stack B. When the judge IS run, its control-zone agreement must approach 100% or the judge itself is mis-calibrated and its other verdicts are suspect.
 5. **C5c over-estimates Stack B when `--judge` is skipped.** The deterministic metric counts a hit on source-match + any Key-Token overlap; without the L2 spot-check validating edge cases, marginal Stack B 'hits' (correct chunk, weak content match) are not independently confirmed and may flatter Stack B.
 6. **Paraphrase-generator family bias favours Stack B.** The Core Paraphrases are generated by gpt-4o-mini, whose synonyms fall inside the embedding space the same model family encodes — systematically advantaging Vector RAG. This is preserved as a disclosed, measurable finding (the hand-written probes partially correct for it), not hidden.
-7. **The committed numbers are OFFLINE tracer data.** With no `OPENAI_API_KEY` in the generation environment, the Core Paraphrases are hand-authored stand-ins for gpt-4o-mini output (faithfully mirroring the deterministic sha256 section sampling and per-type rules) and Stack B's retrieval uses a deterministic token-overlap stand-in, NOT real `text-embedding-3-small` embeddings. Readers must NOT mistake these tracer numbers for the real experiment — a real run requires `OPENAI_API_KEY` and a regenerated `queries.yaml`.
 
 ## Appendix — Interview Talking Points
 
