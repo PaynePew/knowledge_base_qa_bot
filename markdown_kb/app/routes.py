@@ -112,15 +112,11 @@ def chat(req: ChatRequest) -> ChatResponse:
         for s in result["sources"]
     ]
 
-    # Phase 6 Slice 6-2: gated side-effect — file Grounded Answers only.
-    # Cannot Confirm paths (passed=False) do NOT file: skip junk into the wiki.
-    # Adapter SectionRef satisfies the CitableContent Protocol with just the
-    # ``id`` field (qa.maybe_file_answer reads ``.id`` only); avoids leaking
-    # the indexer's full Section dataclass into route territory.
-    filed = None
-    if outcome.passed:
-        cited_refs = [_SectionRef(id=s["source"]) for s in result["sources"]]
-        filed = qa_module.maybe_file_answer(req.query, result["answer"], cited_refs)
+    # Phase 6 Slice 6-2 / Phase 9 Slice 4: gated side-effect — file Grounded
+    # Answers only. Cannot Confirm paths (passed=False) do NOT file.
+    # Delegation to ``qa.dispatch_filing`` keeps the gating + SectionRef adapter
+    # in one place shared with the Wiki stream_query path (issue #121 AC1).
+    filed = qa_module.dispatch_filing(req.query, result)
 
     return ChatResponse(
         answer=result["answer"],
@@ -128,26 +124,6 @@ def chat(req: ChatRequest) -> ChatResponse:
         grounding=grounding,
         filed=filed,
     )
-
-
-class _SectionRef:
-    """Minimal CitableContent adapter for ``qa.maybe_file_answer``.
-
-    The qa module's public ``maybe_file_answer`` accepts any
-    ``CitableContent`` (Protocol — requires ``id``, ``heading_path``,
-    ``content``). The handler holds only ``result["sources"]`` (list of dicts
-    with ``source`` = the bare section id); reconstructing a full
-    ``indexer.Section`` here would force the route to import indexer's
-    dataclass for one field. This shim is the smallest viable adapter — only
-    ``id`` is set because the filing path reads no other field.
-    """
-
-    __slots__ = ("content", "heading_path", "id")
-
-    def __init__(self, id: str) -> None:
-        self.id = id
-        self.heading_path = [id]
-        self.content = ""
 
 
 @router.post("/qa/{slug}/promote", response_model=FiledStatus)

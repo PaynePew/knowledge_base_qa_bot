@@ -1,7 +1,10 @@
-"""Deep module per Ousterhout. Public surface: ``compute_slug``, ``normalize_question``, ``maybe_file_answer``, ``promote``, ``QaPageNotFound``, ``QaPageCorrupt``.
+"""Deep module per Ousterhout. Public surface: ``compute_slug``, ``normalize_question``, ``maybe_file_answer``, ``dispatch_filing``, ``promote``, ``QaPageNotFound``, ``QaPageCorrupt``.
 
 Phase 6 Slice 6-2 — Answer Filing for ``POST /chat``.
 Phase 6 Slice 6-4 — curator-driven ``promote(slug)`` flips ``status: draft -> live``.
+Phase 9 Slice 4 — ``dispatch_filing()`` shared helper extracts the gating logic
+from the ``/chat`` route so the Wiki ``stream_query`` can reuse it without
+duplicating the ``outcome.passed`` check or the ``_SectionRef`` adapter.
 
 When ``/chat`` produces a Grounded Answer (``GroundingOutcome.passed == True``),
 the route layer dispatches one line to ``maybe_file_answer(...)`` which
@@ -473,6 +476,66 @@ def maybe_file_answer(
             op="touched",
             count=new_count,
         )
+
+
+# ---------------------------------------------------------------------------
+# Shared filing dispatcher (Phase 9 Slice 4)
+# ---------------------------------------------------------------------------
+
+
+class _SectionRef:
+    """Minimal CitableContent adapter for ``maybe_file_answer``.
+
+    The qa module's ``maybe_file_answer`` accepts any ``CitableContent``
+    (Protocol — requires ``id``, ``heading_path``, ``content``). Route and
+    retrieval layers hold sources as plain dicts; reconstructing a full
+    ``indexer.Section`` would couple callers to the indexer dataclass.  This
+    shim is the smallest viable adapter — only ``id`` is set because the
+    filing path reads no other field.
+
+    Defined here (not in routes.py) so that both the ``/chat`` route AND
+    ``stream_query`` can call ``dispatch_filing`` without each defining their
+    own adapter shim.
+    """
+
+    __slots__ = ("content", "heading_path", "id")
+
+    def __init__(self, id: str) -> None:
+        self.id = id
+        self.heading_path = [id]
+        self.content = ""
+
+
+def dispatch_filing(query: str, result: dict) -> "FiledStatus | None":
+    """Gate-and-dispatch filing for a single query result.
+
+    Shared helper used by both ``POST /chat`` (routes.py) and the Wiki
+    ``stream_query`` path (retrieval.py) to avoid duplicated dispatch logic
+    (Phase 9 Slice 4 / issue #121 AC1).
+
+    Gating rules (behaviour-preserving — identical to the inline block that
+    previously lived in routes.chat):
+    - ``result["grounding_outcome"].passed`` must be True; Cannot Confirm
+      paths return ``None`` without calling ``maybe_file_answer``.
+    - RAG paths never call this function (caller contract; enforcement is
+      the caller's responsibility — this function does not inspect the stack).
+
+    Args:
+        query:  The original user question (used for slug computation).
+        result: A result dict as returned by ``query()`` / the final yield
+                of ``stream_query()``.  Must contain ``sources`` (list of
+                dicts each with a ``source`` key carrying the section id)
+                and ``grounding_outcome`` (a ``GroundingOutcome`` instance).
+
+    Returns:
+        ``FiledStatus`` describing what happened, or ``None`` on any
+        fail-soft path (Cannot Confirm, IOError, orphan-status guard).
+    """
+    outcome = result["grounding_outcome"]
+    if not outcome.passed:
+        return None
+    cited_refs = [_SectionRef(id=s["source"]) for s in result["sources"]]
+    return maybe_file_answer(query, result["answer"], cited_refs)
 
 
 # ---------------------------------------------------------------------------
