@@ -93,7 +93,9 @@ def test_marginal_zone_excludes_zero_overlap_clear_miss():
 def test_disagreement_zone_when_stack_top1_verdicts_differ():
     para = _para("syn-3")
     # Stack A hits (gold + token), Stack B misses (wrong id) -> disagreement.
-    a = _retriever({para.text: [_item(GOLD, "refund and packaging within thirty days")]})
+    a = _retriever(
+        {para.text: [_item(GOLD, "refund and packaging within thirty days")]}
+    )
     b = _retriever({para.text: [_item(OTHER, "fast delivery options")]})
     subset = build_spotcheck_subset([para], a, b, zones=(ZONE_DISAGREEMENT,))
     stacks = {it.stack for it in subset}
@@ -147,8 +149,12 @@ def test_control_zone_is_seeded_and_reproducible():
 def test_item_in_multiple_zones_carries_all_zones():
     # A marginal hit on Stack A that also disagrees with Stack B.
     para = _para("syn-5")
-    a = _retriever({para.text: [_item(GOLD, "a single refund mention")]})  # marginal hit
-    b = _retriever({para.text: [_item(OTHER, "shipping speeds")]})  # miss -> disagreement
+    a = _retriever(
+        {para.text: [_item(GOLD, "a single refund mention")]}
+    )  # marginal hit
+    b = _retriever(
+        {para.text: [_item(OTHER, "shipping speeds")]}
+    )  # miss -> disagreement
     subset = build_spotcheck_subset(
         [para], a, b, zones=(ZONE_MARGINAL, ZONE_DISAGREEMENT), marginal_threshold=1
     )
