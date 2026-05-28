@@ -244,6 +244,14 @@ def _retrieve_and_gate(question: str) -> dict:
     truncated = question[:60].replace('"', "'")
 
     if indexer.vectorstore is None:
+        # Lazy-load the persisted FAISS index from disk so a fresh Gateway
+        # process can serve stack=rag without requiring a POST /index call in
+        # the same process (the Gateway mounts only /wiki, not vector_rag's
+        # /index — see issue #133). load_vector_index() returns (0, 0) and
+        # leaves vectorstore=None when no persisted index exists on disk.
+        indexer.load_vector_index()
+
+    if indexer.vectorstore is None:
         log_event("chat_fallback", f'"{truncated}" reason=not_indexed')
         return {
             "sources": [],
