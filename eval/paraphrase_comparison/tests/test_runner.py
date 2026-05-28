@@ -159,15 +159,21 @@ def test_running_comparison_does_not_touch_production_paths(
 ):
     kb_before = sorted(p.name for p in PROD_KB.glob("*")) if PROD_KB.exists() else []
     wiki_index_before = (
-        PROD_WIKI_INDEX.read_text() if PROD_WIKI_INDEX.exists() else None
+        PROD_WIKI_INDEX.read_text(encoding="utf-8")
+        if PROD_WIKI_INDEX.exists()
+        else None
     )
-    log_before = PROD_LOG.read_text() if PROD_LOG.exists() else None
+    log_before = PROD_LOG.read_text(encoding="utf-8") if PROD_LOG.exists() else None
 
     run_comparison(report_path=tmp_path / "report.md", embedding_mode="fake")
 
     kb_after = sorted(p.name for p in PROD_KB.glob("*")) if PROD_KB.exists() else []
-    wiki_index_after = PROD_WIKI_INDEX.read_text() if PROD_WIKI_INDEX.exists() else None
-    log_after = PROD_LOG.read_text() if PROD_LOG.exists() else None
+    wiki_index_after = (
+        PROD_WIKI_INDEX.read_text(encoding="utf-8")
+        if PROD_WIKI_INDEX.exists()
+        else None
+    )
+    log_after = PROD_LOG.read_text(encoding="utf-8") if PROD_LOG.exists() else None
 
     assert kb_after == kb_before
     assert wiki_index_after == wiki_index_before
@@ -200,7 +206,13 @@ class _StubJudgeClient:
         self.calls += 1
 
         class _R:
-            content = [type("B", (), {"text": json.dumps({"answers": True, "reasoning": "stub"})})()]
+            content = [
+                type(
+                    "B",
+                    (),
+                    {"text": json.dumps({"answers": True, "reasoning": "stub"})},
+                )()
+            ]
 
         return _R()
 
@@ -243,7 +255,9 @@ def test_report_renders_spotcheck_section_when_judge_runs(
     assert "item(s) judged" in report
 
 
-def test_run_comparison_fail_fasts_with_judge_but_no_key(tmp_path, fake_vector_index, monkeypatch):
+def test_run_comparison_fail_fasts_with_judge_but_no_key(
+    tmp_path, fake_vector_index, monkeypatch
+):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     with pytest.raises(spotcheck_mod.JudgeUnavailableError):
         run_comparison(
