@@ -1,8 +1,8 @@
-"""Deep module per Ousterhout. Public surface: ``query``.
+"""Deep module per Ousterhout. Public surface: ``query``, ``stream_query``.
 
-Retrieval layer — query() for the grounded /chat endpoint.
+Retrieval layer — query() and stream_query() for the grounded /chat endpoint.
 
-Flow:
+query() flow:
   1. tokenize query
   2. search top-3 Sections via BM25
   3. pre-LLM Cannot Confirm gate (ADR-0001)
@@ -11,11 +11,22 @@ Flow:
   6. post-LLM Grounding Check via grounding.verify() (ADR-0004 layer 3)
   7. write chat log entry
   8. return {answer, sources, grounding_outcome}
+
+stream_query() (Phase 9, ADR-0009) wraps query() to yield a partial result
+dict immediately after retrieval (so the gateway can emit the sources SSE
+event before the LLM calls run), then yields the full result after
+draft + verify complete.
+
+The retrieve / draft split is implemented via two private helpers:
+  _retrieve_and_gate() — BM25 search + pre-LLM Cannot Confirm gates
+  _draft_and_verify()  — build_prompt + LLM draft + Grounding Check
+Public query() composes them; contract is unchanged.
 """
 
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from pathlib import Path
 
 import openai
@@ -90,6 +101,96 @@ def query(question: str) -> dict:
     4. grounding.verify() validates every claim against cited Sections.
        Any unsupported claim → Cannot Confirm (claim_unsupported).
        Verifier failure after retry → Cannot Confirm (verifier_unavailable).
+
+    Phase 9: composes _retrieve_and_gate() + _draft_and_verify().
+    Public contract is unchanged; the split is behaviour-preserving.
+    """
+    gate = _retrieve_and_gate(question)
+    if gate["early_exit"]:
+        # Pre-LLM gate fired — return early without calling the LLM.
+        return {
+            "answer": gate["answer"],
+            "sources": gate["sources"],
+            "grounding_outcome": gate["grounding_outcome"],
+        }
+
+    # LLM phase — draft + Grounding Check.
+    result = _draft_and_verify(question, gate["ranked"], gate["sources"])
+    return result
+
+
+def stream_query(question: str) -> Iterator[dict]:
+    """Generator that yields two dicts for use by the SSE streaming endpoint.
+
+    Phase 9 — ADR-0009 (verify-then-stream / sources-first).
+
+    Yields:
+        1. A *partial* result dict immediately after retrieval (before any
+           LLM call), so the gateway can emit the ``sources`` SSE event
+           right away (~instant for BM25, ~1 embedding round-trip for RAG).
+           Shape: ``{sources, grounding_outcome, _phase: "sources_ready"}``.
+           ``grounding_outcome`` at this stage is provisional — it is the
+           pre-LLM gate outcome (may be a Cannot Confirm if below threshold).
+        2. A *full* result dict after draft + Grounding Check complete.
+           Shape: ``{answer, sources, grounding_outcome}`` — identical to
+           what ``query()`` returns.
+
+    The gateway endpoint must:
+      a. Emit ``sources`` SSE event from yield 1.
+      b. Emit ``token`` + ``done`` SSE events from yield 2.
+
+    ADR-0009: only verified text is ever emitted as tokens.  The generator
+    never yields an unverified draft.
+    """
+    gate = _retrieve_and_gate(question)
+
+    # Yield the sources-ready partial result so the gateway can emit the
+    # sources event before making any LLM call.
+    yield {
+        "_phase": "sources_ready",
+        "sources": gate["sources"],
+        "grounding_outcome": gate["grounding_outcome"],
+        "early_exit": gate["early_exit"],
+        "answer": gate.get("answer", ""),
+        "ranked": gate.get("ranked", []),
+    }
+
+    if gate["early_exit"]:
+        # Pre-LLM gate fired — the partial result IS the full result.
+        # Yield the final form so the caller always gets a full result on
+        # the second yield.
+        yield {
+            "answer": gate["answer"],
+            "sources": gate["sources"],
+            "grounding_outcome": gate["grounding_outcome"],
+        }
+        return
+
+    # LLM phase — draft + Grounding Check.
+    result = _draft_and_verify(question, gate["ranked"], gate["sources"])
+    yield result
+
+
+# ---------------------------------------------------------------------------
+# Phase 9 private helpers — retrieve+gate and draft+verify
+# ---------------------------------------------------------------------------
+
+
+def _retrieve_and_gate(question: str) -> dict:
+    """BM25 retrieval + all pre-LLM Cannot Confirm gates (ADR-0001).
+
+    Returns a dict with:
+        sources          — list of {source, heading, score, content, derived_from}
+        grounding_outcome — provisional outcome (pre-LLM gate result)
+        early_exit       — True when a pre-LLM gate fired (no LLM needed)
+        answer           — set to the Cannot Confirm phrase on early_exit paths
+        ranked           — raw (Section, score) pairs for _draft_and_verify;
+                           only meaningful when early_exit is False
+
+    Callers (query() and stream_query()) use the early_exit flag to decide
+    whether to call _draft_and_verify().  The sources list is always
+    populated even on early_exit paths — the gateway emits a sources SSE
+    event before checking early_exit.
     """
     if not indexer.sections:
         log_event(
@@ -97,26 +198,20 @@ def query(question: str) -> dict:
             f'"{question[:60].replace(chr(34), chr(39))}" reason=not_indexed',
         )
         return {
-            "answer": NOT_INDEXED_MESSAGE,
             "sources": [],
-            "grounding_outcome": GroundingOutcome(
-                passed=False,
-                reason="index_missing",
-            ),
+            "grounding_outcome": GroundingOutcome(passed=False, reason="index_missing"),
+            "early_exit": True,
+            "answer": NOT_INDEXED_MESSAGE,
+            "ranked": [],
         }
 
     ranked = indexer.search(question, k=3)
-
-    # Determine the effective top score (0.0 when no results were returned)
     top_score = ranked[0][1] if ranked else 0.0
 
-    # Build sources list from whatever retrieval returned (even if below threshold).
-    # sources is populated whenever retrieval ran — per ADR-0004 / PRD User Story 22.
     # Phase 6 Slice 6-3: each entry carries an optional ``derived_from`` chain
     # populated from the parent wiki page's ``frontmatter.sources``. This is
-    # response-only audit data — see _derived_from_for_section and ADR-0006
-    # §"PROMPT.md citation contract evolution" / PRD #78 Q4 for the W1 invariant
-    # rationale (the chain must NEVER appear in the LLM CONTEXT or verifier prompt).
+    # response-only audit data — the chain must NEVER appear in the LLM CONTEXT
+    # or verifier prompt (ADR-0006 / PRD #78 Q4 W1 invariant).
     sources = [
         {
             "source": sec.id,
@@ -129,16 +224,9 @@ def query(question: str) -> dict:
     ]
 
     if top_score < _SCORE_THRESHOLD:
-        # Cannot Confirm — pre-LLM gate, no LLM call (ADR-0001)
-        # Log with reason=below_threshold regardless of whether search returned
-        # results (score 0.0 is still below any positive threshold).
         truncated = question[:60].replace('"', "'")
-        # Distinguish retrieval_empty (no results) from below_threshold (results but low score).
-        # Both trigger pre-LLM gate; reason differs so callers can show appropriate fallback UX.
         gate_reason = "retrieval_empty" if not ranked else "below_threshold"
         if ranked:
-            # Slice 4-5a: enrich below_threshold log with top BM25 hit id so
-            # Phase 5 /lint can localise coverage gaps to specific sections.
             top_sec = ranked[0][0]
             log_event(
                 "chat_fallback",
@@ -146,21 +234,46 @@ def query(question: str) -> dict:
                 f" top_section={top_sec.id}",
             )
         else:
-            # retrieval_empty — no top hit exists, do not append top_section=
             log_event(
                 "chat_fallback",
                 f'"{truncated}" reason=below_threshold top_score={round(top_score, 3)}',
             )
         return {
-            "answer": CANNOT_CONFIRM_PHRASE,
             "sources": sources,
-            "grounding_outcome": GroundingOutcome(
-                passed=False,
-                reason=gate_reason,
-            ),
+            "grounding_outcome": GroundingOutcome(passed=False, reason=gate_reason),
+            "early_exit": True,
+            "answer": CANNOT_CONFIRM_PHRASE,
+            "ranked": [],
         }
 
-    # Build sections list and prompt.
+    return {
+        "sources": sources,
+        "grounding_outcome": GroundingOutcome(passed=True, reason="claim_supported"),
+        "early_exit": False,
+        "answer": "",
+        "ranked": ranked,
+    }
+
+
+def _draft_and_verify(
+    question: str,
+    ranked: list,
+    sources: list[dict],
+) -> dict:
+    """LLM draft + post-LLM Grounding Check (ADR-0004 layer 3).
+
+    Called only when the pre-LLM gates passed (early_exit is False).
+
+    Args:
+        question: The original user query.
+        ranked:   (Section, score) pairs from BM25.
+        sources:  Already-built sources list (passed through unchanged).
+
+    Returns:
+        Full result dict: {answer, sources, grounding_outcome}.
+        Never returns unverified text — on grounding failure, answer is
+        CANNOT_CONFIRM_PHRASE and grounding_outcome.passed is False.
+    """
     # B3 page expansion (Slice 4-4): expand BM25 hits to full parent pages so
     # the LLM receives page-coherent context. The expanded list is used for
     # prompt construction and grounding verification; sources[] stays BM25 top-K.
@@ -171,20 +284,14 @@ def query(question: str) -> dict:
     draft = _call_llm_with_error_handling(question, prompt_text)
 
     # Post-LLM Grounding Check (ADR-0004 layer 3).
-    # Grounding verifier receives expanded_sections (all pages in LLM context)
-    # so a claim citing a sibling section is correctly validated.
     # verify() never raises — all verifier failures map to
     # grounding_outcome.reason = "verifier_unavailable".
     outcome = grounding_module.verify(draft, expanded_sections)
 
     if outcome.passed:
-        # Verifier approved — return the draft as-is.
         answer = draft
     else:
-        # Verifier rejected or unavailable — fail-closed with Cannot Confirm.
         answer = CANNOT_CONFIRM_PHRASE
-        # Slice 4-5a: enrich with cited= listing the post-B3-expansion Section ids.
-        # Phase 5 /lint uses this to localise coverage gaps without replaying BM25.
         cited_ids = ",".join(sec.id for sec in expanded_sections)
         log_event(
             "chat_grounding_fallback",
@@ -192,7 +299,6 @@ def query(question: str) -> dict:
             f" cited={cited_ids}",
         )
 
-    # Write chat log entry
     _write_chat_log(question, ranked)
 
     return {
