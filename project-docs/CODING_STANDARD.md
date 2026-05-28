@@ -38,6 +38,7 @@ This document is the **reviewer agent's** standards reference (see [`project-doc
 - **§6 Testing** — if test files are in the diff
 - **§7 Dependencies** — if `pyproject.toml` or `uv.lock` is in the diff
 - **§10 Design patterns in use** — when pattern-recognition is needed (e.g. reviewer suspects an anti-pattern is being introduced)
+- **§12 Frontend (Gateway UI)** — if the diff touches the Gateway UI, the SSE client, or static assets
 
 **Out of reviewer scope** (these are author-time / orchestrator-time):
 - **§0** (Reading order, Authority, this section)
@@ -522,4 +523,58 @@ Each signal has a **severity** that determines the reviewer's action:
 - [ ] **FAIL** — A PRD-encoded invariant is broken (most notable: `wiki/log.md` must remain committed, not gitignored — see `prd.md`).
 - [ ] **FAIL** — An ADR-tagged `**Invariant**` is broken **without** a paired new ADR superseding it. Locate them via `grep -nE "Invariant" project-docs/adr/*.md`.
 
+### Frontend drift (§12)
+
+- [ ] **FAIL** — A frontend framework, bundler, or build step is introduced; the Gateway UI must stay vanilla single-file (§12.1).
+- [ ] **FAIL** — `EventSource` is used for the POST `/chat/stream` (it is GET-only; must use `fetch()` + ReadableStream per §12.2).
+- [ ] **FAIL** — Server- or LLM-derived content (answer text, source snippets, headings, citations) is inserted via `innerHTML` instead of `textContent` (XSS; §12.4).
+- [ ] **FAIL** — The client implements optimistic-render-then-retract for answer tokens (nothing to retract under verify-then-stream; §12.3).
+- [ ] **FAIL** — An answer area renders before the `sources` event arrives (violates sources-first; §12.3).
+- [ ] **FIX** — The client branches on a special `cannot_confirm` event instead of the uniform `token` + `done{passed:false}` representation (§12.3).
+- [ ] **FLAG** — Grounding / citation / filing logic is re-implemented client-side instead of consumed verbatim from the server events (§12.5).
+
 The reviewer's job is to spot these and act per the severity. The implementer's job is to not write them in the first place — reading this section before writing code is cheaper than re-doing it after a `FAIL`.
+
+---
+
+## 12. Frontend (Gateway UI)
+
+The repo's only frontend is the Gateway's browser UI (Phase 9 — [ADR-0009](adr/0009-streaming-verify-then-stream.md), [ADR-0010](adr/0010-gateway-mounts-both-apps.md)). It is a **presentation shell** over the SSE stream; all retrieval, grounding, and filing logic stays server-side.
+
+### 12.1 Stack — vanilla, single-file, no build
+
+Vanilla HTML/CSS/JS, a **single file**, served by the Gateway at `/` (FastAPI `StaticFiles`). **No framework, no bundler, no build step** — introducing React/Vue/a build tool is a violation (a rejected pattern, like a second log channel in §5.1). The "no framework friction in a Python repo" rule is deliberate, not an oversight.
+
+### 12.2 SSE client — `fetch` + ReadableStream, never `EventSource`
+
+- `/chat/stream` is **POST**, and native `EventSource` is GET-only. The client MUST use `fetch()` + `ReadableStream` + a small hand-written SSE parser (buffer, split on the `\n\n` event delimiter, read `event:` / `data:` lines, dispatch on event type).
+- Keep the **SSE parser a pure function** (text chunks → parsed events), separable from DOM rendering, so it is unit-testable without a browser. It is the deep/testable unit of the frontend (mirrors §2.1).
+- Handle the full event contract (ADR-0009): `sources`, `status`, `token`, `done`, `error`. Unknown event types are ignored (forward-compat).
+
+### 12.3 Grounding-inspector UX invariants
+
+These encode ADR-0009 in the UI — they are correctness, not decoration:
+
+- **Sources render first.** Never render an answer area before the `sources` event arrives (the whole point — PROMPT.md "Return selected sources first").
+- **The answer area only ever shows verified text.** The client renders `token` events as-is; the server already gated them. The client MUST NOT implement any optimistic-render-then-retract behaviour — under verify-then-stream there is nothing to retract.
+- **Cannot Confirm is uniform.** It arrives as `token`(s) of the fixed phrase + `done{passed:false, reason}`. The client does NOT branch on a special `cannot_confirm` event.
+- **`done` drives the grounding badge** (✓/✗ + reason) and the filed indicator (Wiki only; `done.filed`).
+- **The stack toggle** maps to the `stack` query param; switching stacks is a fresh request.
+
+### 12.4 Security — render server/LLM content as text
+
+Answer text, source `content` snippets, headings, and citations are LLM/corpus-derived → **untrusted for rendering**. Insert them with `textContent` / safe DOM construction, **never** `innerHTML`. No `eval`, no dynamic `<script>` injection. This is the one hard frontend security rule (XSS).
+
+### 12.5 No business logic in the client
+
+The client renders events and issues requests. It does NOT re-implement grounding, gating, citation formatting, or filing decisions — those are server concerns (mirrors §2.3: the UI is a shallow presentation shell). Source/citation shape comes from the `sources` event verbatim (the trio + `derived_from`); the client does not reconstruct citation ids.
+
+### 12.6 Design exploration is out-of-loop
+
+Generating multiple visual variations (`frontend-design` / `prototype` skills, or claude.ai design) is a **human-in-the-loop creative step**, not an implement-agent TDD slice. The orchestration loop consumes the **chosen** mockup and wires it to the real events. A "pick a design" step is not test-reviewed for coverage; the wiring slice is.
+
+### 12.7 Testing
+
+- **SSE parser:** unit-tested as a pure function (hermetic).
+- **Event-sequence behaviour:** asserted at the gateway/endpoint level with a mocked LLM, no `OPENAI_API_KEY` (per §6.3 / §6.4) — same discipline as the backend.
+- **DOM rendering / visuals:** verified manually / via Preview tooling (screenshots), NOT unit-tested. State this honestly — do not claim coverage of visual rendering.

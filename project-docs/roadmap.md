@@ -19,7 +19,7 @@ Phases are ordered by four criteria, in this priority:
 3. **Diminishing returns** — later phases add less interview signal per hour. The sequence has natural stopping points (see § Stopping points).
 4. **Unlock effect** — early phases activate deferred patterns (see [`inspiration.md`](inspiration.md)) that later phases reuse, avoiding repeat engineering.
 
-## Roadmap (Phase 3-11)
+## Roadmap (Phase 3-13)
 
 | Phase | Scope | Est | Axis | Status |
 |---|---|---|---|---|
@@ -33,8 +33,9 @@ Phases are ordered by four criteria, in this priority:
 | **10** | Hot Cache — `wiki/hot.md` (~500 words), rewritten at end of meaningful sessions. First file the agent reads. | 2-4h | convenience | Planned |
 | **11** | Conversation Memory — Query Rewriting + Conversation Store. Multi-turn `/chat`. PROMPT.md stretch #8. | 6-10h | multi-turn | Planned |
 | **12** | Alternative Interfaces — CLI (`kb index`, `kb ask`) + MCP server. PROMPT.md stretch #5. | 4-8h | packaging | Planned |
+| **13** | Hybrid Retrieval over Wiki — BM25 + dense vector **both over the curated `wiki/` Section corpus**, fused via Reciprocal Rank Fusion (RRF). Served as a **third `Retriever`** alongside Stack A (Wiki) and Stack B (Vector RAG). Additive — does **not** touch the two existing apps. Optional cross-encoder reranker deferred to a follow-on. Relates to #107 (becomes a 3rd implementation under the pluggable `Retriever` protocol if that lands). | 14-22h (RRF-only; +4-6h with reranker) | retrieval quality (new axis) | Future / want-to-do |
 
-**Total: 48-87h** (excluding the ⭐ recommended stopping point at Phase 5, which clocks in at 17-31h after Phase 3).
+**Total: 48-87h** for Phases 3-12 (excluding the ⭐ recommended stopping point at Phase 5, which clocks in at 17-31h after Phase 3). **Phase 13 sits on a separate "retrieval quality" axis — it is off the linear Karpathy narrative and is an optional add-on, not on the critical path.**
 
 ## Hard dependencies
 
@@ -87,6 +88,25 @@ The current `docs/` (3 FAQ Sources, 9 Sections) has no stale content, no contrad
 ### Phase 10 (Hot Cache) — defer if single-shot
 
 Hot Cache solves the "where were we?" problem between sessions. If the project stays in single-shot demo usage, Hot Cache has no observable value. Implement only if multi-session use becomes real, or skip and reuse the slot for a different stretch goal.
+
+### Phase 11 (Conversation Memory) — filing × toggle interaction (locked at Phase 9 grill, 2026-05-28)
+
+Conversation Memory lives in the **gateway**, not the sub-apps (Phase 9 decision: sub-apps stay stateless single-turn; Query Rewriting + Conversation Store are gateway concerns). Two constraints the Phase 11 PRD **must** honour:
+
+1. **File the rewritten self-contained query, not the raw elliptical follow-up.** When a multi-turn answer is filed (Phase 6 Answer Filing, Wiki stack only), `frontmatter.question` must be the Query-Rewriting output (self-contained), so `wiki/qa/*.md` stays independently readable. Filing the raw follow-up ("and how long does *that* take?") would write an incoherent standalone page. Query Rewriting's output is self-contained by construction, so this is free — just file the rewritten form.
+2. **Cross-stack fact leakage is already firewalled by the Grounding Check — do NOT add a redundant per-stack conversation partition.** Even if turn N-1 was answered by Vector RAG and turn N toggles to Wiki, the Wiki answer's claims must pass grounding against `wiki/` Sections, so RAG-sourced facts cannot enter a filed Wiki page (an ungrounded claim → Cannot Confirm → no filing). Conversation context shapes the *question*; it can never inject facts into the *answer*. The grounding firewall + the Phase 6 draft/promote gate already cover the "polluted/interrupted filed data" concern raised at the Phase 9 grill.
+
+### Phase 13 (Hybrid Retrieval over Wiki) — design decisions already locked
+
+Scoped during a 2026-05-28 grill (after Phase 8's comparison shipped). Capture so a future session does not re-litigate:
+
+- **Corpus = wiki Sections, both arms.** BM25-over-wiki already exists (`markdown_kb.indexer.search`). The new piece is **dense-over-wiki**. Build the dense (FAISS) index directly from `markdown_kb.indexer.sections` — that list is already filtered (entities/concepts/qa + qa `status==live`) and slug-id'd. Do **not** point `vector_rag` at `wiki/`: its `_load_documents` uses filename-based ids (no slug), which would break id-alignment.
+- **Embed at Section granularity, not char-chunk.** Dense-returned ids must align **1:1** with BM25's slug ids so RRF is true same-corpus fusion. Char-chunking (vector_rag's model) would force a chunk→Section aggregation step (+2-3h, extra design). Section-level keeps fusion trivial.
+- **RRF is recall-union (補漏), NOT precision-filter.** RRF rescues docs BM25 missed; it does **not** remove BM25's false positives. "Eliminate BM25's errors" (precision) needs a **cross-encoder reranker AFTER RRF** — deferred. Ship RRF-only first, measure, then decide on the reranker. Cross-encoder rerankers are small BERT-class models (not LLMs, not token-billed) applied to top-20/50 only.
+- **Token cost is NOT a disadvantage** (the worry that prompted this scoping). Retrieval is LLM-token-free; at fixed top-k the generation cost is identical to single RAG (RRF changes *which* k docs, not *how many*). Real added cost: ~1.4x index storage (inverted + vector on same corpus) + ~6ms p50 latency (noise vs 500ms-2s LLM) + optional reranker.
+- **Everything downstream is reused unchanged.** Because the unit is `Section`, `expand_to_pages` / `build_prompt` / `grounding.verify` (Section satisfies `CitableContent`) / Cannot Confirm gate / `derived_from` all work as-is. The only genuinely new code is the dense index + the ~20-line RRF merge.
+- **Slice plan:** H-1 dense-over-wiki index (4-6h) → H-2 RRF + hybrid `query()` (4-6h) → H-3 thin serving surface `/health`/`/index`/`/chat` (3-5h) → ADR + CONTEXT + reviewer (2-3h) → regression + real-embedding smoke (1-2h).
+- **Relation to #107:** if the pluggable `Retriever` protocol lands, this hybrid is its 3rd implementation (Wiki / Vector-RAG / Hybrid), togglable alongside the other two — so it strengthens, not conflicts with, #107.
 
 ## Out of scope (still)
 
