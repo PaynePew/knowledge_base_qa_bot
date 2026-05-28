@@ -97,9 +97,7 @@ def test_ingest_strips_frontmatter_before_classifier(tmp_path, monkeypatch):
 
     docs_dir = tmp_path / "docs"
     docs_dir.mkdir()
-    (docs_dir / "customer_handbook.md").write_text(
-        _SOURCE_WITH_FRONTMATTER, encoding="utf-8"
-    )
+    (docs_dir / "customer_handbook.md").write_text(_SOURCE_WITH_FRONTMATTER, encoding="utf-8")
 
     wiki_dir = tmp_path / "wiki"
 
@@ -111,9 +109,7 @@ def test_ingest_strips_frontmatter_before_classifier(tmp_path, monkeypatch):
 
     from app.ingest import ingest_sources
 
-    result = ingest_sources(
-        ["customer_handbook.md"], docs_dir=docs_dir, wiki_dir=wiki_dir
-    )
+    result = ingest_sources(["customer_handbook.md"], docs_dir=docs_dir, wiki_dir=wiki_dir)
 
     # The Source was processed successfully into a page.
     assert result.failed_sources == [], f"Unexpected failures: {result.failed_sources}"
@@ -127,8 +123,7 @@ def test_ingest_strips_frontmatter_before_classifier(tmp_path, monkeypatch):
     classifier_text = captured_classifier_input[0]
     for marker in _FRONTMATTER_MARKERS:
         assert marker not in classifier_text, (
-            f"Frontmatter marker {marker!r} leaked into the ingest LLM prompt:\n"
-            f"{classifier_text}"
+            f"Frontmatter marker {marker!r} leaked into the ingest LLM prompt:\n{classifier_text}"
         )
 
     # The real Source body still reached the LLM (strip removed only metadata).

@@ -51,7 +51,9 @@ from .logger import log_event
 # It is duplicated here (not imported) to keep the apps decoupled; the
 # SYSTEM_PROMPT drift smoke test pins both literals against markdown_kb's.
 CANNOT_CONFIRM_PHRASE = "I cannot confirm from the knowledge base."
-NOT_INDEXED_MESSAGE = "The knowledge base has not been indexed yet. Call POST /index first."
+NOT_INDEXED_MESSAGE = (
+    "The knowledge base has not been indexed yet. Call POST /index first."
+)
 
 # ---------------------------------------------------------------------------
 # System prompt — Stack B's own literal of the ADR-0001 strict-grounded contract
@@ -157,7 +159,9 @@ def query(question: str) -> dict:
         return {
             "answer": CANNOT_CONFIRM_PHRASE,
             "sources": [],
-            "grounding_outcome": GroundingOutcome(passed=False, reason="retrieval_empty"),
+            "grounding_outcome": GroundingOutcome(
+                passed=False, reason="retrieval_empty"
+            ),
         }
 
     sources = [
@@ -216,19 +220,26 @@ def _call_llm_with_error_handling(question: str, prompt_text: str) -> str:
         )
         return response.content
     except (openai.APITimeoutError, openai.RateLimitError) as exc:
-        log_event("chat_error", f'"{truncated}" kind=openai_transient exc={type(exc).__name__}')
+        log_event(
+            "chat_error",
+            f'"{truncated}" kind=openai_transient exc={type(exc).__name__}',
+        )
         raise HTTPException(
             status_code=503,
             detail="LLM service temporarily unavailable, please retry.",
         ) from exc
     except openai.AuthenticationError as exc:
-        log_event("chat_error", f'"{truncated}" kind=openai_auth exc={type(exc).__name__}')
+        log_event(
+            "chat_error", f'"{truncated}" kind=openai_auth exc={type(exc).__name__}'
+        )
         raise HTTPException(
             status_code=500,
             detail="LLM service auth failed (check OPENAI_API_KEY).",
         ) from exc
     except openai.APIError as exc:
-        log_event("chat_error", f'"{truncated}" kind=openai_api exc={type(exc).__name__}')
+        log_event(
+            "chat_error", f'"{truncated}" kind=openai_api exc={type(exc).__name__}'
+        )
         raise HTTPException(
             status_code=500,
             detail=f"LLM service error: {exc!s}",

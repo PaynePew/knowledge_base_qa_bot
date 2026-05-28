@@ -75,7 +75,8 @@ def _make_auth_error() -> openai.AuthenticationError:
     return openai.AuthenticationError(
         "Incorrect API key provided",
         response=httpx.Response(
-            401, request=httpx.Request("POST", "https://api.openai.com/v1/chat/completions")
+            401,
+            request=httpx.Request("POST", "https://api.openai.com/v1/chat/completions"),
         ),
         body={},
     )
@@ -85,7 +86,8 @@ def _make_rate_limit_error() -> openai.RateLimitError:
     return openai.RateLimitError(
         "rate limit exceeded",
         response=httpx.Response(
-            429, request=httpx.Request("POST", "https://api.openai.com/v1/chat/completions")
+            429,
+            request=httpx.Request("POST", "https://api.openai.com/v1/chat/completions"),
         ),
         body={},
     )
@@ -184,7 +186,9 @@ def test_chat_empty_retrieval_returns_cannot_confirm(indexed_corpus, monkeypatch
 # ---------------------------------------------------------------------------
 # Post-LLM grounding rejection → Cannot Confirm
 # ---------------------------------------------------------------------------
-def test_chat_grounding_rejection_replaces_with_cannot_confirm(indexed_corpus, monkeypatch):
+def test_chat_grounding_rejection_replaces_with_cannot_confirm(
+    indexed_corpus, monkeypatch
+):
     fake_llm = FakeLLM("Refunds take 3 days and we ship to Mars for free.")
     client = _make_client(monkeypatch, fake_llm)
 

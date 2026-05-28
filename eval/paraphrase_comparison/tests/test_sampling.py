@@ -25,7 +25,9 @@ _FIXTURE = [
 
 def test_sha256_order_is_deterministic_across_calls():
     first = [s.section_id for s in sha256_order(_FIXTURE, "synonym_swap")]
-    second = [s.section_id for s in sha256_order(list(reversed(_FIXTURE)), "synonym_swap")]
+    second = [
+        s.section_id for s in sha256_order(list(reversed(_FIXTURE)), "synonym_swap")
+    ]
     # Same seed + same membership => identical order regardless of input order.
     assert first == second
 
