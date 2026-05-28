@@ -1,0 +1,789 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ask.Wiki&amp;RAG — grounded Q&amp;A (minimal)</title>
+
+<!--
+  Minimal iteration of the conversational seed.
+  Same hard constraints:
+   • Single vanilla HTML/CSS/JS file. NO framework, NO build, NO React.
+   • Driven by MOCK SSE data on a timer — no backend, no fetch.
+   • All 6 states render: sources-first, verifying, streaming, grounded,
+     Cannot Confirm (uniform), error.
+   • SSE event contract (order: sources → status → token* → done | error).
+   • Cannot Confirm is UNIFORM: token(s) of the fixed phrase + done{passed:false}.
+   • Render server/LLM text via textContent — NEVER innerHTML (XSS).
+   • SSE parser stays a small PURE function (text chunks → events).
+-->
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --bg:      #fafaf9;
+    --surface: #ffffff;
+    --ink:     #111111;
+    --ink-2:   #555555;
+    --ink-3:   #8a8a8a;
+    --ink-4:   #b8b8b8;
+    --rule:    #e5e5e3;
+    --rule-2:  #ececea;
+    --accent:  #1f1f1f;
+    --pass:    #2f6b3e;
+    --fail:    #a83a26;
+    --selection: #e9e9e7;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  #stage { height: 100%; display: block; }
+  button { font: inherit; cursor: pointer; }
+  ::selection { background: var(--selection); color: var(--ink); }
+
+  @keyframes pulse-dot { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+  @keyframes blink     { 50% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 680px;
+    margin: 0 auto;
+    height: 100%;
+    display: flex; flex-direction: column;
+    padding: 0 32px;
+  }
+
+  /* ── Masthead ────────────────────────────────────────── */
+  .masthead {
+    flex: none;
+    padding: 22px 0 16px;
+    display: flex; align-items: center; gap: 16px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .mast-logo {
+    font-family: "IBM Plex Sans", sans-serif;
+    font-weight: 500; font-size: 15px;
+    letter-spacing: -.005em; color: var(--ink);
+  }
+  .mast-logo .dot { color: var(--ink-4); margin: 0 1px; }
+  .mast-logo .amp { color: var(--ink-4); margin: 0 1px; font-weight: 400; }
+  .mast-toggle {
+    margin-left: auto;
+    display: inline-flex;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 2px;
+    gap: 1px;
+  }
+  .mast-toggle button {
+    border: 0; background: transparent;
+    padding: 5px 12px;
+    color: var(--ink-3);
+    border-radius: 3px;
+    letter-spacing: .02em;
+  }
+  .mast-toggle button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+
+  /* ── Stream ──────────────────────────────────────────── */
+  .stream {
+    flex: 1;
+    min-height: 0;
+    display: flex; flex-direction: column;
+    padding: 4px 14px 24px 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scroll-behavior: smooth;
+    /* Firefox */
+    scrollbar-width: thin;
+    scrollbar-color: var(--rule) transparent;
+  }
+  /* WebKit / Blink — slim, low-contrast, only fully visible on hover */
+  .stream::-webkit-scrollbar { width: 8px; }
+  .stream::-webkit-scrollbar-track { background: transparent; }
+  .stream::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 4px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    transition: background-color .2s ease;
+  }
+  .stream:hover::-webkit-scrollbar-thumb { background-color: var(--rule); }
+  .stream::-webkit-scrollbar-thumb:hover { background-color: var(--ink-4); }
+  .entry { display: flex; flex-direction: column; }
+
+  .label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 28px 0 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .label .count {
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-2);
+  }
+
+  /* QUERY */
+  .query {
+    font-size: 19px; line-height: 1.4; font-weight: 400;
+    color: var(--ink);
+    padding-bottom: 4px;
+  }
+
+  /* RECORDS */
+  .records summary { list-style: none; cursor: pointer; outline: none; }
+  .records summary::-webkit-details-marker { display: none; }
+  .records[open] .chev { transform: rotate(180deg); }
+  .recs-body { overflow: hidden; }
+  .recs-toggle {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: "IBM Plex Mono", monospace; font-size: 11px;
+    color: var(--ink-3);
+    padding: 0 0 12px;
+    user-select: none;
+    transition: color .15s ease;
+  }
+  .recs-toggle:hover { color: var(--ink-2); }
+  .recs-toggle .chev {
+    display: inline-block; font-size: 9px;
+    transition: transform .25s cubic-bezier(.22,.61,.36,1);
+  }
+  .rec {
+    display: grid;
+    grid-template-columns: 24px 1fr auto;
+    column-gap: 12px;
+    padding: 14px 0;
+    border-top: 1px solid var(--rule);
+  }
+  .rec:last-child { border-bottom: 1px solid var(--rule); }
+  .rec .num {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px; color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+    padding-top: 3px;
+  }
+  .rec .body { min-width: 0; }
+  .rec .id {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12.5px; color: var(--ink); font-weight: 500;
+  }
+  .rec .crumb {
+    font-size: 12px; color: var(--ink-3); margin-top: 2px;
+  }
+  .rec .snip {
+    font-size: 14px; line-height: 1.55; color: var(--ink-2);
+    margin-top: 8px;
+  }
+  .rec .prov {
+    margin-top: 8px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px; color: var(--ink-3);
+  }
+  .rec .prov b { color: var(--ink-2); font-weight: 500; }
+  .rec .score {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px; color: var(--ink-4);
+    font-variant-numeric: tabular-nums;
+    padding-top: 3px;
+  }
+
+  .recs-empty {
+    padding: 22px 0;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    font-size: 13.5px;
+    color: var(--ink-3);
+    text-align: center;
+  }
+
+  /* VERIFY */
+  .verify {
+    display: inline-flex; align-items: center; gap: 10px;
+    font-family: "IBM Plex Mono", monospace; font-size: 11.5px;
+    color: var(--ink-2);
+    padding: 2px 0 4px;
+  }
+  .verify .dots { display: inline-flex; gap: 3px; }
+  .verify .dots i {
+    width: 4px; height: 4px; background: var(--ink-2);
+    border-radius: 50%;
+    animation: pulse-dot 1.1s infinite ease-in-out;
+  }
+  .verify .dots i:nth-child(2) { animation-delay: .15s; }
+  .verify .dots i:nth-child(3) { animation-delay: .30s; }
+
+  /* ANSWER */
+  .answer .body {
+    font-size: 16px; line-height: 1.65; color: var(--ink);
+    white-space: pre-wrap;
+    text-wrap: pretty;
+  }
+  .answer.cannot .body { color: var(--ink-2); }
+  .cursor {
+    display: inline-block;
+    width: 7px; height: 1em;
+    background: var(--ink);
+    margin-left: 2px;
+    transform: translateY(2px);
+    animation: blink 1s steps(1) infinite;
+  }
+
+  .foot {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    margin-top: 20px; padding-top: 14px;
+    border-top: 1px solid var(--rule);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+  }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    color: var(--ink-2);
+    letter-spacing: .02em;
+  }
+  .chip.pass .dot { background: var(--pass); }
+  .chip.fail .dot { background: var(--fail); }
+  .chip .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    display: inline-block;
+  }
+  .chip .label-txt {
+    font-weight: 500; text-transform: uppercase; letter-spacing: .06em;
+  }
+  .chip.pass .label-txt { color: var(--pass); }
+  .chip.fail .label-txt { color: var(--fail); }
+  .reason {
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 12.5px;
+    color: var(--ink-3);
+  }
+  .filed {
+    margin-left: auto;
+    color: var(--ink-3);
+  }
+  .filed b { color: var(--ink); font-weight: 500; }
+
+  /* ERROR */
+  .err {
+    padding: 16px 18px;
+    border: 1px solid var(--rule);
+    background: var(--surface);
+    border-radius: 4px;
+  }
+  .err .h {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--fail);
+    margin-bottom: 6px;
+  }
+  .err .m {
+    font-size: 14.5px;
+    color: var(--ink);
+    line-height: 1.5;
+  }
+  .err button {
+    margin-top: 14px;
+    background: var(--ink); color: var(--surface);
+    border: 0;
+    padding: 7px 14px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .04em;
+    border-radius: 3px;
+  }
+  .err button:hover { background: #000; }
+
+  /* COMPOSER */
+  .composer {
+    flex: none;
+    background: var(--bg);
+    padding: 14px 0 20px;
+    border-top: 1px solid var(--rule);
+  }
+  .composer .box {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 6px 6px 6px 14px;
+  }
+  .composer .box:focus-within {
+    border-color: var(--ink-3);
+  }
+  .composer input {
+    flex: 1; border: 0; outline: none; background: transparent;
+    font-family: inherit; font-size: 14.5px; color: var(--ink);
+    padding: 8px 0;
+  }
+  .composer input::placeholder { color: var(--ink-3); }
+  .composer .send {
+    background: var(--ink); color: var(--surface);
+    border: 0;
+    padding: 8px 14px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .04em;
+    border-radius: 4px;
+  }
+  .composer .send:hover { background: #000; }
+  .composer .hint {
+    margin-top: 8px;
+    text-align: right;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    color: var(--ink-4);
+    letter-spacing: .04em;
+  }
+  .composer .hint kbd {
+    border: 1px solid var(--rule);
+    background: var(--surface);
+    padding: 1px 5px;
+    border-radius: 2px;
+    font-family: inherit;
+    font-size: 9.5px;
+    color: var(--ink-3);
+  }
+
+  /* DEMO BAR */
+  /* DEMO BAR — subtle dev affordance, parked in the corner */
+  #demobar {
+    position: fixed; right: 16px; bottom: 16px;
+    z-index: 1000;
+    display: flex; align-items: center; gap: 1px;
+    padding: 3px;
+    background: rgba(255,255,255,.7);
+    color: var(--ink-3);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    opacity: .55;
+    transition: opacity .2s ease, background .2s ease;
+  }
+  #demobar:hover { opacity: 1; background: rgba(255,255,255,.95); }
+  #demobar .lbl { display: none; }
+  #demobar button {
+    background: transparent;
+    border: 0;
+    color: var(--ink-3);
+    padding: 4px 8px;
+    border-radius: 4px;
+    letter-spacing: .02em;
+    font-size: 10px;
+  }
+  #demobar:hover button { color: var(--ink-2); }
+  #demobar button:hover { background: rgba(0,0,0,.05); color: var(--ink); }
+  #demobar button.on { background: var(--ink); color: var(--surface); }
+  #demobar #replay { font-size: 11px; padding: 3px 7px; }
+
+  @media (max-width: 540px) {
+    .page { padding: 0 20px; }
+    .query { font-size: 17px; }
+    .answer .body { font-size: 15px; }
+  }
+</style>
+</head>
+<body>
+  <main id="stage" aria-live="polite"></main>
+
+  <div id="demobar" role="toolbar" aria-label="Demo states">
+    <span class="lbl">STATE</span>
+    <button data-scn="grounded">Grounded</button>
+    <button data-scn="cannot_confirm">Cannot&nbsp;Confirm</button>
+    <button data-scn="error">Error</button>
+    <button id="replay" title="Replay">↻</button>
+  </div>
+
+<script>
+"use strict";
+/* §12.3: BM25 score is hidden by default (dev-mode only). Enable with ?dev=1.
+   RAG cards never show a score regardless of this flag. */
+const DEV = new URLSearchParams(location.search).has("dev");
+/* textContent-only DOM helper — innerHTML is banned (XSS, §12.4) */
+function el(tag, props, ...kids) {
+  const n = document.createElement(tag);
+  if (props) for (const [k, v] of Object.entries(props)) {
+    if (v == null) continue;
+    if (k === "class") n.className = v;
+    else if (k === "text") n.textContent = v;
+    else if (k === "html") throw new Error("innerHTML banned");
+    else if (k.startsWith("on") && typeof v === "function") n.addEventListener(k.slice(2).toLowerCase(), v);
+    else n.setAttribute(k, v);
+  }
+  for (const kid of kids) { if (kid == null || kid === false) continue; n.append(kid.nodeType ? kid : document.createTextNode(String(kid))); }
+  return n;
+}
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/* ---- MOCK SERVER DATA ---- */
+const WIKI_SOURCES = [
+  { source: "refund-timeline", heading: "concepts › Refund Timeline", score: 8.42,
+    content: "Approved refunds are typically processed within 5–7 business days. The time for the refunded amount to appear in a customer's account may vary based on their bank or card provider.",
+    derived_from: [{ source: "refund_policy.md#refund-timeline", heading: "Refund Policy › Refund Timeline" }] },
+  { source: "non-refundable-items", heading: "concepts › Non-Refundable Items", score: 5.11,
+    content: "Gift cards, digital downloads, and final-sale merchandise are not eligible for a refund under any circumstances.",
+    derived_from: [{ source: "refund_policy.md#non-refundable-items", heading: "Refund Policy › Non-Refundable Items" }] },
+];
+const RAG_SOURCES = [
+  { source: "refund_policy.md", heading: "refund_policy.md", score: 0.71, derived_from: null,
+    content: "… approved refunds are processed within 5-7 business days. The time for the funds to appear depends on the customer's bank or card provider …" },
+  { source: "refund_policy.md", heading: "refund_policy.md", score: 0.64, derived_from: null,
+    content: "… Non-refundable items: gift cards, digital downloads, final-sale merchandise. These items cannot be returned or refunded …" },
+  { source: "shipping_faq.md", heading: "shipping_faq.md", score: 0.58, derived_from: null,
+    content: "… orders ship within 1-2 business days. Refunds for returned shipments are issued only after the item passes inspection at the warehouse …" },
+];
+const ANSWER_TOKENS = ["Approved refunds are ", "typically processed within ", "5–7 business days. ", "The exact time for the refunded ", "amount to appear in your account ", "depends on your bank or ", "card provider."];
+const CANNOT_CONFIRM_PHRASE = "I cannot confirm from the knowledge base.";
+const REASON_TEXT = {
+  claim_supported: "Every claim is supported by the cited sources.",
+  claim_unsupported: "The draft made a claim the sources don't support — the answer was withheld.",
+  verifier_unavailable: "The grounding verifier was unavailable — the answer was withheld to stay safe.",
+  below_threshold: "No source cleared the relevance threshold.",
+  retrieval_empty: "No matching sources were found.",
+  index_missing: "The knowledge base index has not been built yet.",
+};
+function buildScenario(name, stack) {
+  const src = stack === "wiki" ? WIKI_SOURCES : RAG_SOURCES;
+  const filed = stack === "wiki" ? { slug: "refund-processing-time", status: "draft", op: "created", count: 1 } : null;
+  const srcDelay = stack === "wiki" ? 200 : 460;
+  const f = [];
+  if (name === "grounded") {
+    f.push({ ev: "sources", data: { sources: src }, delay: srcDelay });
+    f.push({ ev: "status", data: { phase: "verifying" }, delay: 420 });
+    ANSWER_TOKENS.forEach((t, i) => f.push({ ev: "token", data: { text: t }, delay: i === 0 ? 1500 : 135 }));
+    f.push({ ev: "done", data: { grounding: { passed: true, reason: "claim_supported" }, filed, stack }, delay: 360 });
+    return { query: "How long do refunds take to process?", frames: f };
+  }
+  if (name === "cannot_confirm") {
+    // Empty retrieval — the pre-LLM gate fires (verifier never runs), so there is
+    // NO `status: verifying` frame. Uniform CC: sources → token(fixed phrase) → done.
+    f.push({ ev: "sources", data: { sources: [] }, delay: srcDelay });
+    f.push({ ev: "token", data: { text: CANNOT_CONFIRM_PHRASE }, delay: 1500 });
+    f.push({ ev: "done", data: { grounding: { passed: false, reason: "below_threshold" }, filed: null, stack }, delay: 360 });
+    return { query: "Can I still get a refund 90 days after purchase?", frames: f };
+  }
+  // Error
+  f.push({ ev: "sources", data: { sources: [] }, delay: srcDelay });
+  f.push({ ev: "status", data: { phase: "verifying" }, delay: 420 });
+  f.push({ ev: "error", data: { message: "The answer service is temporarily unavailable. Please try again." }, delay: 1800 });
+  return { query: "How long do refunds take to process?", frames: f };
+}
+
+/* ---- SSE frame builder + PURE parser ---- */
+function buildFrame(ev, data) { return "event: " + ev + "\ndata: " + JSON.stringify(data) + "\n\n"; }
+function createSSEParser() {
+  let buf = "";
+  return function push(chunk) {
+    buf += chunk; const out = []; let idx;
+    while ((idx = buf.indexOf("\n\n")) !== -1) {
+      const raw = buf.slice(0, idx); buf = buf.slice(idx + 2);
+      let event = "message", dataStr = "";
+      for (const line of raw.split("\n")) {
+        if (line.startsWith("event:")) event = line.slice(6).trim();
+        else if (line.startsWith("data:")) dataStr += line.slice(5).trim();
+      }
+      let data = null; try { data = JSON.parse(dataStr); } catch (_) {}
+      out.push({ event, data });
+    }
+    return out;
+  };
+}
+let activeRun = 0;
+async function play(frames, dispatch) {
+  const runId = ++activeRun; const parser = createSSEParser();
+  for (const fr of frames) {
+    await wait(fr.delay); if (runId !== activeRun) return;
+    for (const evt of parser(buildFrame(fr.ev, fr.data))) dispatch(evt.event, evt.data);
+  }
+}
+
+/* ---- UI ---- */
+let stack = "wiki", scenario = "grounded";
+let answerEl = null, answerBody = null, verifyEl = null;
+const stage = document.getElementById("stage");
+let stream, segWiki, segRag, input;
+
+function build() {
+  stream = el("div", { class: "stream" });
+  input = el("input", { type: "text", placeholder: "Ask the knowledge base…" });
+  segWiki = el("button", { type: "button", text: "Wiki", onclick: () => setStack("wiki") });
+  segRag  = el("button", { type: "button", text: "RAG",  onclick: () => setStack("rag")  });
+  const send = el("button", { class: "send", type: "button", text: "Ask", onclick: () => run("grounded") });
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") run("grounded"); });
+
+  const masthead = el("header", { class: "masthead" },
+    el("div", { class: "mast-logo" },
+      "ask",
+      el("span", { class: "dot" }, "."),
+      "Wiki",
+      el("span", { class: "amp" }, "&"),
+      "RAG",
+    ),
+    el("div", { class: "mast-toggle", role: "tablist" }, segWiki, segRag),
+  );
+
+  const composer = el("div", { class: "composer" },
+    el("div", { class: "box" }, input, send),
+    el("div", { class: "hint" }, "Press ", el("kbd", { text: "↵" }), " to submit"),
+  );
+
+  stage.replaceChildren(el("div", { class: "page" }, masthead, stream, composer));
+}
+
+function syncSeg() {
+  segWiki.setAttribute("aria-pressed", stack === "wiki");
+  segRag.setAttribute("aria-pressed", stack === "rag");
+}
+
+function makeLabel(text, opts) {
+  opts = opts || {};
+  const lbl = el("div", { class: "label" }, el("span", { text: text }));
+  if (opts.count != null) lbl.append(el("span", { class: "count", text: "· " + opts.count }));
+  return lbl;
+}
+
+function add(node) {
+  stream.append(node);
+  // Subtle reveal via Web Animations API (robust across embedded iframes).
+  if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    node.animate(
+      [{ opacity: 0, transform: "translateY(4px)" }, { opacity: 1, transform: "none" }],
+      { duration: 320, easing: "cubic-bezier(.22,.61,.36,1)", fill: "backwards" }
+    );
+  }
+  // Smooth scroll to bottom for new entries.
+  requestAnimationFrame(() => {
+    stream.scrollTo({ top: stream.scrollHeight, behavior: "smooth" });
+  });
+}
+
+function setStack(s) { if (s === stack) return; stack = s; run(scenario); }
+
+/* ---- handlers ---- */
+function onQuery(text) {
+  const entry = el("div", { class: "entry" },
+    makeLabel("Query"),
+    el("div", { class: "query", text: text }),
+  );
+  add(entry);
+}
+
+function onSources(sources) {
+  const entry = el("div", { class: "entry" });
+  entry.append(makeLabel("Records", { count: sources.length }));
+
+  if (!sources.length) {
+    entry.append(el("div", { class: "recs-empty", text: "No record met the relevance threshold." }));
+    add(entry);
+    return;
+  }
+
+  const det = el("details", { class: "records", open: "" });
+  const toggle = el("summary", { class: "recs-toggle" },
+    el("span", { text: "Show " + sources.length + " " + (sources.length === 1 ? "record" : "records") }),
+    el("span", { class: "chev", text: "▾" }),
+  );
+  det.append(toggle);
+
+  const recsBody = el("div", { class: "recs-body" });
+  sources.forEach((s, i) => {
+    const rec = el("div", { class: "rec" });
+    rec.append(el("div", { class: "num", text: String(i + 1).padStart(2, "0") }));
+    const body = el("div", { class: "body" });
+    body.append(
+      el("div", { class: "id", text: s.source }),
+      el("div", { class: "crumb", text: s.heading }),
+      el("div", { class: "snip", text: s.content }),
+    );
+    if (s.derived_from && s.derived_from.length) {
+      body.append(el("div", { class: "prov" },
+        el("b", {}, "Derived from "),
+        s.derived_from.map((x) => x.source).join(", "),
+      ));
+    }
+    rec.append(body);
+    // §12.3: score hidden by default (dev-only), and only ever for Wiki; RAG shows none.
+    if (DEV && stack === "wiki" && typeof s.score === "number") {
+      rec.append(el("div", { class: "score", text: s.score.toFixed(2) }));
+    } else {
+      rec.append(el("div", {}));
+    }
+    recsBody.append(rec);
+  });
+  det.append(recsBody);
+  animateDetails(det);
+
+  entry.append(det);
+  add(entry);
+}
+
+/* Smoothly animate <details> open/close using the Web Animations API.
+   We intercept the summary click so we can drive the timing ourselves.
+   A setTimeout safety net guarantees the open/close state flips even in
+   sandboxed environments where WAAPI animations may not advance. */
+function animateDetails(det) {
+  const summary = det.querySelector("summary");
+  const body = det.querySelector(".recs-body");
+  if (!summary || !body) return;
+  let running = null, fallback = null;
+
+  function cleanup() {
+    if (running) { try { running.cancel(); } catch (_) {} running = null; }
+    if (fallback) { clearTimeout(fallback); fallback = null; }
+    body.style.height = "";
+    body.style.opacity = "";
+  }
+
+  summary.addEventListener("click", (e) => {
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    e.preventDefault();
+    cleanup();
+
+    const dur = 260;
+    const ease = "cubic-bezier(.22,.61,.36,1)";
+
+    if (det.open) {
+      // Closing.
+      const h = body.offsetHeight;
+      const finish = () => { det.open = false; cleanup(); };
+      running = body.animate(
+        [{ height: h + "px", opacity: 1 }, { height: "0px", opacity: 0 }],
+        { duration: dur, easing: ease, fill: "forwards" }
+      );
+      running.onfinish = finish;
+      fallback = setTimeout(finish, dur + 60);
+    } else {
+      // Opening.
+      det.open = true;
+      const h = body.scrollHeight;
+      const finish = () => { cleanup(); };
+      running = body.animate(
+        [{ height: "0px", opacity: 0 }, { height: h + "px", opacity: 1 }],
+        { duration: dur, easing: ease, fill: "forwards" }
+      );
+      running.onfinish = finish;
+      fallback = setTimeout(finish, dur + 60);
+    }
+  });
+}
+
+function onStatus() {
+  const entry = el("div", { class: "entry" });
+  entry.append(makeLabel("Verification"));
+  verifyEl = el("div", { class: "verify" },
+    el("span", { class: "dots" }, el("i"), el("i"), el("i")),
+    el("span", { text: "Checking each claim against the cited record…" }),
+  );
+  entry.append(verifyEl);
+  add(entry);
+}
+
+function onToken(t) {
+  if (!answerEl) {
+    if (verifyEl) {
+      const row = verifyEl.closest(".entry");
+      if (row) row.remove();
+      verifyEl = null;
+    }
+    const entry = el("div", { class: "entry" });
+    entry.append(makeLabel("Answer"));
+    answerBody = el("div", { class: "body" });
+    answerEl = el("div", { class: "answer" }, answerBody, el("span", { class: "cursor" }));
+    entry.append(answerEl);
+    add(entry);
+  }
+  answerBody.append(document.createTextNode(t.text));
+  // Token-by-token: each increment is tiny, so a direct scroll feels naturally smooth
+  // without fighting the previous frame's animation.
+  stream.scrollTop = stream.scrollHeight;
+}
+
+function onDone(d) {
+  const cur = answerEl ? answerEl.querySelector(".cursor") : null;
+  if (cur) cur.remove();
+  if (!answerEl) return;
+
+  const pass = d.grounding.passed;
+  if (!pass) answerEl.classList.add("cannot");
+
+  const foot = el("div", { class: "foot" });
+  foot.append(el("span", { class: "chip " + (pass ? "pass" : "fail") },
+    el("span", { class: "dot" }),
+    el("span", { class: "label-txt", text: pass ? "Grounded" : "Cannot confirm" }),
+  ));
+  foot.append(el("span", { class: "reason", text: REASON_TEXT[d.grounding.reason] || d.grounding.reason }));
+  if (d.filed) {
+    foot.append(el("span", { class: "filed" },
+      "Filed → ",
+      el("b", { text: d.filed.slug }),
+    ));
+  }
+  answerEl.append(foot);
+  // Smooth scroll once the foot lands so the grounded chip eases into view.
+  stream.scrollTo({ top: stream.scrollHeight, behavior: "smooth" });
+}
+
+function onError(e) {
+  if (verifyEl) {
+    const row = verifyEl.closest(".entry");
+    if (row) row.remove();
+    verifyEl = null;
+  }
+  const entry = el("div", { class: "entry" });
+  entry.append(makeLabel("Error"));
+  entry.append(el("div", { class: "err" },
+    el("div", { class: "h", text: "Service interrupted" }),
+    el("div", { class: "m", text: e.message }),
+    el("button", { type: "button", text: "Try again", onclick: () => run(scenario) }),
+  ));
+  add(entry);
+}
+
+function dispatch(ev, data) {
+  if (ev === "sources") onSources(data.sources);
+  else if (ev === "status") onStatus();
+  else if (ev === "token") onToken(data);
+  else if (ev === "done") onDone(data);
+  else if (ev === "error") onError(data);
+}
+
+function run(name) {
+  scenario = name;
+  const scn = buildScenario(name, stack);
+  answerEl = null; answerBody = null; verifyEl = null;
+  syncSeg();
+  stream.replaceChildren();
+  onQuery(scn.query);
+  document.querySelectorAll("#demobar [data-scn]").forEach((b) => b.classList.toggle("on", b.dataset.scn === name));
+  play(scn.frames, dispatch);
+}
+
+document.querySelectorAll("#demobar [data-scn]").forEach((b) => (b.onclick = () => run(b.dataset.scn)));
+document.getElementById("replay").onclick = () => run(scenario);
+
+build();
+run("grounded");
+</script>
+</body>
+</html>
