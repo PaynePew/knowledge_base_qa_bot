@@ -1,6 +1,6 @@
-"""Deep module per Ousterhout. Public surface: ``QcVerdict``, ``build_idf``, ``check_key_tokens``.
+"""Deep module per Ousterhout. Public surface: ``QcVerdict``, ``build_idf``, ``check_key_tokens``, ``derive_key_tokens``.
 
-Key-Token QC gate for generated Paraphrases (PRD #100, issue #102).
+Key-Token QC gate for generated Paraphrases (PRD #100, issue #102, #139).
 
 A Paraphrase's dual-side Key Tokens (``key_tokens_docs`` ∪ ``key_tokens_wiki``)
 are what the C5c hit metric overlaps against retrieved content — so a Paraphrase
@@ -21,6 +21,13 @@ Two checks, in order:
 
 The tokeniser is markdown_kb's so "is a stop-word" and "is a token" use the exact
 same convention as the BM25 corpus and the C5c metric (ADR-0002 shared tokeniser).
+
+Issue #139 adds ``derive_key_tokens``, which replaces the LLM-emitted Key Tokens
+with a deterministic derivation from the Gold Section body: tokenise the body,
+rank surviving tokens by corpus IDF, and take the top-N most distinctive single
+tokens. Number-token policy: pure numeric tokens (e.g. "30") are excluded because
+they appear identically in many sections ("30 days", "30%") and are unreliable as
+section discriminators. Tokens shorter than 2 chars are also dropped.
 """
 
 from __future__ import annotations
@@ -131,3 +138,61 @@ def check_key_tokens(
         flagged_tokens=flagged,
         reasons=reasons,
     )
+
+
+# ---------------------------------------------------------------------------
+# Deterministic Key Token derivation (issue #139)
+# ---------------------------------------------------------------------------
+_MIN_TOKEN_LEN = 2  # single chars are never informative Key Tokens
+
+
+def derive_key_tokens(
+    section_body: str,
+    idf: dict[str, float],
+    top_n: int = 10,
+) -> list[str]:
+    """Derive the top-N most distinctive single tokens from a Gold Section body.
+
+    Pipeline (issue #139):
+
+      1. Tokenise ``section_body`` with the markdown_kb tokeniser (ADR-0002) —
+         stop-words and non-alphanumeric chars are stripped automatically.
+      2. Filter out tokens shorter than ``_MIN_TOKEN_LEN`` (2) — single chars
+         carry no retrieval signal.
+      3. Filter out pure numeric tokens (e.g. "30", "15") — numbers appear
+         identically across many sections ("30 days", "30%", "fifteen percent as
+         "15") and are unreliable section discriminators. This is the documented
+         number-token policy (issue #139 AC-4).
+      4. Retain only tokens present in the IDF table — tokens absent from the
+         corpus body cannot match against retrieved content (QC gate logic).
+      5. Rank by IDF descending (higher IDF = more distinctive for this corpus).
+      6. De-duplicate while preserving rank order.
+      7. Return the top-N.
+
+    Returns an empty list when ``section_body`` has no surviving tokens after
+    filtering, rather than raising — the caller (``rekey_paraphrase``) surfaces
+    this via the QC gate.
+    """
+    tokens = tokenize(section_body)
+
+    seen: set[str] = set()
+    candidates: list[tuple[str, float]] = []
+    for tok in tokens:
+        if tok in seen:
+            continue
+        seen.add(tok)
+        # Drop single-char tokens
+        if len(tok) < _MIN_TOKEN_LEN:
+            continue
+        # Drop pure numeric tokens (documented number-token policy)
+        if tok.isdigit():
+            continue
+        score = idf.get(tok)
+        if score is None:
+            # Token not in corpus IDF table → cannot match retrieved content; skip.
+            continue
+        candidates.append((tok, score))
+
+    # Sort by IDF descending (most distinctive first); stable for equal scores.
+    candidates.sort(key=lambda t: -t[1])
+    return [tok for tok, _ in candidates[:top_n]]
