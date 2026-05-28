@@ -216,6 +216,14 @@ def _retrieve_and_gate(question: str) -> dict:
     event before checking early_exit.
     """
     if not indexer.sections:
+        # Lazy-load the persisted .kb/index.json from disk so a fresh Gateway
+        # process can serve stack=wiki without requiring a POST /wiki/index call
+        # in the same process (mirrors the RAG lazy-load fix, issue #133 / #148).
+        # load_index_json() returns (0, 0) and leaves sections=[] when no
+        # persisted index exists on disk.
+        indexer.load_index_json()
+
+    if not indexer.sections:
         log_event(
             "chat_fallback",
             f'"{question[:60].replace(chr(34), chr(39))}" reason=not_indexed',
