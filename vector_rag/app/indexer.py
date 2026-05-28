@@ -38,6 +38,8 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+import openai
+from fastapi import HTTPException
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
@@ -160,7 +162,7 @@ def build_index(docs_dir: Path = DOCS_DIR) -> tuple[int, int]:
         log_event("index_built", "files=0 chunks=0")
         return 0, 0
 
-    vectorstore = _build_faiss(documents)
+    vectorstore = _embed_with_error_handling(documents)
     files_indexed = file_count
     chunks_indexed = len(documents)
     save_vector_index()
@@ -282,6 +284,40 @@ def load_vector_index(index_dir: Path = FAISS_INDEX_DIR) -> tuple[int, int]:
 def _build_faiss(documents: list[Document]) -> FAISS:
     """Construct the FAISS vectorstore from chunk Documents (real-embedding path)."""
     return FAISS.from_documents(documents, get_embeddings())
+
+
+def _embed_with_error_handling(documents: list[Document]) -> FAISS:
+    """Embed + build FAISS, mapping OpenAI exceptions to HTTP status.
+
+    The embedding call is an LLM-facing operation, so it follows the same
+    OpenAI exception → HTTP status mapping as /chat (CODING_STANDARD §4.2):
+      - APITimeoutError, RateLimitError → HTTP 503 (openai_transient)
+      - AuthenticationError            → HTTP 500 (openai_auth)
+      - Any other APIError             → HTTP 500 (openai_api)
+
+    Each branch emits a ``chat_error`` log entry (the repo's shared LLM-error
+    kind). Use ``raise HTTPException(...) from exc`` to preserve the chain.
+    """
+    try:
+        return _build_faiss(documents)
+    except (openai.APITimeoutError, openai.RateLimitError) as exc:
+        log_event("chat_error", f"op=index kind=openai_transient exc={type(exc).__name__}")
+        raise HTTPException(
+            status_code=503,
+            detail="Embedding service temporarily unavailable, please retry.",
+        ) from exc
+    except openai.AuthenticationError as exc:
+        log_event("chat_error", f"op=index kind=openai_auth exc={type(exc).__name__}")
+        raise HTTPException(
+            status_code=500,
+            detail="Embedding service auth failed (check OPENAI_API_KEY).",
+        ) from exc
+    except openai.APIError as exc:
+        log_event("chat_error", f"op=index kind=openai_api exc={type(exc).__name__}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Embedding service error: {exc!s}",
+        ) from exc
 
 
 def _load_documents(docs_dir: Path) -> list[Document]:
