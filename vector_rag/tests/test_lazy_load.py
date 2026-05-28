@@ -22,7 +22,7 @@ import vector_rag.app.indexer as indexer
 import vector_rag.app.retrieval as retrieval
 from markdown_kb.app.grounding import GroundingOutcome
 
-from .conftest import REAL_DOCS, FakeLLMResponse
+from .conftest import FakeLLMResponse
 
 
 # ---------------------------------------------------------------------------

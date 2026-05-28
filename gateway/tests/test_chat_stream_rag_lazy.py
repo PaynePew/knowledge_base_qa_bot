@@ -181,9 +181,7 @@ def test_gateway_rag_stream_lazy_loads_grounded_event_order(lazy_gateway_client)
     assert types[0] == "sources", f"First event must be 'sources', got {types[0]!r}"
     assert types[-1] == "done", f"Last event must be 'done', got {types[-1]!r}"
     middle = types[1:-1]
-    assert middle and middle[0] == "status", (
-        f"'status' event expected after sources: {types}"
-    )
+    assert middle and middle[0] == "status", f"'status' event expected after sources: {types}"
     assert all(t == "token" for t in middle[1:]), (
         f"Events after status must all be 'token': {types}"
     )
@@ -200,8 +198,7 @@ def test_gateway_rag_stream_lazy_loads_done_passed_true(lazy_gateway_client):
 
     assert done["type"] == "done"
     assert done["data"]["grounding"]["passed"] is True, (
-        f"done.grounding.passed must be True after lazy-load, "
-        f"got: {done['data']['grounding']}"
+        f"done.grounding.passed must be True after lazy-load, got: {done['data']['grounding']}"
     )
     assert done["data"]["grounding"]["reason"] != "index_missing", (
         f"done.grounding.reason must NOT be index_missing after lazy-load, "
@@ -220,6 +217,4 @@ def test_gateway_rag_stream_lazy_loads_sources_non_empty(lazy_gateway_client):
 
     assert sources_event is not None, "sources event must be present"
     sources = sources_event["data"]["sources"]
-    assert len(sources) >= 1, (
-        f"sources must be non-empty after lazy-load, got {sources}"
-    )
+    assert len(sources) >= 1, f"sources must be non-empty after lazy-load, got {sources}"
