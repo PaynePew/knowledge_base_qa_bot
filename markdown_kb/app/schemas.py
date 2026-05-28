@@ -620,7 +620,7 @@ class ImportRequest(BaseModel):
 
     ``source`` is the bare filename (or relative sub-path) within ``raw/``
     (e.g. ``"customer_handbook.html"``).  When omitted (or body omitted
-    entirely), batch mode processes all ``raw/**/*.{html,txt}`` files.
+    entirely), batch mode processes all ``raw/**/*.{html,txt,md}`` files.
     """
 
     source: str | None = None
@@ -638,7 +638,7 @@ class ImportSourceResultSchema(BaseModel):
 
     raw_path: str
     docs_path: str
-    original_format: Literal["html", "txt"]
+    original_format: Literal["html", "txt", "md"]
     content_sha256: str = ""
     status: Literal["created", "updated", "skipped"] = "created"
 

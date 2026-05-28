@@ -2,10 +2,10 @@
 
 Multi-Format Import coordinator — raw/ → docs/ format-conversion pipeline.
 
-Provides ``import_sources(source_filter)`` which converts raw ``.html`` and
-``.txt`` files into normalized Markdown files in ``docs/`` with provenance
-frontmatter.  This is a mechanical conversion (no LLM calls) — the import
-path is completely disjoint from ``/ingest``.
+Provides ``import_sources(source_filter)`` which converts raw ``.html``,
+``.txt``, and ``.md`` files into normalized Markdown files in ``docs/`` with
+provenance frontmatter.  This is a mechanical conversion (no LLM calls) — the
+import path is completely disjoint from ``/ingest``.
 
 Pipeline per source file:
     1. Resolve source path(s): batch = glob ``raw/**/*.{html,txt}``; single =
@@ -18,7 +18,7 @@ Pipeline per source file:
        ``content_sha256`` matches the computed hash → skip (no markdownify,
        no disk write).  Emit ``import_skipped`` Wiki Log event.
     5. Convert: ``.html`` → markdownify with semantic whitelist + strip list;
-       ``.txt`` → passthrough (no heading inference).
+       ``.txt`` / ``.md`` → passthrough (no heading inference).
     6. Render output: YAML frontmatter (imported_from, original_format,
        imported_at, content_sha256) + converted body.
     7. Atomic write: tempfile in same dir + ``os.replace`` + cleanup on
@@ -129,7 +129,7 @@ _HTML_STRIP_TAGS = [
     "link",
 ]
 
-_SUPPORTED_EXTENSIONS = {".html", ".txt"}
+_SUPPORTED_EXTENSIONS = {".html", ".txt", ".md"}
 
 # Rejected characters in basenames per PRD #89 §"Filename validation":
 #   - '#'  breaks Section.id contract {filename}#{heading_slug}
@@ -155,7 +155,7 @@ class ImportSourceResult:
 
     ``raw_path`` is the path to the raw source (relative string for the API).
     ``docs_path`` is the output Markdown file path (relative string).
-    ``original_format`` is ``'html'`` or ``'txt'``.
+    ``original_format`` is ``'html'``, ``'txt'``, or ``'md'``.
     ``content_sha256`` is the hex SHA-256 of the raw bytes (slice 7-3).
     ``status`` is one of ``'created'`` (fresh write), ``'updated'`` (hash-drift overwrite),
     or ``'skipped'`` (hash-match no-op) — full enum exercised in slice 7-3.
@@ -163,7 +163,7 @@ class ImportSourceResult:
 
     raw_path: str
     docs_path: str
-    original_format: Literal["html", "txt"]
+    original_format: Literal["html", "txt", "md"]
     content_sha256: str = ""
     status: Literal["created", "updated", "skipped"] = "created"
 
@@ -263,7 +263,7 @@ def _collect_batch_sources() -> list[Path]:
     sources: list[Path] = []
     if not RAW_DIR.exists():
         return sources
-    for ext in (".html", ".txt"):
+    for ext in (".html", ".txt", ".md"):
         sources.extend(RAW_DIR.glob(f"**/*{ext}"))
     return sources
 
@@ -456,9 +456,11 @@ def _process_one_source(
 
     # Determine format — unsupported extensions are silently skipped in batch mode.
     if ext == ".html":
-        fmt: Literal["html", "txt"] = "html"
+        fmt: Literal["html", "txt", "md"] = "html"
     elif ext == ".txt":
         fmt = "txt"
+    elif ext == ".md":
+        fmt = "md"
     else:
         # Batch mode: silent skip (no failure entry, no log)
         return
@@ -654,13 +656,14 @@ def _check_hand_authored_collision(docs_path: Path) -> ImportFailure | None:
     )
 
 
-def _convert_to_markdown(raw_text: str, fmt: Literal["html", "txt"]) -> str:
+def _convert_to_markdown(raw_text: str, fmt: Literal["html", "txt", "md"]) -> str:
     """Convert raw source text to Markdown body.
 
     For ``html``: apply markdownify with semantic whitelist; strip the strip-list tags.
     For ``txt``: passthrough — return the raw text unchanged.
+    For ``md``: passthrough — return the raw text unchanged (no heading inference needed).
     """
-    if fmt == "txt":
+    if fmt in ("txt", "md"):
         return raw_text
 
     # Build BeautifulSoup parse and strip unwanted tags before markdownify
@@ -693,7 +696,7 @@ def _convert_to_markdown(raw_text: str, fmt: Literal["html", "txt"]) -> str:
 def _render_output(
     md_body: str,
     raw_path: Path,
-    fmt: Literal["html", "txt"],
+    fmt: Literal["html", "txt", "md"],
     content_sha256: str,
 ) -> str:
     """Build the full docs/*.md content: YAML frontmatter + converted body.

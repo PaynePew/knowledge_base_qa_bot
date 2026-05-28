@@ -14,8 +14,10 @@ eval/paraphrase_comparison/charts/*.tmp
 
 # /raw/ — local-only import inbox (gitignored; use examples/raw/ for samples)
 # Leading / anchors the pattern to the repo root so examples/raw/ is NOT ignored.
-# Copy examples/raw/*.html into raw/ to try POST /import without committing.
-/raw/
+# Copy examples/raw/*.html or .md into raw/ to try POST /import without committing.
+# raw/README.md is the exception: committed so the inbox is discoverable.
+/raw/*
+!/raw/README.md
 
 # wiki/ — generated artifacts and per-user runtime traces (see wiki/README.md)
 wiki/index.md
