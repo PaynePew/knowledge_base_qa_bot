@@ -156,9 +156,7 @@ def score_stack(
     by_type = {
         ptype: sum(scores) / len(scores) for ptype, scores in per_type_hits.items()
     }
-    mrr_by_type = {
-        ptype: sum(rrs) / len(rrs) for ptype, rrs in per_type_rr.items()
-    }
+    mrr_by_type = {ptype: sum(rrs) / len(rrs) for ptype, rrs in per_type_rr.items()}
     n_by_type = {ptype: len(scores) for ptype, scores in per_type_hits.items()}
     return StackScores(
         stack=stack_name,
@@ -250,8 +248,7 @@ def _render_header(offline: bool) -> str:
         "(**Stack A** — LLM-synthesised `wiki/` + BM25) out-retrieve a traditional "
         "Vector RAG pipeline (**Stack B** — chunk + embed + FAISS) fed the **same** raw "
         "corpus? Scored at the retrieval layer only by the deterministic C5c hit "
-        "metric (source-match AND dual-side Key-Token overlap). K=3."
-        + banner
+        "metric (source-match AND dual-side Key-Token overlap). K=3." + banner
     )
 
 
@@ -336,9 +333,7 @@ def _render_family_section(
     chart_files: list[Path],
     with_macro_average: bool,
 ) -> str:
-    types = [
-        t for t in family_types if t in stack_a.by_type or t in stack_b.by_type
-    ]
+    types = [t for t in family_types if t in stack_a.by_type or t in stack_b.by_type]
     if not types:
         return ""
     intro = (
@@ -548,32 +543,34 @@ def _render_limitations(offline: bool, judged: bool = False) -> str:
 def _render_talking_points() -> str:
     return (
         "## Appendix — Interview Talking Points\n\n"
-        "1. *\"I chose Markdown KB over Vector RAG because at this corpus size, BM25 + "
+        '1. *"I chose Markdown KB over Vector RAG because at this corpus size, BM25 + '
         "an inspectable `.kb/index.json` is more debuggable and has zero per-query "
         "embedding cost. `vector_rag/` is preserved for the hybrid retrieval + rerank "
         "layer once the corpus warrants it.\"* — now backed by this comparison's "
         "per-type data and cost log, not assertion.\n"
-        "2. *\"The comparison isolates the architectural variable: both stacks read the "
+        '2. *"The comparison isolates the architectural variable: both stacks read the '
         "**same** raw corpus, then each runs its own idiomatic indexing pipeline. Stack "
         "B never runs `/ingest` — it embeds un-curated text, which is the fair baseline "
-        "for traditional RAG.\"*\n"
-        "3. *\"I separated Core from Structural-probe types and refused a naive "
+        'for traditional RAG."*\n'
+        '3. *"I separated Core from Structural-probe types and refused a naive '
         "cross-type aggregate, because a researcher-chosen type mix can covertly "
-        "manipulate the verdict. The probes are framed as expected-limit confirmation.\"*\n"
-        "4. *\"I disclosed the paraphrase-generator family bias proactively: GPT-generated "
+        'manipulate the verdict. The probes are framed as expected-limit confirmation."*\n'
+        '4. *"I disclosed the paraphrase-generator family bias proactively: GPT-generated '
         "synonyms fall inside the embedding space the same family encodes, systematically "
-        "favouring Vector RAG. Naming the bias is an interview plus, not a minus.\"*\n"
-        "5. *\"The metric is a custom DeepEval `BaseMetric` (C5c) — I borrowed the "
+        'favouring Vector RAG. Naming the bias is an interview plus, not a minus."*\n'
+        '5. *"The metric is a custom DeepEval `BaseMetric` (C5c) — I borrowed the '
         "framework's runner/dataset/report at the leaf and hand-wrote the opinionated "
         "metric at the joint (ADR-0005), rather than adopting Ragas/DeepEval's stock "
-        "metrics wholesale.\"*"
+        'metrics wholesale."*'
     )
 
 
 # ---------------------------------------------------------------------------
 # Aggregation helpers
 # ---------------------------------------------------------------------------
-def _macro_average(by_type: dict[str, float], types: list[str] | tuple[str, ...]) -> float:
+def _macro_average(
+    by_type: dict[str, float], types: list[str] | tuple[str, ...]
+) -> float:
     """Unweighted mean of a per-type metric over ``types`` present in ``by_type``."""
     present = [by_type[t] for t in types if t in by_type]
     return sum(present) / len(present) if present else 0.0

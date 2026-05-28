@@ -40,7 +40,9 @@ def test_system_prompt_encodes_adr_0001_contract():
     """SYSTEM_PROMPT carries the key ADR-0001 obligations regardless of import source."""
     prompt = SYSTEM_PROMPT
     assert "[Source: filename#heading]" in prompt, "must specify the citation format"
-    assert EXPECTED_CANNOT_CONFIRM in prompt, "must frame the exact Cannot Confirm phrase"
+    assert EXPECTED_CANNOT_CONFIRM in prompt, (
+        "must frame the exact Cannot Confirm phrase"
+    )
     assert "ONLY" in prompt, "must constrain answers to CONTEXT only"
 
 

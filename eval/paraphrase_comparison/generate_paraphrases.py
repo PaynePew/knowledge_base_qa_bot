@@ -65,7 +65,9 @@ PROBES_PATH = _PKG_ROOT / "probes.yaml"
 GENERATOR_MODEL = "gpt-4o-mini"
 TEMPERATURE = 0.7
 SEED = 42
-PER_TYPE_COUNT = 8  # Core types; total core = 5 × 8 = 40 (+ 10 probes → 50, within ~39-54)
+PER_TYPE_COUNT = (
+    8  # Core types; total core = 5 × 8 = 40 (+ 10 probes → 50, within ~39-54)
+)
 
 CORE_TYPES = tuple(CORE_TEMPLATES.keys())
 PROBE_TYPES = tuple(t for t in PARAPHRASE_TYPES if t not in CORE_TEMPLATES)
@@ -271,7 +273,9 @@ def main(argv: list[str] | None = None) -> int:
         help="Skip generation; just run the QC gate over the committed queries.yaml.",
     )
     args = parser.parse_args(argv)
-    load_dotenv(find_dotenv(usecwd=True))  # pick up OPENAI_API_KEY from a repo-root .env
+    load_dotenv(
+        find_dotenv(usecwd=True)
+    )  # pick up OPENAI_API_KEY from a repo-root .env
 
     if args.qc_only or not os.getenv("OPENAI_API_KEY"):
         if not args.qc_only:

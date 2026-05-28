@@ -267,7 +267,9 @@ def load_vector_index(index_dir: Path | None = None) -> tuple[int, int]:
     metadata_path = index_dir / METADATA_FILENAME
     if not metadata_path.exists():
         # Present-but-incomplete index — fail fast rather than serve empty.
-        raise RuntimeError(f"persisted FAISS index at {index_dir} is missing {METADATA_FILENAME}")
+        raise RuntimeError(
+            f"persisted FAISS index at {index_dir} is missing {METADATA_FILENAME}"
+        )
 
     # Let json.JSONDecodeError propagate — a corrupt metadata file is fail-fast.
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
@@ -312,7 +314,9 @@ def _embed_with_error_handling(documents: list[Document]) -> FAISS:
     try:
         return _build_faiss(documents)
     except (openai.APITimeoutError, openai.RateLimitError) as exc:
-        log_event("chat_error", f"op=index kind=openai_transient exc={type(exc).__name__}")
+        log_event(
+            "chat_error", f"op=index kind=openai_transient exc={type(exc).__name__}"
+        )
         raise HTTPException(
             status_code=503,
             detail="Embedding service temporarily unavailable, please retry.",
