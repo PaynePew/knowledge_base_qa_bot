@@ -8,7 +8,7 @@ requires-python = ">=3.11"
 package = false
 
 [tool.uv.workspace]
-members = ["markdown_kb", "vector_rag", "eval/paraphrase_comparison"]
+members = ["markdown_kb", "vector_rag", "eval/paraphrase_comparison", "gateway"]
 
 [dependency-groups]
 dev = [
@@ -25,7 +25,7 @@ dev = [
 # two ``app`` packages never collide). Each member's own pyproject still works
 # for the standalone ``cd <member> && uv run pytest`` workflow.
 [tool.pytest.ini_options]
-testpaths = ["markdown_kb/tests", "vector_rag/tests", "eval/paraphrase_comparison/tests"]
+testpaths = ["markdown_kb/tests", "vector_rag/tests", "eval/paraphrase_comparison/tests", "gateway/tests"]
 pythonpath = [".", "markdown_kb"]
 # vector_rag is an implicit namespace package (no __init__.py), so its test
 # package must be resolved as the unique ``vector_rag.tests`` rather than a bare
