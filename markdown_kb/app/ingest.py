@@ -71,7 +71,7 @@ from pathlib import Path
 
 from ._paths import DOCS_DIR
 from .grounding import verify
-from .indexer import _index_lock, parse_markdown, slugify
+from .indexer import _index_lock, parse_markdown, slugify, split_frontmatter
 from .logger import log_event
 from .schemas import GroundingFailure, IngestSourceResult
 from .templates import classify_source, generate_entity_page, generate_page
@@ -314,8 +314,17 @@ def ingest_sources(
             continue
 
         # Step 4: classify the Source
+        #
+        # Strip the leading YAML frontmatter before handing the text to the
+        # classifier LLM (issue #106): after Phase 7, imported docs/*.md carry
+        # provenance frontmatter (imported_from/original_format/imported_at/
+        # content_sha256) that is metadata ABOUT the file, not content OF the
+        # Source. Feeding it raw lets the LLM misread provenance as Source facts.
+        # The synthesis path is already clean — it consumes Section.content from
+        # parse_markdown, which strips frontmatter per Rule 2.
         try:
-            source_content = source_path.read_text(encoding="utf-8")
+            raw_source_text = source_path.read_text(encoding="utf-8")
+            _, source_content = split_frontmatter(raw_source_text)
             source_type = classify_source(source_content)
             batch._llm_call_count += 1
         except Exception as exc:  # noqa: BLE001
