@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``query``, ``build_prompt``, ``SYSTEM_PROMPT``, ``get_llm``, ``CANNOT_CONFIRM_PHRASE``.
+"""Deep module per Ousterhout. Public surface: ``query``, ``stream_query``, ``build_prompt``, ``SYSTEM_PROMPT``, ``get_llm``, ``CANNOT_CONFIRM_PHRASE``.
 
 Vector RAG (Stack B) query path — retrieve Chunks, gate weak retrieval, build a
 grounded prompt, call the LLM, and verify the draft against the cited Chunks.
@@ -22,11 +22,23 @@ Flow (mirrors markdown_kb's /chat per issue #103):
 SYSTEM_PROMPT is Stack B's OWN literal of the ADR-0001 strict-grounded contract
 — deliberately NOT imported from markdown_kb (the apps stay decoupled). A smoke
 test guards against drift from markdown_kb's contract.
+
+Phase 9 (issue #120): query() is decomposed into two private helpers:
+  _retrieve_and_gate() — vector search + pre-LLM Cannot Confirm gates
+  _draft_and_verify()  — build_prompt + LLM draft + Grounding Check
+Public query() composes them; contract is unchanged.
+stream_query() uses the same decomposition to yield a sources-ready partial
+before any LLM call (ADR-0009 verify-then-stream / sources-first).
+
+RAG source objects carry ONLY citation id + heading + content — NO score,
+NO derived_from (issue #120 spec; RAG serves raw docs/ Sources, not the
+curated wiki layer that has frontmatter.sources chains).
 """
 
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 
 import openai
 from fastapi import HTTPException
@@ -140,15 +152,105 @@ def query(question: str) -> dict:
     Post-LLM gate (ADR-0004 layer 3): grounding.verify() validates every claim
     against the cited Chunks. Any unsupported claim, or verifier unavailability
     after retry, → Cannot Confirm.
+
+    Phase 9: composes _retrieve_and_gate() + _draft_and_verify().
+    Public contract is unchanged; the split is behaviour-preserving.
+    """
+    gate = _retrieve_and_gate(question)
+    if gate["early_exit"]:
+        return {
+            "answer": gate["answer"],
+            "sources": gate["sources"],
+            "grounding_outcome": gate["grounding_outcome"],
+        }
+    return _draft_and_verify(question, gate["chunks"], gate["sources"])
+
+
+def stream_query(question: str) -> Iterator[dict]:
+    """Generator that yields two dicts for use by the SSE streaming endpoint.
+
+    Phase 9 — ADR-0009 (verify-then-stream / sources-first). Mirrors the
+    markdown_kb stream_query() contract so the Gateway can reuse the shared
+    serializer ``markdown_kb.app.sse.events_for_result`` for both stacks.
+
+    Yields:
+        1. A *partial* result dict immediately after retrieval (before any
+           LLM call), so the gateway can emit the ``sources`` SSE event
+           right away (~1 embedding round-trip for vector search).
+           Shape: ``{sources, grounding_outcome, _phase: "sources_ready"}``.
+        2. A *full* result dict after draft + Grounding Check complete.
+           Shape: ``{answer, sources, grounding_outcome}`` — identical to
+           what ``query()`` returns.
+
+    RAG source objects carry ONLY citation id + heading + content — NO score,
+    NO derived_from (issue #120 spec).
+
+    The gateway endpoint must:
+      a. Emit ``sources`` SSE event from yield 1.
+      b. Emit ``token`` + ``done`` SSE events from yield 2.
+
+    ADR-0009: only verified text is ever emitted as tokens.
+    """
+    gate = _retrieve_and_gate(question)
+
+    # Yield the sources-ready partial so the gateway can emit the sources
+    # event before making any LLM call (ADR-0009 sources-first invariant).
+    yield {
+        "_phase": "sources_ready",
+        "sources": gate["sources"],
+        "grounding_outcome": gate["grounding_outcome"],
+        "early_exit": gate["early_exit"],
+        "answer": gate.get("answer", ""),
+        "chunks": gate.get("chunks", []),
+    }
+
+    if gate["early_exit"]:
+        # Pre-LLM gate fired — the partial result IS the full result.
+        yield {
+            "answer": gate["answer"],
+            "sources": gate["sources"],
+            "grounding_outcome": gate["grounding_outcome"],
+        }
+        return
+
+    # LLM phase — draft + Grounding Check.
+    result = _draft_and_verify(question, gate["chunks"], gate["sources"])
+    yield result
+
+
+# ---------------------------------------------------------------------------
+# Phase 9 private helpers — retrieve+gate and draft+verify
+# ---------------------------------------------------------------------------
+
+
+def _retrieve_and_gate(question: str) -> dict:
+    """Vector search + all pre-LLM Cannot Confirm gates (ADR-0001).
+
+    Returns a dict with:
+        sources          — list of {source, heading, content} dicts
+                           (NO score, NO derived_from — RAG source shape)
+        grounding_outcome — provisional outcome (pre-LLM gate result)
+        early_exit       — True when a pre-LLM gate fired (no LLM needed)
+        answer           — set to the Cannot Confirm / not-indexed phrase on
+                           early_exit paths; empty string otherwise
+        chunks           — raw Chunk list for _draft_and_verify; only
+                           meaningful when early_exit is False
+
+    Callers (query() and stream_query()) use the early_exit flag to decide
+    whether to call _draft_and_verify(). The sources list is always populated
+    even on early_exit paths — the gateway emits a sources SSE event before
+    checking early_exit.
     """
     truncated = question[:60].replace('"', "'")
 
     if indexer.vectorstore is None:
         log_event("chat_fallback", f'"{truncated}" reason=not_indexed')
         return {
-            "answer": NOT_INDEXED_MESSAGE,
             "sources": [],
             "grounding_outcome": GroundingOutcome(passed=False, reason="index_missing"),
+            "early_exit": True,
+            "answer": NOT_INDEXED_MESSAGE,
+            "chunks": [],
         }
 
     chunks = indexer.search(question, k=3)
@@ -157,13 +259,19 @@ def query(question: str) -> dict:
         # Pre-LLM Cannot Confirm gate — no LLM call (ADR-0001).
         log_event("chat_fallback", f'"{truncated}" reason=retrieval_empty')
         return {
-            "answer": CANNOT_CONFIRM_PHRASE,
             "sources": [],
             "grounding_outcome": GroundingOutcome(
                 passed=False, reason="retrieval_empty"
             ),
+            "early_exit": True,
+            "answer": CANNOT_CONFIRM_PHRASE,
+            "chunks": [],
         }
 
+    # RAG source shape: citation id + heading + content ONLY.
+    # NO score (prevents the model reasoning "low score → guess", PROMPT.md Q3).
+    # NO derived_from (RAG serves raw docs/ Sources; frontmatter chains are a
+    # wiki-layer concept — issue #120 spec).
     sources = [
         {
             "source": chunk.source,
@@ -173,6 +281,35 @@ def query(question: str) -> dict:
         for chunk in chunks
     ]
 
+    return {
+        "sources": sources,
+        "grounding_outcome": GroundingOutcome(passed=True, reason="claim_supported"),
+        "early_exit": False,
+        "answer": "",
+        "chunks": chunks,
+    }
+
+
+def _draft_and_verify(
+    question: str,
+    chunks: list[Chunk],
+    sources: list[dict],
+) -> dict:
+    """LLM draft + post-LLM Grounding Check (ADR-0004 layer 3).
+
+    Called only when the pre-LLM gates passed (early_exit is False).
+
+    Args:
+        question: The original user query.
+        chunks:   Retrieved Chunk list from _retrieve_and_gate.
+        sources:  Already-built sources list (passed through unchanged).
+
+    Returns:
+        Full result dict: {answer, sources, grounding_outcome}.
+        Never returns unverified text — on grounding failure, answer is
+        CANNOT_CONFIRM_PHRASE and grounding_outcome.passed is False.
+    """
+    truncated = question[:60].replace('"', "'")
     prompt_text = build_prompt(question, chunks)
     draft = _call_llm_with_error_handling(question, prompt_text)
 
