@@ -1,4 +1,4 @@
-"""Gateway endpoint tests for POST /chat/stream?stack=rag (Phase 9 Slice 2 / issue #120).
+"""Gateway endpoint tests for POST /chat/stream?stack=rag (Phase 9 Slice 3 / issue #120).
 
 Tests assert the RAG SSE event sequence and the gateway dispatch:
   sources (RAG source shape: id + heading + content, NO score, NO derived_from)

@@ -3,7 +3,7 @@
 Gateway HTTP wiring for ``POST /chat/stream``.
 
 Phase 9 Slice 1 — Wiki SSE happy-path tracer bullet (ADR-0009, ADR-0010).
-Phase 9 Slice 2 (issue #120) — RAG dispatch added; ``stack=rag`` now routes
+Phase 9 Slice 3 (issue #120) — RAG dispatch added; ``stack=rag`` now routes
 to ``vector_rag.app.retrieval.stream_query``.
 
 All streaming complexity lives in the per-stack ``stream_query()`` functions and

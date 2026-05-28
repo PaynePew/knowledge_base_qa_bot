@@ -267,7 +267,7 @@ def test_chat_stream_unknown_stack_returns_400(gateway_client):
 
 
 def test_chat_stream_rag_stack_no_longer_returns_501(gateway_client):
-    """stack=rag is now dispatched (Phase 9 Slice 2); 501 is replaced by real dispatch.
+    """stack=rag is now dispatched (Phase 9 Slice 3); 501 is replaced by real dispatch.
 
     This test confirms the gateway no longer rejects stack=rag with 501.
     The RAG dispatch uses the vector_rag stack; since gateway_client only
@@ -278,4 +278,4 @@ def test_chat_stream_rag_stack_no_longer_returns_501(gateway_client):
         "/chat/stream?stack=rag",
         json={"query": "test"},
     )
-    assert resp.status_code != 501, "stack=rag must not return 501 after Phase 9 Slice 2"
+    assert resp.status_code != 501, "stack=rag must not return 501 after Phase 9 Slice 3"

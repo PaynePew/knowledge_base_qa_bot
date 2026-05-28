@@ -1,4 +1,4 @@
-"""Tests for vector_rag.app.retrieval.stream_query() (Phase 9 Slice 2 / issue #120).
+"""Tests for vector_rag.app.retrieval.stream_query() (Phase 9 Slice 3 / issue #120).
 
 Covers the two-step yield shape (sources_ready partial, then full result),
 the pre-LLM gate path (early-exit on index missing / empty retrieval), and
