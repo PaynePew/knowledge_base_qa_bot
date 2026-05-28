@@ -47,6 +47,7 @@ import sys
 from pathlib import Path
 
 import yaml
+from dotenv import find_dotenv, load_dotenv
 
 from markdown_kb.app.indexer import parse_markdown, slugify
 
@@ -270,6 +271,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Skip generation; just run the QC gate over the committed queries.yaml.",
     )
     args = parser.parse_args(argv)
+    load_dotenv(find_dotenv(usecwd=True))  # pick up OPENAI_API_KEY from a repo-root .env
 
     if args.qc_only or not os.getenv("OPENAI_API_KEY"):
         if not args.qc_only:

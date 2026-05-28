@@ -1,452 +1,1158 @@
-# Phase 8 Paraphrase set (CONTEXT.md § Phase 8 > Paraphrase, PRD #100, issue #102).
-#
-# The full committed query set: 40 Core Paraphrases (5 LLM-generated types × 8)
-# + 10 hand-written Structural probes (2 types × 5) = 50 across all 7 types.
-#
-# OFFLINE NOTE (no OPENAI_API_KEY in this environment): the 40 Core entries are
-# HAND-AUTHORED stand-ins for what generate_paraphrases.py would produce with
-# gpt-4o-mini. They target the EXACT Gold Sections the deterministic sha256
-# sampler selects per type (so the pipeline is faithfully represented), each
-# rewritten by hand per its type's rule, with dual-side Key Tokens drawn from the
-# real docs Section and concept Wiki Page wording. The metadata block records
-# cost as `n/a (offline)` because no real LLM call was billed. Re-running the
-# generator WITH a key overwrites these with genuine LLM output.
-#
-# The two probe types (typo_fatfinger, industry_jargon) are always hand-written
-# (probes.yaml), merged in unchanged.
-#
-# This file is written atomically (tmp + os.replace) by generate_paraphrases.py;
-# it is hand-authored here for the offline contingency.
-
 metadata:
   generator_model: gpt-4o-mini
-  generated_at: '2026-05-28T00:00:00Z'
+  generated_at: '2026-05-28T08:42:54Z'
   seed: 42
   temperature: 0.7
   prompt_template_version: v1
-  corpus_snapshot_git_sha: offline-hand-authored
+  corpus_snapshot_git_sha: 2d0346f
   total: 50
-  cost_usd: n/a (offline)
-  note: >-
-    Core entries hand-authored offline (no OPENAI_API_KEY); they mirror the
-    deterministic sha256 section sampling and per-type rules the live generator
-    would apply. Probe types always hand-written.
-
+  cost_usd: see run log
 paraphrases:
-  # =====================================================================
-  # synonym_swap — avoid the source's salient vocabulary (lexical stress)
-  # =====================================================================
-  - paraphrase_id: synonym_swap-001
-    paraphrase_type: synonym_swap
-    text: "Why did my profile get frozen after a strange login somewhere?"
-    gold_docs_section_id: account_security.md#suspicious-activity
-    key_tokens_docs: [locked, verification, email, password, device]
-    key_tokens_wiki: [locked, verification, email, password, device]
-    generation_notes: "hand-authored offline stand-in; swapped login->sign-in, frozen->locked"
-
-  - paraphrase_id: synonym_swap-002
-    paraphrase_type: synonym_swap
-    text: "How current is the on-hand quantity shown on a listing?"
-    gold_docs_section_id: product_information.md#stock-availability
-    key_tokens_docs: [stock, count, units, waitlist, minutes]
-    key_tokens_wiki: [stock, count, units, waitlist, minutes]
-    generation_notes: "hand-authored offline stand-in; swapped inventory->quantity, refresh->current"
-
-  - paraphrase_id: synonym_swap-003
-    paraphrase_type: synonym_swap
-    text: "What's the fee for rush shipping and how quickly does it land?"
-    gold_docs_section_id: shipping_options.md#expedited-delivery
-    key_tokens_docs: [expedited, delivery, surcharge, business, days]
-    key_tokens_wiki: [expedited, delivery, surcharge, business, dollar]
-    generation_notes: "hand-authored offline stand-in; swapped cost->fee, fast->quickly"
-
-  - paraphrase_id: synonym_swap-004
-    paraphrase_type: synonym_swap
-    text: "Which nations can I have my parcel sent to?"
-    gold_docs_section_id: international_shipping.md#supported-countries
-    key_tokens_docs: [canada, kingdom, australia, japan, duties]
-    key_tokens_wiki: [canada, kingdom, australia, japan, duties]
-    generation_notes: "hand-authored offline stand-in; swapped countries->nations, ship->sent"
-
-  - paraphrase_id: synonym_swap-005
-    paraphrase_type: synonym_swap
-    text: "What happens to my purchase if the card gets turned down?"
-    gold_docs_section_id: payment_methods.md#failed-payments
-    key_tokens_docs: [declined, pending, hours, card, cancelled]
-    key_tokens_wiki: [declined, pending, hours, card, cancelled]
-    generation_notes: "hand-authored offline stand-in; swapped payment->card, declined->turned down"
-
-  - paraphrase_id: synonym_swap-006
-    paraphrase_type: synonym_swap
-    text: "How do I switch on a second login check for my profile?"
-    gold_docs_section_id: account_security.md#two-factor-authentication
-    key_tokens_docs: [authentication, authenticator, code, device, factor]
-    key_tokens_wiki: [authentication, authenticator, code, device, factor]
-    generation_notes: "hand-authored offline stand-in; swapped enable->switch on, account->profile"
-
-  - paraphrase_id: synonym_swap-007
-    paraphrase_type: synonym_swap
-    text: "Can I halt or reschedule my recurring order without paying?"
-    gold_docs_section_id: subscription_orders.md#managing-a-subscription
-    key_tokens_docs: [subscription, paused, rescheduled, charge, cancelling]
-    key_tokens_wiki: [subscription, paused, rescheduled, charge, cancelling]
-    generation_notes: "hand-authored offline stand-in; swapped pause->halt, subscription kept as anchor"
-
-  - paraphrase_id: synonym_swap-008
-    paraphrase_type: synonym_swap
-    text: "How fast is my reserved order ready to grab from the shop?"
-    gold_docs_section_id: store_pickup.md#buy-online-pick-up-in-store
-    key_tokens_docs: [pickup, reserved, store, hours, counter]
-    key_tokens_wiki: [pickup, reserved, store, hours, counter]
-    generation_notes: "hand-authored offline stand-in; swapped collect->grab, store kept as anchor"
-
-  # =====================================================================
-  # word_reorder — keep vocabulary, restructure the sentence (syntax stress)
-  # =====================================================================
-  - paraphrase_id: word_reorder-001
-    paraphrase_type: word_reorder
-    text: "After the carrier scans the parcel, where is the tracking number emailed?"
-    gold_docs_section_id: shipping_options.md#order-tracking
-    key_tokens_docs: [tracking, number, carrier, parcel, account]
-    key_tokens_wiki: [tracking, number, carrier, parcel, history]
-    generation_notes: "hand-authored offline stand-in; fronted the carrier-scan clause"
-
-  - paraphrase_id: word_reorder-002
-    paraphrase_type: word_reorder
-    text: "Free on orders over fifty dollars — how many business days does standard delivery take?"
-    gold_docs_section_id: shipping_options.md#standard-delivery
-    key_tokens_docs: [standard, delivery, dollars, business, days]
-    key_tokens_wiki: [standard, shipment, dollars, business, days]
-    generation_notes: "hand-authored offline stand-in; fronted the free-threshold clause"
-
-  - paraphrase_id: word_reorder-003
-    paraphrase_type: word_reorder
-    text: "The email address tied to my account — from where can it be changed?"
-    gold_docs_section_id: account_management.md#update-email-address
-    key_tokens_docs: [email, address, profile, confirmation, verified]
-    key_tokens_wiki: [email, address, profile, confirmation, verified]
-    generation_notes: "hand-authored offline stand-in; fronted the object, recast as indirect question"
-
-  - paraphrase_id: word_reorder-004
-    paraphrase_type: word_reorder
-    text: "Retained for seven years — what happens to my order history when an account is closed?"
-    gold_docs_section_id: account_management.md#close-account
-    key_tokens_docs: [close, account, payment, history, retained]
-    key_tokens_wiki: [close, account, payment, history, retained]
-    generation_notes: "hand-authored offline stand-in; fronted the retention clause"
-
-  - paraphrase_id: word_reorder-005
-    paraphrase_type: word_reorder
-    text: "For a twelve-dollar surcharge, within how many business days does expedited delivery arrive?"
-    gold_docs_section_id: shipping_options.md#expedited-delivery
-    key_tokens_docs: [expedited, delivery, surcharge, business, days]
-    key_tokens_wiki: [expedited, delivery, surcharge, business, dollar]
-    generation_notes: "hand-authored offline stand-in; fronted the surcharge clause"
-
-  - paraphrase_id: word_reorder-006
-    paraphrase_type: word_reorder
-    text: "Until the items ship, is the card actually charged or only authorised?"
-    gold_docs_section_id: payment_methods.md#payment-authorization
-    key_tokens_docs: [authorise, capture, funds, hold, shipment]
-    key_tokens_wiki: [authorise, capture, funds, hold, shipment]
-    generation_notes: "hand-authored offline stand-in; fronted the until-ship clause, active->question"
-
-  - paraphrase_id: word_reorder-007
-    paraphrase_type: word_reorder
-    text: "Combined with loyalty point redemption — can a percentage-off code be?"
-    gold_docs_section_id: promo_codes.md#stacking-rules
-    key_tokens_docs: [codes, stacked, percentage, loyalty, shipping]
-    key_tokens_wiki: [codes, stacked, percentage, loyalty, shipping]
-    generation_notes: "hand-authored offline stand-in; fronted the object, inverted clause order"
-
-  - paraphrase_id: word_reorder-008
-    paraphrase_type: word_reorder
-    text: "Once packing begins, from where can an order no longer be cancelled?"
-    gold_docs_section_id: order_management.md#cancel-an-order
-    key_tokens_docs: [cancelled, packing, order, history, return]
-    key_tokens_wiki: [cancelled, packing, order, history, return]
-    generation_notes: "hand-authored offline stand-in; fronted the packing-stage clause"
-
-  # =====================================================================
-  # verbosity_expansion — same single need, padded with conversational filler
-  # =====================================================================
-  - paraphrase_id: verbosity_expansion-001
-    paraphrase_type: verbosity_expansion
-    text: "Hi there, I keep refreshing a product page and the number keeps moving — sorry if this is obvious, but how often does that live stock count actually update?"
-    gold_docs_section_id: product_information.md#stock-availability
-    key_tokens_docs: [stock, count, fifteen, minutes, units]
-    key_tokens_wiki: [stock, count, fifteen, minutes, units]
-    generation_notes: "hand-authored offline stand-in; padded with apology + framing, one need"
-
-  - paraphrase_id: verbosity_expansion-002
-    paraphrase_type: verbosity_expansion
-    text: "So I have a bit of a deadline and I'm trying to plan ahead here — if I pay the extra for the faster option, roughly how many business days until expedited delivery shows up?"
-    gold_docs_section_id: shipping_options.md#expedited-delivery
-    key_tokens_docs: [expedited, delivery, business, days, surcharge]
-    key_tokens_wiki: [expedited, delivery, business, days, surcharge]
-    generation_notes: "hand-authored offline stand-in; padded with deadline framing"
-
-  - paraphrase_id: verbosity_expansion-003
-    paraphrase_type: verbosity_expansion
-    text: "I'm always between sizes and it drives me a little crazy honestly — for the size guide, when my measurements land between two sizes, which way should I round?"
-    gold_docs_section_id: product_information.md#size-guide
-    key_tokens_docs: [size, guide, measurements, outerwear, layers]
-    key_tokens_wiki: [size, guide, measurements, outerwear, layers]
-    generation_notes: "hand-authored offline stand-in; padded with personal aside"
-
-  - paraphrase_id: verbosity_expansion-004
-    paraphrase_type: verbosity_expansion
-    text: "Quick one, hopefully — I got the confirmation email a little while ago but nothing's showing yet, so how long does tracking information usually take to populate?"
-    gold_docs_section_id: shipping_options.md#order-tracking
-    key_tokens_docs: [tracking, twelve, hours, confirmation, email]
-    key_tokens_wiki: [tracking, twelve, hours, confirmation, email]
-    generation_notes: "hand-authored offline stand-in; padded with status preamble"
-
-  - paraphrase_id: verbosity_expansion-005
-    paraphrase_type: verbosity_expansion
-    text: "Apologies if I'm missing something obvious at checkout, but I have this code and it won't go through — why would a promotional code fail to apply to my order?"
-    gold_docs_section_id: promo_codes.md#applying-a-code
-    key_tokens_docs: [code, checkout, minimum, category, restriction]
-    key_tokens_wiki: [code, checkout, minimum, category, restriction]
-    generation_notes: "hand-authored offline stand-in; padded with apology framing"
-
-  - paraphrase_id: verbosity_expansion-006
-    paraphrase_type: verbosity_expansion
-    text: "Hello! I was given one of these as a present and I'm a little unsure how it works — when I check out, how do I actually apply the gift card balance to my order?"
-    gold_docs_section_id: gift_cards.md#redeeming-a-gift-card
-    key_tokens_docs: [gift, card, balance, checkout, pin]
-    key_tokens_wiki: [gift, card, balance, checkout, pin]
-    generation_notes: "hand-authored offline stand-in; padded with gift framing"
-
-  - paraphrase_id: verbosity_expansion-007
-    paraphrase_type: verbosity_expansion
-    text: "I want to leave honest feedback but I'm not sure about the timing — after my order arrives, how long do I actually have to submit a product review?"
-    gold_docs_section_id: product_information.md#product-reviews
-    key_tokens_docs: [review, ninety, days, verified, moderation]
-    key_tokens_wiki: [review, ninety, days, verified, moderation]
-    generation_notes: "hand-authored offline stand-in; padded with intent framing"
-
-  - paraphrase_id: verbosity_expansion-008
-    paraphrase_type: verbosity_expansion
-    text: "I just got a new laptop and I'm tidying up my logins — in the security settings, how do I remove an old trusted device from the list?"
-    gold_docs_section_id: account_security.md#managing-trusted-devices
-    key_tokens_docs: [trusted, devices, security, removed, challenge]
-    key_tokens_wiki: [trusted, devices, security, removed, challenge]
-    generation_notes: "hand-authored offline stand-in; padded with new-laptop framing"
-
-  # =====================================================================
-  # specificity_narrowing — one high-distinctiveness sub-fact of a MULTI-fact section
-  # =====================================================================
-  - paraphrase_id: specificity_narrowing-001
-    paraphrase_type: specificity_narrowing
-    text: "What standing discount applies to every recurring subscription shipment?"
-    gold_docs_section_id: subscription_orders.md#setting-up-a-subscription
-    key_tokens_docs: [subscription, five, percent, discount, recurring]
-    key_tokens_wiki: [subscription, five, percent, discount, recurring]
-    generation_notes: "hand-authored offline stand-in; targeted sub-fact = 5% standing discount (not intervals)"
-
-  - paraphrase_id: specificity_narrowing-002
-    paraphrase_type: specificity_narrowing
-    text: "If a multi-item order is cancelled, can I cancel just one line or does it cancel all?"
-    gold_docs_section_id: order_management.md#cancel-an-order
-    key_tokens_docs: [cancelling, multi, item, partial, supported]
-    key_tokens_wiki: [cancelling, multi, item, partial, supported]
-    generation_notes: "hand-authored offline stand-in; targeted sub-fact = no partial cancellation (not packing window)"
-
-  - paraphrase_id: specificity_narrowing-003
-    paraphrase_type: specificity_narrowing
-    text: "For oversized freight, are import duties still collected at checkout or billed separately?"
-    gold_docs_section_id: international_shipping.md#customs-and-duties
-    key_tokens_docs: [oversized, freight, duties, customs, separately]
-    key_tokens_wiki: [oversized, freight, duties, customs, separately]
-    generation_notes: "hand-authored offline stand-in; targeted sub-fact = oversized-freight exception (not DDP default)"
-
-  - paraphrase_id: specificity_narrowing-004
-    paraphrase_type: specificity_narrowing
-    text: "At what remaining unit count does a product page show the low-stock banner?"
-    gold_docs_section_id: product_information.md#stock-availability
-    key_tokens_docs: [five, units, low, stock, banner]
-    key_tokens_wiki: [five, units, low, stock, banner]
-    generation_notes: "hand-authored offline stand-in; targeted sub-fact = <5 units low-stock banner (not refresh)"
-
-  - paraphrase_id: specificity_narrowing-005
-    paraphrase_type: specificity_narrowing
-    text: "When an order has several parcels, are the card charges combined or split per parcel?"
-    gold_docs_section_id: payment_methods.md#payment-authorization
-    key_tokens_docs: [split, shipments, capture, parcel, charges]
-    key_tokens_wiki: [split, shipments, capture, parcel, charges]
-    generation_notes: "hand-authored offline stand-in; targeted sub-fact = split-shipment per-parcel capture (not auth hold)"
-
-  - paraphrase_id: specificity_narrowing-006
-    paraphrase_type: specificity_narrowing
-    text: "How long is a declined order held in a pending state before it auto-cancels?"
-    gold_docs_section_id: payment_methods.md#failed-payments
-    key_tokens_docs: [twenty, four, hours, pending, cancelled]
-    key_tokens_wiki: [twenty, four, hours, pending, cancelled]
-    generation_notes: "hand-authored offline stand-in; targeted sub-fact = 24h pending window (not decline reasons)"
-
-  - paraphrase_id: specificity_narrowing-007
-    paraphrase_type: specificity_narrowing
-    text: "If I paid by bank transfer, how many extra business days should I expect for my refund?"
-    gold_docs_section_id: returns_policy.md#refund-processing-time
-    key_tokens_docs: [bank, transfer, additional, three, business]
-    key_tokens_wiki: [bank, transfer, extra, three, business]
-    generation_notes: "hand-authored offline stand-in; targeted sub-fact = bank-transfer +3 days (not 5-7 default)"
-
-  - paraphrase_id: specificity_narrowing-008
-    paraphrase_type: specificity_narrowing
-    text: "What restocking fee applies to large appliances returned without a defect?"
-    gold_docs_section_id: returns_policy.md#restocking-fee
-    key_tokens_docs: [fifteen, percent, restocking, appliances, defect]
-    key_tokens_wiki: [fifteen, percent, restocking, appliances, defect]
-    generation_notes: "hand-authored offline stand-in; targeted sub-fact = 15% appliance restocking fee (not standard no-fee)"
-
-  # =====================================================================
-  # implicit_reference — explicit subject stripped (topic only implied)
-  # =====================================================================
-  - paraphrase_id: implicit_reference-001
-    paraphrase_type: implicit_reference
-    text: "Does it have to be sold directly by the retailer, or can a marketplace seller's price count?"
-    gold_docs_section_id: price_matching.md#price-match-eligibility
-    key_tokens_docs: [price, retailer, marketplace, seller, public]
-    key_tokens_wiki: [price, retailer, marketplace, seller, public]
-    generation_notes: "hand-authored offline stand-in; stripped subject = price match eligibility"
-
-  - paraphrase_id: implicit_reference-002
-    paraphrase_type: implicit_reference
-    text: "How many of these am I allowed to claim within a thirty-day stretch?"
-    gold_docs_section_id: price_matching.md#requesting-a-price-match
-    key_tokens_docs: [price, match, fourteen, days, three]
-    key_tokens_wiki: [price, match, fourteen, days, three]
-    generation_notes: "hand-authored offline stand-in; stripped subject = price match requests"
-
-  - paraphrase_id: implicit_reference-003
-    paraphrase_type: implicit_reference
-    text: "Does the balance ever run out if I leave it unused for a couple of years?"
-    gold_docs_section_id: gift_cards.md#redeeming-a-gift-card
-    key_tokens_docs: [balance, expire, dormancy, fees, unused]
-    key_tokens_wiki: [balance, expire, dormancy, fees, unused]
-    generation_notes: "hand-authored offline stand-in; stripped subject = gift card"
-
-  - paraphrase_id: implicit_reference-004
-    paraphrase_type: implicit_reference
-    text: "Can I use two of them together on the same order?"
-    gold_docs_section_id: promo_codes.md#stacking-rules
-    key_tokens_docs: [codes, stacked, percentage, loyalty, shipping]
-    key_tokens_wiki: [codes, stacked, percentage, loyalty, shipping]
-    generation_notes: "hand-authored offline stand-in; stripped subject = promotional codes"
-
-  - paraphrase_id: implicit_reference-005
-    paraphrase_type: implicit_reference
-    text: "After I shut it down, how long is the history kept around?"
-    gold_docs_section_id: account_management.md#close-account
-    key_tokens_docs: [close, account, history, retained, seven]
-    key_tokens_wiki: [close, account, history, retained, seven]
-    generation_notes: "hand-authored offline stand-in; stripped subject = closed account"
-
-  - paraphrase_id: implicit_reference-006
-    paraphrase_type: implicit_reference
-    text: "It still hasn't shown up after ten days — who do I contact to trace it?"
-    gold_docs_section_id: returns_policy.md#refund-processing-time
-    key_tokens_docs: [refund, ten, business, days, support]
-    key_tokens_wiki: [refund, ten, business, days, support]
-    generation_notes: "hand-authored offline stand-in; stripped subject = delayed refund"
-
-  - paraphrase_id: implicit_reference-007
-    paraphrase_type: implicit_reference
-    text: "Can you send it to Japan, or is that one not covered yet?"
-    gold_docs_section_id: international_shipping.md#supported-countries
-    key_tokens_docs: [japan, canada, kingdom, australia, countries]
-    key_tokens_wiki: [japan, canada, kingdom, australia, countries]
-    generation_notes: "hand-authored offline stand-in; stripped subject = international shipping destinations"
-
-  - paraphrase_id: implicit_reference-008
-    paraphrase_type: implicit_reference
-    text: "If I send it back, does it have to be in the box it came in?"
-    gold_docs_section_id: returns_policy.md#return-window
-    key_tokens_docs: [return, packaging, unused, receipt, days]
-    key_tokens_wiki: [packaging, unused, receipt, thirty, refund]
-    generation_notes: "hand-authored offline stand-in; stripped subject = returned item / original packaging"
-
-  # =====================================================================
-  # Structural probes (hand-written) — merged from probes.yaml
-  # =====================================================================
-  - paraphrase_id: typo_fatfinger-001
-    paraphrase_type: typo_fatfinger
-    text: "How lnog do I have to retrun an item for a refnud?"
-    gold_docs_section_id: returns_policy.md#return-window
-    key_tokens_docs: [return, days, refund, packaging, receipt]
-    key_tokens_wiki: [thirty, refund, packaging, receipt, unused]
-    generation_notes: "hand-written probe; typos: long->lnog return->retrun refund->refnud"
-
-  - paraphrase_id: typo_fatfinger-002
-    paraphrase_type: typo_fatfinger
-    text: "What does expedietd shippng cost and how fsat is it?"
-    gold_docs_section_id: shipping_options.md#expedited-delivery
-    key_tokens_docs: [expedited, delivery, surcharge, business, days]
-    key_tokens_wiki: [expedited, delivery, surcharge, business, dollar]
-    generation_notes: "hand-written probe; typos: expedited->expedietd shipping->shippng fast->fsat"
-
-  - paraphrase_id: typo_fatfinger-003
-    paraphrase_type: typo_fatfinger
-    text: "How do I rest my passwrod if I forgto it?"
-    gold_docs_section_id: account_management.md#password-reset
-    key_tokens_docs: [password, reset, link, email, characters]
-    key_tokens_wiki: [password, reset, link, email, characters]
-    generation_notes: "hand-written probe; typos: reset->rest password->passwrod forgot->forgto"
-
-  - paraphrase_id: typo_fatfinger-004
-    paraphrase_type: typo_fatfinger
-    text: "Where is my trakcing nubmer for the parcle?"
-    gold_docs_section_id: shipping_options.md#order-tracking
-    key_tokens_docs: [tracking, number, carrier, parcel, account]
-    key_tokens_wiki: [tracking, number, carrier, parcel, history]
-    generation_notes: "hand-written probe; typos: tracking->trakcing number->nubmer parcel->parcle"
-
-  - paraphrase_id: typo_fatfinger-005
-    paraphrase_type: typo_fatfinger
-    text: "Why was my paymnet declind at chekout?"
-    gold_docs_section_id: payment_methods.md#failed-payments
-    key_tokens_docs: [payment, declined, pending, card, expired]
-    key_tokens_wiki: [payment, declined, pending, card, expired]
-    generation_notes: "hand-written probe; typos: payment->paymnet declined->declind checkout->chekout"
-
-  - paraphrase_id: industry_jargon-001
-    paraphrase_type: industry_jargon
-    text: "What's the RMA window for a full refund?"
-    gold_docs_section_id: returns_policy.md#return-window
-    key_tokens_docs: [return, days, refund, packaging, receipt]
-    key_tokens_wiki: [thirty, refund, packaging, receipt, unused]
-    generation_notes: "hand-written probe; jargon: RMA = return merchandise authorization"
-
-  - paraphrase_id: industry_jargon-002
-    paraphrase_type: industry_jargon
-    text: "Is duty handled DDP for cross-border orders?"
-    gold_docs_section_id: international_shipping.md#customs-and-duties
-    key_tokens_docs: [duties, taxes, checkout, carrier, freight]
-    key_tokens_wiki: [duties, taxes, checkout, carrier, freight]
-    generation_notes: "hand-written probe; jargon: DDP = delivered duty paid"
-
-  - paraphrase_id: industry_jargon-003
-    paraphrase_type: industry_jargon
-    text: "Is BOPIS available and how soon is the order ready?"
-    gold_docs_section_id: store_pickup.md#buy-online-pick-up-in-store
-    key_tokens_docs: [pickup, reserved, store, hours, counter]
-    key_tokens_wiki: [pickup, reserved, store, hours, counter]
-    generation_notes: "hand-written probe; jargon: BOPIS = buy online pick up in store"
-
-  - paraphrase_id: industry_jargon-004
-    paraphrase_type: industry_jargon
-    text: "Do you support 2FA via TOTP or SMS OTP?"
-    gold_docs_section_id: account_security.md#two-factor-authentication
-    key_tokens_docs: [authentication, authenticator, code, device, factor]
-    key_tokens_wiki: [authentication, authenticator, code, device, factor]
-    generation_notes: "hand-written probe; jargon: 2FA/TOTP/OTP = two-factor authentication codes"
-
-  - paraphrase_id: industry_jargon-005
-    paraphrase_type: industry_jargon
-    text: "When does the auth hold drop if I void before fulfilment?"
-    gold_docs_section_id: payment_methods.md#payment-authorization
-    key_tokens_docs: [authorisation, hold, capture, cancelled, shipment]
-    key_tokens_wiki: [authorisation, hold, capture, cancelled, shipment]
-    generation_notes: "hand-written probe; jargon: auth hold / void = authorization release pre-capture"
+- paraphrase_id: synonym_swap-001
+  paraphrase_type: synonym_swap
+  text: What happens if I try to log in from a place that isn't recognized?
+  gold_docs_section_id: account_security.md#suspicious-activity
+  key_tokens_docs:
+  - sign-in attempts
+  - unrecognised location
+  - account
+  - temporarily locked
+  - verification email
+  - address on file
+  - confirms the activity
+  - resets the password
+  - trusted device
+  key_tokens_wiki:
+  - sign-in attempts
+  - unrecognised location
+  - account
+  - temporarily locked
+  - verification email
+  - address on file
+  - confirms the activity
+  - resets the password
+  - trusted device
+  generation_notes: Stripped subject for general inquiry about account security.
+- paraphrase_id: synonym_swap-002
+  paraphrase_type: synonym_swap
+  text: How can I find out if an item is running low and what should I do if it’s
+    out of stock?
+  gold_docs_section_id: product_information.md#stock-availability
+  key_tokens_docs:
+  - product page
+  - live stock count
+  - low-stock banner
+  - restock waitlist
+  - emails
+  - inventory
+  - refresh
+  - checkout
+  key_tokens_wiki:
+  - product page
+  - live stock count
+  - low-stock banner
+  - restock waitlist
+  - emails
+  - inventory
+  - refresh
+  - checkout
+  generation_notes: targeted sub-fact about stock availability and actions for low
+    or out of stock items.
+- paraphrase_id: synonym_swap-003
+  paraphrase_type: synonym_swap
+  text: What is the cost for faster shipping, and when do I need to order to get it
+    sent out today?
+  gold_docs_section_id: shipping_options.md#expedited-delivery
+  key_tokens_docs:
+  - expedited delivery
+  - arrival
+  - two business days
+  - twelve-dollar surcharge
+  - orders
+  - placed
+  - two o'clock
+  - afternoon
+  - local time
+  - ship
+  - same day
+  - later orders
+  - next morning
+  - oversized freight items
+  - destinations
+  - contiguous states
+  key_tokens_wiki:
+  - expedited delivery
+  - promises
+  - arrival
+  - two business days
+  - twelve-dollar surcharge
+  - order
+  - submitted
+  - two o'clock
+  - afternoon
+  - local time
+  - shipped
+  - same day
+  - placed later
+  - dispatched
+  - next morning
+  - faster service
+  - not offered
+  - oversized freight items
+  - addresses
+  - beyond
+  - contiguous states
+  generation_notes: Avoided key terms for expedited delivery and shipping timelines.
+- paraphrase_id: synonym_swap-004
+  paraphrase_type: synonym_swap
+  text: Which locations does Acme Shop deliver to?
+  gold_docs_section_id: international_shipping.md#supported-countries
+  key_tokens_docs:
+  - ships
+  - supported countries
+  - destinations
+  - landed cost
+  - checkout
+  - delivery
+  key_tokens_wiki:
+  - ships
+  - supported countries
+  - destinations
+  - landed cost
+  - checkout
+  - shipment
+  generation_notes: focused on the locations for delivery
+- paraphrase_id: synonym_swap-005
+  paraphrase_type: synonym_swap
+  text: What happens if my payment is rejected, and how long do I have to fix my card
+    details?
+  gold_docs_section_id: payment_methods.md#failed-payments
+  key_tokens_docs:
+  - payment
+  - declined
+  - order
+  - pending
+  - twenty-four hours
+  - update
+  - card
+  - losing
+  - cart
+  - cancelled
+  - authorisation hold
+  - reasons
+  - security code
+  - expired card
+  - address
+  - match
+  - bank's records
+  key_tokens_wiki:
+  - payment
+  - declined
+  - order
+  - pending
+  - twenty-four hours
+  - shopper
+  - update
+  - card
+  - losing
+  - cart
+  - cancelled
+  - authorisation hold
+  - reasons
+  - security code
+  - expired card
+  - address
+  - match
+  - bank's records
+  generation_notes: 'targeted sub-fact: details on rejected payments and time frame
+    for updates.'
+- paraphrase_id: synonym_swap-006
+  paraphrase_type: synonym_swap
+  text: How can I set up an extra layer of security for my account, and when will
+    I need to verify my identity again?
+  gold_docs_section_id: account_security.md#two-factor-authentication
+  key_tokens_docs:
+  - two-factor authentication
+  - security section
+  - profile settings
+  - authenticator app
+  - code sent by text message
+  - new device
+  - trusted device
+  - routine sign-ins
+  key_tokens_wiki:
+  - two-factor authentication
+  - security section
+  - profile settings
+  - authenticator app
+  - code sent by text message
+  - new device
+  - trusted device
+  - routine sign-ins
+  generation_notes: Synonyms used for key terms like 'enable', 'security', and 'verify'.
+- paraphrase_id: synonym_swap-007
+  paraphrase_type: synonym_swap
+  text: What options do I have to adjust my subscription, and when do those changes
+    go into effect?
+  gold_docs_section_id: subscription_orders.md#managing-a-subscription
+  key_tokens_docs:
+  - paused
+  - skipped
+  - rescheduled
+  - subscriptions tab
+  - changes
+  - scheduled charge
+  - cancelling
+  - stops
+  - future charges
+  - refund
+  - shipment
+  - billed
+  key_tokens_wiki:
+  - paused
+  - skipped
+  - rescheduled
+  - subscriptions tab
+  - changes
+  - scheduled charge
+  - cancelling
+  - stops
+  - future charges
+  - reimbursement
+  - shipment
+  - billed
+  generation_notes: Focused on options for adjusting the subscription and the timing
+    of those adjustments.
+- paraphrase_id: synonym_swap-008
+  paraphrase_type: synonym_swap
+  text: How quickly can I set aside something online and pick it up at the shop?
+  gold_docs_section_id: store_pickup.md#buy-online-pick-up-in-store
+  key_tokens_docs:
+  - available for pickup
+  - reserved online
+  - collected from a chosen store
+  - ready within two hours
+  - order page
+  - ready-for-pickup status
+  - sends an email
+  - waiting at the counter
+  key_tokens_wiki:
+  - available for pickup
+  - reserved online
+  - collected from a chosen store
+  - ready in under two hours
+  - order page
+  - ready-for-pickup status
+  - sends an email
+  - products are waiting at the counter
+  generation_notes: Targeting the time frame and process for reserving and picking
+    up items.
+- paraphrase_id: word_reorder-001
+  paraphrase_type: word_reorder
+  text: How long might it take for the tracking information to appear after the shipping
+    confirmation email is sent?
+  gold_docs_section_id: shipping_options.md#order-tracking
+  key_tokens_docs:
+  - tracking number
+  - emailed to the customer
+  - carrier scans the parcel
+  - live tracking status
+  - order history page
+  - customer account
+  - tracking information
+  - twelve hours
+  - shipping confirmation email
+  key_tokens_wiki:
+  - tracking number
+  - emailed to the customer
+  - carrier scans the parcel
+  - live tracking status
+  - order history page
+  - customer account
+  - tracking details
+  - twelve hours
+  - shipping confirmation email
+  generation_notes: Recast as an indirect question.
+- paraphrase_id: word_reorder-002
+  paraphrase_type: word_reorder
+  text: What is the processing time for standard delivery on orders placed on Friday
+    afternoons?
+  gold_docs_section_id: shipping_options.md#standard-delivery
+  key_tokens_docs:
+  - Standard delivery
+  - free on orders over fifty dollars
+  - three to five business days
+  - continental United States
+  - four-dollar fee
+  - weekend handling
+  - Friday afternoon
+  - processing begins the following Monday
+  key_tokens_wiki:
+  - Standard shipment
+  - free on orders over fifty dollars
+  - three to five business days
+  - continental United States
+  - four-dollar fee
+  - weekend handling
+  - Friday afternoon
+  - begins processing the following Monday
+  generation_notes: Recast as an indirect question focusing on processing time.
+- paraphrase_id: word_reorder-003
+  paraphrase_type: word_reorder
+  text: From which page can customers change the email address tied to their account?
+  gold_docs_section_id: account_management.md#update-email-address
+  key_tokens_docs:
+  - change
+  - email address
+  - tied to their account
+  - profile settings page
+  key_tokens_wiki:
+  - change
+  - email address
+  - tied to their account
+  - profile settings page
+  generation_notes: restructured to focus on the page for changing email
+- paraphrase_id: word_reorder-004
+  paraphrase_type: word_reorder
+  text: From which section of profile settings can a customer permanently close an
+    account?
+  gold_docs_section_id: account_management.md#close-account
+  key_tokens_docs:
+  - close account
+  - privacy section
+  - profile settings
+  key_tokens_wiki:
+  - shopper
+  - permanently close
+  - account
+  - privacy section
+  - profile settings
+  generation_notes: restructured as an indirect question
+- paraphrase_id: word_reorder-005
+  paraphrase_type: word_reorder
+  text: How many business days does expedited delivery guarantee arrival for a twelve-dollar
+    surcharge?
+  gold_docs_section_id: shipping_options.md#expedited-delivery
+  key_tokens_docs:
+  - expedited delivery
+  - guarantees
+  - arrival
+  - two business days
+  - twelve-dollar surcharge
+  key_tokens_wiki:
+  - expedited delivery
+  - promises
+  - arrival
+  - two business days
+  - twelve-dollar surcharge
+  generation_notes: restructured as a direct question
+- paraphrase_id: word_reorder-006
+  paraphrase_type: word_reorder
+  text: How long does it take for the issuing bank to release the authorisation hold
+    if an order is cancelled before shipment?
+  gold_docs_section_id: payment_methods.md#payment-authorization
+  key_tokens_docs:
+  - order
+  - authorise
+  - card
+  - order total
+  - capture funds
+  - ship
+  - authorisation hold
+  - released
+  - issuing bank
+  - three to five business days
+  - cancelled
+  - before shipment
+  key_tokens_wiki:
+  - order
+  - authorise
+  - card
+  - order total
+  - capture funds
+  - ship
+  - authorisation hold
+  - released
+  - issuing bank
+  - three to five business days
+  - cancelled
+  - before shipment
+  generation_notes: Recast as an indirect question.
+- paraphrase_id: word_reorder-007
+  paraphrase_type: word_reorder
+  text: What is the one exception that allows a free-shipping code to be combined
+    with a single percentage-off code, given that promotional codes cannot be stacked
+    with each other?
+  gold_docs_section_id: promo_codes.md#stacking-rules
+  key_tokens_docs:
+  - Promotional codes
+  - stacked
+  - percentage-off code
+  - combined
+  - loyalty point redemption
+  - free-shipping code
+  - exception
+  - different parts
+  - total
+  key_tokens_wiki:
+  - Promotional codes
+  - cannot be stacked
+  - percentage-off code
+  - cannot be combined
+  - loyalty point redemption
+  - single percentage-off code
+  - exception
+  - different parts
+  - total
+  generation_notes: Recast as an indirect question.
+- paraphrase_id: word_reorder-008
+  paraphrase_type: word_reorder
+  text: How can an order be cancelled from the order history page, provided it hasn't
+    entered the packing stage?
+  gold_docs_section_id: order_management.md#cancel-an-order
+  key_tokens_docs:
+  - order
+  - cancelled
+  - order history page
+  - packing stage
+  - cancel button
+  - refuse delivery
+  - return
+  - multi-item order
+  - partial cancellation
+  key_tokens_wiki:
+  - order
+  - cancelled
+  - order history page
+  - packing stage
+  - cancel button
+  - refuse shipment
+  - return
+  - multi-item order
+  - partial cancellation
+  generation_notes: Recast as an indirect question, maintaining original key terms.
+- paraphrase_id: verbosity_expansion-001
+  paraphrase_type: verbosity_expansion
+  text: Hey there! I hope you’re having a great day. I was just browsing through a
+    few product pages and got a bit curious about how the stock information works.
+    Could you please let me know how often the stock counts are updated? I want to
+    make sure I have the most accurate information when I'm ready to make my purchase!
+  gold_docs_section_id: product_information.md#stock-availability
+  key_tokens_docs:
+  - product page
+  - live stock count
+  - low-stock banner
+  - restock waitlist
+  - stock figures refresh
+  - checkout
+  key_tokens_wiki:
+  - product page
+  - live stock count
+  - low-stock banner
+  - restock waitlist
+  - stock figures refresh
+  - checkout
+  generation_notes: Expanded question with casual conversation style.
+- paraphrase_id: verbosity_expansion-002
+  paraphrase_type: verbosity_expansion
+  text: Hey there! I hope you're having a great day! I was just looking into the options
+    for expedited delivery and had a quick question. If I want to make sure my order
+    arrives in two business days, can you remind me of the cutoff time for placing
+    my order? Also, I just want to double-check that this service isn't available
+    for certain larger items or for shipments going outside the contiguous states,
+    right? Thanks so much for your help!
+  gold_docs_section_id: shipping_options.md#expedited-delivery
+  key_tokens_docs:
+  - Expedited delivery
+  - arrival within two business days
+  - twelve-dollar surcharge
+  - orders must be placed before two o'clock
+  - same day
+  - next morning
+  - oversized freight items
+  - contiguous states
+  key_tokens_wiki:
+  - Expedited delivery
+  - arrival within two business days
+  - twelve-dollar surcharge
+  - submit before two o'clock
+  - dispatched the next morning
+  - not offered for oversized freight items
+  - addresses beyond the contiguous states
+  generation_notes: Expanded the question to include a greeting and context about
+    the inquiry.
+- paraphrase_id: verbosity_expansion-003
+  paraphrase_type: verbosity_expansion
+  text: Hey there! I hope you're having a great day. I was just browsing through your
+    apparel listings and noticed that there's a size guide included, which is super
+    helpful! However, I'm a little unclear about how to interpret it, especially when
+    it comes to choosing the right size. Could you please explain how the size guide
+    works, particularly if my measurements land between two sizes? Like, should I
+    size up for outerwear or down for fitted base layers? Thanks so much for your
+    help!
+  gold_docs_section_id: product_information.md#size-guide
+  key_tokens_docs:
+  - size guide
+  - measured in inches and centimetres
+  - sizing up for outerwear
+  - sizing down for fitted base layers
+  key_tokens_wiki:
+  - apparel listings
+  - size guide
+  - outerwear
+  - fitted base layers
+  generation_notes: added polite framing and context around the core question about
+    the size guide.
+- paraphrase_id: verbosity_expansion-004
+  paraphrase_type: verbosity_expansion
+  text: Hey there! I hope you're doing well today. I have a quick question regarding
+    my recent order that I placed. I was wondering, once my package has shipped, how
+    long does it typically take for the tracking number to be sent to my email? Also,
+    if there’s any way for me to check the live tracking status, I’d love to know
+    how that works. Thanks so much for your help!
+  gold_docs_section_id: shipping_options.md#order-tracking
+  key_tokens_docs:
+  - tracking number
+  - emailed
+  - carrier scans
+  - live tracking status
+  - order history page
+  - twelve hours
+  - shipping confirmation email
+  key_tokens_wiki:
+  - tracking number
+  - emailed
+  - carrier scans
+  - live tracking status
+  - order history page
+  - twelve hours
+  - shipping confirmation email
+  generation_notes: added polite framing and background context around the core question
+    about tracking number and status
+- paraphrase_id: verbosity_expansion-005
+  paraphrase_type: verbosity_expansion
+  text: Hey there! I hope you're doing well today. I was just trying to use a promotional
+    code during my checkout process, but I'm having a bit of trouble figuring it out.
+    Could you please clarify how I should go about entering the code? Also, I’m curious
+    to know what might cause a code not to apply—like, are there specific requirements
+    I should be aware of, such as a minimum order value or certain items that might
+    be excluded? Thanks so much for your help!
+  gold_docs_section_id: promo_codes.md#applying-a-code
+  key_tokens_docs:
+  - promotional code
+  - checkout page
+  - one code
+  - apply per order
+  - fails to apply
+  - minimum order value
+  - category restriction
+  - excluded items
+  - cart
+  key_tokens_wiki:
+  - promotional code
+  - entered
+  - dedicated field
+  - checkout page
+  - only one code
+  - applied per order
+  - fails to apply
+  - unmet minimum order value
+  - category restriction
+  - excludes products
+  - cart
+  generation_notes: Expanded the question to include politeness and context about
+    difficulty with the promotional code.
+- paraphrase_id: verbosity_expansion-006
+  paraphrase_type: verbosity_expansion
+  text: Hey there! I hope you're having a great day. I recently received a gift card
+    and I’m a bit curious about how to use it properly. Could you please let me know
+    how I can apply the balance at checkout? Also, just to clarify, if I don’t use
+    the entire amount on the card, will I still be able to access that remaining balance
+    later? Thanks so much for your help!
+  gold_docs_section_id: gift_cards.md#redeeming-a-gift-card
+  key_tokens_docs:
+  - gift card
+  - balance
+  - checkout
+  - card number
+  - PIN
+  - payment method
+  - expire
+  - dormancy fees
+  - unused balance
+  key_tokens_wiki:
+  - gift card
+  - balance
+  - checkout
+  - card number
+  - PIN
+  - payment method
+  - expire
+  - dormancy fees
+  - unused balance
+  generation_notes: Expanded with conversational filler and context around the usage
+    of a gift card.
+- paraphrase_id: verbosity_expansion-007
+  paraphrase_type: verbosity_expansion
+  text: Hey there! I hope you’re having a great day. I was just wondering about the
+    whole review system because I want to make sure my feedback counts for something.
+    Could you tell me how a verified-purchase review differs from an unverified one,
+    especially in terms of its impact on the overall rating? Also, how long do I have
+    to submit a review after receiving my product?
+  gold_docs_section_id: product_information.md#product-reviews
+  key_tokens_docs:
+  - verified-purchase
+  - badge
+  - weighted
+  - average rating
+  - unverified reviews
+  - submitted
+  - ninety days
+  - delivery
+  - profanity
+  - personal information
+  - removed
+  - moderation
+  - one business day
+  key_tokens_wiki:
+  - verified-purchase
+  - badge
+  - weighted
+  - average rating
+  - unverified reviews
+  - submitted
+  - ninety days
+  - shipment
+  - profanity
+  - personal information
+  - removed
+  - moderation
+  - under one business day
+  generation_notes: Expanded on the question to include personal context and a desire
+    for understanding.
+- paraphrase_id: verbosity_expansion-008
+  paraphrase_type: verbosity_expansion
+  text: Hey there! I hope you're having a great day. I was just going through my security
+    settings and had a quick question about managing my trusted devices. If I decide
+    to remove a specific device from the list, does that mean I’ll have to go through
+    the two-factor authentication process again the next time I log in from that device?
+    Thanks for your help!
+  gold_docs_section_id: account_security.md#managing-trusted-devices
+  key_tokens_docs:
+  - trusted devices
+  - security section
+  - removed individually
+  - signed out at once
+  - two-factor challenge
+  key_tokens_wiki:
+  - trusted devices
+  - security section
+  - removed individually
+  - signed out at once
+  - two-factor challenge
+  generation_notes: Expanded with polite framing and context around device management.
+- paraphrase_id: specificity_narrowing-001
+  paraphrase_type: specificity_narrowing
+  text: What is the discount percentage applied to subscription orders?
+  gold_docs_section_id: subscription_orders.md#setting-up-a-subscription
+  key_tokens_docs:
+  - eligible consumable products
+  - recurring subscription
+  - delivery intervals
+  - five percent discount
+  - regular price
+  - recurring shipment
+  key_tokens_wiki:
+  - eligible consumable products
+  - recurring subscription
+  - shipment intervals
+  - five percent discount
+  - regular price
+  - recurring shipment
+  generation_notes: targeted sub-fact = subscription orders five percent discount
+- paraphrase_id: specificity_narrowing-002
+  paraphrase_type: specificity_narrowing
+  text: What happens to the cancel button once the packing stage begins?
+  gold_docs_section_id: order_management.md#cancel-an-order
+  key_tokens_docs:
+  - cancel button
+  - packing stage
+  - order history page
+  key_tokens_wiki:
+  - cancel button
+  - packing stage
+  - order history page
+  generation_notes: targeted sub-fact = cancel button disappears after packing begins
+- paraphrase_id: specificity_narrowing-003
+  paraphrase_type: specificity_narrowing
+  text: What is the exception to the delivered-duty-paid arrangement for import duties
+    and taxes?
+  gold_docs_section_id: international_shipping.md#customs-and-duties
+  key_tokens_docs:
+  - import duties
+  - taxes
+  - checkout
+  - delivered-duty-paid arrangement
+  - oversized freight
+  - destination customs office
+  - billed separately
+  key_tokens_wiki:
+  - import duties
+  - taxes
+  - checkout
+  - delivered-duty-paid arrangement
+  - oversized freight
+  - destination customs office
+  - billed separately
+  generation_notes: targeted sub-fact = exception to delivered-duty-paid arrangement
+- paraphrase_id: specificity_narrowing-004
+  paraphrase_type: specificity_narrowing
+  text: What happens when the stock count for a product reaches zero?
+  gold_docs_section_id: product_information.md#stock-availability
+  key_tokens_docs:
+  - live stock count
+  - low-stock banner
+  - restock waitlist
+  - emails
+  - inventory returns
+  - refresh every fifteen minutes
+  key_tokens_wiki:
+  - live stock count
+  - low-stock banner
+  - restock waitlist
+  - emails
+  - inventory returns
+  - refresh every fifteen minutes
+  generation_notes: targeted sub-fact = stock count reaches zero
+- paraphrase_id: specificity_narrowing-005
+  paraphrase_type: specificity_narrowing
+  text: If I cancel my order before it ships, how long will it take for the authorisation
+    hold to be released by my bank?
+  gold_docs_section_id: payment_methods.md#payment-authorization
+  key_tokens_docs:
+  - order
+  - authorise
+  - capture
+  - cancellation
+  - three to five business days
+  key_tokens_wiki:
+  - order
+  - authorise
+  - capture
+  - cancellation
+  - three to five business days
+  generation_notes: targeted sub-fact = order cancellation + 3-5 business days
+- paraphrase_id: specificity_narrowing-006
+  paraphrase_type: specificity_narrowing
+  text: What are the three most common reasons for a payment decline?
+  gold_docs_section_id: payment_methods.md#failed-payments
+  key_tokens_docs:
+  - payment
+  - declined
+  - pending
+  - common
+  - reasons
+  key_tokens_wiki:
+  - payment
+  - declined
+  - pending
+  - common
+  - reasons
+  generation_notes: targeted sub-fact = common decline reasons
+- paraphrase_id: specificity_narrowing-007
+  paraphrase_type: specificity_narrowing
+  text: What is the time frame for the inspection team to verify the condition of
+    a returned item?
+  gold_docs_section_id: returns_policy.md#refund-processing-time
+  key_tokens_docs:
+  - returned item
+  - inspection team
+  - verifies
+  - two business days
+  key_tokens_wiki:
+  - returned product
+  - inspection team
+  - confirms
+  - two business days
+  generation_notes: targeted sub-fact = inspection time for returned items
+- paraphrase_id: specificity_narrowing-008
+  paraphrase_type: specificity_narrowing
+  text: What is the restocking fee for large appliances returned without a manufacturing
+    defect?
+  gold_docs_section_id: returns_policy.md#restocking-fee
+  key_tokens_docs:
+  - restocking fee
+  - large appliances
+  - fifteen percent
+  - returned without a manufacturing defect
+  key_tokens_wiki:
+  - restocking fee
+  - large appliances
+  - fifteen percent
+  - returned without a manufacturing defect
+  generation_notes: targeted sub-fact = large appliances +15% restocking fee
+- paraphrase_id: implicit_reference-001
+  paraphrase_type: implicit_reference
+  text: Will a lower advertised price be matched if it's from a retailer on the approved
+    list?
+  gold_docs_section_id: price_matching.md#price-match-eligibility
+  key_tokens_docs:
+  - Acme Shop
+  - matches
+  - lower advertised price
+  - identical in-stock item
+  - approved major retailers
+  - sold and shipped by the retailer
+  - third-party marketplace seller
+  - general public
+  - members-only
+  - clearance price
+  key_tokens_wiki:
+  - Acme Shop
+  - matches
+  - lower advertised price
+  - identical in-stock product
+  - approved major retailers
+  - sold and shipped by the retailer
+  - third-party marketplace seller
+  - general public
+  - members-only
+  - clearance price
+  generation_notes: stripped subject = price match eligibility
+- paraphrase_id: implicit_reference-002
+  paraphrase_type: implicit_reference
+  text: How do I get the difference refunded if I find a lower price?
+  gold_docs_section_id: price_matching.md#requesting-a-price-match
+  key_tokens_docs:
+  - price match
+  - fourteen days
+  - competitor's listing
+  - approved match
+  - refunded
+  - difference
+  - original payment method
+  - limited
+  - three approved price matches
+  - thirty-day period
+  - discourage reselling
+  key_tokens_wiki:
+  - price match
+  - fourteen days
+  - order
+  - competitor's listing
+  - approved match
+  - refunded
+  - difference
+  - original payment method
+  - shopper
+  - limited
+  - three approved price matches
+  - thirty-day period
+  - discourage reselling
+  generation_notes: stripped subject = price match
+- paraphrase_id: implicit_reference-003
+  paraphrase_type: implicit_reference
+  text: How do I use the balance at checkout if it’s not enough to cover the total?
+  gold_docs_section_id: gift_cards.md#redeeming-a-gift-card
+  key_tokens_docs:
+  - gift card balance
+  - checkout
+  - entering the card number and PIN
+  - order total
+  - second payment method
+  key_tokens_wiki:
+  - gift card balance
+  - applied at checkout
+  - card number
+  - PIN
+  - order total
+  - second payment method
+  generation_notes: stripped subject = gift card
+- paraphrase_id: implicit_reference-004
+  paraphrase_type: implicit_reference
+  text: Can different types of discounts be used together on an order?
+  gold_docs_section_id: promo_codes.md#stacking-rules
+  key_tokens_docs:
+  - Promotional codes
+  - cannot be stacked
+  - percentage-off code
+  - loyalty point redemption
+  - free-shipping code
+  - combined
+  - different parts
+  key_tokens_wiki:
+  - Promotional codes
+  - cannot be stacked
+  - percentage-off code
+  - loyalty point redemption
+  - free-shipping code
+  - combined
+  - different parts
+  generation_notes: stripped subject = promotional codes
+- paraphrase_id: implicit_reference-005
+  paraphrase_type: implicit_reference
+  text: What happens to saved payment methods and order history when it's closed?
+  gold_docs_section_id: account_management.md#close-account
+  key_tokens_docs:
+  - close account
+  - privacy section
+  - saved payment methods
+  - shipping addresses
+  - order history
+  - seven years
+  - tax and warranty obligations
+  key_tokens_wiki:
+  - close account
+  - privacy section
+  - saved payment methods
+  - delivery addresses
+  - order history
+  - seven years
+  - tax and warranty obligations
+  generation_notes: stripped subject = account
+- paraphrase_id: implicit_reference-006
+  paraphrase_type: implicit_reference
+  text: How long will it take for the refund to show up after the item is returned?
+  gold_docs_section_id: returns_policy.md#refund-processing-time
+  key_tokens_docs:
+  - returned item
+  - warehouse
+  - inspection team
+  - approved refunds
+  - original payment method
+  - business days
+  - contact support
+  key_tokens_wiki:
+  - returned product
+  - warehouse
+  - inspection
+  - approved refunds
+  - original payment method
+  - business days
+  - reach out to support
+  generation_notes: stripped subject = refund
+- paraphrase_id: implicit_reference-007
+  paraphrase_type: implicit_reference
+  text: Which countries can receive shipments?
+  gold_docs_section_id: international_shipping.md#supported-countries
+  key_tokens_docs:
+  - Acme Shop
+  - ships
+  - Canada
+  - United Kingdom
+  - European Union
+  - Australia
+  - Japan
+  - supported countries
+  - landed cost
+  - checkout
+  - delivery
+  key_tokens_wiki:
+  - Acme Shop
+  - ships
+  - Canada
+  - United Kingdom
+  - European Union
+  - Australia
+  - Japan
+  - supported countries
+  - landed cost
+  - checkout
+  - shipment
+  generation_notes: stripped subject = countries
+- paraphrase_id: implicit_reference-008
+  paraphrase_type: implicit_reference
+  text: What happens if I try to return something after 30 days?
+  gold_docs_section_id: returns_policy.md#return-window
+  key_tokens_docs:
+  - return
+  - items
+  - full refund
+  - 30 days
+  - original packaging
+  - original receipt
+  - store credit
+  key_tokens_wiki:
+  - products
+  - thirty days
+  - complete refund
+  - unused
+  - original packaging
+  - original receipt
+  - store credit
+  generation_notes: stripped subject = item
+- paraphrase_id: typo_fatfinger-001
+  paraphrase_type: typo_fatfinger
+  text: How lnog do I have to retrun an item for a refnud?
+  gold_docs_section_id: returns_policy.md#return-window
+  key_tokens_docs:
+  - return
+  - days
+  - refund
+  - packaging
+  - receipt
+  key_tokens_wiki:
+  - thirty
+  - refund
+  - packaging
+  - receipt
+  - unused
+  generation_notes: 'hand-written probe; typos: long->lnog return->retrun refund->refnud'
+- paraphrase_id: typo_fatfinger-002
+  paraphrase_type: typo_fatfinger
+  text: What does expedietd shippng cost and how fsat is it?
+  gold_docs_section_id: shipping_options.md#expedited-delivery
+  key_tokens_docs:
+  - expedited
+  - delivery
+  - surcharge
+  - business
+  - days
+  key_tokens_wiki:
+  - expedited
+  - delivery
+  - surcharge
+  - business
+  - dollar
+  generation_notes: 'hand-written probe; typos: expedited->expedietd shipping->shippng
+    fast->fsat'
+- paraphrase_id: typo_fatfinger-003
+  paraphrase_type: typo_fatfinger
+  text: How do I rest my passwrod if I forgto it?
+  gold_docs_section_id: account_management.md#password-reset
+  key_tokens_docs:
+  - password
+  - reset
+  - link
+  - email
+  - characters
+  key_tokens_wiki:
+  - password
+  - reset
+  - link
+  - email
+  - characters
+  generation_notes: 'hand-written probe; typos: reset->rest password->passwrod forgot->forgto'
+- paraphrase_id: typo_fatfinger-004
+  paraphrase_type: typo_fatfinger
+  text: Where is my trakcing nubmer for the parcle?
+  gold_docs_section_id: shipping_options.md#order-tracking
+  key_tokens_docs:
+  - tracking
+  - number
+  - carrier
+  - parcel
+  - account
+  key_tokens_wiki:
+  - tracking
+  - number
+  - carrier
+  - parcel
+  - history
+  generation_notes: 'hand-written probe; typos: tracking->trakcing number->nubmer
+    parcel->parcle'
+- paraphrase_id: typo_fatfinger-005
+  paraphrase_type: typo_fatfinger
+  text: Why was my paymnet declind at chekout?
+  gold_docs_section_id: payment_methods.md#failed-payments
+  key_tokens_docs:
+  - payment
+  - declined
+  - pending
+  - card
+  - expired
+  key_tokens_wiki:
+  - payment
+  - declined
+  - pending
+  - card
+  - expired
+  generation_notes: 'hand-written probe; typos: payment->paymnet declined->declind
+    checkout->chekout'
+- paraphrase_id: industry_jargon-001
+  paraphrase_type: industry_jargon
+  text: What's the RMA window for a full refund?
+  gold_docs_section_id: returns_policy.md#return-window
+  key_tokens_docs:
+  - return
+  - days
+  - refund
+  - packaging
+  - receipt
+  key_tokens_wiki:
+  - thirty
+  - refund
+  - packaging
+  - receipt
+  - unused
+  generation_notes: 'hand-written probe; jargon: RMA = return merchandise authorization'
+- paraphrase_id: industry_jargon-002
+  paraphrase_type: industry_jargon
+  text: Is duty handled DDP for cross-border orders?
+  gold_docs_section_id: international_shipping.md#customs-and-duties
+  key_tokens_docs:
+  - duties
+  - taxes
+  - checkout
+  - carrier
+  - freight
+  key_tokens_wiki:
+  - duties
+  - taxes
+  - checkout
+  - carrier
+  - freight
+  generation_notes: 'hand-written probe; jargon: DDP = delivered duty paid'
+- paraphrase_id: industry_jargon-003
+  paraphrase_type: industry_jargon
+  text: Is BOPIS available and how soon is the order ready?
+  gold_docs_section_id: store_pickup.md#buy-online-pick-up-in-store
+  key_tokens_docs:
+  - pickup
+  - reserved
+  - store
+  - hours
+  - counter
+  key_tokens_wiki:
+  - pickup
+  - reserved
+  - store
+  - hours
+  - counter
+  generation_notes: 'hand-written probe; jargon: BOPIS = buy online pick up in store'
+- paraphrase_id: industry_jargon-004
+  paraphrase_type: industry_jargon
+  text: Do you support 2FA via TOTP or SMS OTP?
+  gold_docs_section_id: account_security.md#two-factor-authentication
+  key_tokens_docs:
+  - authentication
+  - authenticator
+  - code
+  - device
+  - factor
+  key_tokens_wiki:
+  - authentication
+  - authenticator
+  - code
+  - device
+  - factor
+  generation_notes: 'hand-written probe; jargon: 2FA/TOTP/OTP = two-factor authentication
+    codes'
+- paraphrase_id: industry_jargon-005
+  paraphrase_type: industry_jargon
+  text: When does the auth hold drop if I void before fulfilment?
+  gold_docs_section_id: payment_methods.md#payment-authorization
+  key_tokens_docs:
+  - authorisation
+  - hold
+  - capture
+  - cancelled
+  - shipment
+  key_tokens_wiki:
+  - authorisation
+  - hold
+  - capture
+  - cancelled
+  - shipment
+  generation_notes: 'hand-written probe; jargon: auth hold / void = authorization
+    release pre-capture'
