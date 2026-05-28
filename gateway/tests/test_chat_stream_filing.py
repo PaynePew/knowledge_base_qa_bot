@@ -39,8 +39,7 @@ class _FakeLLMResponse:
 
 class _FakeLLM:
     CANNED_ANSWER = (
-        f"Approved refunds are processed within 5-7 business days. "
-        f"[Source: {REFUND_SECTION_ID}]"
+        f"Approved refunds are processed within 5-7 business days. [Source: {REFUND_SECTION_ID}]"
     )
 
     def invoke(self, messages):
@@ -139,9 +138,7 @@ def _parse_sse_response(content: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def test_wiki_stream_grounded_files_and_surfaces_done_filed(
-    grounded_stream_client, tmp_path
-):
+def test_wiki_stream_grounded_files_and_surfaces_done_filed(grounded_stream_client, tmp_path):
     """A grounding-passing Wiki stream creates a wiki/qa/<slug>.md draft
     and populates done.filed with slug / status / op / count.
 
@@ -164,7 +161,9 @@ def test_wiki_stream_grounded_files_and_surfaces_done_filed(
 
     # AC1: done.filed is populated on grounding-pass
     filed = done_data.get("filed")
-    assert filed is not None, f"done.filed must be non-null for grounded wiki stream; got {done_data}"
+    assert filed is not None, (
+        f"done.filed must be non-null for grounded wiki stream; got {done_data}"
+    )
     assert "slug" in filed, f"filed must have slug: {filed}"
     assert "status" in filed, f"filed must have status: {filed}"
     assert "op" in filed, f"filed must have op: {filed}"
@@ -183,9 +182,7 @@ def test_wiki_stream_grounded_files_and_surfaces_done_filed(
     assert "count: 1" in content
 
 
-def test_wiki_stream_grounded_second_ask_touches_filed(
-    grounded_stream_client, tmp_path
-):
+def test_wiki_stream_grounded_second_ask_touches_filed(grounded_stream_client, tmp_path):
     """Re-asking the same question bumps count and reports op=touched."""
     first_resp = grounded_stream_client.post(
         "/chat/stream?stack=wiki",
@@ -216,9 +213,7 @@ def test_wiki_stream_grounded_second_ask_touches_filed(
 # ---------------------------------------------------------------------------
 
 
-def test_wiki_stream_cannot_confirm_does_not_file(
-    indexed_wiki_corpus, monkeypatch, tmp_path
-):
+def test_wiki_stream_cannot_confirm_does_not_file(indexed_wiki_corpus, monkeypatch, tmp_path):
     """Cannot Confirm Wiki stream: done.filed is null and wiki/qa/ stays empty."""
     # Unrelated gibberish → BM25 scores fall below threshold → CC
     from gateway.app.main import app as _gateway_app
@@ -257,11 +252,12 @@ def test_rag_stream_done_filed_null_on_grounding_pass(tmp_path, monkeypatch):
     Phase 9 Slice 4 AC: RAG never files — keep the constraint introduced in
     Slice 3 (#120) and confirm it is preserved after the filing extraction.
     """
+    import hashlib
+
     import vector_rag.app.indexer as vr_indexer
     import vector_rag.app.logger as vr_logger
     import vector_rag.app.retrieval as vr_retrieval
     from langchain_core.embeddings import Embeddings
-    import hashlib
     from markdown_kb.app.grounding import GroundingOutcome
 
     class _FakeEmbeddings(Embeddings):
@@ -325,9 +321,7 @@ def test_rag_stream_done_filed_null_on_grounding_pass(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_chat_route_filing_still_works_after_extraction(
-    grounded_stream_client, tmp_path
-):
+def test_chat_route_filing_still_works_after_extraction(grounded_stream_client, tmp_path):
     """POST /chat (markdown_kb direct) still files on grounding pass.
 
     Regression check: extracting the filing dispatch into a shared helper

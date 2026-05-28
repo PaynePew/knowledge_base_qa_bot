@@ -506,7 +506,7 @@ class _SectionRef:
         self.content = ""
 
 
-def dispatch_filing(query: str, result: dict) -> "FiledStatus | None":
+def dispatch_filing(query: str, result: dict) -> FiledStatus | None:
     """Gate-and-dispatch filing for a single query result.
 
     Shared helper used by both ``POST /chat`` (routes.py) and the Wiki
