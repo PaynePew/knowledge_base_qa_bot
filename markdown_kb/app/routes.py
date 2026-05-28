@@ -6,8 +6,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
-import app.indexer as _indexer
-
+from . import indexer as _indexer
 from . import qa as qa_module
 from .importer import ImportBatchResult
 from .importer import import_sources as run_import
