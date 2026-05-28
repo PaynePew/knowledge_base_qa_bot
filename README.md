@@ -4,7 +4,7 @@ A grounded Q&A bot over a small Markdown knowledge base, with citations back to 
 
 ## Positioning
 
-This is a grounded Q&A service designed for **enterprise knowledge management** — FAQ automation, policy lookup, customer-support routing — where the answers must trace back to source documents (no hallucination) and the knowledge base itself benefits from a curator-maintained synthesis layer above the immutable Sources. The prototype implements the retrieval + grounded-answer path (`/chat`); the layered architecture (ADR-0003) preserves the upgrade path to LLM-maintained synthesis pages (`/ingest`, future) without architectural rewrite.
+This is a grounded Q&A service designed for **enterprise knowledge management** — FAQ automation, policy lookup, customer-support routing — where the answers must trace back to source documents (no hallucination) and the knowledge base itself benefits from a curator-maintained synthesis layer above the immutable Sources. The prototype implements the retrieval + grounded-answer path (`/chat`); the layered architecture (ADR-0003) supports LLM-maintained synthesis pages (`/ingest`, Phase 3) and Answer Filing (`/chat` → `wiki/qa/`, Phase 6) without architectural rewrite.
 
 Karpathy's LLM Wiki gist and [`AgriciDaniel/claude-obsidian`](https://github.com/AgriciDaniel/claude-obsidian) are the pattern source for the curated layer's design — not the project's final form. The patterns translate to enterprise contexts: Hot Cache → session-scoped agent memory; Wiki Log → audit trail; Lint Pass → KB health audit; frontmatter `confidence`/`status` → document governance.
 
@@ -15,7 +15,7 @@ For the exercise spec and verification, see [`PROMPT.md`](PROMPT.md). For the pr
 | Strategy | Folder | Core idea | Status |
 |----------|--------|-----------|--------|
 | Markdown KB | [`markdown_kb/`](markdown_kb/) | Parse Markdown headings into Sections, BM25 over a persisted Section Index | Active — prototype target |
-| Vector RAG | [`vector_rag/`](vector_rag/) | Split Markdown into chunks, embed with OpenAI, retrieve via FAISS | Scaffold only — post-prototype work |
+| Vector RAG | [`vector_rag/`](vector_rag/) | Split Markdown into chunks, embed with OpenAI, retrieve via FAISS | Active — uv workspace member, langchain 1.x; served via Gateway (Phase 9) |
 
 A head-to-head retrieval comparison of these two strategies on the same raw corpus — per-Paraphrase-Type `hit_rate@3` and MRR, charts, a cost log, and six honest-limitation disclosures — lives in [`eval/paraphrase_comparison/report.md`](eval/paraphrase_comparison/report.md) (Phase 8).
 
@@ -93,7 +93,7 @@ The `raw/` directory is gitignored — place your own HTML exports or text files
 there. The `examples/raw/` directory contains sample files you can copy in to
 try the pipeline immediately.
 
-> The `vector_rag/` scaffold is intentionally **not** in the uv workspace — it pins the legacy langchain 0.3.x ecosystem, which conflicts with `markdown_kb`'s 1.x deps. When you reactivate it, either upgrade its imports to langchain 1.x and add it to `[tool.uv.workspace].members`, or run it standalone (`cd vector_rag && uv sync`).
+> `vector_rag/` is a uv workspace member running langchain 1.x (migrated in Phase 8). Run `uv sync --all-packages` from the repo root to install all workspace members together.
 
 ## Prerequisites
 
@@ -119,7 +119,7 @@ The Markdown KB app does not need embeddings. The Vector RAG app uses OpenAI emb
 │   ├── adr/                   ← architectural decisions
 │   └── agents/                ← issue-tracker, triage-labels, domain docs
 ├── markdown_kb/               ← active retrieval app (BM25 + Section Index)
-└── vector_rag/                ← scaffold app for future comparison work
+└── vector_rag/                ← Stack B retrieval app (langchain 1.x, served via Gateway)
 ```
 
 ## Stretch goals
@@ -127,22 +127,22 @@ The Markdown KB app does not need embeddings. The Vector RAG app uses OpenAI emb
 The following stretch goals from `PROMPT.md` are described here for orientation.
 
 - **Score threshold and Cannot Confirm fallback** — already part of the core design (see [ADR-0001](project-docs/adr/0001-strict-grounded-answers.md)).
-- **Output validation (Grounding Check)** — **in progress** (Phase 1, Slices #1-#4). A second structured LLM call after the draft answer verifies every claim traces back to a cited Section. Complements the pre-LLM threshold gate; closes the anti-hallucination loop. Design locked in [ADR-0004](project-docs/adr/0004-post-llm-grounding-check.md).
-- **Wiki Index generation** — planned (Phase 2). Emit `wiki/index.md` from the Section Index so humans and agents can browse topics without calling the API. First concrete step toward the Karpathy-style LLM Wiki layer (ADR-0003). Design to be locked in a follow-up session before implementation.
-- **Answer Filing** — deferred until `wiki/` directory exists (requires Phase 2).
-- **Conversation memory** — deferred until real multi-turn usage demand emerges.
-- **Paraphrase comparison** — deferred until `vector_rag/` is reactivated (langchain 0.3 → 1.x migration).
-- **Streaming interface** (`POST /chat/stream` via SSE) — deferred; adoption trigger: sustained user demand after interview feedback.
-- **Browser UI** showing retrieved Sections before the streamed answer — deferred; adoption trigger: same as streaming.
-- **Multi-format import** (`.txt` / `.html` → canonical Markdown in `docs/`) — **in progress** (Phase 7, Slice 7-1 tracer bullet shipped). `POST /import` converts `raw/**/*.{html,txt}` to `docs/*.md` with provenance frontmatter. Slices 7-2 (full error handling) and 7-3 (idempotency hash chain) follow.
-- **Alternative interfaces** (CLI, MCP server, web UI) — deferred; adoption trigger: concrete downstream consumer with interface requirements.
+- **Output validation (Grounding Check)** — **done** (Phase 1). A second structured LLM call after the draft answer verifies every claim traces back to a cited Section. Design locked in [ADR-0004](project-docs/adr/0004-post-llm-grounding-check.md).
+- **Wiki Index generation** — **done** (Phase 2). Emits `wiki/index.md` from the Section Index so humans and agents can browse topics without calling the API.
+- **Answer Filing** — **done** (Phase 6). High-confidence `/chat` answers are written back to `wiki/qa/*.md`, closing the Two-output rule on the query side.
+- **Paraphrase comparison** — **done** (Phase 8). Head-to-head retrieval comparison (`hit_rate@3`, MRR) of Markdown KB vs Vector RAG across seven paraphrase types. Report in [`eval/paraphrase_comparison/report.md`](eval/paraphrase_comparison/report.md).
+- **Streaming interface** (`POST /chat/stream` via SSE) — **in progress** (Phase 9, [#116](https://github.com/PaynePew/knowledge_base_qa_bot/issues/116)).
+- **Browser UI** showing retrieved Sections before the streamed answer — **in progress** (Phase 9, [#116](https://github.com/PaynePew/knowledge_base_qa_bot/issues/116)).
+- **Multi-format import** (`.txt` / `.html` → canonical Markdown in `docs/`) — **done** (Phase 7). `POST /import` converts `raw/**/*.{html,txt}` to `docs/*.md` with provenance frontmatter.
+- **Conversation memory** — deferred until real multi-turn usage demand emerges (Phase 11).
+- **Alternative interfaces** (CLI, MCP server, web UI) — deferred; adoption trigger: concrete downstream consumer with interface requirements (Phase 12).
 
 ## Roadmap
 
 For the full multi-phase implementation sequence, dependencies, effort estimates, and interview-ready stopping points, see [`project-docs/roadmap.md`](project-docs/roadmap.md).
 
-**Done:** Prototype, Phase 1 (Grounding Check, [ADR-0004](project-docs/adr/0004-post-llm-grounding-check.md)), Phase 2 (Wiki Index Generation).
+**Done:** Prototype · Phase 1 (Grounding Check) · Phase 2 (Wiki Index Generation) · Phase 3 (`/ingest`) · Phase 4 (W2 layered retrieval) · Phase 5 (`/lint`) · Phase 6 (Answer Filing) · Phase 7 (Multi-format import) · Phase 8 (Paraphrase Comparison).
 
-**Next up:** Phase 3 (`/ingest` — Source → curated `wiki/` synthesis pages). Design grill in progress.
+**In progress:** Phase 9 (Streaming + Browser UI — [#116](https://github.com/PaynePew/knowledge_base_qa_bot/issues/116)).
 
-**⭐ Recommended stopping point:** Phase 5 (`/lint`), which closes the Karpathy Ingest + Query + Lint trio.
+**⭐ Recommended stopping point:** Phase 5 (`/lint`), which closes the Karpathy Ingest + Query + Lint trio. See [`project-docs/roadmap.md`](project-docs/roadmap.md) for the full sequence.
