@@ -450,7 +450,7 @@ Notable patterns **rejected** (do not introduce):
 
 - A `Retriever` protocol / plugin architecture (ADR-0002 — premature today).
 - A second log channel beyond `wiki/log.md` (§ 5.1).
-- A `Document` or `Chunk` class (§ 3.1).
+- A `Document` or `Chunk` class **in `markdown_kb`** (§ 3.1). `vector_rag`'s `Chunk` is the blessed exception — its distinct retrieval unit (a char-bounded slice within a Section), defined in [`CONTEXT.md`](../CONTEXT.md) § Phase 8 vocabulary. LangChain's `Document` stays inside vector_rag's LLM-facing modules and never leaks (§ 2.4).
 - A DI container / app-state object (§ 2.7 — only when single-process breaks).
 
 ---

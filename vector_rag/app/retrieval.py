@@ -1,27 +1,43 @@
+"""Deep module per Ousterhout. Public surface: ``query``, ``build_prompt``, ``get_llm``.
+
+Vector RAG (Stack B) query path — retrieve Chunks, build a grounded prompt,
+call the LLM.
+
+This module owns Stack B's LLM call site, so it is an LLM-facing module and may
+import LangChain (CODING_STANDARD §2.4). It consumes domain ``Chunk`` objects
+from :mod:`vector_rag.app.indexer` (never LangChain ``Document``) so the
+retrieval boundary stays framework-free.
+
+The Phase 8 Slice 1 tracer exercises only the retrieval core
+(``indexer.search``); the full grounded ``/chat`` answer path is unchanged
+scaffold and is thickened in a later slice.
+"""
+
+from __future__ import annotations
+
 import os
 
-from langchain.schema import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from . import indexer
+from .indexer import Chunk
+
+# ADR-0001 strict-grounded contract: never hand weak context to the LLM. The
+# literal Cannot Confirm sentinel mirrors markdown_kb's contract surface.
+CANNOT_CONFIRM = "I cannot confirm from the knowledge base."
+
+SYSTEM_PROMPT = (
+    "You answer strictly from the provided CONTEXT. Cite every claim with a "
+    "[Source: slug#heading] marker drawn from the context. If the CONTEXT does "
+    f"not contain the answer, reply exactly: {CANNOT_CONFIRM}"
+)
+
+_llm: ChatOpenAI | None = None
 
 
-SYSTEM_PROMPT = """
-# TODO: Write the system prompt for the knowledge base Q&A assistant.
-#
-# Design decision: Hallucination defense for retrieved chunks.
-#
-# Hints:
-# 1. Only answer using the provided CONTEXT.
-# 2. Cite sources using filename#heading.
-# 3. Define fallback behavior when the context lacks the answer.
-# 4. Explicitly prohibit guessing or outside knowledge.
-"""
-
-_llm = None
-
-
-def get_llm():
+def get_llm() -> ChatOpenAI:
+    """Return the lazily-constructed chat LLM (CODING_STANDARD §10 lazy-singleton)."""
     global _llm
     if _llm is None:
         _llm = ChatOpenAI(
@@ -32,51 +48,43 @@ def get_llm():
     return _llm
 
 
-def build_prompt(query: str, ranked_chunks: list) -> str:
-    # TODO: Build the prompt from retrieved vector chunks.
-    #
-    # Design decision: Give the LLM enough context without flooding it.
-    #
-    # Hints:
-    # 1. Include [Source: filename#heading] before each chunk.
-    # 2. Include retrieval distance or score only for debugging.
-    # 3. Use top-k chunks passed into this function.
-    # 4. Place CONTEXT before QUESTION.
-    return f"CONTEXT:\n(no context)\n\nQUESTION:\n{query}"
+def build_prompt(query_text: str, chunks: list[Chunk]) -> str:
+    """Render the CONTEXT (one block per Chunk) followed by the QUESTION."""
+    blocks = [f"[Source: {chunk.source}]\n{chunk.content}" for chunk in chunks]
+    context = "\n\n".join(blocks) if blocks else "(no context)"
+    return f"CONTEXT:\n{context}\n\nQUESTION:\n{query_text}"
 
 
 def query(question: str) -> dict:
+    """Answer ``question`` from the FAISS index (scaffold answer path).
+
+    The retrieval core (``indexer.search`` → ``Chunk`` list) is the
+    Phase 8 Slice 1 deliverable; the grounded synthesis below is unchanged
+    scaffold behaviour that later slices thicken.
+    """
     if indexer.vectorstore is None:
         return {
             "answer": "The knowledge base has not been indexed yet. Call POST /index first.",
             "sources": [],
         }
 
-    ranked_chunks = indexer.search(question, k=3)
-    if not ranked_chunks:
-        return {
-            "answer": "I cannot confirm from the knowledge base.",
-            "sources": [],
-        }
+    chunks = indexer.search(question, k=3)
+    if not chunks:
+        return {"answer": CANNOT_CONFIRM, "sources": []}
 
     response = get_llm().invoke(
         [
             SystemMessage(content=SYSTEM_PROMPT),
-            HumanMessage(content=build_prompt(question, ranked_chunks)),
+            HumanMessage(content=build_prompt(question, chunks)),
         ]
     )
 
     sources = [
         {
-            "source": doc.metadata.get("source", "unknown"),
-            "heading": doc.metadata.get("heading", "unknown"),
-            "score": round(float(score), 3),
-            "content": doc.page_content[:240],
+            "source": chunk.source,
+            "heading": chunk.heading_path[-1] if chunk.heading_path else "",
+            "content": chunk.content[:240],
         }
-        for doc, score in ranked_chunks
+        for chunk in chunks
     ]
-
-    return {
-        "answer": response.content,
-        "sources": sources,
-    }
+    return {"answer": response.content, "sources": sources}

@@ -1,17 +1,33 @@
 [project]
 name = "knowledge_base_qa_bot"
 version = "0.1.0"
-description = "Grounded Q&A bot over a small Markdown knowledge base. The active prototype lives in markdown_kb/ (BM25 over heading sections). A vector_rag/ scaffold exists for the future hybrid layer but is intentionally not in the workspace today; it pins the legacy langchain 0.3.x ecosystem (langchain-community never moved to 1.x), which conflicts with markdown_kb's 1.x deps. When vector_rag is reactivated, either upgrade its imports to langchain 1.x equivalents and add it to [tool.uv.workspace].members, or run it as a standalone uv project (`cd vector_rag && uv sync`)."
+description = "Grounded Q&A bot over a small Markdown knowledge base. The active prototype lives in markdown_kb/ (BM25 over heading sections, Stack A). vector_rag/ (Stack B: FAISS over chunked raw Sources) is now a workspace member after its LangChain imports were migrated 0.x -> 1.x in Phase 8. The eval/paraphrase_comparison/ package runs both stacks in-process for the retrieval comparison."
 requires-python = ">=3.11"
 
 [tool.uv]
 package = false
 
 [tool.uv.workspace]
-members = ["markdown_kb"]
+members = ["markdown_kb", "vector_rag", "eval/paraphrase_comparison"]
 
 [dependency-groups]
 dev = [
     "pytest>=9.0",
     "httpx>=0.28",
+]
+
+# Root-level pytest config so `uv run pytest` from the repo root collects every
+# workspace member's suite in one run (the eval comparison needs both Stacks
+# importable in-process). ``pythonpath`` puts the repo root on sys.path (so
+# ``vector_rag.app`` / ``eval.paraphrase_comparison`` resolve) AND ``markdown_kb/``
+# (so markdown_kb's tests keep using their established bare ``import app`` —
+# vector_rag is only ever imported via its ``vector_rag.app`` namespace, so the
+# two ``app`` packages never collide). Each member's own pyproject still works
+# for the standalone ``cd <member> && uv run pytest`` workflow.
+[tool.pytest.ini_options]
+testpaths = ["markdown_kb/tests", "eval/paraphrase_comparison/tests"]
+pythonpath = [".", "markdown_kb"]
+addopts = "--strict-markers"
+markers = [
+    "live: Opt-in live tests that make real OpenAI/embedding API calls; skipped by default.",
 ]
