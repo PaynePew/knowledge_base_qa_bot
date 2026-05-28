@@ -1,6 +1,7 @@
 # Paraphrase Comparison Report
 
 Phase 8 retrieval comparison (PRD #100): does Karpathy's curated-Wiki layer (**Stack A** — LLM-synthesised `wiki/` + BM25) out-retrieve a traditional Vector RAG pipeline (**Stack B** — chunk + embed + FAISS) fed the **same** raw corpus? Scored at the retrieval layer only by the deterministic C5c hit metric (source-match AND dual-side Key-Token overlap). K=3.
+
 > ⚠️ **OFFLINE TRACER NUMBERS.** Every score below was produced WITHOUT `OPENAI_API_KEY`: the Core Paraphrases are hand-authored offline stand-ins (not gpt-4o-mini output) and Stack B's vectors come from a deterministic token-overlap stand-in, NOT real `text-embedding-3-small` embeddings. These numbers exercise the pipeline end-to-end but are **not the real experiment**. Re-run with `OPENAI_API_KEY` (and a regenerated `queries.yaml`) for headline figures.
 
 
@@ -20,7 +21,7 @@ On this 16-Source Acme Shop corpus, the Core macro-average hit_rate@3 is **Stack
 | Item | Cost |
 |---|---|
 | Paraphrase generation (Core, gpt-4o-mini) | `n/a (offline)` |
-| L2 cross-family judge spot-check | not run (opt-in via `--judge`) |
+| L2 cross-family judge Spot-check | not run (opt-in via `--judge`) |
 | Stack A index-time LLM synthesis (`/ingest`) | one-shot at ingest; **zero** per-query cost |
 | Stack B index-time embedding | per-chunk at index; **per-query** embedding cost at retrieval |
 
@@ -62,6 +63,16 @@ The two hand-written probe types, each rigged to exercise a known architectural 
 ![probes_hit_rate_at_3](charts/probes_hit_rate_at_3.png)
 ![probes_delta_hit_rate_at_3](charts/probes_delta_hit_rate_at_3.png)
 ![probes_mrr_at_3](charts/probes_mrr_at_3.png)
+
+## Spot-check Validation (L2, cross-family)
+
+Not run. The deterministic L1 (C5c) metric above is the source of every headline number; the optional L2 **Spot-check** is a cross-family second opinion that re-judges L1's edge-case verdicts with a Claude judge (a different model family from the OpenAI embedding powering Stack B). Enable it with:
+
+```
+ANTHROPIC_API_KEY=... uv run python -m eval.paraphrase_comparison.run_comparison --judge=claude-sonnet-4-6
+```
+
+Documented judge choices: `claude-haiku-4-5` / `claude-sonnet-4-6` (default) / `claude-opus-4-7`. Zone tuning: `--judge-zones`, `--judge-marginal-threshold` (default 1), `--judge-control-sample-size` (default 5).
 
 ## Limitations
 

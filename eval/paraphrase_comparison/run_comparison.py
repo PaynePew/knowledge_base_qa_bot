@@ -9,6 +9,14 @@ Without a key, pass ``--fake-embeddings`` to run a deterministic offline
 stand-in (token-overlap ranker) so the loop is still exercisable; the report
 records which mode produced the numbers.
 
+The opt-in L2 cross-family **Spot-check** is enabled with ``--judge=<model>``
+(default ``claude-sonnet-4-6``; documented choices ``claude-haiku-4-5`` /
+``claude-sonnet-4-6`` / ``claude-opus-4-7``). It requires ``ANTHROPIC_API_KEY``
+— without ``--judge`` the Spot-check is skipped and the report notes how to
+enable it; with ``--judge`` but no key the run fail-fasts with a clear message.
+Zone tuning: ``--judge-zones``, ``--judge-marginal-threshold`` (default 1),
+``--judge-control-sample-size`` (default 5).
+
 This is a one-off script, so a stdout summary via ``print`` is acceptable
 (CODING_STANDARD §5.1 — the no-print rule is scoped to committed library code).
 """
@@ -19,7 +27,15 @@ import argparse
 import os
 import sys
 
-from .runner import run_comparison
+from .runner import JudgeConfig, run_comparison
+from .spotcheck import (
+    DEFAULT_CONTROL_SAMPLE_SIZE,
+    DEFAULT_JUDGE_MODEL,
+    DEFAULT_MARGINAL_THRESHOLD,
+    JUDGE_MODELS,
+    ZONES,
+    JudgeUnavailableError,
+)
 
 
 def _install_fake_embeddings() -> None:
@@ -54,6 +70,29 @@ def _install_fake_embeddings() -> None:
     vr_indexer._build_faiss = lambda documents: _FakeVectorStore(documents)
 
 
+def _judge_config(args: argparse.Namespace) -> JudgeConfig | None:
+    """Build the opt-in L2 Spot-check config from the ``--judge*`` flags (or None).
+
+    ``--judge`` is the opt-in switch: absent -> None (Spot-check skipped). When
+    present, ``--judge`` may be bare (use the default model) or carry a model
+    name. Zone selection is parsed from ``--judge-zones`` (comma-separated).
+    """
+    if args.judge is None:
+        return None
+    model = args.judge or DEFAULT_JUDGE_MODEL
+    zones = (
+        tuple(z.strip() for z in args.judge_zones.split(",") if z.strip())
+        if args.judge_zones
+        else ZONES
+    )
+    return JudgeConfig(
+        judge_model=model,
+        zones=zones,
+        marginal_threshold=args.judge_marginal_threshold,
+        control_sample_size=args.judge_control_sample_size,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Phase 8 retrieval comparison runner.")
     parser.add_argument(
@@ -62,6 +101,37 @@ def main(argv: list[str] | None = None) -> int:
         help="Use a deterministic offline embedding stand-in (no API key needed).",
     )
     parser.add_argument("--k", type=int, default=3, help="hit_rate@k cutoff.")
+    parser.add_argument(
+        "--judge",
+        nargs="?",
+        const=DEFAULT_JUDGE_MODEL,
+        default=None,
+        choices=JUDGE_MODELS,
+        metavar="MODEL",
+        help=(
+            "Enable the opt-in L2 cross-family Claude judge Spot-check. Bare flag "
+            f"uses {DEFAULT_JUDGE_MODEL}; choices: {', '.join(JUDGE_MODELS)}. "
+            "Requires ANTHROPIC_API_KEY (fail-fast if absent)."
+        ),
+    )
+    parser.add_argument(
+        "--judge-zones",
+        default=None,
+        metavar="Z1,Z2,...",
+        help=f"Comma-separated Spot-check zones (default: {','.join(ZONES)}).",
+    )
+    parser.add_argument(
+        "--judge-marginal-threshold",
+        type=int,
+        default=DEFAULT_MARGINAL_THRESHOLD,
+        help="Max Key-Token overlap for the Marginal zone (default 1).",
+    )
+    parser.add_argument(
+        "--judge-control-sample-size",
+        type=int,
+        default=DEFAULT_CONTROL_SAMPLE_SIZE,
+        help="Clear-hit/clear-miss count for the Control zone (default 5).",
+    )
     args = parser.parse_args(argv)
 
     fake = args.fake_embeddings or not os.getenv("OPENAI_API_KEY")
@@ -69,9 +139,18 @@ def main(argv: list[str] | None = None) -> int:
     if fake:
         _install_fake_embeddings()
 
-    stack_a, stack_b = run_comparison(k=args.k, embedding_mode=mode)
+    judge = _judge_config(args)
+    try:
+        stack_a, stack_b = run_comparison(k=args.k, embedding_mode=mode, judge=judge)
+    except JudgeUnavailableError as exc:
+        # Opt-in Spot-check fail-fast: a clear one-line message + non-zero exit,
+        # not a stack trace (issue #105 — flag set, key absent).
+        print(f"error: {exc}")
+        return 2
 
     print(f"Phase 8 comparison complete (Stack B embedding mode: {mode}).")
+    if judge is not None:
+        print(f"L2 Spot-check ran with judge {judge.judge_model}.")
     for ptype in sorted(set(stack_a.by_type) | set(stack_b.by_type)):
         a = stack_a.by_type.get(ptype, 0.0)
         b = stack_b.by_type.get(ptype, 0.0)

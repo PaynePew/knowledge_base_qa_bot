@@ -42,6 +42,14 @@ from .models import (
     Paraphrase,
     RetrievedItem,
 )
+from .spotcheck import (
+    DEFAULT_CONTROL_SAMPLE_SIZE,
+    DEFAULT_JUDGE_MODEL,
+    DEFAULT_MARGINAL_THRESHOLD,
+    ZONES,
+    SpotcheckResult,
+    run_spotcheck,
+)
 
 _PKG_ROOT = Path(__file__).resolve().parent
 REPORT_PATH = _PKG_ROOT / "report.md"
@@ -64,6 +72,21 @@ _EXPECTED_WINNER: dict[str, str] = {
     "typo_fatfinger": "A (BM25 token tolerance) — probe",
     "industry_jargon": "B (semantic) — probe",
 }
+
+
+@dataclass(frozen=True)
+class JudgeConfig:
+    """Opt-in L2 Spot-check configuration threaded from the CLI ``--judge*`` flags.
+
+    Present (non-None) only when ``--judge`` was passed; ``run_comparison`` then
+    runs the cross-family Claude judge over the ambiguous subset. Carries the
+    judge model and the three tunable zone knobs (PRD #100 user story 20).
+    """
+
+    judge_model: str = DEFAULT_JUDGE_MODEL
+    zones: tuple[str, ...] = ZONES
+    marginal_threshold: int = DEFAULT_MARGINAL_THRESHOLD
+    control_sample_size: int = DEFAULT_CONTROL_SAMPLE_SIZE
 
 
 @dataclass(frozen=True)
@@ -155,30 +178,35 @@ def render_report(
     embedding_mode: str = "real",
     metadata: dict | None = None,
     chart_files: list[Path] | None = None,
+    spotcheck: SpotcheckResult | None = None,
 ) -> str:
     """Render the full ``report.md`` deliverable for the retrieval comparison.
 
     Structure (PRD #100): TL;DR → Experiment Setup (incl. cost log) → Core
     Comparison (per-type hit_rate@k + MRR + Δ + expected + n, then a Core
     macro-average WITH a caveat) → Structural Probes (separate table, framed as
-    expected-limit confirmation) → Limitations (the six+1 honest disclosures) →
-    Interview Talking Points appendix.
+    expected-limit confirmation) → Spot-check Validation (only when ``--judge``
+    was run) → Limitations (the six+1 honest disclosures) → Interview Talking
+    Points appendix.
 
     ``embedding_mode`` annotates how Stack B's vectors were produced ("real"
     OpenAI embeddings vs a "fake" deterministic offline stand-in) so a reader
     never mistakes an offline tracer number for a real-embedding result.
     ``metadata`` is the ``queries.yaml`` metadata block (read for the honest cost
-    log); ``chart_files`` are the rendered PNGs to embed.
+    log); ``chart_files`` are the rendered PNGs to embed. ``spotcheck`` is the
+    primitive-only L2 result (``None`` when the opt-in judge was not run — the
+    report then notes how to enable it).
     """
     metadata = metadata or {}
     chart_files = chart_files or []
     k = stack_a.k
     offline = embedding_mode == "fake"
+    judged = spotcheck is not None
 
     parts = [
         _render_header(offline),
         _render_tldr(stack_a, stack_b, k, offline),
-        _render_setup(embedding_mode, metadata, k),
+        _render_setup(embedding_mode, metadata, k, spotcheck),
         _render_family_section(
             "Core Comparison",
             CORE_PARAPHRASE_TYPES,
@@ -197,7 +225,8 @@ def render_report(
             chart_files,
             with_macro_average=False,
         ),
-        _render_limitations(offline),
+        _render_spotcheck(spotcheck),
+        _render_limitations(offline, judged),
         _render_talking_points(),
     ]
     return "\n\n".join(p for p in parts if p) + "\n"
@@ -243,11 +272,22 @@ def _render_tldr(
     )
 
 
-def _render_setup(embedding_mode: str, metadata: dict, k: int) -> str:
+def _render_setup(
+    embedding_mode: str,
+    metadata: dict,
+    k: int,
+    spotcheck: SpotcheckResult | None = None,
+) -> str:
     cost = metadata.get("cost_usd", "n/a")
     generator = metadata.get("generator_model", "gpt-4o-mini")
     seed = metadata.get("seed", "n/a")
     snapshot = metadata.get("corpus_snapshot_git_sha", "n/a")
+    judge_cost_line = (
+        f"| L2 cross-family judge Spot-check ({spotcheck.judge_model}) | "
+        f"{spotcheck.total_size} item(s) judged; per-call Anthropic cost |\n"
+        if spotcheck is not None
+        else "| L2 cross-family judge Spot-check | not run (opt-in via `--judge`) |\n"
+    )
     return (
         "## Experiment Setup\n\n"
         "- **Corpus**: 16 raw Acme Shop Sources (`corpus/`), fed identically to both "
@@ -268,8 +308,8 @@ def _render_setup(embedding_mode: str, metadata: dict, k: int) -> str:
         "| Item | Cost |\n"
         "|---|---|\n"
         f"| Paraphrase generation (Core, {generator}) | `{cost}` |\n"
-        "| L2 cross-family judge spot-check | not run (opt-in via `--judge`) |\n"
-        "| Stack A index-time LLM synthesis (`/ingest`) | one-shot at ingest; **zero** "
+        + judge_cost_line
+        + "| Stack A index-time LLM synthesis (`/ingest`) | one-shot at ingest; **zero** "
         "per-query cost |\n"
         "| Stack B index-time embedding | per-chunk at index; **per-query** embedding "
         "cost at retrieval |\n\n"
@@ -368,7 +408,100 @@ def _embed_family_charts(section_title: str, chart_files: list[Path]) -> str:
     return "\n".join(md)
 
 
-def _render_limitations(offline: bool) -> str:
+# ---------------------------------------------------------------------------
+# Spot-check (L2) section
+# ---------------------------------------------------------------------------
+def _render_spotcheck(spotcheck: SpotcheckResult | None) -> str:
+    """Render the L2 Spot-check section, or a how-to-enable note when not run.
+
+    When the opt-in judge ran, shows the by-zone subset size + agreement rate
+    with L1 + an interpretation; the Control-zone agreement must approach 100% or
+    the judge baseline is flagged mis-calibrated (PRD #100 user story 21). When it
+    did not run, the section tells the reader exactly how to enable it (opt-in).
+    """
+    if spotcheck is None:
+        return (
+            "## Spot-check Validation (L2, cross-family)\n\n"
+            "Not run. The deterministic L1 (C5c) metric above is the source of every "
+            "headline number; the optional L2 **Spot-check** is a cross-family second "
+            "opinion that re-judges L1's edge-case verdicts with a Claude judge (a "
+            "different model family from the OpenAI embedding powering Stack B). Enable "
+            "it with:\n\n"
+            "```\n"
+            "ANTHROPIC_API_KEY=... uv run python -m eval.paraphrase_comparison."
+            "run_comparison --judge=claude-sonnet-4-6\n"
+            "```\n\n"
+            "Documented judge choices: `claude-haiku-4-5` / `claude-sonnet-4-6` "
+            "(default) / `claude-opus-4-7`. Zone tuning: `--judge-zones`, "
+            "`--judge-marginal-threshold` (default 1), `--judge-control-sample-size` "
+            "(default 5)."
+        )
+
+    control = spotcheck.agreement_by_zone.get("control")
+    control_flag = ""
+    if control is not None:
+        control_flag = (
+            f"\n\n> **Control-zone calibration: agreement {control:.3f}.** "
+            + (
+                "This approaches 100% — the judge baseline is trustworthy, so its "
+                "Marginal/Disagreement verdicts can be read as a genuine independent "
+                "signal."
+                if control >= 0.9
+                else "⚠️ This is BELOW the ~100% the Control zone exists to confirm — "
+                "the judge itself looks **mis-calibrated**, so treat its other-zone "
+                "verdicts with suspicion (PRD #100 user story 21)."
+            )
+        )
+
+    zone_labels = {
+        "marginal": "Marginal (correct id, ≤ threshold Key-Token overlap)",
+        "disagreement": "Disagreement (Stack A top-1 verdict ≠ Stack B top-1)",
+        "control": "Control (seeded clear-hit + clear-miss baseline)",
+    }
+    rows = [
+        f"| {zone_labels.get(z, z)} | {spotcheck.subset_size_by_zone.get(z, 0)} | "
+        f"{spotcheck.agreement_by_zone.get(z, 0.0):.3f} |"
+        for z in spotcheck.zones_requested
+        if z in spotcheck.subset_size_by_zone
+    ]
+    return (
+        "## Spot-check Validation (L2, cross-family)\n\n"
+        f"An opt-in **Spot-check** re-judged L1's edge-case verdicts with the "
+        f"cross-family judge **{spotcheck.judge_model}** (Claude — a different model "
+        "family from the OpenAI embedding, so no shared blind spot with Stack B). The "
+        f"ambiguous subset = {spotcheck.total_size} item(s) across the requested zones "
+        f"(marginal threshold = {spotcheck.marginal_threshold}, control sample size = "
+        f"{spotcheck.control_sample_size}). The Spot-check produces NO headline numbers "
+        "— L1 owns those; it reports only how often the judge AGREES with L1 per "
+        "zone.\n\n"
+        "| Zone | Subset size | Agreement with L1 |\n"
+        "|---|---|---|\n" + "\n".join(rows) + control_flag + "\n\n"
+        "Interpretation: high Marginal/Disagreement agreement means L1's uncertain "
+        "verdicts hold up under an independent cross-family judge; low agreement "
+        "localises exactly where the deterministic metric and a semantic judge part "
+        "ways (typically Stack B's correct-id-weak-content 'hits', PRD disclosure 5)."
+    )
+
+
+def _render_limitations(offline: bool, judged: bool = False) -> str:
+    # Disclosure (4) flips framing once the cross-family judge has actually run:
+    # before the run it is a caveat about an opt-in step; after, it is an active
+    # cross-family-validation statement (PRD #100 disclosure 4, issue #105 AC).
+    disclosure_4 = (
+        "4. **Cross-family validation was run.** The L2 Spot-check used a Claude judge "
+        "— a DIFFERENT model family from the OpenAI embedding powering Stack B — so the "
+        "second opinion does not share Stack B's same-family blind spot (an OpenAI "
+        "judge would only be a same-family opinion with a blindspot on Stack B's "
+        "same-family-favoured false positives). The judge validates L1's edge cases "
+        "ONLY; L1 remains the source of every headline number. Trust the Spot-check's "
+        "Marginal/Disagreement verdicts only insofar as its Control-zone agreement "
+        "approaches 100% (see the Spot-check section)."
+        if judged
+        else "4. **Spot-check family caveat.** The optional L2 judge (Claude) is chosen "
+        "to be cross-family from the OpenAI embedding so it does not share a blind spot "
+        "with Stack B. When the judge IS run, its control-zone agreement must approach "
+        "100% or the judge itself is mis-calibrated and its other verdicts are suspect."
+    )
     disclosures = [
         "1. **Corpus scale is Stack A's sweet spot.** 16 Sources / ~42 Gold Sections is "
         "small enough that BM25 over a curated Wiki is hard to beat. The comparison does "
@@ -383,10 +516,7 @@ def _render_limitations(offline: bool) -> str:
         "per-chunk embedding cost at index time AND a per-query embedding cost forever. "
         "The headline retrieval numbers do not capture this operational asymmetry — the "
         "cost log does.",
-        "4. **Spot-check family caveat.** The optional L2 judge (Claude) is chosen to be "
-        "cross-family from the OpenAI embedding so it does not share a blind spot with "
-        "Stack B. When the judge IS run, its control-zone agreement must approach 100% "
-        "or the judge itself is mis-calibrated and its other verdicts are suspect.",
+        disclosure_4,
         "5. **C5c over-estimates Stack B when `--judge` is skipped.** The deterministic "
         "metric counts a hit on source-match + any Key-Token overlap; without the L2 "
         "spot-check validating edge cases, marginal Stack B 'hits' (correct chunk, weak "
@@ -457,6 +587,7 @@ def run_comparison(
     report_path: Path = REPORT_PATH,
     embedding_mode: str = "real",
     charts_dir: Path | None = None,
+    judge: JudgeConfig | None = None,
 ) -> tuple[StackScores, StackScores]:
     """Index both Stacks over the eval fixtures, score them, render charts + report.md.
 
@@ -466,11 +597,17 @@ def run_comparison(
     ``embedding_mode="fake"`` so the report records it. ``charts_dir`` defaults to
     a ``charts/`` sibling of ``report_path`` so the report's relative
     ``charts/<file>.png`` links resolve.
+
+    ``judge`` is the opt-in L2 Spot-check config (``None`` = skipped; the report
+    then notes how to enable it). When present, the cross-family Claude judge runs
+    over the ambiguous subset built from the SAME in-process retrieval callables,
+    inside the same production-isolation context. ``run_spotcheck`` fail-fasts if
+    ``ANTHROPIC_API_KEY`` is absent.
     """
     charts_dir = charts_dir or (report_path.parent / "charts")
     paraphrases = load_paraphrases()
     metadata = load_metadata()
-    stack_a, stack_b = _run_scored(paraphrases, k)
+    stack_a, stack_b, spotcheck = _run_scored(paraphrases, k, judge)
     chart_files = charts.render_charts(stack_a, stack_b, charts_dir=charts_dir)
     write_text_atomic(
         report_path,
@@ -480,15 +617,21 @@ def run_comparison(
             embedding_mode,
             metadata=metadata,
             chart_files=chart_files,
+            spotcheck=spotcheck,
         ),
     )
     return stack_a, stack_b
 
 
 def _run_scored(
-    paraphrases: list[Paraphrase], k: int
-) -> tuple[StackScores, StackScores]:
-    """Build both indexes under production isolation, then score each Stack."""
+    paraphrases: list[Paraphrase], k: int, judge: JudgeConfig | None = None
+) -> tuple[StackScores, StackScores, SpotcheckResult | None]:
+    """Build both indexes under production isolation, then score each Stack.
+
+    When ``judge`` is set, the opt-in L2 Spot-check runs here too — inside the
+    same isolation context and against the same in-process Stack retrieval
+    callables — so its zones are built from the identical L1 verdicts.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         _isolate_production_paths(tmp_path)
@@ -496,7 +639,19 @@ def _run_scored(
         stacks.index_stack_b()
         a = score_stack("Stack A", paraphrases, stacks.stack_a_retrieval, k)
         b = score_stack("Stack B", paraphrases, stacks.stack_b_retrieval, k)
-    return a, b
+        spotcheck = None
+        if judge is not None:
+            spotcheck = run_spotcheck(
+                paraphrases,
+                stacks.stack_a_retrieval,
+                stacks.stack_b_retrieval,
+                judge_model=judge.judge_model,
+                k=k,
+                zones=judge.zones,
+                marginal_threshold=judge.marginal_threshold,
+                control_sample_size=judge.control_sample_size,
+            )
+    return a, b, spotcheck
 
 
 def _isolate_production_paths(tmp_path: Path) -> None:

@@ -25,6 +25,7 @@ markers = [
 
 [dependency-groups]
 dev = [
+    "anthropic>=0.104.1",
     "deepeval>=4.0.4",
     "matplotlib>=3.10.9",
 ]
