@@ -184,6 +184,29 @@ def test_stream_query_index_missing_full_result_not_indexed(
     assert full["grounding_outcome"].reason == "index_missing"
 
 
+def test_stream_query_index_missing_emits_cannot_confirm_phrase(
+    fake_embeddings, monkeypatch
+):
+    """On index-missing path, stream second yield answer is CANNOT_CONFIRM_PHRASE (not NOT_INDEXED_MESSAGE).
+
+    Issue #138 — SSE uniformity: all 5 CC reasons must stream CANNOT_CONFIRM_PHRASE
+    in the token events.  query() still returns NOT_INDEXED_MESSAGE; only the stream
+    path normalises to the CC phrase so the UI token stream is identical regardless
+    of which gate fired.
+    """
+    indexer.vectorstore = None
+    monkeypatch.setattr(retrieval, "get_llm", lambda: FakeLLM())
+
+    results = list(retrieval.stream_query("anything"))
+    full = results[1]
+    assert full["answer"] == retrieval.CANNOT_CONFIRM_PHRASE, (
+        f"stream_query index_missing must emit CANNOT_CONFIRM_PHRASE, got: {full['answer']!r}"
+    )
+    assert full["answer"] != retrieval.NOT_INDEXED_MESSAGE, (
+        "stream_query must NOT emit NOT_INDEXED_MESSAGE (query() does, stream_query must not)"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Pre-LLM gate — retrieval empty: early-exit, no LLM call
 # ---------------------------------------------------------------------------
