@@ -19,7 +19,7 @@ Phases are ordered by four criteria, in this priority:
 3. **Diminishing returns** — later phases add less interview signal per hour. The sequence has natural stopping points (see § Stopping points).
 4. **Unlock effect** — early phases activate deferred patterns (see [`inspiration.md`](inspiration.md)) that later phases reuse, avoiding repeat engineering.
 
-## Roadmap (Phase 3-13)
+## Roadmap (Phase 3-14)
 
 | Phase | Scope | Est | Axis | Status |
 |---|---|---|---|---|
@@ -34,8 +34,9 @@ Phases are ordered by four criteria, in this priority:
 | **11** | Conversation Memory — Query Rewriting + Conversation Store. Multi-turn `/chat`. PROMPT.md stretch #8. | 6-10h | multi-turn | Planned |
 | **12** | Alternative Interfaces — CLI (`kb index`, `kb ask`) + MCP server. PROMPT.md stretch #5. | 4-8h | packaging | Planned |
 | **13** | Hybrid Retrieval over Wiki — BM25 + dense vector **both over the curated `wiki/` Section corpus**, fused via Reciprocal Rank Fusion (RRF). Served as a **third `Retriever`** alongside Stack A (Wiki) and Stack B (Vector RAG). Additive — does **not** touch the two existing apps. Optional cross-encoder reranker deferred to a follow-on. Relates to #107 (becomes a 3rd implementation under the pluggable `Retriever` protocol if that lands). | 14-22h (RRF-only; +4-6h with reranker) | retrieval quality (new axis) | Future / want-to-do |
+| **14** | **Getting-Started documentation** — rewrite `README.md` (+ `.env.example`) so a newcomer can go `git clone` → install → configure → run without reading source. Covers: clone/install steps, `.env.example` AI API keys (which to set, required vs optional), starting the back-end + front-end (gateway/browser UI) servers, importing Sources + generating fake data, an API reference for `/index` / `/ingest` / `/lint` / `/chat` (what each does, **how & when** to call it), and how to run the Wiki-vs-Vector-RAG comparison. **Wrap-up phase** — documents shipped capability, adds no features; full coverage implies Phases 3/4/5/8/9 have landed. Full content TBD via `grill-with-docs`. | TBD (pre-grill) | documentation / onboarding | Planned — grill pending |
 
-**Total: 48-87h** for Phases 3-12 (excluding the ⭐ recommended stopping point at Phase 5, which clocks in at 17-31h after Phase 3). **Phase 13 sits on a separate "retrieval quality" axis — it is off the linear Karpathy narrative and is an optional add-on, not on the critical path.**
+**Total: 48-87h** for Phases 3-12 (excluding the ⭐ recommended stopping point at Phase 5, which clocks in at 17-31h after Phase 3). **Phase 13 sits on a separate "retrieval quality" axis — it is off the linear Karpathy narrative and is an optional add-on, not on the critical path.** **Phase 14 is a documentation / onboarding wrap-up — also off the feature axis; it tracks and documents whatever has shipped rather than adding capability.**
 
 ## Hard dependencies
 
@@ -107,6 +108,21 @@ Scoped during a 2026-05-28 grill (after Phase 8's comparison shipped). Capture s
 - **Everything downstream is reused unchanged.** Because the unit is `Section`, `expand_to_pages` / `build_prompt` / `grounding.verify` (Section satisfies `CitableContent`) / Cannot Confirm gate / `derived_from` all work as-is. The only genuinely new code is the dense index + the ~20-line RRF merge.
 - **Slice plan:** H-1 dense-over-wiki index (4-6h) → H-2 RRF + hybrid `query()` (4-6h) → H-3 thin serving surface `/health`/`/index`/`/chat` (3-5h) → ADR + CONTEXT + reviewer (2-3h) → regression + real-embedding smoke (1-2h).
 - **Relation to #107:** if the pluggable `Retriever` protocol lands, this hybrid is its 3rd implementation (Wiki / Vector-RAG / Hybrid), togglable alongside the other two — so it strengthens, not conflicts with, #107.
+
+### Phase 14 (README / Getting-Started docs) — grill outline (content TBD)
+
+Goal: a newcomer can go from `git clone` to a running, queryable system using only `README.md` + `.env.example`, no source-reading required. This is the **收尾 (wrap-up)** phase — it documents shipped capability, it does not add features. Run **`grill-with-docs`** to lock the full content; the topics to cover (placeholder outline, not yet grilled):
+
+1. **Install & bootstrap** — clone, Python version, virtualenv, dependency install. Which requirements files / packages (`markdown_kb`, `vector_rag`, `gateway`)? Any system deps?
+2. **Environment config (`.env.example`)** — which AI API keys/vars to set and what each is for: `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_INGEST_MODEL`, `OPENAI_VERIFIER_MODEL`, the `vector_rag` embedding model, etc. Required vs optional, and the documented fallback chain (e.g. `OPENAI_INGEST_MODEL` → `OPENAI_MODEL` → hardcoded default).
+3. **Running the servers** — how to start the back-end and the front-end (gateway / browser UI). The single-origin gateway (ADR-0010) mounts both stacks; document the `stack=wiki|rag` toggle and the streaming endpoint (`POST /chat/stream`).
+4. **Importing data** — how Sources enter the system: `docs/*.md`, `raw/*.txt|*.html` via Multi-Format Import (Phase 7), and how a user points the pipeline at their own corpus.
+5. **Generating fake data** — how the `fake-docs/` corpus is generated (LLM prompts to a fictional company), and how a user regenerates or extends it.
+6. **API reference** — each endpoint: what it does, how to call it (curl examples), and **when** to use it. `/index` (build/rebuild the Section index), `/ingest` (Source → `wiki/` projection), `/lint` (maintenance pass), `/chat` + `/chat/stream`. Include the typical end-to-end ordering (e.g. index → ingest → re-index → chat; lint periodically).
+7. **Wiki-vs-Vector-RAG comparison** — how to run the Paraphrase Comparison (Phase 8 / DeepEval), where the report lands, and how to read it.
+8. **Typical usage flows** — narrative walkthroughs that tie the APIs together: "I have a new FAQ doc — what do I do?", "I want to ask a question", "the KB feels stale — how do I maintain it?"
+
+Open questions to settle in the grill: target audience (an interviewer reviewing the repo vs an operator running it)? How much lives in `README.md` vs a split-out `project-docs/USAGE.md` / API reference? Does README coverage gate on phases still in progress (6, 9), or do we document "current state" and explicitly mark unfinished surfaces?
 
 ## Out of scope (still)
 
