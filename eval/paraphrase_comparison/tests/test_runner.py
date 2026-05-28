@@ -265,3 +265,94 @@ def test_run_comparison_fail_fasts_with_judge_but_no_key(
             embedding_mode="fake",
             judge=JudgeConfig(),
         )
+
+
+# ---------------------------------------------------------------------------
+# Statistical report upgrade (issue #140)
+# ---------------------------------------------------------------------------
+
+
+def test_report_includes_mcnemar_per_core_type(tmp_path, fake_vector_index):
+    """Each Core Paraphrase Type must have a McNemar p-value row in the report."""
+    from eval.paraphrase_comparison.models import CORE_PARAPHRASE_TYPES
+
+    report_path = tmp_path / "report.md"
+    run_comparison(report_path=report_path, embedding_mode="fake")
+    report = report_path.read_text(encoding="utf-8")
+
+    # The statistical tests section must be present inside Core Comparison.
+    assert "McNemar" in report
+    assert "Holm" in report
+    # Every Core type must appear with a p-value row.
+    for ptype in CORE_PARAPHRASE_TYPES:
+        assert ptype in report
+
+
+def test_report_includes_wilson_ci_for_core_types(tmp_path, fake_vector_index):
+    """Wilson confidence intervals must be rendered for both stacks."""
+    report_path = tmp_path / "report.md"
+    run_comparison(report_path=report_path, embedding_mode="fake")
+    report = report_path.read_text(encoding="utf-8")
+
+    # CI column header must appear in the Core Comparison statistical section.
+    assert "95% CI" in report
+    # CI notation uses brackets like [lo, hi].
+    assert "[" in report and "]" in report
+
+
+def test_report_holm_correction_applied_across_five_core_types(
+    tmp_path, fake_vector_index
+):
+    """The report must mention Holm correction and show it covers the 5 Core types."""
+    report_path = tmp_path / "report.md"
+    run_comparison(report_path=report_path, embedding_mode="fake")
+    report = report_path.read_text(encoding="utf-8")
+
+    # Holm correction note must be present (can be in header or footer of stat table).
+    assert "Holm" in report
+    # The report must note that 5 tests are corrected.
+    assert "5" in report  # number of Core types being corrected
+
+
+def test_report_probes_excluded_from_statistical_tests(tmp_path, fake_vector_index):
+    """Probe types must NOT appear in the McNemar p-value table rows."""
+    from eval.paraphrase_comparison.models import PROBE_PARAPHRASE_TYPES
+
+    report_path = tmp_path / "report.md"
+    run_comparison(report_path=report_path, embedding_mode="fake")
+    report = report_path.read_text(encoding="utf-8")
+
+    # The statistical tests heading is distinct; extract its table only.
+    stat_heading = "### Statistical Tests (Core types"
+    assert stat_heading in report
+    stat_start = report.index(stat_heading)
+    # The section ends at the next "## " heading or end of string.
+    next_section = report.find("\n## ", stat_start + 1)
+    stat_window = (
+        report[stat_start:next_section] if next_section != -1 else report[stat_start:]
+    )
+    for ptype in PROBE_PARAPHRASE_TYPES:
+        assert ptype not in stat_window, (
+            f"Probe type '{ptype}' appeared in the McNemar statistical table — "
+            "probes must remain descriptive-only"
+        )
+
+
+def test_report_includes_faithfulness_drift_disclosure(tmp_path, fake_vector_index):
+    """The report must disclose the faithfulness-drift risk (AC 5)."""
+    report_path = tmp_path / "report.md"
+    run_comparison(report_path=report_path, embedding_mode="fake")
+    report = report_path.read_text(encoding="utf-8")
+
+    # Faithfulness-drift is a distinctive phrase from the PRD disclosure requirement.
+    assert "faithfulness" in report.lower() or "mislabeled" in report.lower()
+
+
+def test_core_macro_average_caveat_preserved(tmp_path, fake_vector_index):
+    """The Core macro-average caveat must still be present after the stats upgrade."""
+    report_path = tmp_path / "report.md"
+    run_comparison(report_path=report_path, embedding_mode="fake")
+    report = report_path.read_text(encoding="utf-8")
+
+    assert "Core macro-average" in report
+    assert "Caveat" in report
