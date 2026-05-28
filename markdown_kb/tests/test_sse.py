@@ -189,14 +189,15 @@ def test_cannot_confirm_emits_token_frames():
 
 
 def test_done_event_carries_grounding_outcome():
-    """done event carries passed and reason from the grounding outcome."""
+    """done event carries passed and reason nested under done.grounding (PRD #116)."""
     result = _make_result(passed=False, reason="claim_unsupported")
     frames = events_for_result(result)
     parsed = _parse_frames(frames)
     done = parsed[-1]
     assert done["type"] == "done"
-    assert done["data"]["passed"] is False
-    assert done["data"]["reason"] == "claim_unsupported"
+    # PRD-locked shape: done.grounding.{passed,reason} (not flat)
+    assert done["data"]["grounding"]["passed"] is False
+    assert done["data"]["grounding"]["reason"] == "claim_unsupported"
 
 
 def test_done_event_filed_none_when_not_filed():
@@ -206,6 +207,9 @@ def test_done_event_filed_none_when_not_filed():
     parsed = _parse_frames(frames)
     done_data = parsed[-1]["data"]
     assert done_data["filed"] is None
+    # grounding must still be nested (PRD #116 shape invariant)
+    assert done_data["grounding"]["passed"] is False
+    assert done_data["grounding"]["reason"] == "retrieval_empty"
 
 
 def test_done_event_filed_populated_when_filed():
@@ -215,6 +219,9 @@ def test_done_event_filed_populated_when_filed():
     frames = events_for_result(result)
     parsed = _parse_frames(frames)
     done_data = parsed[-1]["data"]
+    # grounding is nested per PRD #116 shape
+    assert done_data["grounding"]["passed"] is True
+    assert done_data["grounding"]["reason"] == "claim_supported"
     assert done_data["filed"] is not None
     assert done_data["filed"]["slug"] == "test-slug-abc123"
     assert done_data["filed"]["status"] == "draft"
@@ -247,3 +254,26 @@ def test_no_token_frames_for_empty_answer():
     assert "token" not in types
     assert types[0] == "sources"
     assert types[-1] == "done"
+
+
+def test_done_stack_field_default_none():
+    """done.stack is None when stack is not passed (serializer is stack-agnostic)."""
+    result = _make_result()
+    frames = events_for_result(result)
+    parsed = _parse_frames(frames)
+    done_data = parsed[-1]["data"]
+    assert "stack" in done_data
+    assert done_data["stack"] is None
+
+
+def test_done_stack_field_carries_stack_when_provided():
+    """done.stack reflects the stack name injected by the Gateway caller."""
+    result = _make_result()
+    frames = events_for_result(result, stack="wiki")
+    parsed = _parse_frames(frames)
+    done_data = parsed[-1]["data"]
+    assert done_data["stack"] == "wiki"
+
+    frames_rag = events_for_result(result, stack="rag")
+    done_rag = _parse_frames(frames_rag)[-1]["data"]
+    assert done_rag["stack"] == "rag"

@@ -220,7 +220,7 @@ def test_chat_stream_token_events_form_verified_answer(gateway_client):
 
 
 def test_chat_stream_done_event_passed_true(gateway_client):
-    """done event carries passed=True for a grounded query."""
+    """done event carries nested grounding.passed=True for a grounded query (PRD #116)."""
     resp = gateway_client.post(
         "/chat/stream?stack=wiki",
         json={"query": "What is the refund policy?"},
@@ -228,19 +228,35 @@ def test_chat_stream_done_event_passed_true(gateway_client):
     events = _parse_sse_response(resp.text)
     done = events[-1]
     assert done["type"] == "done"
-    assert done["data"]["passed"] is True
-    assert done["data"]["reason"] == "claim_supported"
+    # PRD-locked shape: done.grounding.{passed,reason}
+    assert done["data"]["grounding"]["passed"] is True
+    assert done["data"]["grounding"]["reason"] == "claim_supported"
+    # stack is populated by the Gateway dispatcher
+    assert done["data"]["stack"] == "wiki"
 
 
-def test_chat_stream_debug_page_loads(gateway_client):
-    """GET / returns the debug HTML page."""
+def test_ui_page_loads(gateway_client):
+    """GET / returns the Gateway UI (production UI — Slice 6 #122).
+
+    Asserts §12 invariants: fetch+ReadableStream (§12.2), textContent-only
+    rendering (§12.4), no EventSource (GET-only — §12.2).
+    """
     resp = gateway_client.get("/")
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
-    # Minimal content checks — textContent usage (§12.4), fetch (§12.2).
+    # §12.2: must use fetch(), not EventSource instantiation.
+    # 'EventSource' may appear in comments (explaining why it is NOT used)
+    # but `new EventSource` must not appear.
     assert "fetch(" in resp.text
+    assert "new EventSource" not in resp.text, "Must not instantiate EventSource (GET-only; §12.2)"
+    # §12.4: LLM/server content via textContent (never innerHTML assignment)
+    # 'innerHTML' may appear in comments/guard strings but must never be an assignment target.
     assert "textContent" in resp.text
-    assert "EventSource" not in resp.text, "Must not use EventSource (GET-only; §12.2)"
+    assert ".innerHTML =" not in resp.text and ".innerHTML=" not in resp.text, (
+        "innerHTML assignment is banned per §12.4"
+    )
+    # §12.2: SSE parser function present (the unit-testable pure fn)
+    assert "createSSEParser" in resp.text
 
 
 # ---------------------------------------------------------------------------
@@ -252,7 +268,7 @@ def test_chat_stream_cannot_confirm_emits_tokens(gateway_client):
     """Cannot Confirm answer streams as token events (uniform representation).
 
     Sends a query that the corpus cannot answer (score below threshold).
-    The done event must carry passed=False.
+    The done event must carry grounding.passed=False (PRD #116 shape).
     """
     resp = gateway_client.post(
         "/chat/stream?stack=wiki",
@@ -264,7 +280,8 @@ def test_chat_stream_cannot_confirm_emits_tokens(gateway_client):
     assert types[0] == "sources"
     assert types[-1] == "done"
     done_data = events[-1]["data"]
-    assert done_data["passed"] is False
+    # PRD-locked shape: done.grounding.passed
+    assert done_data["grounding"]["passed"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -411,6 +428,54 @@ def test_post_sources_error_event_has_detail_and_retryable(
     assert "retryable" in data, f"error event must have 'retryable': {data}"
 
 
+@pytest.fixture()
+def gateway_client_llm_unmapped_error(indexed_wiki_corpus, monkeypatch):
+    """TestClient where the LLM raises a NON-HTTPException (unmapped) error.
+
+    Mirrors a misconfiguration / unexpected failure that is NOT mapped to an
+    HTTPException by the LLM wrapper — e.g. a base ``openai.OpenAIError``
+    ("Missing credentials") raised when no API key is set. After the sources
+    event (HTTP 200 committed), the stream must STILL terminate with a terminal
+    ``error`` event, never a silent truncation (ADR-0009 defense-in-depth).
+    """
+
+    def _raise_unmapped(*_args, **_kwargs):
+        raise RuntimeError("missing credentials / unexpected LLM failure")
+
+    fake = type("_UnmappedErrLLM", (), {"invoke": staticmethod(_raise_unmapped)})()
+    monkeypatch.setattr(_retrieval, "_llm", fake)
+    monkeypatch.setattr(_retrieval, "get_llm", lambda: fake)
+
+    from gateway.app.main import app as _gateway_app
+
+    return TestClient(_gateway_app)
+
+
+def test_post_sources_unmapped_error_still_emits_terminal_error(
+    gateway_client_llm_unmapped_error,
+):
+    """A non-HTTPException after sources must not silently truncate the stream.
+
+    The stream ends with a terminal ``error`` event carrying a GENERIC detail
+    (raw internals not leaked) and ``retryable: false``; no ``done`` follows.
+    """
+    resp = gateway_client_llm_unmapped_error.post(
+        "/chat/stream?stack=wiki",
+        json={"query": "What is the refund policy?"},
+    )
+    assert resp.status_code == 200
+    events = _parse_sse_response(resp.text)
+    types = [e["type"] for e in events]
+    assert types[0] == "sources"
+    assert types[-1] == "error", f"unmapped error must still terminate with 'error': {types}"
+    assert "done" not in types, f"'done' must not follow an error event: {types}"
+    err = next(e for e in events if e["type"] == "error")
+    assert "missing credentials" not in err["data"]["detail"].lower(), (
+        "generic detail must not leak the raw exception message"
+    )
+    assert err["data"]["retryable"] is False
+
+
 def test_post_sources_503_error_is_retryable(gateway_client_llm_error):
     """A 503 (transient) LLM error produces retryable=True in the error event."""
     resp = gateway_client_llm_error.post(
@@ -500,7 +565,10 @@ def test_cannot_confirm_uniform_event_sequence(gateway_client_cc):
     resp = client.post("/chat/stream?stack=wiki", json={"query": query_text})
     events = _parse_sse_response(resp.text)
     types = [e["type"] for e in events]
-    reason = events[-1]["data"].get("reason", "unknown") if events else "no events"
+    # done.grounding.reason carries the specific CC gate (PRD #116 shape)
+    reason = (
+        events[-1]["data"].get("grounding", {}).get("reason", "unknown") if events else "no events"
+    )
 
     # Sequence: sources first, done last, tokens in between
     assert types[0] == "sources", f"[{reason}] expected sources first: {types}"
@@ -515,10 +583,12 @@ def test_cannot_confirm_uniform_event_sequence(gateway_client_cc):
     assert reconstructed == CANNOT_CONFIRM_PHRASE, (
         f"[{reason}] tokens must spell CANNOT_CONFIRM_PHRASE; got: {reconstructed!r}"
     )
-    # done carries passed=False
+    # done carries grounding.passed=False (PRD-locked shape)
     done_data = events[-1]["data"]
-    assert done_data["passed"] is False, f"[{reason}] done.passed must be False"
+    assert done_data["grounding"]["passed"] is False, (
+        f"[{reason}] done.grounding.passed must be False"
+    )
     # No filing on CC paths
     assert done_data.get("filed") is None, (
-        f"[{reason}] done.filed must be None on CC paths: {done_data['filed']}"
+        f"[{reason}] done.filed must be None on CC paths: {done_data.get('filed')}"
     )

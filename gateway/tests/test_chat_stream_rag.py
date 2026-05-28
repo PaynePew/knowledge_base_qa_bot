@@ -235,7 +235,7 @@ def test_chat_stream_rag_token_events_form_verified_answer(rag_gateway_client):
 
 
 def test_chat_stream_rag_done_event_passed_true(rag_gateway_client):
-    """done event carries passed=True for a grounded RAG query."""
+    """done event carries grounding.passed=True for a grounded RAG query (PRD #116)."""
     resp = rag_gateway_client.post(
         "/chat/stream?stack=rag",
         json={"query": "What is the refund policy?"},
@@ -243,8 +243,11 @@ def test_chat_stream_rag_done_event_passed_true(rag_gateway_client):
     events = _parse_sse_response(resp.text)
     done = events[-1]
     assert done["type"] == "done"
-    assert done["data"]["passed"] is True
-    assert done["data"]["reason"] == "claim_supported"
+    # PRD-locked shape: done.grounding.{passed,reason}
+    assert done["data"]["grounding"]["passed"] is True
+    assert done["data"]["grounding"]["reason"] == "claim_supported"
+    # stack is populated by the Gateway dispatcher
+    assert done["data"]["stack"] == "rag"
 
 
 def test_chat_stream_rag_done_filed_always_null(rag_gateway_client):
@@ -256,6 +259,8 @@ def test_chat_stream_rag_done_filed_always_null(rag_gateway_client):
     events = _parse_sse_response(resp.text)
     done = events[-1]
     assert done["type"] == "done"
+    # grounding is nested per PRD #116 shape even for RAG
+    assert "grounding" in done["data"], f"done must carry nested grounding: {done['data']}"
     assert done["data"].get("filed") is None, (
         f"RAG done.filed must always be null, got: {done['data'].get('filed')}"
     )

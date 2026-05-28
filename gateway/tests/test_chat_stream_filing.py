@@ -157,7 +157,8 @@ def test_wiki_stream_grounded_files_and_surfaces_done_filed(grounded_stream_clie
     assert done_events, f"Expected a done event; got types: {[e['type'] for e in events]}"
 
     done_data = done_events[-1]["data"]
-    assert done_data["passed"] is True
+    # PRD-locked shape: done.grounding.passed (not flat)
+    assert done_data["grounding"]["passed"] is True
 
     # AC1: done.filed is populated on grounding-pass
     filed = done_data.get("filed")
@@ -230,7 +231,8 @@ def test_wiki_stream_cannot_confirm_does_not_file(indexed_wiki_corpus, monkeypat
     assert done_events, "Expected a done event"
 
     done_data = done_events[-1]["data"]
-    assert done_data["passed"] is False
+    # PRD-locked shape: done.grounding.passed
+    assert done_data["grounding"]["passed"] is False
 
     # AC2: no filing on CC path
     filed = done_data.get("filed")
@@ -300,7 +302,8 @@ def test_rag_stream_done_filed_null_on_grounding_pass(tmp_path, monkeypatch):
     done_events = [e for e in events if e["type"] == "done"]
     assert done_events, "Expected a done event"
     done_data = done_events[-1]["data"]
-    assert done_data["passed"] is True
+    # PRD-locked shape: done.grounding.passed
+    assert done_data["grounding"]["passed"] is True
 
     # AC3: RAG never files
     filed = done_data.get("filed")

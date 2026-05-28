@@ -21,7 +21,8 @@ SSE event contract (ADR-0009):
   sources            — immediately after retrieval (real latency win)
   status{phase}      — liveness between sources and first token; LLM path only
   token(s)           — verified answer or CANNOT_CONFIRM_PHRASE; one per word
-  done{passed,reason,filed} — terminal success event (filed null for stack=rag)
+  done{grounding:{passed,reason},filed,stack} — terminal success event (PRD #116
+                       shape; filed null for stack=rag)
   error{detail,retryable}   — terminal failure when the LLM errors AFTER sources
 """
 
@@ -151,10 +152,26 @@ def chat_stream(req: ChatRequest, stack: str = "wiki") -> StreamingResponse:
             retryable = exc.status_code == 503
             yield encode_event("error", {"detail": exc.detail, "retryable": retryable})
             return
+        except Exception:  # noqa: BLE001 — intentional last-resort catch
+            # Defense in depth (ADR-0009): HTTP 200 is already committed once the
+            # sources event is sent, so ANY error during draft/verify — including
+            # unmapped or unexpected ones (e.g. an LLM client misconfiguration that
+            # raises a base openai.OpenAIError rather than a mapped HTTPException) —
+            # must surface as a terminal SSE error event, never a silently
+            # truncated stream that hangs the client. Detail is generic to avoid
+            # leaking internals; mapped transient/auth errors keep their curated
+            # detail in the HTTPException branch above.
+            yield encode_event(
+                "error",
+                {"detail": "Internal error while generating the answer.", "retryable": False},
+            )
+            return
 
         # events_for_result emits sources + token(s) + done; we skip the
         # sources frame here (already emitted above) and forward the rest.
-        all_frames = events_for_result(full_result)
+        # Pass `stack` so done.stack reflects the dispatched retrieval stack
+        # (the serializer is stack-agnostic; only the Gateway knows the stack).
+        all_frames = events_for_result(full_result, stack=stack)
         # Skip the first frame (sources) — it was already sent.
         yield from all_frames[1:]
 
