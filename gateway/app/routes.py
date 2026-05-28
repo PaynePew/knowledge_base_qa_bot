@@ -154,7 +154,9 @@ def chat_stream(req: ChatRequest, stack: str = "wiki") -> StreamingResponse:
 
         # events_for_result emits sources + token(s) + done; we skip the
         # sources frame here (already emitted above) and forward the rest.
-        all_frames = events_for_result(full_result)
+        # Pass `stack` so done.stack reflects the dispatched retrieval stack
+        # (the serializer is stack-agnostic; only the Gateway knows the stack).
+        all_frames = events_for_result(full_result, stack=stack)
         # Skip the first frame (sources) — it was already sent.
         yield from all_frames[1:]
 

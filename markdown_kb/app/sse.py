@@ -47,7 +47,9 @@ def encode_event(event_type: str, data: dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def events_for_result(result: dict[str, Any]) -> list[str]:
+def events_for_result(
+    result: dict[str, Any], *, stack: str | None = None
+) -> list[str]:
     """Convert a ``query()`` result dict into an ordered list of SSE frames.
 
     Pure function.  Mirrors the verify-then-stream protocol (ADR-0009):
@@ -59,13 +61,22 @@ def events_for_result(result: dict[str, Any]) -> list[str]:
     2. ``token`` — one frame per word (each non-whitespace run plus its
        adjacent whitespace), so concatenating all token texts reconstructs
        the verified answer exactly (whitespace is never collapsed).
-    3. ``done`` — terminal frame with ``passed``, ``reason``, and optional
-       ``filed`` (populated when Answer Filing ran on this response).
+    3. ``done`` — terminal frame with PRD-locked shape:
+       ``{grounding: {passed, reason}, filed, stack}``.
+       ``grounding`` nests the outcome fields (PRD #116 §"SSE event contract").
+       ``filed`` is populated when Answer Filing ran; ``None`` otherwise.
+       ``stack`` is the dispatched retrieval stack name; ``None`` when not
+       known to this serializer (it is passed in by the Gateway, which is the
+       only caller that knows the stack).
 
     Args:
         result: A dict with keys ``answer``, ``sources``,
             ``grounding_outcome`` (a ``GroundingOutcome`` instance), and
             optionally ``filed`` (a ``FiledStatus`` instance or ``None``).
+        stack: Optional stack identifier (e.g. ``"wiki"`` or ``"rag"``).
+            Passed by the Gateway when it calls this serializer so the
+            ``done`` frame carries the dispatched stack name.  Defaults to
+            ``None``; callers that do not know the stack omit this arg.
 
     Returns:
         Ordered list of SSE frame strings.
@@ -99,11 +110,16 @@ def events_for_result(result: dict[str, Any]) -> list[str]:
     for chunk in re.findall(r"\s*\S+\s*", answer):
         frames.append(encode_event("token", {"text": chunk}))
 
-    # 3. done event — grounding outcome + optional filing status.
+    # 3. done event — PRD-locked shape (PRD #116 §"SSE event contract"):
+    #    {grounding: {passed, reason}, filed, stack}
+    # `grounding` nests the outcome fields so the client reads
+    # done.grounding.passed / done.grounding.reason (UI mockup contract).
     outcome = result["grounding_outcome"]
     done_payload: dict[str, Any] = {
-        "passed": outcome.passed,
-        "reason": outcome.reason,
+        "grounding": {
+            "passed": outcome.passed,
+            "reason": outcome.reason,
+        },
     }
     # filed is present on query() results that went through the Answer
     # Filing side-effect (Phase 6). Not always present in direct
@@ -118,6 +134,9 @@ def events_for_result(result: dict[str, Any]) -> list[str]:
         }
     else:
         done_payload["filed"] = None
+    # stack is injected by the Gateway (the only caller that knows which
+    # stack was dispatched). The serializer itself is stack-agnostic.
+    done_payload["stack"] = stack
     frames.append(encode_event("done", done_payload))
 
     return frames

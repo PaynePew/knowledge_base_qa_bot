@@ -220,7 +220,7 @@ def test_chat_stream_token_events_form_verified_answer(gateway_client):
 
 
 def test_chat_stream_done_event_passed_true(gateway_client):
-    """done event carries passed=True for a grounded query."""
+    """done event carries nested grounding.passed=True for a grounded query (PRD #116)."""
     resp = gateway_client.post(
         "/chat/stream?stack=wiki",
         json={"query": "What is the refund policy?"},
@@ -228,8 +228,11 @@ def test_chat_stream_done_event_passed_true(gateway_client):
     events = _parse_sse_response(resp.text)
     done = events[-1]
     assert done["type"] == "done"
-    assert done["data"]["passed"] is True
-    assert done["data"]["reason"] == "claim_supported"
+    # PRD-locked shape: done.grounding.{passed,reason}
+    assert done["data"]["grounding"]["passed"] is True
+    assert done["data"]["grounding"]["reason"] == "claim_supported"
+    # stack is populated by the Gateway dispatcher
+    assert done["data"]["stack"] == "wiki"
 
 
 def test_chat_stream_debug_page_loads(gateway_client):
@@ -252,7 +255,7 @@ def test_chat_stream_cannot_confirm_emits_tokens(gateway_client):
     """Cannot Confirm answer streams as token events (uniform representation).
 
     Sends a query that the corpus cannot answer (score below threshold).
-    The done event must carry passed=False.
+    The done event must carry grounding.passed=False (PRD #116 shape).
     """
     resp = gateway_client.post(
         "/chat/stream?stack=wiki",
@@ -264,7 +267,8 @@ def test_chat_stream_cannot_confirm_emits_tokens(gateway_client):
     assert types[0] == "sources"
     assert types[-1] == "done"
     done_data = events[-1]["data"]
-    assert done_data["passed"] is False
+    # PRD-locked shape: done.grounding.passed
+    assert done_data["grounding"]["passed"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -500,7 +504,11 @@ def test_cannot_confirm_uniform_event_sequence(gateway_client_cc):
     resp = client.post("/chat/stream?stack=wiki", json={"query": query_text})
     events = _parse_sse_response(resp.text)
     types = [e["type"] for e in events]
-    reason = events[-1]["data"].get("reason", "unknown") if events else "no events"
+    # done.grounding.reason carries the specific CC gate (PRD #116 shape)
+    reason = (
+        events[-1]["data"].get("grounding", {}).get("reason", "unknown")
+        if events else "no events"
+    )
 
     # Sequence: sources first, done last, tokens in between
     assert types[0] == "sources", f"[{reason}] expected sources first: {types}"
@@ -515,10 +523,12 @@ def test_cannot_confirm_uniform_event_sequence(gateway_client_cc):
     assert reconstructed == CANNOT_CONFIRM_PHRASE, (
         f"[{reason}] tokens must spell CANNOT_CONFIRM_PHRASE; got: {reconstructed!r}"
     )
-    # done carries passed=False
+    # done carries grounding.passed=False (PRD-locked shape)
     done_data = events[-1]["data"]
-    assert done_data["passed"] is False, f"[{reason}] done.passed must be False"
+    assert done_data["grounding"]["passed"] is False, (
+        f"[{reason}] done.grounding.passed must be False"
+    )
     # No filing on CC paths
     assert done_data.get("filed") is None, (
-        f"[{reason}] done.filed must be None on CC paths: {done_data['filed']}"
+        f"[{reason}] done.filed must be None on CC paths: {done_data.get('filed')}"
     )
