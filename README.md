@@ -77,22 +77,27 @@ answers `/chat` on the very first run without `/ingest` or `/index`:
 
 | Stack | Committed artifact | Coverage |
 |-------|--------------------|----------|
-| Wiki (markdown_kb) | `.kb/index.json` | 9 curated concepts from `wiki/concepts/` |
-| Vector RAG (vector_rag) | `.kb/faiss_index/` | all 25 Sources in `docs/` (282 chunks) |
+| Wiki (markdown_kb) | `.kb/index.json` | 60 sections — original FAQ + `fake-docs/` + Chinese `demo-zh/`, synthesised into `wiki/` |
+| Vector RAG (vector_rag) | `.kb/faiss_index/` | all 25 Sources in `docs/` (282 chunks), incl. `fake-docs/` + `demo-zh/` |
 
 `.kb/` stays gitignored; these two artifacts are intentionally force-added (`git
 add -f`). Rebuild and re-commit them whenever `docs/` or `wiki/` change — see
 [Rebuilding the indexes](#rebuilding-the-indexes).
 
-> **Coverage note (Wiki vs RAG).** The Wiki stack answers only from the curated
-> `wiki/` layer — 9 concepts synthesised from the original policy/FAQ Sources.
-> The RAG stack indexes the *raw* `docs/` corpus, including the 20
-> `docs/fake-docs/` files (loyalty program, gift cards, bulk orders, …) that were
-> never run through `/ingest`. So a question about a fake-docs-only topic answers
-> on **RAG** but returns *"I cannot confirm from the knowledge base"* on **Wiki**.
-> This is correct grounded behaviour (no hallucination), not a bug. To give the
-> Wiki stack the same coverage, run `POST /wiki/ingest` then `POST /wiki/index`
-> and re-commit `.kb/index.json` (an LLM synthesis step — see Rebuilding).
+> **Coverage note (Wiki vs RAG).** Both stacks now cover the full demo corpus —
+> the English `fake-docs/` topics (loyalty, gift cards, payments, warranty, bulk
+> orders, …) and the Chinese `demo-zh/退款政策.md`. RAG indexes the *raw* `docs/`
+> chunks; Wiki answers from the curated `wiki/` concept/entity pages synthesised
+> by `/ingest`.
+>
+> One nuance: a few minimal original docs (`account_help`, `refund_policy`,
+> `shipping_faq`) overlap with the richer `fake-docs/` on topics like
+> cancellation and shipping, and state *different* facts (e.g. cancel window
+> 24h vs 1–2h). To keep the Wiki stack from surfacing contradictory sources (the
+> grounding check would refuse, returning *"I cannot confirm"*), the original
+> concepts are kept canonical for those overlapping topics and the duplicate
+> `fake-docs/` concepts were dropped at ingest time. Fake-docs-unique topics and
+> the Chinese concepts are fully indexed.
 
 ## Running a single stack
 
