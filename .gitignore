@@ -30,6 +30,10 @@ wiki/index.md
 wiki/lint-report.md
 wiki/log.md
 wiki/hot.md
+# Filed-Answer drafts auto-written by POST /chat (Phase 6, wiki/qa/<slug>.md).
+# Per-user runtime data — the curated wiki/concepts/ and wiki/entities/ pages
+# stay committed; only the runtime qa/ drafts are ignored.
+wiki/qa/
 
 # vector_rag/ (Stack B) runtime trace — decoupled from markdown_kb's wiki/log.md
 # (issue #103); same append-only Wiki Log discipline, own file.
