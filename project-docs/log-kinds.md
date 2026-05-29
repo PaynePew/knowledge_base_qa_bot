@@ -202,6 +202,30 @@ already enumerated under the Grounding Check section above and not re-listed her
 
 ---
 
+## Gateway
+
+Authorized by GitHub issue #158 (Phase 11 PRD — Conversation Memory) and
+GitHub issue #161 (Phase 11 Slice 3 — Rewrite observability). The Gateway owns
+its own append-only log channel at `gateway/log.md` (written via
+`gateway/app/logger.py::log_event`) — the same `## [<ISO-8601 UTC>] <kind> | <summary>`
+format and the same single-channel discipline (CODING_STANDARD §5.1), just a
+separate file from `wiki/log.md` and `vector_rag/log.md`.
+
+The `chat_rewrite` kind is gateway-specific (query rewriting is a gateway
+operation, stack-agnostic). It is emitted **only when a rewrite actually
+happened** (turn 2+, history non-empty); a turn-1 passthrough writes no entry.
+Phase 5 `/lint` reads `wiki/log.md` only (kinds `chat_fallback` /
+`chat_grounding_fallback`) and is therefore unaffected by this channel.
+
+| Kind | When fired | Summary template |
+|---|---|---|
+| `chat_rewrite` | Turn 2+ query rewriting succeeded inside `_sse_generator`; emitted right after `rewrite_query()` returns | `session=<uuid> raw="<60-char-bounded raw follow-up>" rewritten="<60-char-bounded self-contained query>"` |
+
+`raw` and `rewritten` are truncated to 60 chars and have inner `"` replaced
+with `'` (per CODING_STANDARD §5.3 bounded-summary idiom).
+
+---
+
 ## Adding a new kind
 
 1. Pick a `snake_case` name that names the **event**, not the outcome (so failures and successes can share a kind with `reason=` discrimination — see `grounding_verify` returning either `claim_supported` or `claim_unsupported` under one kind).

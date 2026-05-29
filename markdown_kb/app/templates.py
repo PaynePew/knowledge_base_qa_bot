@@ -90,6 +90,9 @@ You are a knowledge-base curator. Your task is to write a concise, accurate \
 synthesis wiki page for the given Source section.
 
 Rules:
+- Write the page in the **same language as the Source**. If the Source is in \
+Chinese, write the page in Chinese. If the Source is in English, write in \
+English. Do not translate.
 - Write a short, clear prose summary of the section content.
 - Stay faithful to the source — do not add facts not present in the source.
 - In `open_questions`, list any genuinely ambiguous or unanswered aspects \
@@ -97,13 +100,15 @@ apparent from the source. Leave the list empty if there are none.
 - Keep the body to 2–4 sentences; quality over quantity.
 
 Red link rule: When you mention a concept warranting its own page that the \
-wiki may not yet cover, use Obsidian-style [[concept-slug]] wikilinks. Use the \
-same slug convention as wiki page filenames (lowercase, hyphen-separated, no \
-extension). do NOT verify whether the page actually exists — it is intentional \
-that some links are unresolved ("red links"). Constraints: maximum 5 wikilinks \
-per page; do NOT use for common terms (e.g. [[customer]], [[refund]] when the \
-whole page is about refunds); only for concepts that warrant their own page \
-(entity / concept).
+wiki may not yet cover, use Obsidian-style [[concept-slug]] wikilinks. The \
+slug must use the same convention as wiki page filenames: for ASCII concepts \
+use lowercase, hyphen-separated slugs (e.g. [[return-policy]]); for CJK / \
+non-ASCII concepts keep the characters verbatim as they appear in the \
+slugified heading (e.g. [[退款政策]]). do NOT verify whether the page actually \
+exists — it is intentional that some links are unresolved ("red links"). \
+Constraints: maximum 5 wikilinks per page; do NOT use for common terms \
+(e.g. [[customer]], [[refund]] when the whole page is about refunds); only for \
+concepts that warrant their own page (entity / concept).
 """
 
 
@@ -123,6 +128,9 @@ synthesis wiki page for the given Source, treating it as an *entity* (a \
 product, person, place, or named thing that the KB describes as a whole).
 
 Rules:
+- Write the page in the **same language as the Source**. If the Source is in \
+Chinese, write the page in Chinese. If the Source is in English, write in \
+English. Do not translate.
 - Write a short, clear prose summary covering the entire Source.
 - Stay faithful to the source — do not add facts not present in the source.
 - In `open_questions`, list any genuinely ambiguous or unanswered aspects \
@@ -130,13 +138,15 @@ apparent from the source. Leave the list empty if there are none.
 - Keep the body to 3–6 sentences; quality over quantity.
 
 Red link rule: When you mention a concept warranting its own page that the \
-wiki may not yet cover, use Obsidian-style [[concept-slug]] wikilinks. Use the \
-same slug convention as wiki page filenames (lowercase, hyphen-separated, no \
-extension). do NOT verify whether the page actually exists — it is intentional \
-that some links are unresolved ("red links"). Constraints: maximum 5 wikilinks \
-per page; do NOT use for common terms (e.g. [[customer]], [[product]] when the \
-whole page is about that product); only for concepts that warrant their own \
-page (entity / concept).
+wiki may not yet cover, use Obsidian-style [[concept-slug]] wikilinks. The \
+slug must use the same convention as wiki page filenames: for ASCII concepts \
+use lowercase, hyphen-separated slugs (e.g. [[return-policy]]); for CJK / \
+non-ASCII concepts keep the characters verbatim as they appear in the \
+slugified heading (e.g. [[退款政策]]). do NOT verify whether the page actually \
+exists — it is intentional that some links are unresolved ("red links"). \
+Constraints: maximum 5 wikilinks per page; do NOT use for common terms \
+(e.g. [[customer]], [[product]] when the whole page is about that product); \
+only for concepts that warrant their own page (entity / concept).
 """
 
 

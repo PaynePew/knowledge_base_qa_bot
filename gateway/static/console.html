@@ -6,11 +6,17 @@
 <title>Operator Console — KB Gateway</title>
 
 <!--
-  KB Gateway Operator Console — Phase 15 S1 (#169).
+  KB Gateway Operator Console — Phase 15 S2 (#170).
   Single vanilla HTML/CSS/JS file. NO framework, NO build step (CODING_STANDARD §12.1).
   XSS: all server-derived content inserted via textContent, never innerHTML (§12.4).
   No business logic: validation and routing decisions are server-derived (§12.5).
-  Drag-drop Upload drop zone: POST /upload (multipart) → renders result card.
+
+  Phase 15 S1 (#169): Drag-drop Upload drop zone: POST /upload (multipart) → renders result card.
+  Phase 15 S2 (#170): Guided pipeline stepper: Upload → Import → Ingest → Index → Lint.
+    - Each step has its own Run button (single-step re-run).
+    - Controls are disabled while the step's request is in flight.
+    - Import step calls POST /wiki/import → renders ImportResponse per-file result card.
+    - Generic step renderer + per-step card renderer pattern for Ingest/Index/Lint reuse.
   Shared design tokens: linked from shared.css (Phase 15 S1).
 -->
 
@@ -42,7 +48,7 @@
   .page {
     max-width: 680px;
     margin: 0 auto;
-    padding: 0 32px 48px;
+    padding: 0 32px 64px;
   }
 
   /* ── Masthead (shared with reader, §12.1) ────────────────── */
@@ -93,24 +99,146 @@
     border-color: var(--ink-3);
   }
 
-  /* ── Section labels ──────────────────────────────────────── */
-  .section-label {
+  /* ── Pipeline stepper ────────────────────────────────────── */
+  .pipeline {
+    margin-top: 32px;
+  }
+
+  .pipeline-header {
     font-family: "IBM Plex Mono", monospace;
     font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase;
     color: var(--ink-3);
-    margin: 32px 0 16px;
+    margin-bottom: 20px;
     display: flex; align-items: center; gap: 8px;
+  }
+
+  /* Step track */
+  .step-track {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin-bottom: 24px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .step-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .04em;
+    color: var(--ink-4);
+    white-space: nowrap;
+    padding: 5px 0;
+    transition: color .15s ease;
+  }
+  .step-pill.active { color: var(--ink); }
+  .step-pill.done   { color: var(--pass); }
+
+  .step-num {
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    border: 1.5px solid currentColor;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px;
+    flex-shrink: 0;
+  }
+  .step-pill.done .step-num {
+    background: var(--pass);
+    border-color: var(--pass);
+    color: #fff;
+  }
+  .step-pill.active .step-num {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--surface);
+  }
+
+  .step-arrow {
+    color: var(--ink-4);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    padding: 0 8px;
+    flex-shrink: 0;
+    user-select: none;
+  }
+
+  /* Individual step panel */
+  .step-panel {
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    background: var(--surface);
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+
+  .step-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--rule);
+    gap: 12px;
+  }
+
+  .step-panel-title {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .step-panel-desc {
+    font-size: 12px;
+    color: var(--ink-3);
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* Run button */
+  .run-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--ink);
+    color: var(--surface);
+    border: 0;
+    padding: 6px 14px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .04em;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: background .15s ease, opacity .15s ease;
+  }
+  .run-btn:hover:not(:disabled) { background: #000; }
+  .run-btn:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+  }
+
+  /* Step result area */
+  .step-result {
+    /* populated by JS — empty by default */
   }
 
   /* ── Upload drop zone ────────────────────────────────────── */
   .drop-zone {
     border: 1.5px dashed var(--rule);
-    border-radius: 6px;
-    padding: 36px 24px;
+    border-radius: 0 0 5px 5px; /* fits inside panel */
+    padding: 28px 20px;
     text-align: center;
     cursor: pointer;
     transition: border-color .2s ease, background .2s ease;
-    background: var(--surface);
+    background: var(--bg);
   }
   .drop-zone.drag-over {
     border-color: var(--ink-3);
@@ -139,30 +267,33 @@
   }
   .drop-btn {
     display: inline-block;
-    margin-top: 16px;
+    margin-top: 14px;
     background: var(--ink);
     color: var(--surface);
     border: 0;
-    padding: 8px 16px;
+    padding: 7px 14px;
     font-family: "IBM Plex Mono", monospace;
     font-size: 11px;
     letter-spacing: .04em;
     border-radius: 4px;
     cursor: pointer;
+    transition: background .15s ease;
   }
   .drop-btn:hover { background: #000; }
+  .drop-btn:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+  }
 
   /* ── Result card ─────────────────────────────────────────── */
   .result-card {
-    margin-top: 20px;
-    border: 1px solid var(--rule);
-    border-radius: 6px;
+    border-top: 1px solid var(--rule);
     background: var(--surface);
     overflow: hidden;
   }
   .result-card-head {
     display: flex; align-items: center; gap: 10px;
-    padding: 12px 16px;
+    padding: 10px 16px;
     border-bottom: 1px solid var(--rule);
     font-family: "IBM Plex Mono", monospace;
     font-size: 11px;
@@ -178,19 +309,19 @@
   .result-card-head .badge .dot {
     width: 6px; height: 6px; border-radius: 50%;
   }
-  .badge-written .dot  { background: var(--pass); }
-  .badge-written       { color: var(--pass); }
-  .badge-rejected .dot { background: var(--fail); }
-  .badge-rejected      { color: var(--fail); }
-  .badge-error .dot    { background: var(--fail); }
-  .badge-error         { color: var(--fail); }
+  .badge-ok .dot    { background: var(--pass); }
+  .badge-ok         { color: var(--pass); }
+  .badge-warn .dot  { background: #c47f17; }
+  .badge-warn       { color: #c47f17; }
+  .badge-fail .dot  { background: var(--fail); }
+  .badge-fail       { color: var(--fail); }
 
   /* File rows inside result card — reuse .rec layout from the reader */
   .rec {
     display: grid;
     grid-template-columns: 24px 1fr auto;
     column-gap: 12px;
-    padding: 12px 16px;
+    padding: 10px 16px;
     border-top: 1px solid var(--rule-2);
   }
   .rec:first-child { border-top: none; }
@@ -203,22 +334,27 @@
   .rec .body { min-width: 0; }
   .rec .id {
     font-family: "IBM Plex Mono", monospace;
-    font-size: 12.5px; color: var(--ink); font-weight: 500;
+    font-size: 12px; color: var(--ink); font-weight: 500;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .rec .crumb {
     font-size: 12px; color: var(--ink-3); margin-top: 2px;
   }
-  .rec .status-col {
+  .rec .label {
     font-family: "IBM Plex Mono", monospace;
     font-size: 10.5px;
     padding-top: 2px;
     text-align: right;
     min-width: 60px;
   }
-  .status-written  { color: var(--pass); }
-  .status-rejected { color: var(--fail); }
-  .status-error    { color: var(--fail); }
+  .label-created  { color: var(--pass); }
+  .label-updated  { color: #c47f17; }
+  .label-skipped  { color: var(--ink-3); }
+  .label-failed   { color: var(--fail); }
+  /* Upload result labels */
+  .label-written  { color: var(--pass); }
+  .label-rejected { color: var(--fail); }
+  .label-error    { color: var(--fail); }
 
   /* ── Spinner (busy state) ────────────────────────────────── */
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -231,17 +367,26 @@
     animation: spin .7s linear infinite;
     vertical-align: middle;
     margin-right: 8px;
+    flex-shrink: 0;
   }
   .busy-row {
-    padding: 14px 16px;
+    padding: 12px 16px;
     font-family: "IBM Plex Mono", monospace;
     font-size: 11px;
     color: var(--ink-3);
     letter-spacing: .04em;
     display: flex; align-items: center;
+    border-top: 1px solid var(--rule);
   }
 
-  /* ── Resource Browser ───────────────────────────────────── */
+  /* ── Resource Browser (Phase 15 S5, issue #171) ─────────── */
+  .section-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 40px 0 16px;
+    display: flex; align-items: center; gap: 8px;
+  }
   .browser-breadcrumb {
     display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
     font-family: "IBM Plex Mono", monospace;
@@ -362,19 +507,26 @@
       <a class="mast-reader" href="/">reader</a>
     </header>
 
-    <div id="upload-section">
-      <!-- Drop zone and result card are built by JS below -->
-    </div>
+    <div id="pipeline-root"></div>
 
     <div id="browser-section">
-      <!-- Resource browser built by JS below -->
+      <!-- Resource browser built by JS below (Phase 15 S5, issue #171) -->
     </div>
   </div>
 
 <script>
 "use strict";
 
-/* §12.4: textContent-only DOM helper — innerHTML is banned */
+/* ============================================================
+   §12.4: textContent-only DOM helper — innerHTML is banned.
+   Accepts: el(tag, props?, ...children)
+   - props.class   → className
+   - props.text    → textContent
+   - props.html    → THROWS (banned)
+   - props.on*     → addEventListener
+   - other props   → setAttribute
+   Children may be DOM nodes, strings, null/false (skipped).
+   ============================================================ */
 function el(tag, props) {
   var kids = Array.prototype.slice.call(arguments, 2);
   var n = document.createElement(tag);
@@ -385,7 +537,7 @@ function el(tag, props) {
       if (v == null) continue;
       if (k === "class") n.className = v;
       else if (k === "text") n.textContent = v;
-      else if (k === "html") throw new Error("innerHTML banned");
+      else if (k === "html") throw new Error("innerHTML banned (CODING_STANDARD §12.4)");
       else if (k.startsWith("on") && typeof v === "function") n.addEventListener(k.slice(2).toLowerCase(), v);
       else n.setAttribute(k, v);
     }
@@ -398,164 +550,444 @@ function el(tag, props) {
   return n;
 }
 
-/* ── State ───────────────────────────────────────────────────── */
-var busy = false;
+/* ============================================================
+   Pipeline step descriptors.
 
-/* ── Build drop zone ─────────────────────────────────────────── */
-var fileInput = el("input", { type: "file", multiple: "", accept: ".html,.txt,.md", style: "display:none" });
-fileInput.addEventListener("change", function() {
-  if (fileInput.files && fileInput.files.length > 0) {
-    handleFiles(Array.from(fileInput.files));
-  }
-});
+   Each step has:
+     id      — machine key, used for CSS and state
+     label   — display name in the stepper track
+     desc    — one-line description shown in the step panel header
+     run     — async function(setState) → fires the request + renders result
+               setState(busy) enables/disables the button
 
-var dropZone = el("div", { class: "drop-zone" },
-  el("div", { class: "drop-hint" },
-    el("strong", { text: "Drag and drop files here" }),
-    el("br"),
-    "or click to select files"
-  ),
-  el("div", { class: "drop-ext", text: "Accepts .html · .txt · .md — max 10 MB each" }),
-  el("button", { class: "drop-btn", type: "button", text: "Choose files",
-    onclick: function() { if (!busy) fileInput.click(); }
-  }),
-  fileInput
-);
+   Steps declared in pipeline order. Later slices (Ingest #172, Index/Lint #173)
+   replace the stub run() functions here with real implementations.
+   ============================================================ */
 
-/* Drag and drop handlers */
-dropZone.addEventListener("dragover", function(e) {
-  e.preventDefault();
-  if (!busy) dropZone.classList.add("drag-over");
-});
-dropZone.addEventListener("dragleave", function() {
-  dropZone.classList.remove("drag-over");
-});
-dropZone.addEventListener("drop", function(e) {
-  e.preventDefault();
-  dropZone.classList.remove("drag-over");
-  if (busy) return;
-  var files = e.dataTransfer.files;
-  if (files && files.length > 0) {
-    handleFiles(Array.from(files));
-  }
-});
+/* ── Per-step result-card renderers ───────────────────────── */
 
-/* Assemble upload section */
-var uploadSection = document.getElementById("upload-section");
-uploadSection.append(
-  el("div", { class: "section-label", text: "Upload" }),
-  dropZone
-);
+/* Upload result card — matches Phase 15 S1 logic, now inside the stepper panel */
+function renderUploadCard(results) {
+  var written  = results.filter(function(r) { return r.status === "written";  }).length;
+  var rejected = results.filter(function(r) { return r.status === "rejected"; }).length;
+  var errors   = results.filter(function(r) { return r.status === "error";    }).length;
 
-/* Result card container (populated after upload) */
-var resultContainer = el("div", { id: "result-container" });
-uploadSection.append(resultContainer);
+  var parts = [];
+  if (written > 0)  parts.push(written  + " staged");
+  if (rejected > 0) parts.push(rejected + " rejected");
+  if (errors > 0)   parts.push(errors   + " error" + (errors !== 1 ? "s" : ""));
+  var summaryText = parts.join(" · ") || "0 files";
 
-/* ── Upload handler ──────────────────────────────────────────── */
-function handleFiles(files) {
-  if (busy) return;
-  busy = true;
-  dropZone.classList.add("busy");
+  var badgeClass = errors > 0 ? "badge badge-fail"
+                 : rejected > 0 ? "badge badge-warn"
+                 : "badge badge-ok";
 
-  /* Show spinner while in flight */
-  resultContainer.replaceChildren(
-    el("div", { class: "result-card" },
-      el("div", { class: "busy-row" },
-        el("span", { class: "spinner" }),
-        el("span", { text: "Uploading " + files.length + " file" + (files.length !== 1 ? "s" : "") + "…" })
-      )
+  var head = el("div", { class: "result-card-head" },
+    el("span", { text: "Upload" }),
+    el("span", { text: "·" }),
+    el("span", { class: badgeClass },
+      el("span", { class: "dot" }),
+      el("span", { text: summaryText })
     )
   );
 
-  var formData = new FormData();
-  for (var i = 0; i < files.length; i++) {
-    formData.append("files", files[i], files[i].name);
-  }
-
-  fetch("/upload", {
-    method: "POST",
-    body: formData,
-  }).then(function(resp) {
-    if (!resp.ok) {
-      return resp.text().then(function(text) {
-        throw new Error("HTTP " + resp.status + ": " + text);
-      });
-    }
-    return resp.json();
-  }).then(function(data) {
-    renderResultCard(data.results || []);
-  }).catch(function(err) {
-    renderError(err.message || String(err));
-  }).finally(function() {
-    busy = false;
-    dropZone.classList.remove("busy");
-  });
-}
-
-/* ── Render result card ──────────────────────────────────────── */
-function renderResultCard(results) {
-  var written  = results.filter(function(r) { return r.status === "written"; }).length;
-  var rejected = results.filter(function(r) { return r.status === "rejected"; }).length;
-  var errors   = results.filter(function(r) { return r.status === "error"; }).length;
-
-  /* Summary badge in header */
-  var summaryParts = [];
-  if (written > 0)  summaryParts.push(written  + " staged");
-  if (rejected > 0) summaryParts.push(rejected + " rejected");
-  if (errors > 0)   summaryParts.push(errors   + " error" + (errors !== 1 ? "s" : ""));
-  var summaryText = summaryParts.join(" · ") || "0 files";
-
-  var head = el("div", { class: "result-card-head" },
-    el("span", { text: "Upload result" }),
-    el("span", { text: "·" }),
-    el("span", { text: summaryText })
-  );
-
-  var rows = el("div", { class: "recs-body" });
+  var rows = el("div");
   results.forEach(function(r, i) {
-    /* §12.4: all server-derived text via textContent */
-    var statusClass = "status-" + r.status;
-    var statusLabel = r.status === "written" ? "staged" : r.status;
+    var labelClass = "label label-" + r.status;
+    var labelText  = r.status === "written" ? "staged" : r.status;
 
-    var bodyEl = el("div", { class: "body" });
-    /* Filename — §12.4 textContent */
-    bodyEl.append(el("div", { class: "id", text: r.filename }));
-
-    /* Subtitle: target_dir when written, reason when rejected/error */
+    var bodyEl = el("div", { class: "body" },
+      el("div", { class: "id", text: r.filename })
+    );
     var subtitle = "";
     if (r.status === "written" && r.target_dir) {
       subtitle = "→ " + r.target_dir;
     } else if ((r.status === "rejected" || r.status === "error") && r.reason) {
       subtitle = r.reason;
     }
-    if (subtitle) {
+    if (subtitle) bodyEl.append(el("div", { class: "crumb", text: subtitle }));
+
+    rows.append(el("div", { class: "rec" },
+      el("div", { class: "num", text: String(i + 1).padStart(2, "0") }),
+      bodyEl,
+      el("div", { class: labelClass, text: labelText })
+    ));
+  });
+
+  return el("div", { class: "result-card" }, head, rows);
+}
+
+/* Import result card — renders ImportResponse (imported_sources + skipped_sources + failed_sources) */
+function renderImportCard(data) {
+  var imported = data.imported_sources || [];
+  var skipped  = data.skipped_sources  || [];
+  var failed   = data.failed_sources   || [];
+
+  /* Summary line */
+  var parts = [];
+  if (imported.length > 0) parts.push(imported.length + " imported");
+  if (skipped.length > 0)  parts.push(skipped.length  + " skipped");
+  if (failed.length > 0)   parts.push(failed.length   + " failed");
+  var summaryText = parts.join(" · ") || "0 files";
+
+  var badgeClass = failed.length > 0  ? "badge badge-fail"
+                 : skipped.length > 0 ? "badge badge-warn"
+                 : "badge badge-ok";
+
+  var head = el("div", { class: "result-card-head" },
+    el("span", { text: "Import" }),
+    el("span", { text: "·" }),
+    el("span", { class: badgeClass },
+      el("span", { class: "dot" }),
+      el("span", { text: summaryText })
+    )
+  );
+
+  var rows = el("div");
+  var rowIndex = 0;
+
+  /* Helper: build a row from ImportSourceResultSchema (imported / skipped) */
+  function makeSourceRow(r) {
+    rowIndex++;
+    /* raw_path → docs_path breadcrumb */
+    var rawName  = r.raw_path  ? r.raw_path.split(/[/\\]/).pop()  : "";
+    var docsName = r.docs_path ? r.docs_path.split(/[/\\]/).pop() : "";
+    var subtitle = rawName && docsName ? rawName + " → " + docsName : rawName || docsName;
+
+    var bodyEl = el("div", { class: "body" },
+      el("div", { class: "id", text: rawName || r.raw_path })
+    );
+    if (r.original_format) {
+      bodyEl.append(el("div", { class: "crumb", text: subtitle + " · " + r.original_format }));
+    } else if (subtitle) {
       bodyEl.append(el("div", { class: "crumb", text: subtitle }));
     }
 
-    rows.append(
-      el("div", { class: "rec" },
-        el("div", { class: "num", text: String(i + 1).padStart(2, "0") }),
-        bodyEl,
-        el("div", { class: "status-col " + statusClass, text: statusLabel })
+    var labelClass = "label label-" + r.status; /* created | updated | skipped */
+    rows.append(el("div", { class: "rec" },
+      el("div", { class: "num", text: String(rowIndex).padStart(2, "0") }),
+      bodyEl,
+      el("div", { class: labelClass, text: r.status })
+    ));
+  }
+
+  /* Helper: build a row from ImportFailureSchema */
+  function makeFailureRow(f) {
+    rowIndex++;
+    var rawName = f.raw_path ? f.raw_path.split(/[/\\]/).pop() : f.raw_path;
+    var bodyEl  = el("div", { class: "body" },
+      el("div", { class: "id",   text: rawName || f.raw_path }),
+      el("div", { class: "crumb", text: f.error_message || f.error_type })
+    );
+    rows.append(el("div", { class: "rec" },
+      el("div", { class: "num", text: String(rowIndex).padStart(2, "0") }),
+      bodyEl,
+      el("div", { class: "label label-failed", text: "failed" })
+    ));
+  }
+
+  imported.forEach(makeSourceRow);
+  skipped.forEach(makeSourceRow);
+  failed.forEach(makeFailureRow);
+
+  return el("div", { class: "result-card" }, head, rows);
+}
+
+/* Generic error card — used by any step on network/HTTP error */
+function renderErrorCard(stepLabel, message) {
+  return el("div", { class: "result-card" },
+    el("div", { class: "result-card-head" },
+      el("span", { text: stepLabel + " — error" })
+    ),
+    el("div", { style: "padding:12px 16px; font-size:13px; color:var(--fail);", text: message })
+  );
+}
+
+/* Busy-row shown while a request is in flight */
+function makeBusyCard(label) {
+  return el("div", { class: "result-card" },
+    el("div", { class: "busy-row" },
+      el("span", { class: "spinner" }),
+      el("span", { text: label + "…" })
+    )
+  );
+}
+
+/* ============================================================
+   Step definitions
+   Each step exposes:
+     id, label, desc
+     buildBody(resultEl)  — returns the DOM subtree for the step body
+     busy flag           — managed internally
+   The run() callback is in each STEP_DEFS entry.
+   ============================================================ */
+
+/* ── Upload step body builder ─────────────────────────────── */
+function buildUploadBody(resultEl) {
+  /* File input (hidden) */
+  var fileInput = el("input", { type: "file", multiple: "", accept: ".html,.txt,.md", style: "display:none" });
+  var uploadBusy = false;
+
+  function setUploadBusy(v) {
+    uploadBusy = v;
+    if (v) {
+      dropZone.classList.add("busy");
+      dropBtn.disabled = true;
+    } else {
+      dropZone.classList.remove("busy");
+      dropBtn.disabled = false;
+    }
+  }
+
+  function handleFiles(files) {
+    if (uploadBusy) return;
+    setUploadBusy(true);
+
+    resultEl.replaceChildren(makeBusyCard("Uploading " + files.length + " file" + (files.length !== 1 ? "s" : "")));
+
+    var formData = new FormData();
+    for (var i = 0; i < files.length; i++) {
+      formData.append("files", files[i], files[i].name);
+    }
+
+    fetch("/upload", { method: "POST", body: formData })
+      .then(function(resp) {
+        if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+        return resp.json();
+      })
+      .then(function(data) { resultEl.replaceChildren(renderUploadCard(data.results || [])); })
+      .catch(function(err)  { resultEl.replaceChildren(renderErrorCard("Upload", err.message || String(err))); })
+      .finally(function()   { setUploadBusy(false); });
+  }
+
+  fileInput.addEventListener("change", function() {
+    if (fileInput.files && fileInput.files.length > 0) handleFiles(Array.from(fileInput.files));
+  });
+
+  var dropBtn = el("button", { class: "drop-btn", type: "button", text: "Choose files",
+    onclick: function() { if (!uploadBusy) fileInput.click(); }
+  });
+
+  var dropZone = el("div", { class: "drop-zone" },
+    el("div", { class: "drop-hint" },
+      el("strong", { text: "Drag and drop files here" }),
+      el("br"),
+      "or click to select files"
+    ),
+    el("div", { class: "drop-ext", text: "Accepts .html · .txt · .md — max 10 MB each" }),
+    dropBtn,
+    fileInput
+  );
+
+  dropZone.addEventListener("dragover", function(e) {
+    e.preventDefault();
+    if (!uploadBusy) dropZone.classList.add("drag-over");
+  });
+  dropZone.addEventListener("dragleave", function() { dropZone.classList.remove("drag-over"); });
+  dropZone.addEventListener("drop", function(e) {
+    e.preventDefault();
+    dropZone.classList.remove("drag-over");
+    if (uploadBusy) return;
+    var files = e.dataTransfer.files;
+    if (files && files.length > 0) handleFiles(Array.from(files));
+  });
+
+  return dropZone;
+}
+
+/* ── Step definitions ─────────────────────────────────────── */
+/* §12.8 / §12.5: No fake progress percentages. Use indeterminate spinner only.
+   Ingest (#172) and Index/Lint (#173) run-functions will be wired in their slices.
+   The stub placeholders below show the hook point without locking the API shape. */
+
+var STEP_DEFS = [
+  {
+    id: "upload",
+    label: "Upload",
+    desc: "Stage .html / .txt / .md files into raw/ or docs/",
+    buildBody: function(resultEl) {
+      return buildUploadBody(resultEl);
+    },
+    /* Upload step has its own inline controls — no top-level Run button */
+    noRunBtn: true,
+  },
+  {
+    id: "import",
+    label: "Import",
+    desc: "Convert raw/ sources to Markdown docs/",
+    buildBody: null,
+    run: function(resultEl, setStepBusy) {
+      setStepBusy(true);
+      resultEl.replaceChildren(makeBusyCard("Running Import"));
+
+      fetch("/wiki/import", { method: "POST" })
+        .then(function(resp) {
+          if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+          return resp.json();
+        })
+        .then(function(data) { resultEl.replaceChildren(renderImportCard(data)); })
+        .catch(function(err)  { resultEl.replaceChildren(renderErrorCard("Import", err.message || String(err))); })
+        .finally(function()   { setStepBusy(false); });
+    },
+  },
+  {
+    id: "ingest",
+    label: "Ingest",
+    desc: "Synthesise wiki pages from docs/ (LLM call)",
+    buildBody: null,
+    run: function(resultEl, setStepBusy) {
+      /* Slice #172 will implement this run function. Stub for stepper completeness. */
+      setStepBusy(true);
+      resultEl.replaceChildren(makeBusyCard("Running Ingest"));
+
+      fetch("/wiki/ingest", { method: "POST" })
+        .then(function(resp) {
+          if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+          return resp.json();
+        })
+        .then(function(data) {
+          /* Stub: render raw JSON summary until slice #172 wires the full card */
+          var results  = data.results         || [];
+          var failed   = data.failed_sources  || [];
+          var skipped  = data.skipped_sources || [];
+          var summaryText = results.length + " ingested, " + skipped.length + " skipped, " + failed.length + " failed";
+          resultEl.replaceChildren(el("div", { class: "result-card" },
+            el("div", { class: "result-card-head" }, el("span", { text: "Ingest · " + summaryText }))
+          ));
+        })
+        .catch(function(err)  { resultEl.replaceChildren(renderErrorCard("Ingest", err.message || String(err))); })
+        .finally(function()   { setStepBusy(false); });
+    },
+  },
+  {
+    id: "index",
+    label: "Index",
+    desc: "Rebuild BM25 search index from wiki/",
+    buildBody: null,
+    run: function(resultEl, setStepBusy) {
+      /* Slice #173 will implement this run function. Stub for stepper completeness. */
+      setStepBusy(true);
+      resultEl.replaceChildren(makeBusyCard("Running Index"));
+
+      fetch("/wiki/index", { method: "POST" })
+        .then(function(resp) {
+          if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+          return resp.json();
+        })
+        .then(function(data) {
+          var summaryText = data.files_indexed + " files, " + data.sections_indexed + " sections";
+          resultEl.replaceChildren(el("div", { class: "result-card" },
+            el("div", { class: "result-card-head" }, el("span", { text: "Index · " + summaryText }))
+          ));
+        })
+        .catch(function(err)  { resultEl.replaceChildren(renderErrorCard("Index", err.message || String(err))); })
+        .finally(function()   { setStepBusy(false); });
+    },
+  },
+  {
+    id: "lint",
+    label: "Lint",
+    desc: "Audit wiki for orphans, red links, contradictions",
+    buildBody: null,
+    run: function(resultEl, setStepBusy) {
+      /* Slice #173 will implement this run function. Stub for stepper completeness. */
+      setStepBusy(true);
+      resultEl.replaceChildren(makeBusyCard("Running Lint"));
+
+      fetch("/wiki/lint", { method: "POST" })
+        .then(function(resp) {
+          if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+          return resp.json();
+        })
+        .then(function(data) {
+          var total = data.summary ? data.summary.total_findings : "?";
+          resultEl.replaceChildren(el("div", { class: "result-card" },
+            el("div", { class: "result-card-head" }, el("span", { text: "Lint · " + total + " finding" + (total !== 1 ? "s" : "") }))
+          ));
+        })
+        .catch(function(err)  { resultEl.replaceChildren(renderErrorCard("Lint", err.message || String(err))); })
+        .finally(function()   { setStepBusy(false); });
+    },
+  },
+];
+
+/* ============================================================
+   Build the pipeline DOM
+   ============================================================ */
+function buildPipeline(rootEl) {
+  /* ── Step track (breadcrumb row) ─────────────────────── */
+  var trackItems = [];
+  STEP_DEFS.forEach(function(step, i) {
+    if (i > 0) trackItems.push(el("span", { class: "step-arrow", text: "→" }));
+    trackItems.push(
+      el("span", { class: "step-pill" + (i === 0 ? " active" : ""), id: "track-" + step.id },
+        el("span", { class: "step-num", text: String(i + 1) }),
+        el("span", { text: step.label })
       )
     );
   });
 
-  var card = el("div", { class: "result-card" }, head, rows);
-  resultContainer.replaceChildren(card);
+  var track = el.apply(null, ["div", { class: "step-track" }].concat(trackItems));
+
+  /* ── Step panels ─────────────────────────────────────── */
+  var panels = el("div", { class: "step-panels" });
+
+  STEP_DEFS.forEach(function(step) {
+    var resultEl = el("div", { class: "step-result" });
+
+    /* Per-step busy state + button toggle */
+    var runBtn;
+    function setStepBusy(busy) {
+      if (runBtn) runBtn.disabled = busy;
+      /* Update track pill */
+      var pill = document.getElementById("track-" + step.id);
+      if (pill) {
+        if (busy) {
+          pill.classList.add("active");
+          pill.classList.remove("done");
+        }
+      }
+    }
+
+    /* Header */
+    var headLeft = el("div", { style: "display:flex; align-items:center; gap:12px; min-width:0; flex:1;" },
+      el("span", { class: "step-panel-title", text: step.label }),
+      el("span", { class: "step-panel-desc",  text: step.desc })
+    );
+
+    var headEl;
+    if (step.noRunBtn) {
+      /* Upload: no Run button in the header — controlled inside the drop zone */
+      headEl = el("div", { class: "step-panel-head" }, headLeft);
+    } else {
+      runBtn = el("button", { class: "run-btn", type: "button", text: "Run",
+        onclick: function() { step.run(resultEl, setStepBusy); }
+      });
+      headEl = el("div", { class: "step-panel-head" }, headLeft, runBtn);
+    }
+
+    /* Body */
+    var bodyChildren = [];
+    if (step.buildBody) {
+      bodyChildren.push(step.buildBody(resultEl));
+    }
+    bodyChildren.push(resultEl);
+
+    var panel = el.apply(null, ["div", { class: "step-panel" }, headEl].concat(bodyChildren));
+    panels.append(panel);
+  });
+
+  rootEl.append(
+    el("div", { class: "pipeline" },
+      el("div", { class: "pipeline-header", text: "Pipeline" }),
+      track,
+      panels
+    )
+  );
 }
 
-/* ── Render error ────────────────────────────────────────────── */
-function renderError(message) {
-  var card = el("div", { class: "result-card" },
-    el("div", { class: "result-card-head" },
-      el("span", { text: "Upload failed" })
-    ),
-    el("div", { style: "padding:14px 16px; font-size:14px; color:var(--fail);",
-      text: message })
-  );
-  resultContainer.replaceChildren(card);
-}
+/* ── Boot ──────────────────────────────────────────────────── */
+buildPipeline(document.getElementById("pipeline-root"));
 
 /* ══════════════════════════════════════════════════════════
    Resource Browser (Phase 15 S5, issue #171)

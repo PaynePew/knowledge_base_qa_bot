@@ -31,6 +31,7 @@ from fastapi.testclient import TestClient
 from markdown_kb.app.grounding import GroundingClaim, GroundingOutcome, GroundingResult
 
 import gateway.app.conversation_store as _store_module
+import gateway.app.logger as _gateway_logger
 import gateway.app.query_rewriting as _rewrite_module
 
 _FIXTURE_DOCS = Path(__file__).resolve().parents[2] / "markdown_kb" / "tests" / "fixtures" / "docs"
@@ -128,6 +129,7 @@ def _parse_sse_response(content: str) -> list[dict]:
 def _redirect_paths_to_tmp(tmp_path, monkeypatch):
     """Redirect INDEX_PATH, LOG_PATH, WIKI_DIR to tmp for all multiturn tests."""
     monkeypatch.setattr(_logger, "LOG_PATH", tmp_path / "wiki" / "log.md")
+    monkeypatch.setattr(_gateway_logger, "LOG_PATH", tmp_path / "gateway" / "log.md")
     monkeypatch.setattr(_indexer, "INDEX_PATH", tmp_path / ".kb" / "index.json")
     monkeypatch.setattr(_indexer, "WIKI_DIR", tmp_path / "wiki")
 
