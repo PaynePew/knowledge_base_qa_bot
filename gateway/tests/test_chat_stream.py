@@ -31,6 +31,9 @@ from markdown_kb.app.grounding import GroundingClaim, GroundingOutcome, Groundin
 from markdown_kb.app.retrieval import CANNOT_CONFIRM_PHRASE
 
 REAL_DOCS = Path(__file__).resolve().parents[2] / "docs"
+# 3-Source hermetic fixture: keeps tests stable regardless of docs/ growth.
+# issue #142: docs/fake-docs/ is now part of docs/, so REAL_DOCS = 20 files.
+_FIXTURE_DOCS = Path(__file__).resolve().parents[2] / "markdown_kb" / "tests" / "fixtures" / "docs"
 
 
 # ---------------------------------------------------------------------------
@@ -70,8 +73,13 @@ def _redirect_paths_to_tmp(tmp_path, monkeypatch):
 
 @pytest.fixture()
 def indexed_wiki_corpus(tmp_path, monkeypatch):
-    """Build the Section Index from REAL_DOCS into the tmp paths."""
-    _indexer.build_index(REAL_DOCS)
+    """Build the Section Index from the 3-Source hermetic fixture docs.
+
+    Uses _FIXTURE_DOCS (tests/fixtures/docs/, 3 files) so BM25 scores and
+    the index size remain stable regardless of docs/ growth (issue #142:
+    docs/fake-docs/ is now part of docs/).
+    """
+    _indexer.build_index(_FIXTURE_DOCS)
     yield
     _indexer.sections.clear()
 

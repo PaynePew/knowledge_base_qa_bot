@@ -11,10 +11,10 @@ content is non-deterministic and never asserted (CODING_STANDARD §6.2).
 
 Pipeline:
 
-    1. Load the Gold Section inventory (gold_sections.yaml) and, per Core
-       Paraphrase Type, sha256-sample which Gold Sections to target
-       (generation.sampling — specificity_narrowing samples multi-sub-fact
-       sections only; cross-type reuse allowed).
+    1. Derive the Gold Section inventory from the corpus (issue #142: no longer
+       read from gold_sections.yaml) and, per Core Paraphrase Type, sha256-sample
+       which Gold Sections to target (generation.sampling — cross-type reuse
+       allowed).
     2. For each (type, section), render the type's per-type prompt template
        over the docs Section body + concept Wiki Page body, and call gpt-4o-mini
        (temperature=0.7, seed=42, one-shot) with with_structured_output into the
@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -58,7 +59,9 @@ from .loader import QUERIES_PATH, load_paraphrases, write_text_atomic
 from .models import PARAPHRASE_TYPES, Paraphrase
 
 _PKG_ROOT = Path(__file__).resolve().parent
+_REPO_ROOT = _PKG_ROOT.parent.parent
 CORPUS_DIR = _PKG_ROOT / "corpus"
+FAKE_DOCS_DIR = _REPO_ROOT / "docs" / "fake-docs"
 WIKI_CONCEPTS_DIR = _PKG_ROOT / "wiki" / "concepts"
 PROBES_PATH = _PKG_ROOT / "probes.yaml"
 
@@ -94,6 +97,45 @@ def _get_generator_llm():
         max_retries=1,
     )
     return llm.with_structured_output(ParaphraseDraft)
+
+
+# ---------------------------------------------------------------------------
+# Corpus freeze (AC3 — reproducible snapshot at eval-run time)
+# ---------------------------------------------------------------------------
+def freeze_corpus(
+    source_dir: Path = FAKE_DOCS_DIR,
+    dest_dir: Path = CORPUS_DIR,
+) -> int:
+    """Snapshot ``source_dir`` (``docs/fake-docs/``) into ``dest_dir`` (``corpus/``).
+
+    Copies every ``*.md`` file from ``source_dir`` into ``dest_dir``, overwriting
+    any existing file of the same name. Extra files in ``dest_dir`` that no longer
+    exist in ``source_dir`` are removed so the snapshot is an exact mirror.
+
+    Returns the number of files written. Raises on a missing or unreadable
+    ``source_dir`` (fail-fast per CODING_STANDARD §4.1).
+
+    This is called at the start of the live generation path so the eval corpus is
+    frozen to the current ``docs/fake-docs/`` state before sampling and generation
+    run. The committed corpus/ snapshot is never read directly from the mutable
+    demo content — Phase 8 always operates on the frozen copy (issue #142, AC3).
+    """
+    if not source_dir.is_dir():
+        raise FileNotFoundError(f"freeze_corpus: source_dir not found: {source_dir}")
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    source_files = {f.name: f for f in source_dir.glob("*.md")}
+    dest_files = {f.name for f in dest_dir.glob("*.md")}
+
+    # Remove stale files in dest that are no longer in source.
+    for stale in dest_files - source_files.keys():
+        (dest_dir / stale).unlink()
+
+    # Copy (overwrite) each source file into dest.
+    for name, src_path in sorted(source_files.items()):
+        shutil.copy2(src_path, dest_dir / name)
+
+    return len(source_files)
 
 
 # ---------------------------------------------------------------------------
@@ -135,8 +177,13 @@ def generate_core(per_type_count: int = PER_TYPE_COUNT) -> list[Paraphrase]:
     Deterministic sampling picks the target Gold Sections (seed = type name);
     each (type, section) yields one gpt-4o-mini structured-output call. Requires
     OPENAI_API_KEY — callers gate on it (see ``main``).
+
+    Gold Sections are now auto-derived from the corpus rather than read from
+    gold_sections.yaml (issue #142). The multi_sub_fact_only filter for
+    specificity_narrowing has been dropped — sub-fact narrowing is handled by
+    the Synthesizer's context-bound evolutions (PRD #137).
     """
-    gold = sampling.load_gold_sections()
+    gold = sampling.load_gold_sections(corpus_dir=CORPUS_DIR)
     docs_bodies = _docs_section_bodies()
     llm = _get_generator_llm()
 
@@ -147,7 +194,6 @@ def generate_core(per_type_count: int = PER_TYPE_COUNT) -> list[Paraphrase]:
             gold,
             seed=ptype,
             count=per_type_count,
-            multi_sub_fact_only=(ptype == "specificity_narrowing"),
         )
         for idx, sec in enumerate(sections, start=1):
             heading, docs_body = docs_bodies[sec.section_id]
@@ -236,7 +282,10 @@ def run_qc(paraphrases: list[Paraphrase]) -> list[qc.QcVerdict]:
     matchable, so the distinctiveness judgement must see both corpora.
     """
     docs_bodies = _docs_section_bodies()
-    wiki_bodies = [_concept_body(s.concept_slug) for s in sampling.load_gold_sections()]
+    wiki_bodies = [
+        _concept_body(s.concept_slug)
+        for s in sampling.load_gold_sections(corpus_dir=CORPUS_DIR)
+    ]
     idf = qc.build_idf([body for _, body in docs_bodies.values()] + wiki_bodies)
     return [
         qc.check_key_tokens(p.paraphrase_id, sorted(p.key_tokens), idf)
@@ -272,10 +321,25 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Skip generation; just run the QC gate over the committed queries.yaml.",
     )
+    parser.add_argument(
+        "--freeze",
+        action="store_true",
+        help=(
+            "Snapshot docs/fake-docs/ into eval/paraphrase_comparison/corpus/ before "
+            "generation (AC3: hermetic corpus freeze). Implied by the live generation "
+            "path; pass explicitly to freeze without regenerating."
+        ),
+    )
     args = parser.parse_args(argv)
     load_dotenv(
         find_dotenv(usecwd=True)
     )  # pick up OPENAI_API_KEY from a repo-root .env
+
+    if args.freeze and (args.qc_only or not os.getenv("OPENAI_API_KEY")):
+        # --freeze without a live generation run: just freeze the corpus and exit.
+        n = freeze_corpus()
+        print(f"Corpus frozen: {n} file(s) copied from {FAKE_DOCS_DIR} → {CORPUS_DIR}.")
+        return 0
 
     if args.qc_only or not os.getenv("OPENAI_API_KEY"):
         if not args.qc_only:
@@ -289,6 +353,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1 if any(v.rejected for v in verdicts) else 0
 
     # --- live generation path ---
+    # AC3: freeze the corpus snapshot from docs/fake-docs/ before sampling so
+    # the comparison always operates on the frozen copy, not mutable demo content.
+    n_frozen = freeze_corpus()
+    print(
+        f"Corpus frozen: {n_frozen} file(s) copied from {FAKE_DOCS_DIR} → {CORPUS_DIR}."
+    )
     core = generate_core(args.per_type)
     verdicts = run_qc(core)
     _print_qc(verdicts)

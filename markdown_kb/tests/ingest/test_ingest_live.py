@@ -1,7 +1,7 @@
 """Live integration smoke test for POST /ingest — Slice #5 (Phase 3 companion).
 
 Makes a real OpenAI API call to confirm that the ingest pipeline:
-  1. Classifies ``fake-docs/acme_shop_about.md`` as ``entity`` type.
+  1. Classifies ``docs/fake-docs/acme_shop_about.md`` as ``entity`` type.
   2. Writes a well-formed Wiki Page to ``wiki/entities/acme-shop-about.md``
      (or equivalent slug) with all 7 required frontmatter fields.
 
@@ -14,10 +14,9 @@ Requirements:
     clear message if it is absent rather than silently passing or skipping.
 
 Scope decision (documented per issue #33 AC):
-    ``fake-docs/`` is scoped to ingest tests only — excluded from the
-    ``/index`` glob and the ``/chat`` endpoint.  ``docs/`` remains the
-    canonical user-facing corpus.  The live test injects ``fake-docs/`` as
-    the docs_dir so the real server's SOURCE_DIRS list is not changed.
+    ``docs/fake-docs/`` is the unified synthetic Source pool (issue #142).
+    The live test injects ``docs/fake-docs/`` as the docs_dir so the real
+    server's SOURCE_DIRS list is not changed.
 """
 
 from __future__ import annotations
@@ -37,10 +36,10 @@ import app.logger as logger_module
 # Repo-root-relative paths
 # ---------------------------------------------------------------------------
 
-# fake-docs/ is two levels up from this test file:
+# docs/fake-docs/ is two levels up from this test file:
 # markdown_kb/tests/ingest/test_ingest_live.py → repo root
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_FAKE_DOCS_DIR = _REPO_ROOT / "fake-docs"
+_FAKE_DOCS_DIR = _REPO_ROOT / "docs" / "fake-docs"
 _ACME_SOURCE_NAME = "acme_shop_about.md"
 
 
@@ -81,7 +80,7 @@ def test_ingest_acme_shop_live(tmp_path, monkeypatch):
     monkeypatch.setattr(logger_module, "LOG_PATH", wiki_dir / "log.md")
 
     # Patch DOCS_DIR inside ingest_module so ingest_sources resolves
-    # "acme_shop_about.md" under fake-docs/ rather than the real docs/.
+    # "acme_shop_about.md" under docs/fake-docs/ rather than the real docs/.
     monkeypatch.setattr(ingest_module, "DOCS_DIR", _FAKE_DOCS_DIR)
 
     from app.main import app

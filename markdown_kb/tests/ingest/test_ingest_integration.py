@@ -114,6 +114,12 @@ def _make_fake_llm(body: str = FIXED_BODY) -> MagicMock:
 # ---------------------------------------------------------------------------
 
 
+_TESTS_DIR = Path(__file__).resolve().parent.parent
+# Hermetic 3-Source fixture docs/ — keeps batch-mode tests decoupled from the
+# growing docs/ tree (issue #142: docs/fake-docs/ is now part of docs/).
+_FIXTURE_DOCS_DIR = _TESTS_DIR / "fixtures" / "docs"
+
+
 @pytest.fixture()
 def client_with_fake_ingest_llm(tmp_path, monkeypatch):
     """TestClient with a schema-aware fake ingest LLM and redirected wiki_dir.
@@ -125,8 +131,10 @@ def client_with_fake_ingest_llm(tmp_path, monkeypatch):
       synthesis calls get _FakeSynthesisOutput.
     - `app.indexer.WIKI_DIR` redirected to tmp_path so pages land in
       a temp directory, not the real wiki/.
-    - `app.ingest.DOCS_DIR` uses the real docs/ directory (no mock — per
-      CODING_STANDARD §6.3, we only mock the LLM, not the indexer/parser).
+    - `app.ingest.DOCS_DIR` redirected to the 3-Source hermetic fixture under
+      tests/fixtures/docs/ (per CODING_STANDARD §6.3: mock only the LLM;
+      redirect DOCS_DIR to a controlled fixture dir so the indexer/parser runs
+      against real files, not a mock, without picking up docs/fake-docs/).
 
     Returns:
         (client, tmp_wiki_path) tuple.
@@ -137,8 +145,12 @@ def client_with_fake_ingest_llm(tmp_path, monkeypatch):
 
     # Redirect wiki/ to tmp_path so written pages land in isolation
     import app.indexer as indexer_module
+    import app.ingest as ingest_module
 
     monkeypatch.setattr(indexer_module, "WIKI_DIR", tmp_path / "wiki")
+    # Redirect DOCS_DIR to the 3-Source hermetic fixture so batch-mode tests
+    # remain stable regardless of how many files live under the real docs/.
+    monkeypatch.setattr(ingest_module, "DOCS_DIR", _FIXTURE_DOCS_DIR)
 
     from app.main import app
 

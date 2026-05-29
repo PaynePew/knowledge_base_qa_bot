@@ -2,10 +2,12 @@
 
 Per-type prompt template for the ``specificity_narrowing`` Paraphrase Type (PRD #100, #102).
 
-Rule: a multi-sub-fact Gold Section answers several distinct questions; this type
-asks about ONE high-distinctiveness sub-fact only, not the section's headline
-topic. It is generatable ONLY from multi-sub-fact sections — the generator
-samples those sections exclusively (``sampling.sample_sections(..., multi_sub_fact_only=True)``).
+Rule: a Gold Section that answers several distinct questions can source this
+type; the prompt asks about ONE high-distinctiveness sub-fact only, not the
+section's headline topic. The former ``multi_sub_fact`` flag that restricted
+sampling to such sections was dropped in issue #142 — sub-fact narrowing is now
+steered by this prompt's RULE over any sampled Gold Section, and downstream by
+the Synthesizer's context-bound evolutions (PRD #137).
 Tests whether retrieval can land the right Section from a narrow, specific cue.
 """
 
@@ -30,7 +32,7 @@ ONE_SHOT = (
 
 
 def build_prompt(*, heading: str, body: str) -> str:
-    """Render the specificity_narrowing user prompt for one multi-sub-fact Gold Section."""
+    """Render the specificity_narrowing user prompt for one Gold Section."""
     return (
         f"{RULE}\n\n"
         f"Example:\n{ONE_SHOT}\n\n"
