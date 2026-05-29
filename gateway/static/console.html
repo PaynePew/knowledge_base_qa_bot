@@ -507,7 +507,6 @@ function renderImportCard(data) {
   var imported = data.imported_sources || [];
   var skipped  = data.skipped_sources  || [];
   var failed   = data.failed_sources   || [];
-  var total    = imported.length + skipped.length + failed.length;
 
   /* Summary line */
   var parts = [];
@@ -691,7 +690,6 @@ var STEP_DEFS = [
     id: "upload",
     label: "Upload",
     desc: "Stage .html / .txt / .md files into raw/ or docs/",
-    buildResult: null, /* no result outside the drop zone */
     buildBody: function(resultEl) {
       return buildUploadBody(resultEl);
     },
