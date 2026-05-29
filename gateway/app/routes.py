@@ -8,6 +8,9 @@ during the draft+verify gap), terminal error event (post-sources LLM/infra
 failure), and uniform Cannot Confirm for all five CC reasons.
 Phase 9 Slice 3 (issue #120) — RAG dispatch added; ``stack=rag`` routes to
 ``vector_rag.app.retrieval.stream_query``.
+Phase 11 Slice 1 (issue #159) — Conversation Memory tracer bullet: session
+lifecycle, Query Rewriting (Wiki turn 2+), Conversation Store write-on-done,
+``done.session`` field injection.  Sub-apps unchanged (ADR-0010).
 
 All streaming complexity lives in the per-stack ``stream_query()`` functions and
 the shared ``markdown_kb.app.sse.events_for_result()`` serializer; this module is
@@ -17,17 +20,21 @@ per stack — the generator body is identical for both (ADR-0010: gateway is the
 composition layer).  RAG sources carry ONLY citation id + heading + content (no
 score, no derived_from — issue #120); the shared serializer renders them as-is.
 
-SSE event contract (ADR-0009):
+SSE event contract (ADR-0009, extended by Phase 11):
   sources            — immediately after retrieval (real latency win)
   status{phase}      — liveness between sources and first token; LLM path only
   token(s)           — verified answer or CANNOT_CONFIRM_PHRASE; one per word
-  done{grounding:{passed,reason},filed,stack} — terminal success event (PRD #116
-                       shape; filed null for stack=rag)
+  done{grounding:{passed,reason},filed,stack,session} — terminal success event
+                       (PRD #116 shape + Phase 11 session field; filed null for
+                       stack=rag)
   error{detail,retryable}   — terminal failure when the LLM errors AFTER sources
 """
 
 from __future__ import annotations
 
+import datetime
+import json
+import uuid
 from collections.abc import Callable, Iterator
 
 from fastapi import APIRouter, HTTPException
@@ -36,6 +43,9 @@ from markdown_kb.app.retrieval import stream_query as _wiki_stream_query
 from markdown_kb.app.schemas import ChatRequest
 from markdown_kb.app.sse import encode_event, events_for_result
 from vector_rag.app.retrieval import stream_query as _rag_stream_query
+
+from . import conversation_store as _conv_store_module
+from .query_rewriting import rewrite_query
 
 router = APIRouter()
 
@@ -48,10 +58,26 @@ _STACK_STREAM_FN: dict[str, Callable[[str], Iterator[dict]]] = {
 
 
 @router.post("/chat/stream")
-def chat_stream(req: ChatRequest, stack: str = "wiki") -> StreamingResponse:
+def chat_stream(
+    req: ChatRequest,
+    stack: str = "wiki",
+    session: str | None = None,
+) -> StreamingResponse:
     """Stream a grounded answer as SSE events.
 
     Dispatches to the selected Retrieval Stack via ``_STACK_STREAM_FN``.
+
+    Phase 11 Slice 1 multi-turn additions:
+    - ``session`` query param identifies the conversation session.  Absent on
+      the first request; minted as a UUID by the Gateway; returned in
+      ``done.session``; echoed by the client on subsequent requests.
+    - Turn 1 (no prior history): query dispatched unchanged (passthrough — no
+      rewrite LLM call, preserving Phase 9 sources-first latency win).
+    - Turn 2+: ``rewrite_query`` reformulates the raw follow-up into a
+      self-contained query using the session history, then dispatches.
+    - On ``done``: the turn ``{question: rewritten, answer, stack,
+      grounding_reason, ts}`` is appended to the Conversation Store.
+    - On ``error`` (before ``done``): nothing is written to the store.
 
     SSE event order (ADR-0009 verify-then-stream):
       1. ``sources`` — emitted immediately after retrieval, before any LLM call.
@@ -65,8 +91,9 @@ def chat_stream(req: ChatRequest, stack: str = "wiki") -> StreamingResponse:
          ``{phase: "verifying"}`` — tells the UI the draft+verify step is running.
       3. ``token``(s) — words of the verified answer only (or CANNOT_CONFIRM_PHRASE
          on any CC path); no unverified draft ever reaches the stream.
-      4. ``done`` — grounding outcome (passed, reason) and optional filing status.
-         ``done.filed`` is always null for ``stack=rag`` (RAG never files).
+      4. ``done`` — grounding outcome (passed, reason), optional filing status,
+         and ``session`` id.  ``done.filed`` is always null for ``stack=rag``
+         (RAG never files).
          OR
          ``error`` — terminal failure event when the LLM/infra errors AFTER the
          sources event has been committed (HTTP 200 already sent).  Payload:
@@ -77,6 +104,8 @@ def chat_stream(req: ChatRequest, stack: str = "wiki") -> StreamingResponse:
         stack: Query param selecting the Retrieval Stack (default ``wiki``).
             ``wiki`` — Wiki BM25 stack (markdown_kb).
             ``rag``  — Vector RAG stack (vector_rag).
+        session: Optional session id.  Absent → Gateway mints a new UUID.
+            Present → Gateway continues the existing conversation.
 
     Returns:
         StreamingResponse with media_type ``text/event-stream``.
@@ -88,6 +117,19 @@ def chat_stream(req: ChatRequest, stack: str = "wiki") -> StreamingResponse:
         raise HTTPException(
             status_code=400, detail=f"Unknown stack={stack!r}. Use 'wiki' or 'rag'."
         )
+
+    # Session lifecycle: mint a new UUID when no session is supplied.
+    session_id: str = session if session else str(uuid.uuid4())
+
+    # Look up conversation history BEFORE the response starts (synchronous,
+    # no I/O — plain dict lookup in the in-memory store).
+    history = _conv_store_module.store.get_history(session_id)
+
+    # Query Rewriting: passthrough on turn 1 (empty history); rewrite on turn 2+.
+    # rewrite_query() is in gateway.app.query_rewriting — the only gateway module
+    # that imports LangChain types (CODING_STANDARD §2.4).
+    # Routes and store see only plain Python strings and dicts.
+    self_contained_query = rewrite_query(req.query, history=history)
 
     stream_fn = _STACK_STREAM_FN[stack]
 
@@ -101,20 +143,14 @@ def chat_stream(req: ChatRequest, stack: str = "wiki") -> StreamingResponse:
         This separation ensures the sources event is always emitted BEFORE
         any LLM call starts (ADR-0009 §"sources-first is real, not post-hoc").
 
-        Event emission (Slices 2+3):
-          - status{phase:"verifying"} emitted after sources, before the LLM
-            call, on the LLM path only (early_exit=False).
-          - On the LLM path, _draft_and_verify raises HTTPException on LLM/infra
-            error.  We catch it here and emit a terminal error event instead of
-            propagating (HTTP 200 is already committed; no done follows).
-          - Cannot Confirm paths (early_exit=True) always stream
-            CANNOT_CONFIRM_PHRASE — stream_query normalises index_missing to
-            CANNOT_CONFIRM_PHRASE so the token stream is uniform across all 5
-            CC reasons (done.reason still carries the specific gate).
-          - ``stream_fn`` is selected per stack via _STACK_STREAM_FN; the body
-            is identical for wiki and rag (rag never files → done.filed null).
+        Phase 11 multi-turn additions:
+          - Dispatch uses ``self_contained_query`` (rewritten or passthrough),
+            never ``req.query`` directly.
+          - On ``done``: append turn to Conversation Store; inject ``session``
+            into the ``done`` payload.
+          - On ``error`` (before ``done``): forward the error, do NOT write.
         """
-        gen = stream_fn(req.query)
+        gen = stream_fn(self_contained_query)
 
         # First yield: sources_ready partial — emit sources event only.
         partial = next(gen)
@@ -151,7 +187,7 @@ def chat_stream(req: ChatRequest, stack: str = "wiki") -> StreamingResponse:
         except HTTPException as exc:
             retryable = exc.status_code == 503
             yield encode_event("error", {"detail": exc.detail, "retryable": retryable})
-            return
+            return  # error-before-done: do NOT write to the store (AC)
         except Exception:  # noqa: BLE001 — intentional last-resort catch
             # Defense in depth (ADR-0009): HTTP 200 is already committed once the
             # sources event is sent, so ANY error during draft/verify — including
@@ -165,15 +201,41 @@ def chat_stream(req: ChatRequest, stack: str = "wiki") -> StreamingResponse:
                 "error",
                 {"detail": "Internal error while generating the answer.", "retryable": False},
             )
-            return
+            return  # error-before-done: do NOT write to the store (AC)
 
         # events_for_result emits sources + token(s) + done; we skip the
-        # sources frame here (already emitted above) and forward the rest.
-        # Pass `stack` so done.stack reflects the dispatched retrieval stack
-        # (the serializer is stack-agnostic; only the Gateway knows the stack).
+        # sources frame here (already emitted above) and forward token frames.
+        # We rebuild the done frame ourselves to inject ``session`` (Phase 11).
         all_frames = events_for_result(full_result, stack=stack)
-        # Skip the first frame (sources) — it was already sent.
-        yield from all_frames[1:]
+        # all_frames layout: [sources_frame, token_frame..., done_frame]
+        # Yield token frames (indices 1..n-1); rebuild done (index -1).
+        token_frames = all_frames[1:-1]
+        yield from token_frames
+
+        # --- Phase 11: inject session into done + append turn to store ---
+        # Parse the existing done frame to get the base payload, then add session.
+        done_frame_raw = all_frames[-1]  # e.g. "event: done\ndata: {...}\n\n"
+        done_data_line = next(
+            line for line in done_frame_raw.split("\n") if line.startswith("data: ")
+        )
+        done_payload: dict = json.loads(done_data_line[len("data: ") :])
+        done_payload["session"] = session_id
+        yield encode_event("done", done_payload)
+
+        # Append turn to the Conversation Store (only reached on normal done —
+        # error-before-done returns early above without executing this block).
+        outcome = full_result["grounding_outcome"]
+        ts = datetime.datetime.now(datetime.UTC).isoformat()
+        _conv_store_module.store.append_turn(
+            session_id,
+            {
+                "question": self_contained_query,  # rewritten or passthrough
+                "answer": full_result.get("answer", ""),
+                "stack": stack,
+                "grounding_reason": outcome.reason,
+                "ts": ts,
+            },
+        )
 
     return StreamingResponse(
         _sse_generator(),
