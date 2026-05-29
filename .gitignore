@@ -1,5 +1,11 @@
 # Built retrieval artifacts (rebuilt by POST /index). Also covers
 # .kb/faiss_index/ (Stack B's regenerable binary index, per issue #104).
+# NOTE: .kb/index.json (Wiki/BM25) and .kb/faiss_index/ (RAG) are intentionally
+# force-committed (git add -f) as the first-run/demo seed so a fresh clone can
+# answer /chat immediately without re-running ingest/index. Regenerate them with
+# the commands in README ("Rebuilding the indexes") before committing whenever
+# docs/ or wiki/ change — and rebuild the Wiki index via POST /index (NOT an eval
+# run, which clobbers .kb/index.json with a docs/-based index).
 .kb/
 
 # Phase 8 retrieval comparison (eval/paraphrase_comparison/) intermediate state.
