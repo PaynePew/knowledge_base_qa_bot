@@ -1,4 +1,4 @@
-"""Shallow module per Ousterhout. Public surface: ``load_paraphrases``, ``load_metadata``, ``write_text_atomic``, ``QUERIES_PATH``.
+"""Shallow module per Ousterhout. Public surface: ``load_paraphrases``, ``load_metadata``, ``write_text_atomic``, ``replace_atomic``, ``QUERIES_PATH``.
 
 Read/write helpers for the Phase 8 Paraphrase set and report (PRD #100).
 
@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import time
 from pathlib import Path
 
 import yaml
@@ -20,6 +21,27 @@ from .models import Paraphrase
 
 _PKG_ROOT = Path(__file__).resolve().parent
 QUERIES_PATH = _PKG_ROOT / "queries.yaml"
+
+
+def replace_atomic(
+    src: str | Path, dst: Path, *, attempts: int = 5, backoff: float = 0.1
+) -> None:
+    """``os.replace`` with a bounded retry for transient Windows file locks.
+
+    On Windows an antivirus or the Search indexer can briefly open a just-written
+    file to scan it, making ``os.replace`` raise a transient ``PermissionError``
+    (WinError 5 / 32). A short retry clears the race; a persistent failure still
+    raises (CODING_STANDARD §2.6). Zero overhead on the normal first-try success;
+    on POSIX the race does not occur so the loop runs exactly once.
+    """
+    for attempt in range(attempts):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(backoff)
 
 
 def load_paraphrases(path: Path = QUERIES_PATH) -> list[Paraphrase]:
@@ -69,7 +91,7 @@ def write_text_atomic(path: Path, content: str) -> None:
         # mode would otherwise translate "\n" to CRLF and dirty the working tree.
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(content)
-        os.replace(tmp_name, path)
+        replace_atomic(tmp_name, path)
     except Exception:
         try:
             os.unlink(tmp_name)
