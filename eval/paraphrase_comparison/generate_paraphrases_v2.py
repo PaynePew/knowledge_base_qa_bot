@@ -192,9 +192,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--per-type",
         type=int,
-        default=SynthesizerConfig.per_type_count
-        if not callable(SynthesizerConfig.per_type_count)
-        else SynthesizerConfig().per_type_count,
+        default=SynthesizerConfig().per_type_count,
         help="Core Paraphrases per type (Demo tier default: 50).",
     )
     parser.add_argument(
