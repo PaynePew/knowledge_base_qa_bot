@@ -462,3 +462,182 @@ def test_multiturn_event_order_unchanged(multiturn_client):
     # done carries session (Phase 11 addition)
     done_data = next(e for e in events if e["type"] == "done")["data"]
     assert "session" in done_data
+
+
+# ---------------------------------------------------------------------------
+# AC (Slice 4): status:rewriting ordering — turn 1 absent, turn 2+ before sources
+# ---------------------------------------------------------------------------
+
+
+def test_turn1_no_status_rewriting_event(multiturn_client):
+    """Turn 1 (no history) MUST NOT emit a status:rewriting event (turn 1 is passthrough)."""
+    resp = multiturn_client.post(
+        "/chat/stream?stack=wiki",
+        json={"query": "How long do refunds take?"},
+    )
+    assert resp.status_code == 200
+    events = _parse_sse_response(resp.text)
+    rewriting_events = [
+        e for e in events if e["type"] == "status" and e.get("data", {}).get("phase") == "rewriting"
+    ]
+    assert rewriting_events == [], f"Turn 1 must NOT emit status:rewriting; got: {rewriting_events}"
+
+
+def test_turn2_emits_status_rewriting_before_sources(indexed_wiki_corpus, monkeypatch):
+    """Turn 2+ MUST emit status:rewriting BEFORE the sources event.
+
+    The ordering is: status:rewriting → sources → status:verifying → token(s) → done.
+    This is the Phase 11 Slice 4 AC.
+    """
+    fake_llm = _FakeLLM()
+    monkeypatch.setattr(_retrieval, "_llm", fake_llm)
+    monkeypatch.setattr(_retrieval, "get_llm", lambda: fake_llm)
+    monkeypatch.setattr(
+        _retrieval.grounding_module,
+        "verify",
+        lambda draft, sections: _approved_outcome(),
+    )
+    fake_rewrite = _FakeRewriteLLM("how long do exchanges take?")
+    monkeypatch.setattr(_rewrite_module, "get_rewrite_llm", lambda: fake_rewrite)
+
+    # Seed a session with 1 prior turn so this is turn 2.
+    existing_id = str(uuid.uuid4())
+    _store_module.store.append_turn(
+        existing_id,
+        {
+            "question": "How long do refunds take?",
+            "answer": "5-7 business days.",
+            "stack": "wiki",
+            "grounding_reason": "claim_supported",
+            "ts": "2026-05-29T10:00:00Z",
+        },
+    )
+
+    from gateway.app.main import app as _gateway_app
+
+    client = TestClient(_gateway_app)
+    resp = client.post(
+        f"/chat/stream?stack=wiki&session={existing_id}",
+        json={"query": "and exchanges?"},
+    )
+    assert resp.status_code == 200
+    events = _parse_sse_response(resp.text)
+    types = [e["type"] for e in events]
+
+    # Must have a status:rewriting event
+    rewriting_indices = [
+        i
+        for i, e in enumerate(events)
+        if e["type"] == "status" and e.get("data", {}).get("phase") == "rewriting"
+    ]
+    assert rewriting_indices, f"Turn 2 must emit status:rewriting; got event types: {types}"
+
+    # status:rewriting must appear BEFORE sources
+    rewriting_idx = rewriting_indices[0]
+    sources_indices = [i for i, t in enumerate(types) if t == "sources"]
+    assert sources_indices, f"Turn 2 must emit sources; got: {types}"
+    sources_idx = sources_indices[0]
+
+    assert rewriting_idx < sources_idx, (
+        f"status:rewriting (index {rewriting_idx}) must precede sources (index {sources_idx}); "
+        f"event order: {types}"
+    )
+
+
+def test_turn2_full_event_order_with_rewriting(indexed_wiki_corpus, monkeypatch):
+    """Turn 2 full SSE event order: status:rewriting → sources → status:verifying → token(s) → done."""
+    fake_llm = _FakeLLM()
+    monkeypatch.setattr(_retrieval, "_llm", fake_llm)
+    monkeypatch.setattr(_retrieval, "get_llm", lambda: fake_llm)
+    monkeypatch.setattr(
+        _retrieval.grounding_module,
+        "verify",
+        lambda draft, sections: _approved_outcome(),
+    )
+    fake_rewrite = _FakeRewriteLLM("how long do exchanges take?")
+    monkeypatch.setattr(_rewrite_module, "get_rewrite_llm", lambda: fake_rewrite)
+
+    existing_id = str(uuid.uuid4())
+    _store_module.store.append_turn(
+        existing_id,
+        {
+            "question": "How long do refunds take?",
+            "answer": "5-7 business days.",
+            "stack": "wiki",
+            "grounding_reason": "claim_supported",
+            "ts": "2026-05-29T10:00:00Z",
+        },
+    )
+
+    from gateway.app.main import app as _gateway_app
+
+    client = TestClient(_gateway_app)
+    resp = client.post(
+        f"/chat/stream?stack=wiki&session={existing_id}",
+        json={"query": "and exchanges?"},
+    )
+    assert resp.status_code == 200
+    events = _parse_sse_response(resp.text)
+    types = [e["type"] for e in events]
+
+    # First event: status:rewriting
+    assert types[0] == "status", f"First event must be status:rewriting, got: {types}"
+    assert events[0]["data"]["phase"] == "rewriting", (
+        f"First status event must have phase=rewriting, got: {events[0]['data']}"
+    )
+    # Second event: sources
+    assert types[1] == "sources", f"Second event must be sources, got: {types}"
+    # Last event: done with session
+    assert types[-1] == "done"
+    assert "session" in events[-1]["data"]
+
+
+def test_rewrite_error_after_status_rewriting_yields_terminal_error(
+    indexed_wiki_corpus, monkeypatch
+):
+    """If rewrite_query raises after status:rewriting is committed, a terminal error event is emitted.
+
+    The store must NOT be written (consistent with error-before-done invariant).
+    """
+    fake_llm = _FakeLLM()
+    monkeypatch.setattr(_retrieval, "_llm", fake_llm)
+    monkeypatch.setattr(_retrieval, "get_llm", lambda: fake_llm)
+
+    class _ErrorRewriteLLM:
+        def with_structured_output(self, schema):
+            chain = MagicMock()
+            chain.invoke.side_effect = RuntimeError("rewrite LLM exploded")
+            return chain
+
+    monkeypatch.setattr(_rewrite_module, "get_rewrite_llm", lambda: _ErrorRewriteLLM())
+
+    existing_id = str(uuid.uuid4())
+    _store_module.store.append_turn(
+        existing_id,
+        {
+            "question": "How long do refunds take?",
+            "answer": "5-7 business days.",
+            "stack": "wiki",
+            "grounding_reason": "claim_supported",
+            "ts": "2026-05-29T10:00:00Z",
+        },
+    )
+
+    from gateway.app.main import app as _gateway_app
+
+    client = TestClient(_gateway_app)
+    resp = client.post(
+        f"/chat/stream?stack=wiki&session={existing_id}",
+        json={"query": "and exchanges?"},
+    )
+    assert resp.status_code == 200
+    events = _parse_sse_response(resp.text)
+    types = [e["type"] for e in events]
+
+    # Must have a terminal error event
+    assert "error" in types, f"Expected error event; got: {types}"
+    # Must NOT have a done event (error-before-done invariant)
+    assert "done" not in types, f"Must NOT have done after rewrite error; got: {types}"
+    # Store must still have only 1 turn (the seeded one, not a new one)
+    history = _store_module.store.get_history(existing_id)
+    assert len(history) == 1, f"Rewrite error must not write a turn; store has {len(history)} turns"
