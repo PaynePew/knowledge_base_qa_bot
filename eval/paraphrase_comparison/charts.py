@@ -34,6 +34,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402  (must follow the backend selection)
 
+from .loader import replace_atomic
 from .models import CORE_PARAPHRASE_TYPES, PROBE_PARAPHRASE_TYPES
 
 if TYPE_CHECKING:
@@ -180,14 +181,14 @@ def _diverging_delta(
 # Internal helpers
 # ---------------------------------------------------------------------------
 def _savefig_atomic(fig, path: Path) -> Path:
-    """Save ``fig`` to ``path`` via tmp + ``os.replace`` (CODING_STANDARD §2.6)."""
+    """Save ``fig`` to ``path`` via tmp + ``replace_atomic`` (CODING_STANDARD §2.6)."""
     fd, tmp_name = tempfile.mkstemp(
         dir=path.parent, suffix=".tmp", prefix=f"{path.stem}_"
     )
     os.close(fd)  # matplotlib opens the file itself; we only needed a unique name
     try:
         fig.savefig(tmp_name, format="png", dpi=120)
-        os.replace(tmp_name, path)
+        replace_atomic(tmp_name, path)
     except Exception:
         try:
             os.unlink(tmp_name)
