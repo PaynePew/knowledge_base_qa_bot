@@ -214,7 +214,7 @@ def test_ttl_default_is_30_minutes():
     assert TTL_SECONDS == 1800
 
 
-def test_ttl_evicts_idle_session(monkeypatch):
+def test_ttl_evicts_idle_session():
     """A session idle for longer than TTL is evicted; later get_history returns []."""
     # Inject a clock so we do not sleep 30 real minutes.
     fake_time = [0.0]
@@ -235,7 +235,7 @@ def test_ttl_evicts_idle_session(monkeypatch):
     assert store.get_history("sess") == []
 
 
-def test_ttl_does_not_evict_active_session(monkeypatch):
+def test_ttl_does_not_evict_active_session():
     """A session touched within TTL survives the eviction sweep."""
     fake_time = [0.0]
 
@@ -253,7 +253,7 @@ def test_ttl_does_not_evict_active_session(monkeypatch):
     assert len(store.get_history("sess")) == 1
 
 
-def test_ttl_resets_on_append(monkeypatch):
+def test_ttl_resets_on_append():
     """A new append refreshes the idle clock; the session survives a sweep that
     would have evicted it based on the old timestamp."""
     fake_time = [0.0]
@@ -277,7 +277,7 @@ def test_ttl_resets_on_append(monkeypatch):
     assert len(store.get_history("sess")) == 2
 
 
-def test_ttl_evicts_multiple_sessions_without_runtime_error(monkeypatch):
+def test_ttl_evicts_multiple_sessions_without_runtime_error():
     """AC3: The TTL sweep must NOT raise RuntimeError when multiple sessions
     are evicted in a single call (no mutation of the dict during iteration)."""
     fake_time = [0.0]
