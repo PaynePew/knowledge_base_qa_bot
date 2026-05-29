@@ -88,7 +88,7 @@ def test_different_sessions_are_isolated():
 
 
 # ---------------------------------------------------------------------------
-# Dump (Phase 10 Hot Cache seam)
+# Dump (full session-window export)
 # ---------------------------------------------------------------------------
 
 
