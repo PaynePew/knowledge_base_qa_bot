@@ -41,6 +41,11 @@ import vector_rag.app.indexer as vr_indexer  # noqa: E402
 import vector_rag.app.logger as vr_logger  # noqa: E402
 
 REAL_DOCS = Path(__file__).resolve().parents[2] / "docs"
+# 3-Source hermetic fixture: keeps tests stable regardless of docs/ growth.
+# issue #142: docs/fake-docs/ is now part of docs/, so REAL_DOCS is 20 files.
+_FIXTURE_DOCS = (
+    Path(__file__).resolve().parents[2] / "markdown_kb" / "tests" / "fixtures" / "docs"
+)
 
 
 @dataclass(frozen=True)
@@ -114,10 +119,13 @@ def fake_embeddings(monkeypatch):
 
 @pytest.fixture()
 def indexed_corpus(fake_embeddings):
-    """Build the FAISS index from the real docs/ corpus using fake embeddings.
+    """Build the FAISS index from the 3-Source hermetic fixture using fake embeddings.
 
+    Uses _FIXTURE_DOCS (tests/fixtures/docs/, 3 files) rather than REAL_DOCS
+    so the FAISS similarity results are stable regardless of how many files live
+    under docs/ (issue #142: docs/fake-docs/ is now part of docs/).
     Relies on the autouse path redirect so the persisted index lands in tmp.
     """
-    vr_indexer.build_index(REAL_DOCS)
+    vr_indexer.build_index(_FIXTURE_DOCS)
     yield
     vr_indexer.vectorstore = None

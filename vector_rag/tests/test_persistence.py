@@ -18,7 +18,7 @@ import pytest
 
 import vector_rag.app.indexer as indexer
 
-from .conftest import REAL_DOCS
+from .conftest import _FIXTURE_DOCS
 
 QUERY = "How long do refunds take?"
 
@@ -127,7 +127,9 @@ def test_save_overwrites_previous_index(indexed_corpus):
     )
 
     # Re-build against the same corpus; the dir must still be a valid, loadable index.
-    indexer.build_index(REAL_DOCS)
+    # Use _FIXTURE_DOCS (same 3-Source fixture as indexed_corpus) so file/chunk
+    # counts match first_metadata (REAL_DOCS would include docs/fake-docs/ now).
+    indexer.build_index(_FIXTURE_DOCS)
     indexer.vectorstore = None
     files, chunks = indexer.load_vector_index()
     assert files == first_metadata["files_indexed"]

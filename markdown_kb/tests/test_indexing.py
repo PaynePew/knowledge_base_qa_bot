@@ -411,16 +411,18 @@ def test_build_index_meta_files_not_in_index_json(tmp_path, monkeypatch):
 def test_write_and_load_index_json(tmp_path, monkeypatch):
     """write_index_json then load_index_json round-trips losslessly.
 
-    Uses REAL_DOCS explicitly (not the default SOURCE_DIRS) to keep this
-    test isolated from the whitelist change.
+    Uses the 3-Source hermetic fixture dir (tests/fixtures/docs/) rather than
+    the real docs/ so the count assertions remain stable regardless of how many
+    files live under docs/ (issue #142: docs/fake-docs/ is now part of docs/).
     """
     kb_dir = tmp_path / ".kb"
     index_path = kb_dir / "index.json"
 
     monkeypatch.setattr(indexer, "INDEX_PATH", index_path)
 
-    # Build from real docs explicitly (bypasses SOURCE_DIRS whitelist)
-    build_index(REAL_DOCS)
+    # Use the hermetic 3-Source fixture, not the real docs/
+    fixture_docs = Path(__file__).resolve().parent / "fixtures" / "docs"
+    build_index(fixture_docs)
 
     # Verify it's pretty-printed JSON
     assert index_path.exists(), ".kb/index.json must exist after build_index"

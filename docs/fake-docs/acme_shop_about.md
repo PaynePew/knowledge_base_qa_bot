@@ -1,6 +1,6 @@
 # Acme Shop
 
-Acme Shop is a fictional e-commerce company used as a demo fixture for the `knowledge_base_qa_bot` ingest pipeline. This file is **not part of the canonical user-facing corpus** (`docs/`) — it lives in `fake-docs/` and is scoped to ingest tests only.
+Acme Shop is a fictional e-commerce company used as a demo fixture for the `knowledge_base_qa_bot` ingest pipeline. This file lives in `docs/fake-docs/` — the unified synthetic Source pool that serves as the runtime demo KB, the Phase 8 eval corpus source, and the user-facing folder-import example (issue #142).
 
 ## Company History
 
