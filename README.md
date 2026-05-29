@@ -1,247 +1,331 @@
 # Knowledge Base Q&A Bot
 
-A grounded Q&A bot over a small Markdown knowledge base, with citations back to the original `filename#heading`. The repo holds two parallel retrieval strategies; the prototype targets the Markdown KB strategy first, with the Vector RAG app preserved for post-prototype comparison work (see [ADR-0002](project-docs/adr/0002-two-parallel-retrieval-apps.md)).
+**English** · [繁體中文](#繁體中文)
 
-## Quick start (demo)
+A grounded Q&A bot over a small Markdown knowledge base. Every answer is built
+from cited records — if the sources don't support a claim, the bot says
+*"I cannot confirm"* instead of guessing. It ships **two** retrieval stacks you
+can compare side by side: a curated **Wiki** stack (BM25), whose curated-layer
+design follows [Karpathy's LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f),
+and a **Vector RAG** stack (FAISS), both served from one browser UI.
 
-The retrieval indexes for **both** stacks ship pre-built and committed (see
-[First-run guarantee](#first-run-guarantee)), so a fresh clone answers questions
-immediately — no `ingest`/`index` step required on first run.
+## The interface
+
+**Reader** — ask a question, pick a stack, read a grounded answer.
+
+![Reader UI](project-docs/screenshots/reader.png)
+
+**Operator Console** — the curator surface: upload documents, run the build
+pipeline, and keep the knowledge base healthy.
+
+![Operator Console](project-docs/screenshots/console.png)
+
+## Quick start
+
+The retrieval indexes ship **pre-built and committed**, so a fresh clone answers
+questions immediately — no build step needed on the first run.
 
 ```bash
-# 1. Install all workspace members (single .venv at the repo root)
+# 1. Clone
+git clone https://github.com/PaynePew/knowledge_base_qa_bot.git
+cd knowledge_base_qa_bot
+
+# 2. Install (single .venv at the repo root)
 uv sync --all-packages
 
-# 2. Provide an OpenAI key — both stacks call OpenAI for the final grounded
-#    answer. A repo-root .env is loaded automatically:
-echo 'OPENAI_API_KEY=sk-...' > .env          # or: export OPENAI_API_KEY="sk-..."
+# 3. Add your OpenAI key
+cp .env.example .env        # then edit .env and set OPENAI_API_KEY=sk-...
 
-# 3. Launch the Gateway — serves the browser UI and BOTH stacks on one origin.
-#    Run from the repo root (not from inside a stack folder).
+# 4. Launch the Gateway (serves the UI and both stacks on one origin)
 uv run uvicorn gateway.app.main:app --port 8000
 ```
 
-Then open <http://localhost:8000/> and use the **Wiki / RAG toggle** to ask the
-same question against either retrieval stack. The Gateway mounts the Wiki stack
-at `/wiki`, the RAG stack at `/rag`, and exposes `POST /chat/stream` (Server-Sent
-Events, sources-first) which the UI consumes.
+Open <http://localhost:8000/> for the Reader and <http://localhost:8000/console>
+for the Console.
 
-> The Gateway is the recommended demo surface. To run a single stack on its own,
-> see [Running a single stack](#running-a-single-stack). To rebuild the indexes
-> after editing the corpus, see [Rebuilding the indexes](#rebuilding-the-indexes).
+> **Keys.** `OPENAI_API_KEY` is **required** — both stacks call OpenAI to write
+> the final answer. `ANTHROPIC_API_KEY` is **optional** and only used by the
+> evaluation's Claude judge. See [`.env.example`](.env.example).
 
-## Positioning
+## Using the Reader
 
-This is a grounded Q&A service designed for **enterprise knowledge management** — FAQ automation, policy lookup, customer-support routing — where the answers must trace back to source documents (no hallucination) and the knowledge base itself benefits from a curator-maintained synthesis layer above the immutable Sources. The prototype implements the retrieval + grounded-answer path (`/chat`); the layered architecture (ADR-0003) supports LLM-maintained synthesis pages (`/ingest`, Phase 3) and Answer Filing (`/chat` → `wiki/qa/`, Phase 6) without architectural rewrite.
+- **Ask anything** in the box (English *or* Chinese) and press Enter.
+- **Toggle Wiki / RAG** to run the same question against either retrieval stack.
+- **Sources appear first** — the records the answer is grounded in — then the
+  answer streams in below them.
+- A **grounding badge** confirms every claim traces back to a cited source; if
+  it can't, you get *"I cannot confirm"* rather than a hallucination.
+- **Follow-up questions** continue the same conversation (multi-turn).
 
-Karpathy's LLM Wiki gist and [`AgriciDaniel/claude-obsidian`](https://github.com/AgriciDaniel/claude-obsidian) are the pattern source for the curated layer's design — not the project's final form. The patterns translate to enterprise contexts: Hot Cache → session-scoped agent memory; Wiki Log → audit trail; Lint Pass → KB health audit; frontmatter `confidence`/`status` → document governance.
+Both files and questions can be in **English or Traditional/Simplified Chinese** —
+the Wiki stack tokenises CJK text and keeps Chinese answers in Chinese.
 
-For the exercise spec and verification, see [`PROMPT.md`](PROMPT.md). For the project's shared vocabulary, see [`CONTEXT.md`](CONTEXT.md). For decisions, see [`project-docs/adr/`](project-docs/adr/). For the short version of why Wiki over RAG, see [`project-docs/why-wiki.md`](project-docs/why-wiki.md).
+## Using the Console
 
-## Retrieval strategies
+The Console is where a curator grows and maintains the knowledge base. The
+**pipeline stepper** runs a file through five steps; each is a card with its own
+**Run** button.
 
-| Strategy | Folder | Core idea | Status |
-|----------|--------|-----------|--------|
-| Markdown KB | [`markdown_kb/`](markdown_kb/) | Parse Markdown headings into Sections, BM25 over a persisted Section Index | Active — prototype target |
-| Vector RAG | [`vector_rag/`](vector_rag/) | Split Markdown into chunks, embed with OpenAI, retrieve via FAISS | Active — uv workspace member, langchain 1.x; served via Gateway (Phase 9) |
+**A file's journey — Upload → Import → Ingest → Index:**
 
-A head-to-head retrieval comparison of these two strategies on the same raw corpus — per-Paraphrase-Type `hit_rate@3` and MRR, charts, a cost log, and six honest-limitation disclosures — lives in [`eval/paraphrase_comparison/report.md`](eval/paraphrase_comparison/report.md) (Phase 8).
+| Step | What it does |
+|------|--------------|
+| **Upload** | Drag-drop files. `.html` / `.txt` land in `raw/`; `.md` goes straight to `docs/`. |
+| **Import** | Convert `raw/` sources into clean Markdown in `docs/` (with provenance). |
+| **Ingest** | An LLM synthesises `docs/` Sources into curated `wiki/` pages. |
+| **Index** | Build the BM25 search index so the new content is answerable. |
 
-Both apps share a core API; the Wiki stack additionally implements the curated-layer endpoints (`/import`, `/ingest`):
+The **RAG track** (separate panel) rebuilds the vector index from `docs/`,
+independent of the Wiki chain.
 
-| Method | Endpoint | Description | Wiki | RAG |
-|--------|----------|-------------|:----:|:---:|
-| `GET` | `/health` | Liveness check | ✓ | ✓ |
-| `POST` | `/import` | Convert `raw/**/*.{html,txt}` → `docs/*.md` with provenance frontmatter | ✓ | — |
-| `POST` | `/ingest` | Synthesise `docs/*.md` Sources → curated `wiki/` pages (LLM) | ✓ | — |
-| `POST` | `/index` | Build the retrieval index (Wiki: `wiki/concepts` + `wiki/entities`; RAG: chunk + embed `docs/`) | ✓ | ✓ |
-| `POST` | `/chat` | Answer a question with grounded Sections and Citations | ✓ | ✓ |
+**When to run Lint — and what it gives you:**
 
-The Gateway (Phase 9) adds `POST /chat/stream` (SSE) for the browser UI and routes to either stack via a `?stack=wiki|rag` query param.
+Run **Lint** after editing the corpus, or periodically, to audit the knowledge
+base's health. It surfaces problems you can't see by eye — orphan pages, broken
+`[[wikilinks]]`, contradictions between pages, stale pages, and coverage gaps.
 
-After calling `POST /index`, each strategy persists its retrieval artifact under `.kb/`:
+Lint findings feed the **Curation Queue**, where you review the bot's
+auto-filed Q&A drafts — read the actual question and answer content — and either
+**Promote** a good one to a permanent page or **Discard** it. This is how
+high-quality answers get folded back into the knowledge base over time.
 
-| Strategy | Persisted artifact | Startup behavior |
-|----------|--------------------|------------------|
-| Markdown KB | `.kb/index.json` (Section Index) | Loads the index into memory on startup |
-| Vector RAG | `.kb/faiss_index/` | Loads the FAISS index into memory on startup |
+The **Resource Browser** at the bottom lets you read through `docs/`, `raw/`,
+and `wiki/` without leaving the page.
 
-Each app loads its persisted index on startup; if the artifact is missing it
-serves an **empty** index (every query returns *"I cannot confirm"*) until you
-rebuild. That is why the indexes are committed — see below.
+## Project structure
 
-### First-run guarantee
+```
+knowledge_base_qa_bot/
+├── gateway/          # Gateway app + browser UI (Reader at /, Console at /console) — start here
+├── markdown_kb/      # Wiki stack: BM25 over a curated wiki/ layer
+├── vector_rag/       # RAG stack: chunk + embed docs/ into FAISS
+├── docs/             # Sources — the bot's runtime knowledge base
+├── wiki/             # Curated layer written by Ingest (concepts, entities, filed Q&A)
+├── raw/              # Local inbox for uploaded .html/.txt before Import
+├── .kb/              # Pre-built retrieval indexes (committed demo seed)
+├── eval/             # Wiki-vs-RAG paraphrase comparison harness + report
+├── project-docs/     # ADRs, roadmap, coding standard, screenshots
+├── CONTEXT.md        # Shared vocabulary (glossary)
+└── .env.example      # Copy to .env and add your OpenAI key
+```
 
-Both retrieval artifacts under `.kb/` are committed as a demo seed, so the bot
-answers `/chat` on the very first run without `/ingest` or `/index`:
+## Evaluation: Wiki vs RAG
 
-| Stack | Committed artifact | Coverage |
-|-------|--------------------|----------|
-| Wiki (markdown_kb) | `.kb/index.json` | 60 sections — original FAQ + `fake-docs/` + Chinese `demo-zh/`, synthesised into `wiki/` |
-| Vector RAG (vector_rag) | `.kb/faiss_index/` | all 25 Sources in `docs/` (282 chunks), incl. `fake-docs/` + `demo-zh/` |
+Does a curated Wiki + BM25 out-retrieve a traditional Vector RAG pipeline on the
+**same** corpus? The harness scores both stacks across seven paraphrase types.
 
-`.kb/` stays gitignored; these two artifacts are intentionally force-added (`git
-add -f`). Rebuild and re-commit them whenever `docs/` or `wiki/` change — see
-[Rebuilding the indexes](#rebuilding-the-indexes).
+**Test set.** 260 queries over one 20-Source / ~51-Gold-Section corpus:
+**250 Core paraphrases** (5 LLM-generated rewrite types × 50) plus **10
+hand-written structural probes** (2 types × 5). A "hit" requires the retrieved
+unit to match the gold section *and* share content key-tokens, so a
+right-document-wrong-content result counts as a miss.
 
-> **Coverage note (Wiki vs RAG).** Both stacks now cover the full demo corpus —
-> the English `fake-docs/` topics (loyalty, gift cards, payments, warranty, bulk
-> orders, …) and the Chinese `demo-zh/退款政策.md`. RAG indexes the *raw* `docs/`
-> chunks; Wiki answers from the curated `wiki/` concept/entity pages synthesised
-> by `/ingest`.
->
-> One nuance: a few minimal original docs (`account_help`, `refund_policy`,
-> `shipping_faq`) overlap with the richer `fake-docs/` on topics like
-> cancellation and shipping, and state *different* facts (e.g. cancel window
-> 24h vs 1–2h). To keep the Wiki stack from surfacing contradictory sources (the
-> grounding check would refuse, returning *"I cannot confirm"*), the original
-> concepts are kept canonical for those overlapping topics and the duplicate
-> `fake-docs/` concepts were dropped at ingest time. Fake-docs-unique topics and
-> the Chinese concepts are fully indexed.
+**Cross-platform L2 check.** The deterministic metric's edge-case verdicts are
+re-judged by a *different model family* — **Claude (`claude-sonnet-4-6`)**, not
+the OpenAI family that powers RAG's embeddings — so the second opinion shares no
+blind spot with the stack it checks. 207 ambiguous items were re-judged.
 
-## Running a single stack
+**Statistical honesty.** On the Core types, no per-type difference reaches
+statistical significance after a paired McNemar test with Holm correction. The
+structural probes are only **n=5 each** — too small to support any statistical
+inference — so they are reported as descriptive *expected-limit confirmation*,
+never averaged into a headline number.
 
-Dependencies are managed with [uv](https://docs.astral.sh/uv/) (single `.venv/` at the repo root, single `uv.lock`). See [`pyproject.toml`](pyproject.toml) for the workspace layout. The [Gateway](#quick-start-demo) is the usual entry point; to exercise one stack directly:
+**What the results show:**
+
+- **Synonym misses (Wiki's weak spot).** When a query uses vocabulary absent
+  from the source, keyword BM25 can miss where vector similarity matches:
+  synonym_swap Wiki 0.90 vs RAG 0.94, with the unseen-jargon probe the extreme
+  (Wiki 0.40 vs RAG 1.00).
+- **Semantic false positives (RAG's weak spot).** The metric scores a "hit" when
+  RAG returns the right document with only weak content overlap; the cross-family
+  Claude judge localised exactly these correct-id / weak-content hits, which
+  flatter RAG's raw numbers.
+- **Citation quality (Wiki's structural edge).** Wiki cites a stable
+  `filename#heading` with `sources:` provenance that is grounding-checked at
+  ingest; RAG cites raw chunks by similarity score, usually losing section
+  boundaries.
+
+**How they should perform, objectively** ([`why-wiki.md`](project-docs/why-wiki.md)).
+The two differ in *when* synthesis happens — Wiki synthesises once at ingest (a
+compounding, auditable artifact); RAG re-derives every query from raw chunks. The
+expected verdict is therefore scale-dependent: **under ~1000 pages → Wiki**
+(cheap index navigation, zero per-query embedding cost, structured provenance);
+**over ~100K pages → RAG** (the index outgrows full-scan navigation); **in
+between → hybrid**. This corpus sits squarely in Wiki's regime — which is exactly
+what the data shows: a statistical near-tie that Wiki reaches with simpler,
+cheaper, more auditable machinery.
+
+![Close on natural paraphrases](eval/paraphrase_comparison/charts/core_hit_rate_at_3.png)
+
+![Probes expose each architecture's limit](eval/paraphrase_comparison/charts/probes_hit_rate_at_3.png)
+
+Full methodology, statistical tests, cost log, and honest limitations are in
+[`eval/paraphrase_comparison/report.md`](eval/paraphrase_comparison/report.md).
+
+## Deep dive
+
+- [`CONTEXT.md`](CONTEXT.md) — the project's shared vocabulary.
+- [`PROMPT.md`](PROMPT.md) — the exercise spec and design answers.
+- [`project-docs/adr/`](project-docs/adr/) — architectural decisions.
+- [`project-docs/roadmap.md`](project-docs/roadmap.md) — the full implementation sequence.
+
+---
+
+# 繁體中文
+
+[English](#knowledge-base-qa-bot) · **繁體中文**
+
+一個建立在小型 Markdown 知識庫之上的「有根據」問答機器人。每個答案都由引用的
+來源組成——如果來源無法支持某個說法,機器人會回答 *"I cannot confirm"*,而不是
+亂猜。它內建**兩套**可並排比較的檢索引擎:精選的 **Wiki** 引擎(BM25,其精選層
+設計參考 [Karpathy 的 LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f))
+與 **Vector RAG** 引擎(FAISS),兩者由同一個瀏覽器介面提供服務。
+
+## 介面
+
+**Reader(閱讀端)**——輸入問題、選擇引擎、讀取有根據的答案。
+
+![Reader 介面](project-docs/screenshots/reader.png)
+
+**Operator Console(操作主控台)**——策展人的介面:上傳文件、執行建置流程、
+維護知識庫的健康度。
+
+![Operator Console](project-docs/screenshots/console.png)
+
+## 快速開始
+
+檢索索引已**預先建好並提交**,所以剛 clone 下來就能立刻問答——第一次執行
+不需要任何建置步驟。
 
 ```bash
-# Wiki stack (markdown_kb) — relative imports require running from markdown_kb/
-cd markdown_kb
-export OPENAI_API_KEY="sk-..."
-export KB_SCORE_THRESHOLD="0.5"    # optional; default 0.5
-uv run uvicorn app.main:app --reload --port 8000
+# 1. Clone
+git clone https://github.com/PaynePew/knowledge_base_qa_bot.git
+cd knowledge_base_qa_bot
 
-# RAG stack (vector_rag) — run from the repo root so markdown_kb resolves
-export OPENAI_API_KEY="sk-..."
-uv run uvicorn vector_rag.app.main:app --reload --port 8001
+# 2. 安裝(repo 根目錄共用一個 .venv)
+uv sync --all-packages
+
+# 3. 設定你的 OpenAI key
+cp .env.example .env        # 接著編輯 .env,填入 OPENAI_API_KEY=sk-...
+
+# 4. 啟動 Gateway(同一個來源同時提供 UI 與兩套引擎)
+uv run uvicorn gateway.app.main:app --port 8000
 ```
 
-Each stack exposes the shared API (`/health`, `/index`, `/chat`; the Wiki stack adds `/import` and `/ingest`) directly at its own root, e.g. `curl -X POST http://localhost:8000/chat -d '{"query":"..."}'`. Run the curl verification cases listed in [`PROMPT.md`](PROMPT.md).
+開啟 <http://localhost:8000/> 進入 Reader,或 <http://localhost:8000/console>
+進入 Console。
 
-Run the tests from the repo root (collects every workspace member's suite):
+> **關於 key。** `OPENAI_API_KEY` 是**必填**——兩套引擎都會呼叫 OpenAI 來產生
+> 最終答案。`ANTHROPIC_API_KEY` 是**選填**,只有評測用的 Claude judge 會用到。
+> 詳見 [`.env.example`](.env.example)。
 
-```bash
-uv run pytest                       # default: skips live OpenAI tests
-uv run pytest -m live               # opt-in: real OpenAI API calls
-```
+## 操作 Reader
 
-### Multi-format import demo (Phase 7)
+- 在輸入框**輸入任何問題**(英文**或**中文),按 Enter。
+- **切換 Wiki / RAG**,用同一個問題去問兩套不同的檢索引擎。
+- **來源會先出現**——也就是答案所依據的記錄——接著答案會在下方逐字串流出現。
+- **grounding 標章**會確認每個說法都能追溯到引用來源;若無法,你會看到
+  *"I cannot confirm"*,而不是幻覺式的答案。
+- **後續追問**會延續同一段對話(多輪)。
 
-Drop HTML or plain-text files into `raw/` (gitignored local inbox) and run
-`POST /import` to convert them to Markdown docs before ingesting:
+檔案與問題都可以是**英文或繁/簡中文**——Wiki 引擎會對中文做 CJK 斷詞,並讓
+中文的答案維持中文。
 
-```bash
-# Copy the example files into the local raw/ inbox
-cp examples/raw/*.html raw/
-cp examples/raw/*.txt raw/
+## 操作 Console
 
-# Convert raw sources to docs/
-curl -s -X POST http://localhost:8000/import | jq .
+Console 是策展人擴充與維護知識庫的地方。**流程步驟器(pipeline stepper)**
+會讓一份檔案走過五個步驟,每個步驟都是一張卡片,各有自己的 **Run** 按鈕。
 
-# Single-file mode: import only one source
-curl -s -X POST http://localhost:8000/import \
-  -H "Content-Type: application/json" \
-  -d '{"source": "clean_article.html"}' | jq .
+**一份檔案的旅程 —— Upload → Import → Ingest → Index:**
 
-# Then run the full pipeline to make the content queryable
-curl -s -X POST http://localhost:8000/ingest | jq .
-curl -s -X POST http://localhost:8000/index | jq .
-curl -s -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{"query": "What is the refund policy?"}' | jq .
-```
+| 步驟 | 做什麼 |
+|------|--------|
+| **Upload** | 拖放檔案。`.html` / `.txt` 進入 `raw/`;`.md` 直接進入 `docs/`。 |
+| **Import** | 把 `raw/` 的來源轉成乾淨的 Markdown 放進 `docs/`(含出處)。 |
+| **Ingest** | 由 LLM 把 `docs/` 的 Sources 合成為精選的 `wiki/` 頁面。 |
+| **Index** | 建立 BM25 搜尋索引,讓新內容可被問答。 |
 
-The `raw/` directory is gitignored — place your own HTML exports or text files
-there. The `examples/raw/` directory contains sample files you can copy in to
-try the pipeline immediately.
+**RAG track**(獨立面板)會從 `docs/` 重建向量索引,與 Wiki 流程互不相干。
 
-> `vector_rag/` is a uv workspace member running langchain 1.x (migrated in Phase 8). Run `uv sync --all-packages` from the repo root to install all workspace members together.
+**什麼時候該跑 Lint —— 它能幫你什麼:**
 
-## Rebuilding the indexes
+在編輯語料之後、或定期執行 **Lint** 來稽核知識庫的健康度。它會找出肉眼看不到的
+問題——孤立頁面(orphan)、壞掉的 `[[wikilink]]`、頁面之間的矛盾、過時頁面、
+以及涵蓋缺口(coverage gap)。
 
-`.kb/` is regenerable. Rebuild and re-commit after editing `docs/` (RAG + Wiki
-Sources) or `wiki/` (the Wiki curated layer). With the Gateway running on `:8000`:
+Lint 的結果會餵進 **Curation Queue(策展佇列)**,你可以在這裡檢視機器人自動
+歸檔的 Q&A 草稿——直接看到實際的問題與答案內容——然後把好的**升級(Promote)**
+成永久頁面,或**捨棄(Discard)**。這就是高品質答案逐步被收回知識庫的方式。
 
-```bash
-# (optional) regenerate the curated Wiki layer from docs/ first — LLM synthesis
-# that rewrites wiki/concepts/. Skip this to keep the existing curated pages.
-curl -s -X POST http://localhost:8000/wiki/ingest | jq .
+頁面底部的 **Resource Browser** 讓你不離開頁面就能瀏覽 `docs/`、`raw/`、`wiki/`。
 
-# Wiki BM25 index  -> .kb/index.json   (local; no embeddings, no key needed)
-curl -s -X POST http://localhost:8000/wiki/index | jq .
-
-# RAG FAISS index  -> .kb/faiss_index/ (re-embeds docs/ via OpenAI; key required)
-curl -s -X POST http://localhost:8000/rag/index | jq .
-
-# Persist the demo seed (these paths are gitignored, so force-add)
-git add -f .kb/index.json .kb/faiss_index/
-git commit -m "chore: rebuild .kb demo seed"
-```
-
-> **Rebuild the Wiki index via `POST /wiki/index`, never from an eval run.** The
-> [`eval/paraphrase_comparison/`](eval/paraphrase_comparison/) harness builds a
-> *`docs/`-based* index for its own comparison and overwrites `.kb/index.json`
-> with ~76 raw-doc sections. If that snapshot is committed by mistake, the Wiki
-> stack retrieves over the wrong layer (raw docs instead of the 9 curated
-> concepts). After any eval run, re-run `POST /wiki/index` before committing.
-
-## Prerequisites
-
-Both apps call OpenAI for the final grounded answer (`/chat`), so an
-`OPENAI_API_KEY` is required to answer questions on either stack:
-
-```bash
-export OPENAI_API_KEY="sk-..."     # or put it in a repo-root .env (auto-loaded)
-```
-
-| Stack | Needs OpenAI for answering (`/chat`) | Needs OpenAI for indexing (`/index`) |
-|-------|--------------------------------------|--------------------------------------|
-| Wiki (markdown_kb) | yes | no — BM25 is local |
-| Vector RAG (vector_rag) | yes | yes — uses `text-embedding-3-small` |
-
-Because both indexes ship pre-built, you only need the key for indexing when you
-[rebuild](#rebuilding-the-indexes) (and the RAG rebuild is the only step that
-spends embedding tokens).
-
-## Layout
+## 專案結構
 
 ```
-/
-├── CLAUDE.md                  ← agent-skill configuration
-├── CONTEXT.md                 ← shared vocabulary (glossary)
-├── PROMPT.md                  ← exercise spec + design answers + verification
-├── README.md                  ← this file
-├── docs/                      ← Sources (the bot's runtime knowledge base)
-├── wiki/                      ← generated/curated wiki layer (see wiki/README.md)
-├── .kb/                       ← committed demo seed: index.json (Wiki) + faiss_index/ (RAG)
-├── project-docs/
-│   ├── adr/                   ← architectural decisions
-│   └── agents/                ← issue-tracker, triage-labels, domain docs
-├── gateway/                   ← Gateway app + browser UI (mounts both stacks; demo entry point)
-├── markdown_kb/               ← Wiki retrieval app (BM25 + Section Index)
-└── vector_rag/                ← RAG retrieval app (langchain 1.x, FAISS over docs/)
+knowledge_base_qa_bot/
+├── gateway/          # Gateway 應用 + 瀏覽器 UI(Reader 在 /,Console 在 /console)——從這裡開始
+├── markdown_kb/      # Wiki 引擎:在精選的 wiki/ 層上做 BM25
+├── vector_rag/       # RAG 引擎:把 docs/ 切塊並嵌入 FAISS
+├── docs/             # Sources——機器人執行時的知識庫
+├── wiki/             # Ingest 寫出的精選層(concepts、entities、歸檔 Q&A)
+├── raw/              # 上傳的 .html/.txt 在 Import 前的本機收件匣
+├── .kb/              # 預先建好的檢索索引(提交進 repo 的 demo 種子)
+├── eval/             # Wiki-vs-RAG 改寫比較工具 + 報告
+├── project-docs/     # ADR、roadmap、coding standard、screenshots
+├── CONTEXT.md        # 共用詞彙表(glossary)
+└── .env.example      # 複製成 .env 並填入你的 OpenAI key
 ```
 
-## Stretch goals
+## 評測:Wiki vs RAG
 
-The following stretch goals from `PROMPT.md` are described here for orientation.
+在**相同**語料下,精選 Wiki + BM25 的檢索能不能勝過傳統的 Vector RAG?這個工具
+會針對七種改寫類型為兩套引擎評分。
 
-- **Score threshold and Cannot Confirm fallback** — already part of the core design (see [ADR-0001](project-docs/adr/0001-strict-grounded-answers.md)).
-- **Output validation (Grounding Check)** — **done** (Phase 1). A second structured LLM call after the draft answer verifies every claim traces back to a cited Section. Design locked in [ADR-0004](project-docs/adr/0004-post-llm-grounding-check.md).
-- **Wiki Index generation** — **done** (Phase 2). Emits `wiki/index.md` from the Section Index so humans and agents can browse topics without calling the API.
-- **Answer Filing** — **done** (Phase 6). High-confidence `/chat` answers are written back to `wiki/qa/*.md`, closing the Two-output rule on the query side.
-- **Paraphrase comparison** — **done** (Phase 8). Head-to-head retrieval comparison (`hit_rate@3`, MRR) of Markdown KB vs Vector RAG across seven paraphrase types. Report in [`eval/paraphrase_comparison/report.md`](eval/paraphrase_comparison/report.md).
-- **Streaming interface** (`POST /chat/stream` via SSE) — **in progress** (Phase 9, [#116](https://github.com/PaynePew/knowledge_base_qa_bot/issues/116)).
-- **Browser UI** showing retrieved Sections before the streamed answer — **in progress** (Phase 9, [#116](https://github.com/PaynePew/knowledge_base_qa_bot/issues/116)).
-- **Multi-format import** (`.txt` / `.html` → canonical Markdown in `docs/`) — **done** (Phase 7). `POST /import` converts `raw/**/*.{html,txt}` to `docs/*.md` with provenance frontmatter.
-- **Conversation memory** — deferred until real multi-turn usage demand emerges (Phase 11).
-- **Alternative interfaces** (CLI, MCP server, web UI) — deferred; adoption trigger: concrete downstream consumer with interface requirements (Phase 12).
+**測試資料量。** 在一份 20-Source / 約 51 個 Gold Section 的語料上,共 260 筆
+查詢:**250 筆 Core 改寫**(5 種 LLM 生成的改寫類型 × 50)加上 **10 筆手寫的
+結構性探針**(2 種 × 5)。「命中(hit)」必須是檢索結果的來源符合 gold section
+**且**內容共享關鍵詞,所以「文件對、內容不對」算未命中。
 
-## Roadmap
+**跨平台 L2 檢核。** 確定性指標在邊界情況的判定,會由**另一個模型家族**重新評判
+——**Claude(`claude-sonnet-4-6`)**,而非驅動 RAG 嵌入的 OpenAI 家族——因此這個
+第二意見與它所檢核的引擎沒有共同盲點。共重新評判了 207 筆模稜兩可的項目。
 
-For the full multi-phase implementation sequence, dependencies, effort estimates, and interview-ready stopping points, see [`project-docs/roadmap.md`](project-docs/roadmap.md).
+**統計上的誠實。** 在 Core 類型上,經過配對 McNemar 檢定 + Holm 校正後,**沒有
+任何一種類型的差異達到統計顯著**。結構性探針每種只有 **n=5**——數量太少,
+無法支撐任何統計推論——所以它們僅作為描述性的「**預期極限驗證**」呈現,絕不併入
+任何頭條數字。
 
-**Done:** Prototype · Phase 1 (Grounding Check) · Phase 2 (Wiki Index Generation) · Phase 3 (`/ingest`) · Phase 4 (W2 layered retrieval) · Phase 5 (`/lint`) · Phase 6 (Answer Filing) · Phase 7 (Multi-format import) · Phase 8 (Paraphrase Comparison).
+**測試結果顯示:**
 
-**In progress:** Phase 9 (Streaming + Browser UI — [#116](https://github.com/PaynePew/knowledge_base_qa_bot/issues/116)).
+- **同義詞未命中(Wiki 的弱點)。** 當查詢使用了來源中沒有出現過的詞彙,關鍵詞
+  BM25 可能漏掉、而向量相似度能命中:synonym_swap Wiki 0.90 vs RAG 0.94,而
+  「沒見過的行話」探針是極端例子(Wiki 0.40 vs RAG 1.00)。
+- **語意上的偽陽性(RAG 的弱點)。** 當 RAG 回傳了正確文件但內容僅有微弱重疊時,
+  指標仍記為「命中」;跨家族的 Claude judge 正好定位出這些「id 對、內容弱」的
+  命中,它們會美化 RAG 的原始數字。
+- **引用品質(Wiki 的結構性優勢)。** Wiki 引用穩定的 `filename#heading`,並帶有
+  在 ingest 時做過 grounding 檢查的 `sources:` 出處;RAG 則以相似度分數引用原始
+  chunk,通常會遺失章節邊界。
 
-**⭐ Recommended stopping point:** Phase 5 (`/lint`), which closes the Karpathy Ingest + Query + Lint trio. See [`project-docs/roadmap.md`](project-docs/roadmap.md) for the full sequence.
+**客觀上兩者應該如何表現**([`why-wiki.md`](project-docs/why-wiki.md))。兩者的
+差別在於**合成發生的時機**——Wiki 在 ingest 時合成一次(形成可稽核、會累積的
+產物);RAG 則在每次查詢時從原始 chunk 重新推導。因此預期的結論取決於規模:
+**約 1000 頁以下 → Wiki**(索引導覽便宜、每次查詢零嵌入成本、出處結構化);
+**約 10 萬頁以上 → RAG**(索引大到無法全掃導覽);**兩者之間 → 混合**。這份語料
+正好落在 Wiki 的範圍——而這正是數據所顯示的:在統計上幾乎打平,但 Wiki 用更簡單、
+更便宜、更可稽核的機制就達到了。
+
+![自然改寫上相當接近](eval/paraphrase_comparison/charts/core_hit_rate_at_3.png)
+
+![探針暴露各自架構的極限](eval/paraphrase_comparison/charts/probes_hit_rate_at_3.png)
+
+完整的方法、統計檢定、成本紀錄與誠實的限制說明,都在
+[`eval/paraphrase_comparison/report.md`](eval/paraphrase_comparison/report.md)。
+
+## 深入閱讀
+
+- [`CONTEXT.md`](CONTEXT.md) —— 專案的共用詞彙表。
+- [`PROMPT.md`](PROMPT.md) —— 題目規格與設計解答。
+- [`project-docs/adr/`](project-docs/adr/) —— 架構決策(ADR)。
+- [`project-docs/roadmap.md`](project-docs/roadmap.md) —— 完整的實作順序。
