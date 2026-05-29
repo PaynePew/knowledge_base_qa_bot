@@ -33,8 +33,10 @@ PROD_LOG = REPO_ROOT / "wiki" / "log.md"
 
 def test_queries_yaml_holds_full_seven_type_set():
     paraphrases = load_paraphrases()
-    # Full Slice 2 set: ~39-54 Paraphrases across all seven types.
-    assert 39 <= len(paraphrases) <= 54
+    # Demo-tier set (issue #145): ~50 per Core type + ~5 per probe type (~260).
+    # Assert a floor + all types present, not a brittle exact range, so the test
+    # survives regeneration at different --per-type sizes.
+    assert len(paraphrases) >= 35
     assert {p.paraphrase_type for p in paraphrases} == set(PARAPHRASE_TYPES)
     ids = [p.paraphrase_id for p in paraphrases]
     assert len(ids) == len(set(ids)), "paraphrase_id must be unique"
@@ -101,7 +103,9 @@ def test_both_stacks_run_in_process_and_return_resolved_docs_ids(fake_vector_ind
     stacks.index_stack_a()
     stacks.index_stack_b()
 
-    para = next(p for p in load_paraphrases() if p.paraphrase_id == "synonym_swap-005")
+    # Pick any synonym_swap Paraphrase by TYPE (not a hard-coded id) so the test
+    # survives regeneration, which re-assigns paraphrase_ids (issue #145).
+    para = next(p for p in load_paraphrases() if p.paraphrase_type == "synonym_swap")
     a_items = stacks.stack_a_retrieval(para.text, k=3)
     b_items = stacks.stack_b_retrieval(para.text, k=3)
 
