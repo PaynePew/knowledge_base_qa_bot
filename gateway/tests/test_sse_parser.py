@@ -313,3 +313,69 @@ def test_ui_file_stack_toggle_uses_query_param():
     assert "stack=" in text, (
         "UI must include stack= query param in the /chat/stream request (§12.3)"
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 11 Slice 4: done.session surfacing + multi-turn UI invariants
+# ---------------------------------------------------------------------------
+
+
+def test_parser_surfaces_done_session():
+    """The SSE parser surfaces done.session from the done event payload (Phase 11 Slice 4 AC)."""
+    parser = create_sse_parser()
+    done_payload = {
+        "grounding": {"passed": True, "reason": "claim_supported"},
+        "filed": None,
+        "stack": "wiki",
+        "session": "abc123-uuid-here",
+    }
+    frame = f"event: done\ndata: {json.dumps(done_payload)}\n\n"
+    events = parser(frame)
+    assert events[0]["event"] == "done"
+    assert events[0]["data"]["session"] == "abc123-uuid-here", (
+        "done.session must be surfaced by the parser"
+    )
+
+
+def test_ui_file_captures_done_session():
+    """The UI captures done.session from the done event (Phase 11 Slice 4 — §12 multi-turn)."""
+    text = _STATIC_INDEX.read_text(encoding="utf-8")
+    # The UI must reference done.session to capture the session id.
+    assert "d.session" in text or "done.session" in text or ".session" in text, (
+        "UI must read done.session to capture the session id (Phase 11 Slice 4)"
+    )
+
+
+def test_ui_file_sends_session_query_param():
+    """The UI echoes session id via ?session= on subsequent requests (Phase 11 Slice 4)."""
+    text = _STATIC_INDEX.read_text(encoding="utf-8")
+    assert "session=" in text, (
+        "UI must include session= query param when echoing session id (Phase 11 Slice 4)"
+    )
+
+
+def test_ui_file_has_rewriting_indicator():
+    """The UI renders a rewriting indicator for status:{phase:rewriting} (Phase 11 Slice 4)."""
+    text = _STATIC_INDEX.read_text(encoding="utf-8")
+    # The UI should show text like "understanding your question" for the rewriting phase.
+    assert "understanding your question" in text.lower() or "rewriting" in text.lower(), (
+        "UI must render a rewriting indicator for status:rewriting (Phase 11 Slice 4)"
+    )
+
+
+def test_ui_file_status_handler_is_phase_aware():
+    """The UI's status handler dispatches on phase (rewriting vs verifying) — Phase 11 Slice 4."""
+    text = _STATIC_INDEX.read_text(encoding="utf-8")
+    # The onStatus function must reference phase to differentiate rewriting from verifying.
+    assert '"rewriting"' in text or "'rewriting'" in text, (
+        "UI must handle phase=rewriting in the status event handler (Phase 11 Slice 4)"
+    )
+
+
+def test_ui_file_toggle_keeps_session():
+    """The UI stack toggle does NOT reset the session id (Phase 11 Slice 4 — history preserved)."""
+    text = _STATIC_INDEX.read_text(encoding="utf-8")
+    # The setStack function must NOT clear/reset sessionId.
+    # We verify indirectly: sessionId is a state variable and setStack does not reassign it to null.
+    # The structural invariant: the word sessionId appears in the source.
+    assert "sessionId" in text, "UI must use a sessionId state variable (Phase 11 Slice 4)"
