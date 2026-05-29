@@ -255,17 +255,24 @@ def import_sources(source_filter: str | None) -> ImportBatchResult:
 
 
 def _collect_batch_sources() -> list[Path]:
-    """Glob raw/**/*.{html,txt} recursively.
+    """Glob raw/**/*.{html,txt,md} recursively.
 
     Returns all matching absolute Paths. Unsupported extensions are silently
     skipped (per PRD #89 §23 batch mode semantics).
+
+    The committed ``raw/README.md`` inbox marker is excluded: it documents the
+    inbox and is the sole gitignore exception in ``raw/`` (see that file), not
+    user-dropped content. Importing it would also clobber/collide with the
+    hand-authored ``docs/README.md``, so every batch run would otherwise report
+    a spurious HandAuthoredCollision.
     """
     sources: list[Path] = []
     if not RAW_DIR.exists():
         return sources
     for ext in (".html", ".txt", ".md"):
         sources.extend(RAW_DIR.glob(f"**/*{ext}"))
-    return sources
+    inbox_marker = RAW_DIR / "README.md"
+    return [p for p in sources if p != inbox_marker]
 
 
 def _validate_filename(basename: str, raw_path_str: str) -> ImportFailure | None:
@@ -482,7 +489,7 @@ def _process_one_source(
     seen_docs_basenames[docs_basename] = str(raw_path)
 
     # HandAuthoredCollision: docs target exists without imported_from frontmatter
-    hand_collision = _check_hand_authored_collision(docs_path)
+    hand_collision = _check_hand_authored_collision(raw_path, docs_path)
     if hand_collision is not None:
         result.failed_sources.append(hand_collision)
         _emit_import_error(hand_collision)
@@ -623,11 +630,15 @@ def _process_one_source(
     )
 
 
-def _check_hand_authored_collision(docs_path: Path) -> ImportFailure | None:
+def _check_hand_authored_collision(raw_path: Path, docs_path: Path) -> ImportFailure | None:
     """Return ImportFailure if docs_path exists without ``imported_from`` frontmatter.
 
     A docs file that lacks ``imported_from`` is assumed to be hand-authored.
     Overwriting it would destroy curator work, so the import is refused.
+
+    ``raw_path`` is the source being imported; it populates ``ImportFailure.raw_path``
+    so the failure points at the source the curator dropped (the actionable file),
+    while the protected docs target is named in the message.
     """
     if not docs_path.exists():
         return None
@@ -636,22 +647,23 @@ def _check_hand_authored_collision(docs_path: Path) -> ImportFailure | None:
     except OSError:
         # If we can't read it, play it safe and refuse to overwrite.
         return ImportFailure(
-            raw_path=str(docs_path),
+            raw_path=str(raw_path),
             error_type="HandAuthoredCollision",
-            error_message=f"Could not read existing docs file to check provenance: {docs_path.name}"[
-                :200
-            ],
+            error_message=(
+                f"Cannot import {raw_path.name}: existing docs/{docs_path.name} is "
+                f"unreadable, refusing to overwrite"
+            )[:200],
         )
     # Check for imported_from in the YAML frontmatter block
     if content.startswith("---\n") and "imported_from:" in content:
         # Has provenance — safe to overwrite (existing import, not hand-authored)
         return None
     return ImportFailure(
-        raw_path=str(docs_path),
+        raw_path=str(raw_path),
         error_type="HandAuthoredCollision",
         error_message=(
-            f"Docs file exists without 'imported_from' frontmatter (hand-authored?): "
-            f"{docs_path.name}"
+            f"Cannot import {raw_path.name}: target docs/{docs_path.name} exists "
+            f"without 'imported_from' frontmatter (hand-authored?)"
         )[:200],
     )
 
