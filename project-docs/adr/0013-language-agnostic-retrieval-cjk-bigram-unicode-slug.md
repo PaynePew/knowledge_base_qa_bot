@@ -8,7 +8,7 @@ Phase 16 makes `markdown_kb`'s BM25 pipeline work for non-Latin corpora without 
 
 `tokenize()` (in `markdown_kb/app/indexer.py`) is extended to detect CJK Unified Ideograph runs (U+4E00–U+9FFF, Extension A, Extension B, Compatibility Ideographs). CJK runs are tokenised as **sliding character bigrams** with a **unigram fallback** for length-1 runs (so single-character queries like `錢` are never silently dropped). All other text (Latin, digits, punctuation) continues to use the existing `TOKEN_RE`/`STOP_WORDS` path unchanged.
 
-**Invariant: pure-ASCII input produces a byte-identical token list to the pre-Phase-16 implementation.** The new CJK branch only triggers on codepoints > 127; characters ≤ 127 are entirely handled by the legacy path. This guarantees English BM25 scores, `KB_SCORE_THRESHOLD`, and the Phase 8 paraphrase-comparison baseline are unaffected by the change.
+The new CJK branch only triggers on codepoints > 127; characters ≤ 127 are entirely handled by the legacy path, so pure-ASCII input tokenises byte-identically to the pre-Phase-16 implementation (tagged as an **Invariant** under [Consequences](#consequences)). This guarantees English BM25 scores, `KB_SCORE_THRESHOLD`, and the Phase 8 paraphrase-comparison baseline are unaffected by the change.
 
 ### Slug generator: Unicode-preserving
 
@@ -16,7 +16,7 @@ Phase 16 makes `markdown_kb`'s BM25 pipeline work for non-Latin corpora without 
 
 This follows the GitHub/Obsidian Unicode anchor convention: `## 退款政策` → `退款政策`, making Citations human-readable and clickable in both platforms. The `-2`/`-3` collision suffix for duplicate slugs is retained unchanged.
 
-**Invariant: pure-ASCII input produces byte-identical output to `re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")`.** The Unicode letter path only activates for codepoints > 127.
+The Unicode letter path only activates for codepoints > 127, so pure-ASCII input produces byte-identical output to `re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")` (tagged as an **Invariant** under [Consequences](#consequences)).
 
 ### Single mixed Section Index — no per-language partition
 
@@ -43,6 +43,8 @@ Retained only as a **fallback** for length-1 CJK runs (single-character queries)
 
 ## Consequences
 
+- **Invariant**: `tokenize()` (`markdown_kb/app/indexer.py`) — pure-ASCII input produces a byte-identical token list to the pre-Phase-16 implementation; the CJK branch fires only on codepoints > 127. English BM25 scores, `KB_SCORE_THRESHOLD`, and the Phase 8 paraphrase-comparison baseline are therefore unaffected. A change that breaks this requires a superseding ADR (§2.5).
+- **Invariant**: `slugify()` (same module) — pure-ASCII input produces byte-identical output to `re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")`; the Unicode-letter path activates only on codepoints > 127.
 - **Re-index required** after the tokeniser change: the persisted `.kb/index.json` snapshot encodes the token list per Section; existing indexes built with the old ASCII-only `TOKEN_RE` are not compatible with the new bigram tokens for any non-ASCII section. Operators must re-run `POST /index` after upgrading.
 - **BM25 segregates languages.** A Chinese query structurally cannot match English-only Sections (disjoint tokens), and vice versa. This is the expected and documented behaviour for the Wiki/BM25 stack. Vector RAG blends languages naturally via its multilingual embedding space — that contrast is a deliberate architectural talking point (see Phase 8 paraphrase comparison).
 - **Chinese stop-word handling is deferred.** BM25 IDF already down-weights high-frequency tokens; bigram tokenisation produces different high-frequency tokens than unigram would. Function-word noise should be assessed from real Chinese usage before committing to a stop set. Tracking issue deferred.
