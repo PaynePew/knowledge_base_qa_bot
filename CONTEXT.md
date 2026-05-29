@@ -141,6 +141,14 @@ _Avoid_: Q&A page (collides casually with "Q&A bot" — the product), Saved answ
 The single-origin parent app that fronts both Retrieval Stacks. Mounts `markdown_kb` and `vector_rag` as sub-apps, serves the browser UI, and exposes one `POST /chat/stream?stack=wiki|rag` that dispatches to the selected Stack. The designated home for cross-stack and session-scoped concerns: the Retrieval Stack toggle (Phase 9) and Conversation Memory (Phase 11 — [[query-rewriting]] + [[conversation-store]]) live here, so the sub-apps stay stateless and single-turn. Distinct from a Retrieval Stack — a Stack owns retrieval + grounding; the Gateway owns composition, not retrieval. See [[adr-0010]] (and [[adr-0002]] for why the Stacks stay independent).
 _Avoid_: Proxy (it dispatches in-process, not via HTTP forwarding), Router (collides with FastAPI's APIRouter), Server (every app is a server).
 
+**Operator Console** _(future, Phase 15)_:
+The curator-facing management surface served by the [[gateway]] — the write/maintain counterpart to the reader chat UI. Drives the existing Wiki lifecycle operations (Import → Ingest → Index → Lint → Filed Answer promotion) and exposes RAG index rebuild as a single parallel action; it orchestrates each Retrieval Stack's operations but does not merge them (ADR-0002). Wiki-centric by design — the RAG stack has no Ingest/Lint/Filing, so only its index build is operable. Also hosts a resource browser over `docs/` and `wiki/`. Scope is a single local operator (no auth, no multi-user); demo posture shapes scope, not engineering rigor.
+_Avoid_: Admin panel (implies user/role administration — out of scope), Dashboard (implies metrics/monitoring, not lifecycle actions), Backend page (vague).
+
+**Upload** _(future, Phase 15)_:
+The transport/staging operation behind the Operator Console drop zone: writes dropped browser file bytes onto the server. `.html`/`.txt` land in `raw/` (becoming Import candidates); `.md` lands directly in `docs/` (already canonical Markdown — skips Import). Distinct from Import — Upload only moves bytes onto the server, it never converts.
+_Avoid_: Import (Import converts raw→docs; Upload only stages bytes), Ingest (LLM synthesis docs→wiki).
+
 ## Flagged ambiguities
 
 **Slug generation for non-ASCII headings is undefined.**
