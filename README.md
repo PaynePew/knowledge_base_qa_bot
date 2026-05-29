@@ -15,7 +15,7 @@ and a **Vector RAG** stack (FAISS), both served from one browser UI.
 
 ![Reader UI](project-docs/screenshots/reader.png)
 
-**Operator Console** — the back-office surface: upload documents, run the build
+**Operator Console** — the admin interface: upload documents, run the build
 pipeline, and keep your company or personal knowledge base healthy.
 
 ![Operator Console](project-docs/screenshots/console.png)
