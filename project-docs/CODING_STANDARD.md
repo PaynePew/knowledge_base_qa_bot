@@ -280,13 +280,20 @@ Adding a shortcut that bypasses the pre-LLM gate ("if score is just barely below
 
 ## 5. Logging and observability
 
-### 5.1 Single log channel
+### 5.1 Per-app log channel
 
-Every operationally-interesting event goes to `wiki/log.md` via `log_event(kind, summary)`. **No** `print()`, **no** `logging.getLogger(...)`, **no** `sys.stderr.write(...)` in production code.
+Each package owns **one** log channel: `<package>/log.md`, written via that
+package's own `log_event(kind, summary)`. The three current channels are
+`wiki/log.md` (`markdown_kb`), `vector_rag/log.md` (`vector_rag`), and
+`gateway/log.md` (`gateway`).
 
-If you want a debug-only channel, instead either:
+**The violation is** `print()`, `logging.getLogger(...)`, or `sys.stderr.write(...)`
+in production code — **or** writing into *another* package's log channel. A package
+having its own `<package>/log.md` is correct; cross-package writes are not.
 
-- Add a new `kind` to the unified log (e.g. `parse_warning`, `chat_grounding_retry`).
+If you want a debug-only signal inside a package, either:
+
+- Add a new `kind` to that package's log (e.g. `parse_warning`, `chat_grounding_retry`).
 - Or use `pytest.fail` / `assert` for test-only diagnostics.
 
 ### 5.2 Log line format
@@ -441,7 +448,7 @@ For quick recognition during code review. Code-site anchors for each pattern liv
 | **Lazy singleton** | Avoids constructing a real OpenAI client at import time; lets tests stub via `monkeypatch` before first use. LLM getter functions are the canonical sites. |
 | **Guard clause / early return** | ADR-0001: never hand weak context to the LLM. Two early returns before the prompt is even built (pre-LLM Cannot Confirm gate). |
 | **Atomic write (tmp + rename)** | Crash mid-write must not leave a half-written file for the next read. POSIX `os.replace` is atomic on a single filesystem. The indexer and wiki-index modules are the canonical sites. |
-| **Append-only log** | Karpathy log discipline; survives across crashes; `grep`-able audit trail. All events flow to `wiki/log.md` via `log_event`. |
+| **Append-only log** | Karpathy log discipline; survives across crashes; `grep`-able audit trail. Each package routes events to its own `<package>/log.md` via `log_event` (§5.1). |
 | **DI via monkeypatch** | No DI framework; tests use pytest's `monkeypatch` to swap module-level state. LLM getter functions and the log path are the canonical swap points. |
 | **Strategy (deferred / implicit)** | ADR-0002 explicitly defers a `Retriever` protocol until both retrieval implementations work. The two workspace packages are two strategies; the abstraction is *not* extracted yet. |
 | **Repository / in-memory store** | Single-process, single-writer; module-level list is the "repository." When this model breaks, the upgrade path is `app.state` or external store. |
@@ -451,7 +458,7 @@ For quick recognition during code review. Code-site anchors for each pattern liv
 Notable patterns **rejected** (do not introduce):
 
 - A `Retriever` protocol / plugin architecture (ADR-0002 — premature today).
-- A second log channel beyond `wiki/log.md` (§ 5.1).
+- Writing into *another* package's log channel, or using `print` / `logging.getLogger` / `stderr` instead of `log_event` (§ 5.1 — each package owns one `<package>/log.md` channel; cross-package writes are the violation).
 - A `Document` or `Chunk` class **in `markdown_kb`** (§ 3.1). `vector_rag`'s `Chunk` is the blessed exception — its distinct retrieval unit (a char-bounded slice within a Section), defined in [`CONTEXT.md`](../CONTEXT.md) § Phase 8 vocabulary. LangChain's `Document` stays inside vector_rag's LLM-facing modules and never leaks (§ 2.4).
 - A DI container / app-state object (§ 2.7 — only when single-process breaks).
 
@@ -494,7 +501,8 @@ Each signal has a **severity** that determines the reviewer's action:
 
 ### Logging drift (§5)
 
-- [ ] **FAIL** — `print()`, `logging.getLogger(...)`, or `sys.stderr.write(...)` lands in production code (violates §5.1 single log channel).
+- [ ] **FAIL** — `print()`, `logging.getLogger(...)`, or `sys.stderr.write(...)` lands in production code (violates §5.1 per-app log channel).
+- [ ] **FAIL** — A module writes into *another* package's log channel (e.g. gateway code calling `markdown_kb.app.logger.log_event`, or monkey-patching `LOG_PATH` to point at a sibling package's log file in production code — violates §5.1 per-app log channel).
 - [ ] **FIX** — A new log site logs full user queries or full document content (violates §5.3 bounded summaries; truncate to 60 chars).
 - [ ] **FIX** — A new log site logs unrounded float scores (violates §5.3; use `round(score, 3)`).
 - [ ] **FAIL** — A new log `kind=` is used without a corresponding row in [`log-kinds.md`](log-kinds.md).

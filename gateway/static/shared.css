@@ -1,0 +1,25 @@
+/*
+  KB Gateway — shared design tokens (Phase 15 S1, issue #169).
+
+  Extracted from gateway/static/index.html so both the reader UI (GET /)
+  and the Operator Console (GET /console) can link this single file.
+
+  CODING_STANDARD §12.1: no build step; plain CSS only.
+  Design tokens declared as CSS custom properties on :root so every page
+  that links this file picks them up automatically.
+*/
+
+:root {
+  --bg:        #fafaf9;
+  --surface:   #ffffff;
+  --ink:       #111111;
+  --ink-2:     #555555;
+  --ink-3:     #8a8a8a;
+  --ink-4:     #b8b8b8;
+  --rule:      #e5e5e3;
+  --rule-2:    #ececea;
+  --accent:    #1f1f1f;
+  --pass:      #2f6b3e;
+  --fail:      #a83a26;
+  --selection: #e9e9e7;
+}

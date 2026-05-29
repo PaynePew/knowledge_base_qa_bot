@@ -118,6 +118,20 @@ Full enumeration landed with slice 7-2 (#91). All 11 typed failure modes are emi
 
 ---
 
+## `/upload` route (Phase 15 Operator Console)
+
+Authorized by GitHub issue #168 (Phase 15 PRD) + [ADR-0011](adr/0011-upload-separate-from-import.md). Slice S1 (#169) introduces all five kinds below. Upload is a system boundary: it stages dropped browser bytes onto the server (`.html`/`.txt` → `raw/`, `.md` → `docs/`) and never converts (Import stays unchanged). `filename` and `reason` fields are rendered via `repr()` so embedded quotes/spaces stay unambiguous in the grep-able log line.
+
+| Kind | When fired | Summary template |
+|---|---|---|
+| `upload_batch_started` | Start of an `upload_files()` call | `files=N` |
+| `upload_file` | One file staged successfully to `raw/` or `docs/` | `filename=<repr> target=<repr target dir>` |
+| `upload_rejected` | One file failed validation (type allow-list, size limit, traversal-safe filename) | `filename=<repr> reason=<repr>` |
+| `upload_error` | One file failed at the atomic-write stage (OS-level, e.g. disk full / permission) | `filename=<repr> reason=<repr ≤200>` |
+| `upload_batch_completed` | End of `upload_files()`; emitted even when some files were rejected / errored | `written=A rejected=B errors=C duration_ms=N` |
+
+---
+
 ## Phase 6 Answer Filing
 
 Authorized by GitHub issue #78 (Phase 6 PRD) §"Reflect step" (Q5) and
@@ -185,6 +199,30 @@ The verifier-side kinds (`grounding_verify`, `grounding_verifier_error`) are
 emitted by `markdown_kb`'s `grounding.py` — which Stack B adopts unchanged — so
 they write to `markdown_kb`'s `wiki/log.md`, not `vector_rag/log.md`. They are
 already enumerated under the Grounding Check section above and not re-listed here.
+
+---
+
+## Gateway
+
+Authorized by GitHub issue #158 (Phase 11 PRD — Conversation Memory) and
+GitHub issue #161 (Phase 11 Slice 3 — Rewrite observability). The Gateway owns
+its own append-only log channel at `gateway/log.md` (written via
+`gateway/app/logger.py::log_event`) — the same `## [<ISO-8601 UTC>] <kind> | <summary>`
+format and the same single-channel discipline (CODING_STANDARD §5.1), just a
+separate file from `wiki/log.md` and `vector_rag/log.md`.
+
+The `chat_rewrite` kind is gateway-specific (query rewriting is a gateway
+operation, stack-agnostic). It is emitted **only when a rewrite actually
+happened** (turn 2+, history non-empty); a turn-1 passthrough writes no entry.
+Phase 5 `/lint` reads `wiki/log.md` only (kinds `chat_fallback` /
+`chat_grounding_fallback`) and is therefore unaffected by this channel.
+
+| Kind | When fired | Summary template |
+|---|---|---|
+| `chat_rewrite` | Turn 2+ query rewriting succeeded inside `_sse_generator`; emitted right after `rewrite_query()` returns | `session=<uuid> raw="<60-char-bounded raw follow-up>" rewritten="<60-char-bounded self-contained query>"` |
+
+`raw` and `rewritten` are truncated to 60 chars and have inner `"` replaced
+with `'` (per CODING_STANDARD §5.3 bounded-summary idiom).
 
 ---
 
