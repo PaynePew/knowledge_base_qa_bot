@@ -162,6 +162,13 @@ def chat_stream(
             status_code=400, detail=f"Unknown stack={stack!r}. Use 'wiki' or 'rag'."
         )
 
+    # Sweep idle sessions at request entry (CODING_STANDARD §2.6: the TTL sweep
+    # iterates over a snapshot of keys so it never mutates during iteration).
+    # This is the only production call site for evict_expired(); wiring it here
+    # keeps TTL eviction lazy (triggered by incoming traffic) without a background
+    # thread — sufficient for the single-process prototype model.
+    _conv_store_module.store.evict_expired()
+
     # Session lifecycle: mint a new UUID when no session is supplied.
     session_id: str = session if session else str(uuid.uuid4())
 

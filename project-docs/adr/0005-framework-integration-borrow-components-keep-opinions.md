@@ -42,5 +42,8 @@ We chose partial borrowing because the project's value is in its *opinions* (the
 | `markdown_kb/app/lint.py` | `ChatOpenAI` (contradiction / staleness checks) | `markdown_kb` `POST /lint` | `markdown_kb/tests/lint/` live test |
 | `vector_rag/app/indexer.py` | `OpenAIEmbeddings` via `FAISS.from_documents` (embedding) | `vector_rag` `POST /index` (embedding) | shared with the `vector_rag` `/chat` live test (one live call exercises index→chat) |
 | `vector_rag/app/retrieval.py` | `ChatOpenAI.invoke` (answer synthesis) | `vector_rag` `POST /chat` | `vector_rag/tests/test_chat_live.py` |
+| `gateway/app/query_rewriting.py` | `ChatOpenAI.with_structured_output` (Query Rewriting) | `POST /chat/stream` turn 2+ (gateway-level; both stacks) | `gateway/tests/test_query_rewriting.py::test_rewrite_query_live` |
 
 vector_rag's `/chat` + embeddings is the surface added by issue #103 (Phase 8 Slice 3). It adopts `markdown_kb`'s `grounding.py` unchanged through the `CitableContent` Protocol (ADR-0004 Q9) rather than owning a second verifier, so it adds no new structured-output call site. The single PRD-authorised `@pytest.mark.live` test for this surface lives in `vector_rag/tests/test_chat_live.py`.
+
+The gateway Query Rewriting module is the **Gateway's first LLM-facing module** (Phase 11 Slice 1 — issue #159, ADR-0013). It is called on turn 2+ only (turn 1 is a passthrough — no LLM call). Its `OPENAI_REWRITE_MODEL` knob mirrors the ingest/verifier pattern. LangChain types (`ChatOpenAI`, `HumanMessage`, `SystemMessage`, `with_structured_output`) are confined to this module; callers (`routes.py`) see only plain Python strings. The single `@pytest.mark.live` test lives in `gateway/tests/test_query_rewriting.py::test_rewrite_query_live`.

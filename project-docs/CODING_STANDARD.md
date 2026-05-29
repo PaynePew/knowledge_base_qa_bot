@@ -211,10 +211,11 @@ The reviewer must check that any PR which touches the code site of an invariant 
 
 ### 2.6 Concurrency
 
-- The index swap is the only contended operation. Hold the index lock **only** when assigning to the module-level `sections` list (see ADR-0003 § Consequences for the invariant).
+- The index swap is the only contended operation **on the Section Index**. Hold the index lock **only** when assigning to the module-level `sections` list (see ADR-0003 § Consequences for the invariant).
 - Readers do not lock. Mid-rebuild readers see the previous snapshot until the swap completes.
 - **Persistent state writes are atomic**: write to `<file>.tmp`, then `os.replace(...)`. Never write to the target file directly. The indexer and wiki-index modules carry the canonical implementation of this pattern.
-- Beyond a single FastAPI worker, this model breaks. Multi-worker is **post-prototype**; will need an external lock (filesystem flock, redis, or DB). Do not refactor proactively.
+- **The Conversation Store is the second per-turn-mutated, TTL-swept structure** (Phase 11 — ADR-0013). Single-process CPython `dict` / `deque` operations are GIL-atomic for single-statement ops — no lock is needed for append or read under the current single-worker model. The TTL sweep (`evict_expired()`) iterates over a **snapshot** of keys (`list(self._sessions)`) so that deleting expired entries inside the loop never triggers `RuntimeError: dictionary changed size during iteration`.
+- Beyond a single FastAPI worker, both the Section Index lock model and the in-memory Conversation Store break. Multi-worker is **post-prototype**; will need an external lock / Redis-backed store. Do not refactor proactively.
 
 ### 2.7 State management
 
@@ -599,3 +600,13 @@ The Operator Console (`/console` — [ADR-0011](adr/0011-upload-separate-from-im
 - **Batch Ingest is ONE call, never a per-file loop.** `ingest_sources` resolves cross-source slug collisions via an in-memory `used_slugs` set scoped to a **single call** (`resolve_slug_collision`, "within a single batch call"). The console MUST send a drop batch (capped at 5 files) as one `POST /ingest` over the named sources; more than 5 files are chunked into **sequential** single calls ("Batch k/N"). A client loop of single-source `/ingest` calls resets `used_slugs` and silently overwrites a colliding slug — breaking the "a Section is never silently overwritten" guarantee (#54). This is a correctness invariant, not a performance choice.
 - **No fake progress.** Without SSE the client has no intra-call visibility. Show an indeterminate indicator + status label for single blocking calls (Import / Index / Lint / Ingest-within-a-batch). A determinate percentage or counter appears **only** where the client owns the count ("Batch k/N", "k/N files"). A time-eased fake percentage is a drift signal.
 - **Destructive actions are server-gated.** Promote (`/qa/{slug}/promote`) and Discard (`DELETE /qa/{slug}`, inert-only, refuses `status: live`) are server decisions; the client does not replicate the inert/live eligibility policy (§12.5).
+
+### 12.9 Multi-turn UI (Phase 11 — Conversation Memory)
+
+These encode ADR-0013 in the reader chat UI — they are session-correctness invariants:
+
+- **Session id hold.** The client reads `done.session` from every `done` event and stores it in a local variable. The id is never shown to the user. On subsequent requests, the client echoes it via `?session=<id>` in the query string. No manual id entry by the user — the server mints the UUID on the first request.
+- **Session id persistence across toggle.** A stack toggle (Wiki ↔ RAG) is a fresh `POST /chat/stream?stack=<new>` request, but it MUST echo the same `?session=<id>`. Toggling stacks does NOT reset the session; the Conversation Store is keyed by `session_id` only (ADR-0013). The session variable is only reset when the user explicitly starts a new conversation.
+- **`status:{phase:"rewriting"}` indicator.** When the gateway emits `status:{phase:"rewriting"}`, the client renders a status indicator (e.g. "understanding your question…"). This event is emitted only on turn 2+ (passthrough on turn 1). The indicator clears when the next event (`sources`) arrives. Render via `textContent` only (§12.4).
+- **Turn 1 has no `status:rewriting`.** Turn 1 (empty history / no `?session=`) skips Query Rewriting. The client must not render the rewriting indicator on turn 1.
+- **All multi-turn state is server-side.** The client holds only the session id; it never re-implements history tracking, reference resolution, or query rewriting. Those are gateway concerns (§12.5).
