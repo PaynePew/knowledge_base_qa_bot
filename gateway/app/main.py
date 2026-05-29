@@ -27,7 +27,7 @@ from dotenv import find_dotenv, load_dotenv
 load_dotenv(find_dotenv(usecwd=True))
 
 from fastapi import FastAPI  # noqa: E402
-from fastapi.responses import HTMLResponse  # noqa: E402
+from fastapi.responses import FileResponse, HTMLResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 # Import sub-apps AFTER env is loaded so retrieval singletons see OPENAI_API_KEY.
@@ -40,6 +40,14 @@ from .routes import router  # noqa: E402
 _STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 _UI_PATH = _STATIC_DIR / "index.html"
 _CONSOLE_PATH = _STATIC_DIR / "console.html"
+_FAVICON_PATH = _STATIC_DIR / "favicon.svg"
+
+# The favicon never changes between deploys, but StaticFiles only sends
+# ETag/Last-Modified — so the browser re-validates it on every page load (a 304
+# round-trip per request). A max-age lets the browser serve it from cache without
+# asking, so those repeated conditional requests disappear. Bust on redesign with
+# a hard refresh (the mark is tiny; a day of staleness is harmless).
+_FAVICON_CACHE = "public, max-age=86400"
 
 app = FastAPI(title="KB Gateway", version="0.1.0")
 app.include_router(router)
@@ -65,6 +73,40 @@ def serve_ui() -> str:
     - Console button in masthead navigates to ``GET /console`` (Phase 15 S1).
     """
     return _UI_PATH.read_text(encoding="utf-8")
+
+
+@app.get("/favicon.svg", include_in_schema=False)
+def serve_favicon_svg() -> FileResponse:
+    """Serve the site favicon with a cacheable ``Cache-Control`` header.
+
+    Both HTML pages declare ``<link rel="icon" href="/favicon.svg">`` and fetch it
+    here rather than via the ``/static`` mount: StaticFiles only sets
+    ETag/Last-Modified, so the browser re-validates the favicon on every load (a
+    304 round-trip each time). Serving it from a dedicated route lets us attach a
+    ``max-age`` so the browser caches it outright and stops re-requesting it.
+    """
+    return FileResponse(
+        _FAVICON_PATH,
+        media_type="image/svg+xml",
+        headers={"Cache-Control": _FAVICON_CACHE},
+    )
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def serve_favicon() -> FileResponse:
+    """Serve the site favicon for the literal ``/favicon.ico`` request.
+
+    The HTML pages declare ``<link rel="icon" href="/favicon.svg">`` so modern
+    browsers fetch the SVG directly, but bare ``/favicon.ico`` hits (older
+    clients, crawlers, prefetchers) would otherwise 404. This route returns the
+    same single-color SVG mark with the correct media type — and the same
+    ``Cache-Control`` — so those requests resolve instead of logging a 404.
+    """
+    return FileResponse(
+        _FAVICON_PATH,
+        media_type="image/svg+xml",
+        headers={"Cache-Control": _FAVICON_CACHE},
+    )
 
 
 @app.get("/console", response_class=HTMLResponse, include_in_schema=False)

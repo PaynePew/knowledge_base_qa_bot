@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Operator Console — KB Gateway</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 
 <!--
   KB Gateway Operator Console — Phase 15 (S1–S6).
@@ -444,7 +445,12 @@
     border-radius: 6px;
     background: var(--surface);
     overflow: hidden;
+    transition: opacity .15s ease;
   }
+  /* Dim the listing in place while the next folder loads instead of collapsing it
+     to a spinner — the box keeps its height, so switching folders no longer jolts
+     the page. Contents swap with a height morph + staggered reveal on resolve. */
+  .browser-entries.is-loading { opacity: .4; pointer-events: none; }
   .browser-empty {
     padding: 20px 16px;
     font-size: 13px;
@@ -469,7 +475,9 @@
     color: var(--ink-3);
     padding-top: 1px;
     user-select: none;
+    transition: transform .18s cubic-bezier(.22,.61,.36,1), color .15s ease;
   }
+  .entry-row.is-dir:hover .entry-icon { transform: translateX(2px); color: var(--ink-2); }
   .entry-name {
     font-family: "IBM Plex Mono", monospace;
     font-size: 12.5px;
@@ -2250,9 +2258,45 @@ buildRagTrack(document.getElementById("rag-track-root"));
    §12.5: no business logic in the client (paths validated server-side)
    ══════════════════════════════════════════════════════════ */
 
+/* ── Motion helpers (Phase 15 UI polish) ─────────────────────
+   element.animate() (WAAPI) is NOT covered by the prefers-reduced-motion CSS
+   block above — that only disables CSS animations/transitions — so guard every
+   call here. scrollSoftIntoView falls back to an instant jump under reduced
+   motion. */
+var REDUCED_MOTION = matchMedia("(prefers-reduced-motion: reduce)");
+function animateIn(node, dur, delay, dy) {
+  if (REDUCED_MOTION.matches) return;
+  node.animate(
+    [{ opacity: 0, transform: "translateY(" + (dy == null ? 6 : dy) + "px)" }, { opacity: 1, transform: "none" }],
+    { duration: dur || 320, delay: delay || 0, easing: "cubic-bezier(.22,.61,.36,1)", fill: "backwards" }
+  );
+}
+function scrollSoftIntoView(node, block) {
+  node.scrollIntoView({ behavior: REDUCED_MOTION.matches ? "auto" : "smooth", block: block || "nearest" });
+}
+
+/* Bring the whole Browse section into view after a folder switch. If it fits in
+   the viewport, centre it so every folder is visible at once; if it's taller than
+   the viewport, anchor its top — the "Browse" label — to the top of the screen so
+   the listing reads from the start. Driven with window.scrollTo to a FIXED pixel
+   target (not scrollIntoView) so a concurrent height morph can't make it
+   re-measure a box that's still resizing. Measure AFTER the new entries are in the
+   DOM and BEFORE the morph starts, so it reads the final layout. */
+function scrollBrowserIntoView() {
+  var rect = browserSection.getBoundingClientRect();
+  var vh = window.innerHeight || document.documentElement.clientHeight;
+  var maxScroll = Math.max(0, document.documentElement.scrollHeight - vh);
+  var absTop = rect.top + window.scrollY;
+  var target = rect.height <= vh ? absTop - (vh - rect.height) / 2 : absTop;
+  target = Math.max(0, Math.min(target, maxScroll));
+  if (REDUCED_MOTION.matches) window.scrollTo(0, target);
+  else window.scrollTo({ top: target, behavior: "smooth" });
+}
+
 /* ── Browser state ───────────────────────────────────────── */
 var browserPath = "";   /* current relpath in the tree */
 var browserBusy = false;
+var browserBooted = false;   /* suppress auto-scroll on the initial boot load */
 
 /* ── Browser containers ──────────────────────────────────── */
 var browserSection = document.getElementById("browser-section");
@@ -2317,13 +2361,20 @@ function navigateTo(relpath) {
   /* Close any open file viewer */
   fileViewerEl.replaceChildren();
 
-  /* Show spinner inside entries box */
-  entriesEl.replaceChildren(
-    el("div", { class: "busy-row" },
-      el("span", { class: "spinner" }),
-      el("span", { text: relpath ? "Loading " + relpath + "…" : "Loading roots…" })
-    )
-  );
+  /* Loading affordance. If a listing is already showing, dim it in place (no
+     collapse-to-spinner) so the box keeps its height and the page doesn't jolt.
+     On the very first paint the box is empty, so fall back to the spinner. */
+  var hadEntries = entriesEl.childElementCount > 0;
+  if (hadEntries) {
+    entriesEl.classList.add("is-loading");
+  } else {
+    entriesEl.replaceChildren(
+      el("div", { class: "busy-row" },
+        el("span", { class: "spinner" }),
+        el("span", { text: relpath ? "Loading " + relpath + "…" : "Loading roots…" })
+      )
+    );
+  }
 
   fetch("/read/tree?" + new URLSearchParams({ path: relpath }))
     .then(function(r) {
@@ -2332,10 +2383,32 @@ function navigateTo(relpath) {
     })
     .then(function(data) {
       browserPath = relpath;
+      var firstLoad = !browserBooted;
+      browserBooted = true;
       renderBreadcrumb(relpath);
+
+      /* Soft switch: measure the box, swap in the new entries, then glide the
+         section into view and morph the box height from old → new so the listing
+         resizes gently instead of snapping. Order matters — scrollBrowserIntoView
+         must read the FINAL layout (entries rendered, morph not yet started). */
+      entriesEl.classList.remove("is-loading");
+      var oldH = entriesEl.getBoundingClientRect().height;
       renderEntries(data.entries || []);
+      var newH = entriesEl.getBoundingClientRect().height;
+
+      if (!firstLoad) {
+        scrollBrowserIntoView();
+        if (!REDUCED_MOTION.matches && Math.abs(newH - oldH) > 1) {
+          entriesEl.animate(
+            [{ height: oldH + "px" }, { height: newH + "px" }],
+            { duration: 240, easing: "cubic-bezier(.22,.61,.36,1)" }
+          );
+        }
+      }
     })
     .catch(function(err) {
+      browserBooted = true;
+      entriesEl.classList.remove("is-loading");
       entriesEl.replaceChildren(
         el("div", { class: "busy-row" },
           el("span", { style: "color:var(--fail);", text: "Failed to load: " + (err.message || String(err)) })
@@ -2376,6 +2449,15 @@ function renderEntries(entries) {
   });
 
   entriesEl.replaceChildren.apply(entriesEl, rows);
+
+  /* Soft staggered reveal as a folder's contents swap in — gives opening and
+     closing (breadcrumb up) a gentle motion instead of an instant hard cut.
+     Stagger is capped so a large directory still settles quickly. */
+  if (!REDUCED_MOTION.matches) {
+    rows.forEach(function(row, i) {
+      animateIn(row, 300, Math.min(i * 26, 260), 5);
+    });
+  }
 }
 
 /* ── Open and display a file ─────────────────────────────── */
@@ -2383,15 +2465,21 @@ function openFile(relpath, name) {
   if (browserBusy) return;
   browserBusy = true;
 
-  /* Show loading in viewer area */
-  fileViewerEl.replaceChildren(
-    el("div", { class: "file-viewer" },
-      el("div", { class: "file-viewer-head" },
-        el("span", { class: "file-name", text: relpath }),
-        el("span", { text: "loading…" })
-      )
+  /* Show loading in viewer area, then glide down to it so the user sees the
+     article that just appeared at the bottom (otherwise it opens off-screen).
+     The content replaces this node in place, so a single scroll here is enough. */
+  var loadingViewer = el("div", { class: "file-viewer" },
+    el("div", { class: "file-viewer-head" },
+      el("span", { class: "file-name", text: relpath }),
+      el("span", { text: "loading…" })
     )
   );
+  fileViewerEl.replaceChildren(loadingViewer);
+  animateIn(loadingViewer, 320, 0, 8);
+  /* NB: the scroll-into-view happens AFTER the content renders (below), not here.
+     During loading the viewer is only a thin placeholder, so the page is short
+     and a scroll now would stop a few pixels down; once the full article swaps
+     in the page grows but would not re-scroll. */
 
   fetch("/read/file?" + new URLSearchParams({ path: relpath }))
     .then(function(r) {
@@ -2406,17 +2494,20 @@ function openFile(relpath, name) {
         onclick: function() { fileViewerEl.replaceChildren(); }
       });
 
-      fileViewerEl.replaceChildren(
-        el("div", { class: "file-viewer" },
-          el("div", { class: "file-viewer-head" },
-            el("span", { text: "raw" }),
-            el("span", { text: "·" }),
-            el("span", { class: "file-name", text: relpath }),
-            closeBtn
-          ),
-          el("pre", { class: "file-content", text: content })
-        )
+      var contentViewer = el("div", { class: "file-viewer" },
+        el("div", { class: "file-viewer-head" },
+          el("span", { text: "raw" }),
+          el("span", { text: "·" }),
+          el("span", { class: "file-name", text: relpath }),
+          closeBtn
+        ),
+        el("pre", { class: "file-content", text: content })
       );
+      fileViewerEl.replaceChildren(contentViewer);
+      animateIn(contentViewer, 300, 0, 4);
+      /* Glide down to the now full-height article so the user sees it appear at
+         the bottom. Done after render (final layout) on the next frame. */
+      requestAnimationFrame(function() { scrollSoftIntoView(contentViewer, "start"); });
     })
     .catch(function(err) {
       fileViewerEl.replaceChildren(

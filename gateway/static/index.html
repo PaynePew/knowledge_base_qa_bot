@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ask.Wiki&amp;RAG — grounded Q&amp;A</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 
 <!--
   KB Gateway browser UI — Phase 9 Slice 6 (#122) + Phase 11 Slice 4 (#162).
@@ -98,7 +99,9 @@
     padding: 4px 14px 24px 0;
     overflow-y: auto;
     overscroll-behavior: contain;
-    scroll-behavior: smooth;
+    /* No CSS scroll-behavior:smooth — programmatic scroll is animated by a JS
+       easing tween (scrollTurnIntoView) so it works reliably inside this flex
+       container and stays interruptible per turn. */
     scrollbar-width: thin;
     scrollbar-color: var(--rule) transparent;
   }
@@ -349,6 +352,68 @@
     color: var(--ink-3);
   }
 
+  /* ── Empty state ─────────────────────────────────────────── */
+  .empty {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 8px 0 40px;
+  }
+  .empty-inner { max-width: 520px; }
+  .empty-eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--ink-3);
+    margin-bottom: 18px;
+  }
+  .empty-title {
+    margin: 0;
+    font-family: "IBM Plex Sans", sans-serif;
+    font-weight: 300;
+    font-size: 32px;
+    line-height: 1.12;
+    letter-spacing: -.02em;
+    color: var(--ink);
+  }
+  .empty-sub {
+    margin: 16px 0 0;
+    font-size: 14.5px;
+    line-height: 1.65;
+    color: var(--ink-2);
+    max-width: 46ch;
+  }
+  .empty-prompts { margin-top: 34px; }
+  .empty-prompts-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--ink-3);
+    margin-bottom: 4px;
+  }
+  .empty-q {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    width: 100%;
+    background: transparent; border: 0;
+    border-top: 1px solid var(--rule);
+    padding: 14px 2px;
+    text-align: left;
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 15px;
+    color: var(--ink-2);
+    transition: color .15s ease, padding-left .2s cubic-bezier(.22,.61,.36,1);
+  }
+  .empty-q:last-child { border-bottom: 1px solid var(--rule); }
+  .empty-q:hover { color: var(--ink); padding-left: 8px; }
+  .empty-q .arrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 13px;
+    color: var(--ink-4);
+    flex: none;
+    transition: transform .2s cubic-bezier(.22,.61,.36,1), color .15s ease;
+  }
+  .empty-q:hover .arrow { color: var(--ink-2); transform: translateX(3px); }
+
   /* ── Console nav link ───────────────────────────────────── */
   .mast-console {
     font-family: "IBM Plex Mono", monospace;
@@ -370,6 +435,7 @@
     .page { padding: 0 20px; }
     .query { font-size: 17px; }
     .answer .body { font-size: 15px; }
+    .empty-title { font-size: 26px; }
   }
 </style>
 </head>
@@ -447,6 +513,18 @@ var REASON_TEXT = {
   index_missing: "The knowledge base index has not been built yet.",
 };
 
+/* ── PRESET QUESTIONS ────────────────────────────────────────────────────────
+   Suggested first questions shown in the empty state. These are static UI copy
+   (not server-derived), grounded in the sample FAQ corpus so a first click
+   returns a real grounded answer rather than "Cannot confirm". Same set works
+   for both stacks (shared corpus). */
+var PRESET_QUESTIONS = [
+  "How long do refunds take to process?",
+  "Can I cancel an order after it has shipped?",
+  "How long does standard shipping take?",
+  "How do I reset my password?",
+];
+
 /* ── STATE ───────────────────────────────────────────────────────────────── */
 var stack = "wiki";
 var answerEl = null, answerBody = null, verifyEl = null;
@@ -455,6 +533,14 @@ var currentQuery = "";
    Never cleared — stack toggle preserves history across Wiki↔RAG switches. */
 var sessionId = null;
 var stream, segWiki, segRag, input;
+/* In-flight request tracking. Each request gets a monotonically increasing
+   sequence; only the latest renders. A new request aborts the previous fetch
+   (stops the server stream too) so two overlapping streams can never interleave
+   into the shared render state — which previously produced a leaked answer body
+   and a second, contradictory grounding badge (e.g. "Cannot confirm" + green
+   "Grounded") when the stack was toggled mid-stream. */
+var reqSeq = 0;
+var currentController = null;
 
 /* ── LAYOUT ──────────────────────────────────────────────────────────────── */
 function build() {
@@ -503,6 +589,7 @@ function syncSeg() {
 /* ── HELPERS ─────────────────────────────────────────────────────────────── */
 function makeLabel(text, opts) {
   var lbl = el("div", { class: "label" }, el("span", { text: text }));
+  if (opts && opts.tag) lbl.append(el("span", { class: "count", text: "· " + opts.tag }));
   if (opts && opts.count != null) lbl.append(el("span", { class: "count", text: "· " + opts.count }));
   return lbl;
 }
@@ -515,20 +602,131 @@ function add(node) {
       { duration: 320, easing: "cubic-bezier(.22,.61,.36,1)", fill: "backwards" }
     );
   }
-  requestAnimationFrame(function() {
-    stream.scrollTo({ top: stream.scrollHeight, behavior: "smooth" });
-  });
+  /* No scroll in add() itself — each handler owns its scroll: onQuery anchors the
+     new question to the top, while the answer-phase handlers glide to the bottom
+     (scrollStreamToBottom) so the reader follows records → generating → answer. */
+}
+
+/* Smoothly scroll the .stream so `top` (a position within its scroll content)
+   leads the viewport, via a JS easing tween. Native smooth scrolling inside this
+   flex/overflow container proved unreliable, so we drive scrollTop ourselves
+   (each assignment is instant — CSS scroll-behavior is not smooth). A new tween
+   supersedes the previous one (token guard) so rapid turns stay snappy. */
+var scrollTweenId = 0;
+function smoothScrollStreamTo(top) {
+  var max = stream.scrollHeight - stream.clientHeight;
+  var target = Math.max(0, Math.min(top, max));
+  var start = stream.scrollTop;
+  var dist = target - start;
+  if (Math.abs(dist) < 1) { stream.scrollTop = target; return; }
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) { stream.scrollTop = target; return; }
+  var myId = ++scrollTweenId;
+  var dur = 380, t0 = null;
+  function step(ts) {
+    if (myId !== scrollTweenId) return;          /* superseded by a newer scroll */
+    if (t0 === null) t0 = ts;
+    var p = Math.min(1, (ts - t0) / dur);
+    var e = 1 - Math.pow(1 - p, 3);              /* easeOutCubic */
+    stream.scrollTop = start + dist * e;
+    if (p < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+/* Scroll a turn's Query to the top of the viewport ("scroll to the newest
+   question"). The .stream is the scroll container; the page itself never scrolls
+   (body is overflow:hidden, exactly one viewport tall). */
+function scrollTurnIntoView(entry) {
+  var top = entry.getBoundingClientRect().top - stream.getBoundingClientRect().top + stream.scrollTop;
+  smoothScrollStreamTo(top);
+}
+
+/* Glide the stream to its bottom so the freshest streamed content leads the
+   viewport. Two beats only (NOT per token — that yanks the view): (1) as the
+   answer phase begins — records arrive, the "generating" indicator shows, the
+   answer's first tokens land — so the reader watches the response take shape
+   (the whole point of streaming); (2) on done, so the answer's end + grounding
+   verdict are brought fully into view. smoothScrollStreamTo clamps to the real
+   max, so passing scrollHeight resolves to the bottom. */
+function scrollStreamToBottom() {
+  smoothScrollStreamTo(stream.scrollHeight);
+}
+
+/* Remove the empty-state placeholder once a conversation begins. */
+function clearEmptyState() {
+  var e = stream.querySelector(".empty");
+  if (e) e.remove();
+}
+
+/* Remove blinking cursors left on a turn that was abandoned mid-stream (e.g. the
+   user asked a new question or toggled stacks before the answer finished). */
+function removeCursors() {
+  var cs = stream.querySelectorAll(".cursor");
+  for (var i = 0; i < cs.length; i++) cs[i].remove();
 }
 
 function setStack(s) {
   if (s === stack) return;
   stack = s;
   syncSeg();
-  /* Switching stacks = fresh request (§12.3). Re-submit current query if any. */
+  /* Switching stacks is a fresh request (§12.3), but the transcript is
+     append-only: re-ask the current question on the new stack as a NEW turn
+     below the existing ones (so the prior Query/answer stay visible — the whole
+     point is comparing Wiki vs RAG), then scroll to it. With no conversation
+     yet, just refresh the empty state so its copy reflects the active stack. */
   if (currentQuery) {
+    onQuery(currentQuery);
     resetStreamState();
-    stream.replaceChildren();
     startRequest(currentQuery);
+  } else {
+    renderEmptyState();
+  }
+}
+
+/* ── EMPTY STATE ─────────────────────────────────────────────────────────────
+   Shown before any question (and after a stack toggle with no conversation).
+   Stack-aware greeting + clickable preset questions. All copy is static UI text
+   built via the textContent-only el() helper (§12.4); clicking a chip just fills
+   the composer and submits — no client business logic (§12.5). */
+function ask(query) {
+  input.value = query;
+  submit();
+}
+
+function renderEmptyState() {
+  resetStreamState();
+  var isWiki = stack === "wiki";
+
+  var eyebrow = el("div", { class: "empty-eyebrow",
+    text: "Grounded Q&A · " + (isWiki ? "Wiki" : "RAG") });
+  var title = el("h1", { class: "empty-title", text: "What would you like to know?" });
+  var sub = el("p", { class: "empty-sub", text: isWiki
+    ? "Answers are synthesised from the curated wiki layer and checked against every cited record — if the sources don’t support a claim, the bot says so instead of guessing."
+    : "Answers are retrieved from the source corpus by semantic similarity and checked against every cited record — if the sources don’t support a claim, the bot says so instead of guessing."
+  });
+
+  var prompts = el("div", { class: "empty-prompts" },
+    el("div", { class: "empty-prompts-label", text: "Try asking" }));
+  PRESET_QUESTIONS.forEach(function(q) {
+    prompts.append(el("button", { class: "empty-q", type: "button",
+      onclick: function() { ask(q); } },
+      el("span", { class: "empty-q-text", text: q }),
+      el("span", { class: "arrow", text: "→" }),
+    ));
+  });
+
+  var wrap = el("div", { class: "empty" },
+    el("div", { class: "empty-inner" }, eyebrow, title, sub, prompts));
+  stream.replaceChildren(wrap);
+
+  /* Staggered reveal on load (skipped under reduced-motion). */
+  if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    [eyebrow, title, sub, prompts].forEach(function(node, i) {
+      node.animate(
+        [{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }],
+        { duration: 460, delay: 80 + i * 90, easing: "cubic-bezier(.22,.61,.36,1)", fill: "backwards" }
+      );
+    });
   }
 }
 
@@ -538,24 +736,49 @@ function resetStreamState() {
   verifyEl = null;
 }
 
+/* Remove the current liveness indicator row (rewriting / verifying), if any.
+   A fresh status, the sources event, the first token, and errors all supersede
+   the previous indicator — so each clears it before rendering. Without this the
+   "rewriting" row was orphaned when "verifying" reassigned verifyEl, leaving
+   "Understanding your question…" pulsing forever (§12.9: the rewriting indicator
+   clears when the next event arrives). */
+function clearIndicator() {
+  if (verifyEl) {
+    var row = verifyEl.closest(".entry");
+    if (row) row.remove();
+    verifyEl = null;
+  }
+}
+
 /* ── EVENT RENDER FUNCTIONS ──────────────────────────────────────────────── */
 function onQuery(text) {
+  /* Begin a new turn in the append-only transcript: tidy any turn abandoned
+     mid-stream, drop the empty state on the first question, then append the
+     Query and glide to it. The stack tag (· WIKI / · RAG) makes the Wiki-vs-RAG
+     comparison legible when the same question is re-asked via the toggle. */
+  clearEmptyState();
+  clearIndicator();
+  removeCursors();
   var entry = el("div", { class: "entry" },
-    makeLabel("Query"),
+    makeLabel("Query", { tag: stack }),
     el("div", { class: "query", text: text }),
   );
   add(entry);
+  scrollTurnIntoView(entry);
 }
 
 function onSources(sources) {
   /* §12.3 sources-first: this function is called before any answer area is
-     created. The answer entry is only created in onToken, which runs after. */
+     created. The answer entry is only created in onToken, which runs after.
+     §12.9: clear the turn-2+ "rewriting" indicator now that sources have arrived. */
+  clearIndicator();
   var entry = el("div", { class: "entry" });
   entry.append(makeLabel("Records", { count: sources.length }));
 
   if (!sources.length) {
     entry.append(el("div", { class: "recs-empty", text: "No record met the relevance threshold." }));
     add(entry);
+    scrollStreamToBottom();
     return;
   }
 
@@ -599,6 +822,9 @@ function onSources(sources) {
 
   entry.append(det);
   add(entry);
+  /* Beat 1: records have arrived — glide down so the reader sees them (and the
+     "generating" indicator that follows) instead of leaving them below the fold. */
+  scrollStreamToBottom();
 }
 
 function animateDetails(det) {
@@ -656,6 +882,8 @@ function onStatus(d) {
     ? "Understanding your question…"
     : "Checking each claim against the cited record…";
 
+  /* Supersede any prior indicator so two never stack (e.g. rewriting → verifying). */
+  clearIndicator();
   var entry = el("div", { class: "entry" });
   entry.append(makeLabel(labelText));
   verifyEl = el("div", { class: "verify" },
@@ -664,27 +892,30 @@ function onStatus(d) {
   );
   entry.append(verifyEl);
   add(entry);
+  /* Beat 1 (cont.): keep the live "understanding…/checking…" indicator in view so
+     the reader can see the answer is being generated. */
+  scrollStreamToBottom();
 }
 
 function onToken(t) {
   /* §12.3: answer area only created after sources have arrived (onSources runs
      first in the SSE event order; answerEl is null until this first onToken). */
   if (!answerEl) {
-    if (verifyEl) {
-      var row = verifyEl.closest(".entry");
-      if (row) row.remove();
-      verifyEl = null;
-    }
+    clearIndicator();
     var entry = el("div", { class: "entry" });
     entry.append(makeLabel("Answer"));
     answerBody = el("div", { class: "body" });
     answerEl = el("div", { class: "answer" }, answerBody, el("span", { class: "cursor" }));
     entry.append(answerEl);
     add(entry);
+    /* Beat 1 (cont.): the answer area just appeared — glide to it once so the
+       reader sees generation start. Deliberately NOT repeated per token below
+       (that yanks the viewport); the next glide is onDone. */
+    scrollStreamToBottom();
   }
-  /* §12.4: token text appended as TextNode (never innerHTML) */
+  /* §12.4: token text appended as TextNode (never innerHTML). No per-token
+     scroll — the answer fills in place; the viewport settles to it on done. */
   answerBody.append(document.createTextNode(t.text));
-  stream.scrollTop = stream.scrollHeight;
 }
 
 function onDone(d) {
@@ -716,15 +947,14 @@ function onDone(d) {
     ));
   }
   answerEl.append(foot);
-  stream.scrollTo({ top: stream.scrollHeight, behavior: "smooth" });
+  /* Beat 2: the answer is complete — glide to the bottom so its end and the
+     grounding verdict (Grounded / Cannot confirm) are fully in view. */
+  scrollStreamToBottom();
 }
 
 function onError(e) {
-  if (verifyEl) {
-    var row = verifyEl.closest(".entry");
-    if (row) row.remove();
-    verifyEl = null;
-  }
+  clearIndicator();
+  removeCursors();
   var entry = el("div", { class: "entry" });
   entry.append(makeLabel("Error"));
   /* §12.4: error detail via textContent */
@@ -732,13 +962,16 @@ function onError(e) {
   entry.append(el("div", { class: "err" },
     el("div", { class: "h", text: "Service interrupted" }),
     el("div", { class: "m", text: msg }),
+    /* Retry the same turn: drop this error block, keep the Query above it, and
+       re-run the request (sources/answer append where the error was). */
     el("button", { type: "button", text: "Try again", onclick: function() {
+      entry.remove();
       resetStreamState();
-      stream.replaceChildren();
       startRequest(currentQuery);
     }}),
   ));
   add(entry);
+  scrollStreamToBottom();
 }
 
 /* ── DISPATCH ────────────────────────────────────────────────────────────── */
@@ -754,6 +987,15 @@ function dispatch(ev, data) {
 
 /* ── REAL SSE REQUEST (fetch + ReadableStream, §12.2) ────────────────────── */
 function startRequest(query) {
+  /* Claim the latest sequence and abort any in-flight request. Aborting stops
+     the previous server stream and, together with the mySeq guard below, ensures
+     a superseded stream can never render into the shared state (no interleaved
+     tokens, no duplicate grounding badge). */
+  var mySeq = ++reqSeq;
+  if (currentController) { try { currentController.abort(); } catch (_) {} }
+  var controller = new AbortController();
+  currentController = controller;
+
   var parser = createSSEParser();
   /* Phase 11 Slice 4: echo session id on turn 2+ so the gateway continues the
      conversation.  Stack toggle is a fresh request but keeps the same sessionId
@@ -765,7 +1007,9 @@ function startRequest(query) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query: query }),
+    signal: controller.signal,
   }).then(function(resp) {
+    if (mySeq !== reqSeq) return;   /* superseded before headers arrived */
     if (!resp.ok) {
       /* Pre-stream HTTP error (e.g. 400 unknown stack) — cannot arrive as SSE */
       onError({ detail: "HTTP " + resp.status + ": " + resp.statusText });
@@ -777,6 +1021,7 @@ function startRequest(query) {
 
     function pump() {
       reader.read().then(function(result) {
+        if (mySeq !== reqSeq) return;   /* a newer request took over — stop rendering */
         if (result.done) return;
         var chunk = decoder.decode(result.value, { stream: true });
         var events = parser(chunk);
@@ -785,11 +1030,15 @@ function startRequest(query) {
         }
         pump();
       }).catch(function(err) {
+        if (err && err.name === "AbortError") return;   /* intentional supersede */
+        if (mySeq !== reqSeq) return;
         onError({ detail: "Stream read error: " + (err.message || String(err)) });
       });
     }
     pump();
   }).catch(function(err) {
+    if (err && err.name === "AbortError") return;   /* intentional supersede */
+    if (mySeq !== reqSeq) return;
     onError({ detail: "Network error: " + (err.message || String(err)) });
   });
 }
@@ -798,16 +1047,21 @@ function startRequest(query) {
 function submit() {
   var query = input.value.trim();
   if (!query) return;
+  input.value = "";   /* clear the composer once the question is sent */
   currentQuery = query;
-  resetStreamState();
-  stream.replaceChildren();
+  /* Append-only: onQuery tidies any abandoned turn + drops the empty state, then
+     adds the new Query and scrolls to it. resetStreamState runs AFTER so the new
+     turn's streaming pointers start fresh (onQuery still sees the prior turn's
+     verifyEl/cursor to clean them up). */
   onQuery(query);
+  resetStreamState();
   startRequest(query);
 }
 
 /* ── INIT ────────────────────────────────────────────────────────────────── */
 build();
 syncSeg();
+renderEmptyState();
 </script>
 </body>
 </html>
