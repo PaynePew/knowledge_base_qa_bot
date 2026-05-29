@@ -42,7 +42,12 @@ GOLD_SECTIONS_PATH = _PKG_ROOT / "gold_sections.yaml"
 # a single entity wiki page, not concept pages, and are not Paraphrase sources).
 # This is the one piece of hand-knowledge that cannot be auto-derived without
 # the LLM classifier that distinguishes entity from concept Sources.
-CORPUS_ENTITY_SOURCES: frozenset[str] = frozenset({"warranty.md"})
+# Mirrors corpus_generator.CORPUS_ENTITY_SOURCES (issue #143: acme_shop_about is
+# an entity "about" page, not a customer-support retrieval target). The online
+# /ingest fixtures use the production LLM classifier (classify_source, #106), so
+# this static set is the gold-derivation contract — the post-build --qc-only
+# check verifies the fixtures actually cover every Gold Section before spend.
+CORPUS_ENTITY_SOURCES: frozenset[str] = frozenset({"warranty.md", "acme_shop_about.md"})
 
 
 # ---------------------------------------------------------------------------

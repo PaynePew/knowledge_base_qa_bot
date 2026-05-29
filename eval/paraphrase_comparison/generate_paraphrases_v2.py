@@ -80,6 +80,7 @@ from .generate_paraphrases import (
     _docs_section_bodies,
     freeze_corpus,
     load_probes,
+    missing_concept_fixtures,
     render_queries_yaml,
     run_qc,
     _print_qc,
@@ -226,6 +227,17 @@ def main(argv: list[str] | None = None) -> int:
                 "Running QC gate over the committed queries.yaml instead.\n"
                 "For the full Demo-tier live regeneration, see issue #145."
             )
+        # Same precondition as the live path: run_qc reads a concept Wiki Page
+        # per Gold Section, so report missing fixtures with an actionable message
+        # rather than a raw FileNotFoundError traceback (issue #145).
+        missing = missing_concept_fixtures()
+        if missing:
+            print(
+                f"\nERROR: {len(missing)} Gold Section(s) have no concept Wiki Page "
+                f"(e.g. {sorted(missing)[:3]}). Build the wiki fixtures first:\n"
+                "  uv run python -m eval.paraphrase_comparison.build_wiki_fixtures"
+            )
+            return 1
         from .loader import load_paraphrases
 
         verdicts = run_qc(load_paraphrases())
@@ -244,6 +256,22 @@ def main(argv: list[str] | None = None) -> int:
     print(
         f"Corpus frozen: {n_frozen} file(s) copied from {FAKE_DOCS_DIR} → {CORPUS_DIR}."
     )
+
+    # Fail fast BEFORE the paid generation: run_qc (below) reads a concept Wiki
+    # Page for every Gold Section, so stale/absent fixtures would crash QC only
+    # AFTER the expensive Synthesizer run and waste the spend (issue #145).
+    missing = missing_concept_fixtures()
+    if missing:
+        print(
+            f"\nERROR: {len(missing)} Gold Section(s) have no concept Wiki Page "
+            f"(e.g. {sorted(missing)[:3]}).\n"
+            "The wiki fixtures are stale or absent — build them FIRST so QC will "
+            "not crash after the paid generation:\n"
+            "  uv run python -m eval.paraphrase_comparison.build_wiki_fixtures\n"
+            "Then re-run this command. (Tip: `--qc-only` validates the QC path for "
+            "free before spending.)"
+        )
+        return 1
 
     config = SynthesizerConfig(
         per_type_count=args.per_type,

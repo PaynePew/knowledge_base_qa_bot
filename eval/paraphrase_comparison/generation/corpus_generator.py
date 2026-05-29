@@ -526,11 +526,14 @@ def generate_doc_live(doc: DocSpec, output_dir: Path, llm) -> Path:
     lines: list[str] = [f"# {doc.title}", ""]
     for section in doc.sections:
         prompt = (
-            f"Write a concise, realistic help-centre section for an e-commerce "
+            f"Write a thorough, realistic help-centre section for an e-commerce "
             f"company called Acme Shop. The section heading is "
             f'"{section.heading}" under the page "{doc.title}". '
             f"Content focus: {section.prompt_hint} "
-            f"Write 3–5 sentences of factual, professional prose in plain English. "
+            f"Write 2–3 well-developed paragraphs (roughly 140–230 words total) of "
+            f"factual, professional prose in plain English. Cover the topic in depth "
+            f"with concrete specifics a real customer would ask about — relevant "
+            f"steps, timeframes, eligibility conditions, fees, and edge cases. "
             f"Do not include the heading itself in your response."
         )
         response = llm.invoke(prompt)

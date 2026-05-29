@@ -168,6 +168,23 @@ def _concept_body(slug: str) -> str:
     return " ".join(lines).strip()
 
 
+def missing_concept_fixtures(corpus_dir: Path = CORPUS_DIR) -> list[str]:
+    """Return Gold Section ids whose concept Wiki Page is absent from WIKI_CONCEPTS_DIR.
+
+    ``run_qc`` reads each Gold Section's concept body; in the live pipeline that
+    runs AFTER the paid Synthesizer generation, so a stale/absent fixture set
+    crashes QC and wastes the spend (issue #145). Callers check this BEFORE
+    generation and bail cheaply, pointing the user at ``build_wiki_fixtures``.
+    The online ``/ingest`` fixtures use an LLM classifier, so this is the only
+    reliable pre-spend guarantee the concept pages cover the Gold Section pool.
+    """
+    return [
+        s.section_id
+        for s in sampling.load_gold_sections(corpus_dir=corpus_dir)
+        if not (WIKI_CONCEPTS_DIR / f"{s.concept_slug}.md").exists()
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Core generation (LLM)
 # ---------------------------------------------------------------------------
