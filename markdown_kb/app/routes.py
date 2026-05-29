@@ -177,9 +177,16 @@ def lint() -> LintResponse:
 def ingest(req: IngestRequest | None = None) -> IngestResponse:
     """Ingest one or all Sources and write wiki synthesis pages.
 
-    - No body (or body with ``source=null``): batch mode — processes all
-      Sources discovered under docs/ via ``glob("**/*.md")``.
-    - Body with ``source="<filename>"``: single-source mode.
+    - No body (or body with ``source=null`` and no ``sources``): batch mode —
+      processes all Sources discovered under docs/ via ``glob("**/*.md")``.
+    - Body with ``sources=["a.md", "b.md"]``: explicit multi-source batch
+      mode — ingests exactly those named Sources in one call, sharing the
+      cross-source ``used_slugs`` set for slug collision detection (#54).
+      Used by the Operator Console drop-batch path (Phase 15 S3, issue #172).
+    - Body with ``source="<filename>"``: single-source mode (back-compat).
+
+    Priority: ``sources`` list (non-empty) → ``source`` single-string →
+    all-docs batch mode.
 
     Shallow wrapper around `ingest_sources(...)`.  All domain logic
     (parse → classify → synthesise → write) lives in `ingest.py`
@@ -189,10 +196,14 @@ def ingest(req: IngestRequest | None = None) -> IngestResponse:
     is not found (reflected in ``failed_sources``).
     """
     force = req.force if req is not None else False
-    if req is None or req.source is None:
-        # Batch mode: ingest all docs/
+    if req is not None and req.sources:
+        # Explicit multi-source batch (Phase 15 S3): one call, shared used_slugs.
+        batch = ingest_sources(req.sources, force=force)
+    elif req is None or req.source is None:
+        # All-docs batch mode: ingest everything under docs/
         batch = ingest_sources(None, force=force)
     else:
+        # Single-source mode (back-compat)
         batch = ingest_sources([req.source], force=force)
     return IngestResponse(
         results=batch.results,

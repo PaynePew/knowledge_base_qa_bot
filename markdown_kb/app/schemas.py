@@ -258,12 +258,24 @@ class IngestRequest(BaseModel):
     (e.g. "refund_policy.md"). When omitted (or body omitted entirely),
     batch mode ingests all Sources under docs/ (Slice #2).
 
+    `sources` is an explicit list of bare filenames for multi-source batch
+    calls (Phase 15 S3, issue #172). Used by the Operator Console to send
+    a drop batch as a single call so the cross-source `used_slugs` set is
+    shared across all named Sources — essential for the "a Section is never
+    silently overwritten" guarantee (#54 / ADR-0011).
+
+    Back-compat priority:
+      1. `sources` list (explicit multi-source batch) — wins if non-empty.
+      2. `source` single-string — used when `sources` is absent/empty.
+      3. Neither → all-docs batch mode (glob "**/*.md").
+
     `force` bypasses hash-skip idempotency (Phase 3 amendment #93). When
     True, the source is re-ingested even if its docs_body_hash matches the
     existing wiki frontmatter. Defaults to False.
     """
 
     source: str | None = None
+    sources: list[str] | None = None
     force: bool = False
 
 
