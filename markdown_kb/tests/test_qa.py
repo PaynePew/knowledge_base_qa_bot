@@ -85,16 +85,30 @@ def test_compute_slug_distinct_questions_produce_distinct_slugs():
     )
 
 
-def test_compute_slug_cjk_question_degrades_gracefully():
-    """No ASCII alphanumerics → ``qa-<hash>`` (Q3 degenerate form)."""
+def test_compute_slug_cjk_question_produces_readable_slug():
+    """Phase 16: CJK questions produce a readable CJK-prefix slug.
+
+    Pre-Phase-16 behaviour: slugify("如何取消订单？") returned "section" (CJK was
+    dropped) → compute_slug mapped that to "qa-<hash>".
+
+    Post-Phase-16 behaviour: slugify preserves CJK characters verbatim, so
+    a CJK question now gets a grep-able CJK prefix (e.g. "如何取消订单-<hash>"),
+    which is strictly more useful than the opaque "qa-<hash>" form.
+    The hash suffix still ensures uniqueness.
+    """
     from app.qa import compute_slug
 
     cjk_slug = compute_slug("如何取消订单？")
-    assert cjk_slug.startswith("qa-"), (
-        f"Expected 'qa-<hash>' for CJK-only question, got {cjk_slug!r}"
-    )
-    # 6 hex chars + 'qa-' prefix
-    assert len(cjk_slug) == len("qa-") + 6
+    # Phase 16: CJK chars are preserved → prefix contains CJK characters
+    # (the question-mark ？ is stripped as punctuation, so the slug starts
+    # with the CJK run directly)
+    cjk_chars = [ch for ch in cjk_slug if "一" <= ch <= "鿿"]
+    assert cjk_chars, f"Phase 16: expected CJK characters in slug prefix, got {cjk_slug!r}"
+    # Hash suffix (6 hex chars) is always present
+    parts = cjk_slug.rsplit("-", 1)
+    assert (
+        len(parts) == 2 and len(parts[1]) == 6 and all(c in "0123456789abcdef" for c in parts[1])
+    ), f"Expected '<prefix>-<6hex>' format, got {cjk_slug!r}"
 
 
 def test_normalize_question_strips_punct_collapses_whitespace():
