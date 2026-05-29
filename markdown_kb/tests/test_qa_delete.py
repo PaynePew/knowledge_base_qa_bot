@@ -24,7 +24,6 @@ from dataclasses import dataclass
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Minimal Section stub (mirrors test_qa_promote.py)
 # ---------------------------------------------------------------------------
@@ -299,10 +298,10 @@ def test_delete_missing_via_route_returns_404(tmp_path):
 
 def test_delete_draft_via_route_returns_204(tmp_path):
     """``DELETE /qa/{slug}`` for a draft page returns HTTP 204 No Content."""
-    from app.qa import compute_slug, maybe_file_answer
     from fastapi.testclient import TestClient
 
     from app.main import app
+    from app.qa import compute_slug, maybe_file_answer
 
     query = "How do I cancel my subscription?"
     cited = [_stub("refund-policy#cancellation")]
@@ -311,9 +310,7 @@ def test_delete_draft_via_route_returns_204(tmp_path):
 
     client = TestClient(app, raise_server_exceptions=False)
     response = client.delete(f"/qa/{slug}")
-    assert response.status_code == 204, (
-        f"Expected 204 for draft delete, got {response.status_code}"
-    )
+    assert response.status_code == 204, f"Expected 204 for draft delete, got {response.status_code}"
 
     # File must be gone
     qa_path = tmp_path / "wiki" / "qa" / f"{slug}.md"

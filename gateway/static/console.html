@@ -6,7 +6,7 @@
 <title>Operator Console — KB Gateway</title>
 
 <!--
-  KB Gateway Operator Console — Phase 15 (S1–S5).
+  KB Gateway Operator Console — Phase 15 (S1–S6).
   Single vanilla HTML/CSS/JS file. NO framework, NO build step (CODING_STANDARD §12.1).
   XSS: all server-derived content inserted via textContent, never innerHTML (§12.4).
   No business logic: validation and routing decisions are server-derived (§12.5).
@@ -36,6 +36,17 @@
     - Staleness guard: module-level indexStale flag set by Ingest run, cleared by Index run.
       Integration point: slice #172 Ingest run() calls markIngestDone() on resolve;
       markIndexDone() is called in the Index run.finally block.
+  Phase 15 S6 (#174): Curation Queue — Promote + Discard (DELETE /qa inert-only).
+    - Rendered after Lint runs (driven by the stored LintResponse).
+    - C8 promotion candidates: each card shows question, answer (fetched via GET /read/file),
+      and cited Sources. Promote button → POST /wiki/qa/{slug}/promote (draft→live).
+      Discard button → DELETE /wiki/qa/{slug} (inert only; live refused by server → 409).
+    - C9 stale filed answers: read-only flag with "re-ingest the source" hint. No
+      destructive action (live pages are never deleted — ADR-0012).
+    - C10 invalid qa schema: read-only flag with "fix frontmatter or discard" hint.
+      Discard button offered (inert; server decides eligibility — §12.5).
+    - All server-derived text via textContent (§12.4).
+    - Re-runs lint on "Refresh" to pick up queue changes.
   Shared design tokens: linked from shared.css (Phase 15 S1).
 -->
 
@@ -575,6 +586,217 @@
     word-break: break-word;
   }
 
+  /* ── Curation Queue (Phase 15 S6, issue #174) ───────────── */
+  .curation-queue {
+    margin-top: 40px;
+  }
+
+  .queue-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .queue-header-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  .queue-refresh-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: none;
+    color: var(--ink-3);
+    border: 1px solid var(--rule);
+    padding: 4px 10px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .04em;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-left: auto;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .queue-refresh-btn:hover:not(:disabled) {
+    color: var(--ink);
+    border-color: var(--ink-3);
+  }
+  .queue-refresh-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+  .queue-section {
+    margin-bottom: 24px;
+  }
+
+  .queue-section-head {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--ink-3);
+    padding: 8px 0 8px;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 10px;
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  .queue-empty {
+    padding: 14px 0;
+    font-size: 13px;
+    color: var(--ink-3);
+    font-style: italic;
+  }
+
+  /* Draft card: bordered, full-width, body preview */
+  .draft-card {
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    background: var(--surface);
+    overflow: hidden;
+    margin-bottom: 10px;
+  }
+
+  .draft-card-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 16px 10px;
+    border-bottom: 1px solid var(--rule-2);
+  }
+
+  .draft-card-question {
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--ink);
+    flex: 1;
+    min-width: 0;
+    line-height: 1.4;
+  }
+
+  .draft-card-meta {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    color: var(--ink-4);
+    flex-shrink: 0;
+    padding-top: 2px;
+    white-space: nowrap;
+  }
+
+  .draft-card-body {
+    padding: 10px 16px;
+    font-size: 13px;
+    color: var(--ink-2);
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 160px;
+    overflow-y: auto;
+    border-bottom: 1px solid var(--rule-2);
+  }
+
+  .draft-card-sources {
+    padding: 6px 16px 8px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    color: var(--ink-4);
+    border-bottom: 1px solid var(--rule-2);
+    display: flex; align-items: flex-start; gap: 6px; flex-wrap: wrap;
+  }
+
+  .draft-card-sources .src-label {
+    color: var(--ink-3);
+    flex-shrink: 0;
+  }
+
+  .draft-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+  }
+
+  .promote-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--pass);
+    color: #fff;
+    border: 0;
+    padding: 5px 12px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .04em;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background .15s ease, opacity .15s ease;
+  }
+  .promote-btn:hover:not(:disabled) { background: #276a40; }
+  .promote-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+  .discard-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: none;
+    color: var(--fail);
+    border: 1px solid var(--fail);
+    padding: 5px 12px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .04em;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background .15s ease, opacity .15s ease;
+  }
+  .discard-btn:hover:not(:disabled) { background: #fff0f0; }
+  .discard-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+  .card-status-msg {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .03em;
+    margin-left: 8px;
+    flex: 1;
+  }
+  .card-status-msg.ok   { color: var(--pass); }
+  .card-status-msg.err  { color: var(--fail); }
+
+  /* Flag card (C9 stale / C10 invalid) — no destructive actions on stale */
+  .flag-card {
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    background: var(--surface);
+    overflow: hidden;
+    margin-bottom: 8px;
+    padding: 10px 16px;
+    display: grid;
+    grid-template-columns: 24px 1fr auto;
+    column-gap: 12px;
+    align-items: start;
+  }
+
+  .flag-icon {
+    font-size: 13px;
+    color: var(--ink-4);
+    padding-top: 2px;
+    text-align: center;
+  }
+
+  .flag-body { min-width: 0; }
+
+  .flag-slug {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    color: var(--ink);
+    font-weight: 500;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  .flag-hint {
+    font-size: 12px;
+    color: var(--ink-3);
+    margin-top: 3px;
+    line-height: 1.4;
+  }
+
+  .flag-actions { display: flex; align-items: flex-start; padding-top: 1px; }
+
   @media (max-width: 540px) {
     .page { padding: 0 20px 48px; }
   }
@@ -602,6 +824,9 @@
 
     <!-- RAG rebuild track: parallel to Wiki chain (#173) -->
     <div id="rag-track-root"></div>
+
+    <!-- Curation Queue: built by JS after Lint runs (Phase 15 S6, issue #174) -->
+    <div id="curation-queue-root"></div>
 
     <div id="browser-section">
       <!-- Resource browser built by JS below (Phase 15 S5, issue #171) -->
@@ -1441,6 +1666,7 @@ var STEP_DEFS = [
     buildBody: null,
     run: function(resultEl, setStepBusy) {
       /* Phase 15 S4 (#173): real LintResponse card with per-check grouped findings */
+      /* Phase 15 S6 (#174): store lint data + trigger Curation Queue render */
       setStepBusy(true);
       resultEl.replaceChildren(makeBusyCard("Running Lint audit…"));
 
@@ -1449,7 +1675,12 @@ var STEP_DEFS = [
           if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
           return resp.json();
         })
-        .then(function(data) { resultEl.replaceChildren(renderLintCard(data)); })
+        .then(function(data) {
+          resultEl.replaceChildren(renderLintCard(data));
+          /* Phase 15 S6: store latest lint data and render the Curation Queue */
+          lastLintData = data;
+          renderCurationQueue(document.getElementById("curation-queue-root"), data);
+        })
         .catch(function(err)  { resultEl.replaceChildren(renderErrorCard("Lint", err.message || String(err))); })
         .finally(function()   { setStepBusy(false); });
     },
@@ -1529,6 +1760,400 @@ function buildPipeline(rootEl) {
       panels
     )
   );
+}
+
+/* ============================================================
+   Phase 15 S6 (#174) — Curation Queue
+   Driven by the latest LintResponse stored in lastLintData.
+   Sections:
+     - C8 Promotion candidates (draft Filed Answers, ranked) — Promote + Discard
+     - C9 Stale filed answers — read-only flag, "re-ingest source" hint
+     - C10 Invalid qa schema — read-only flag + optional Discard (inert only)
+   §12.4: all server-derived text via textContent.
+   §12.5: server decides inert/live eligibility; the client just calls and shows.
+   ============================================================ */
+
+/* Module-level store for the latest LintResponse */
+var lastLintData = null;
+
+/* ── Curation Queue renderer ──────────────────────────────── */
+function renderCurationQueue(rootEl, lintData) {
+  if (!rootEl) return;
+  if (!lintData || !lintData.findings) {
+    /* No data yet — clear the queue section */
+    rootEl.replaceChildren();
+    return;
+  }
+
+  var findings     = lintData.findings;
+  var candidates   = findings.promotion_candidates  || [];   /* C8 */
+  var staleQa      = findings.stale_filed_answers   || [];   /* C9 */
+  var invalidQa    = findings.invalid_qa_schemas    || [];   /* C10 */
+
+  /* If all categories are empty, render a clean-slate message */
+  if (candidates.length === 0 && staleQa.length === 0 && invalidQa.length === 0) {
+    rootEl.replaceChildren(
+      el("div", { class: "curation-queue" },
+        el("div", { class: "queue-header" },
+          el("span", { class: "queue-header-label", text: "Curation Queue" }),
+          makeRefreshBtn()
+        ),
+        el("div", { class: "queue-empty", text: "No curation items — all Filed Answers are clean." })
+      )
+    );
+    return;
+  }
+
+  var queueEl = el("div", { class: "curation-queue" });
+
+  /* ── Header ─────────────────────────────────────────────── */
+  queueEl.append(
+    el("div", { class: "queue-header" },
+      el("span", { class: "queue-header-label", text: "Curation Queue" }),
+      makeRefreshBtn()
+    )
+  );
+
+  /* ── C8: Promotion candidates ───────────────────────────── */
+  if (candidates.length > 0) {
+    var c8Section = el("div", { class: "queue-section" },
+      el("div", { class: "queue-section-head" },
+        el("span", { text: "Promotion Candidates (C8)" }),
+        el("span", { class: "label label-created", text: String(candidates.length) })
+      )
+    );
+    candidates.forEach(function(f) {
+      c8Section.append(buildDraftCard(f));
+    });
+    queueEl.append(c8Section);
+  }
+
+  /* ── C9: Stale filed answers ────────────────────────────── */
+  if (staleQa.length > 0) {
+    /* Deduplicate by page_slug — C10 may overlap, show each slug once */
+    var staleMap = {};
+    staleQa.forEach(function(f) { staleMap[f.page_slug] = f; });
+    var staleSlugs = Object.keys(staleMap);
+
+    var c9Section = el("div", { class: "queue-section" },
+      el("div", { class: "queue-section-head" },
+        el("span", { text: "Stale Filed Answers (C9)" }),
+        el("span", { class: "label label-updated", text: String(staleSlugs.length) })
+      )
+    );
+    staleSlugs.forEach(function(slug) {
+      var f = staleMap[slug];
+      var drift = f.max_drift_days != null ? f.max_drift_days.toFixed(1) + "d drift" : "";
+      var hint = "Re-ingest the source document to refresh this live Filed Answer.";
+      c9Section.append(buildFlagCard(
+        /* icon */ "~",
+        /* slug */ f.page_slug,
+        /* subtitle */ drift + (drift ? " — " : "") + hint,
+        /* discardBtn? */ false
+      ));
+    });
+    queueEl.append(c9Section);
+  }
+
+  /* ── C10: Invalid qa schema ─────────────────────────────── */
+  if (invalidQa.length > 0) {
+    /* Group by slug — multiple findings per slug are possible */
+    var invalidMap = {};
+    invalidQa.forEach(function(f) {
+      if (!invalidMap[f.page_slug]) invalidMap[f.page_slug] = [];
+      invalidMap[f.page_slug].push(f);
+    });
+    var invalidSlugs = Object.keys(invalidMap);
+
+    var c10Section = el("div", { class: "queue-section" },
+      el("div", { class: "queue-section-head" },
+        el("span", { text: "Invalid QA Schema (C10)" }),
+        el("span", { class: "label label-failed", text: String(invalidSlugs.length) })
+      )
+    );
+    invalidSlugs.forEach(function(slug) {
+      var items = invalidMap[slug];
+      var propSummary = items.map(function(i) {
+        return i.property_name + "=" + i.offending_value;
+      }).join("; ");
+      var hint = "Fix the frontmatter property or Discard to clear this invalid entry.";
+      c10Section.append(buildFlagCard(
+        /* icon */ "!",
+        /* slug */ slug,
+        /* subtitle */ propSummary + " — " + hint,
+        /* discardBtn? */ true,
+        /* onDiscard */ function(cardEl) { doDiscard(slug, cardEl); }
+      ));
+    });
+    queueEl.append(c10Section);
+  }
+
+  rootEl.replaceChildren(queueEl);
+}
+
+/* ── Refresh button ─────────────────────────────────────────
+   Re-runs lint and refreshes the queue without opening the
+   full pipeline stepper — keeps the queue self-contained.    */
+function makeRefreshBtn() {
+  var btn = el("button", {
+    class: "queue-refresh-btn",
+    type: "button",
+    text: "Refresh"
+  });
+  btn.addEventListener("click", function() {
+    btn.disabled = true;
+    btn.textContent = "Refreshing…";
+
+    fetch("/wiki/lint", { method: "POST" })
+      .then(function(resp) {
+        if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+        return resp.json();
+      })
+      .then(function(data) {
+        lastLintData = data;
+        renderCurationQueue(document.getElementById("curation-queue-root"), data);
+      })
+      .catch(function() {
+        btn.disabled = false;
+        btn.textContent = "Refresh";
+      });
+  });
+  return btn;
+}
+
+/* ── Draft card builder (C8) ────────────────────────────────
+   Fetches the draft body via GET /read/file?path=wiki/qa/<slug>.md
+   (the S5 read API, issue #171). Shows question, answer, sources.
+   Promote → POST /wiki/qa/{slug}/promote
+   Discard → DELETE /wiki/qa/{slug}                              */
+function buildDraftCard(f) {
+  /* slug, question, count, age_days, cited_count come from PromotionCandidateFinding */
+  var slug = f.slug;
+  var question = f.question || "";
+  var metaText = "asked " + f.count + "×";
+  if (f.age_days != null) metaText += " · " + f.age_days.toFixed(0) + "d ago";
+
+  /* Action state */
+  var actionBusy = false;
+  var statusMsgEl = el("span", { class: "card-status-msg" });
+
+  /* Buttons */
+  var promoteBtn = el("button", {
+    class: "promote-btn",
+    type: "button",
+    text: "Promote"
+  });
+  var discardBtn = el("button", {
+    class: "discard-btn",
+    type: "button",
+    text: "Discard"
+  });
+
+  function setActionBusy(v) {
+    actionBusy = v;
+    promoteBtn.disabled = v;
+    discardBtn.disabled = v;
+  }
+
+  promoteBtn.addEventListener("click", function() {
+    if (actionBusy) return;
+    setActionBusy(true);
+    statusMsgEl.textContent = "Promoting…";
+    statusMsgEl.className = "card-status-msg";
+
+    fetch("/wiki/qa/" + encodeURIComponent(slug) + "/promote", { method: "POST" })
+      .then(function(resp) {
+        if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+        return resp.json();
+      })
+      .then(function() {
+        statusMsgEl.textContent = "Promoted — now live in corpus.";
+        statusMsgEl.className = "card-status-msg ok";
+        promoteBtn.disabled = true;
+        discardBtn.disabled = true;
+        /* Mark the card as promoted visually */
+        cardEl.style.opacity = "0.6";
+      })
+      .catch(function(err) {
+        statusMsgEl.textContent = "Error: " + (err.message || String(err));
+        statusMsgEl.className = "card-status-msg err";
+        setActionBusy(false);
+      });
+  });
+
+  discardBtn.addEventListener("click", function() {
+    if (actionBusy) return;
+    setActionBusy(true);
+    statusMsgEl.textContent = "Discarding…";
+    statusMsgEl.className = "card-status-msg";
+    doDiscard(slug, cardEl, statusMsgEl, setActionBusy);
+  });
+
+  /* Answer body + sources: fetch asynchronously from the S5 read API */
+  var bodyPlaceholder = el("div", { class: "draft-card-body" });
+  bodyPlaceholder.textContent = "Loading…";
+
+  var sourcesEl = el("div", { class: "draft-card-sources" },
+    el("span", { class: "src-label", text: "sources:" })
+  );
+  /* cited_count from PromotionCandidateFinding — we can't list the IDs from
+     the finding alone; the actual IDs live in the file frontmatter which the
+     read API gives us. Populate from the file once fetched. */
+
+  fetch("/read/file?" + new URLSearchParams({ path: "wiki/qa/" + slug + ".md" }))
+    .then(function(r) {
+      if (!r.ok) return r.json().then(function(j) { throw new Error(j.detail || ("HTTP " + r.status)); });
+      return r.json();
+    })
+    .then(function(data) {
+      var content = data.content || "";
+      /* Extract body (everything after the second ---) */
+      var lines = content.split("\n");
+      var dashIdxs = [];
+      for (var i = 0; i < lines.length; i++) {
+        if (lines[i].trim() === "---") dashIdxs.push(i);
+        if (dashIdxs.length === 2) break;
+      }
+      var bodyText = dashIdxs.length >= 2
+        ? lines.slice(dashIdxs[1] + 1).join("\n").replace(/^\n+/, "")
+        : content;
+      bodyPlaceholder.textContent = bodyText.trim() || "(no body)";
+
+      /* Extract sources from frontmatter YAML text */
+      if (dashIdxs.length >= 2) {
+        var fmLines = lines.slice(dashIdxs[0] + 1, dashIdxs[1]);
+        /* Find the sources: list — look for "sources:" then subsequent "- " items */
+        var inSources = false;
+        var srcs = [];
+        for (var j = 0; j < fmLines.length; j++) {
+          var ln = fmLines[j];
+          if (/^sources\s*:/.test(ln)) { inSources = true; continue; }
+          if (inSources) {
+            var m = ln.match(/^\s+-\s+(.*)/);
+            if (m) {
+              srcs.push(m[1].trim());
+            } else {
+              inSources = false;
+            }
+          }
+        }
+        if (srcs.length > 0) {
+          srcs.forEach(function(s) {
+            sourcesEl.append(el("span", { text: s }));
+          });
+        } else {
+          sourcesEl.append(el("span", { text: "(none listed)" }));
+        }
+      }
+    })
+    .catch(function() {
+      bodyPlaceholder.textContent = "(could not load answer body)";
+      sourcesEl.append(el("span", { text: "(unknown)" }));
+    });
+
+  var cardEl = el("div", { class: "draft-card" },
+    el("div", { class: "draft-card-head" },
+      el("div", { class: "draft-card-question", text: question }),
+      el("div", { class: "draft-card-meta",     text: metaText })
+    ),
+    bodyPlaceholder,
+    sourcesEl,
+    el("div", { class: "draft-card-actions" },
+      promoteBtn,
+      discardBtn,
+      statusMsgEl
+    )
+  );
+
+  return cardEl;
+}
+
+/* ── Flag card builder (C9 / C10) ───────────────────────────
+   Read-only card with icon, slug, hint text, and optional Discard.
+   C9 (live stale):  discardBtn=false — never offer destructive action on live.
+   C10 (invalid):    discardBtn=true  — inert, safe to discard.            */
+function buildFlagCard(icon, slug, subtitle, showDiscard, onDiscard) {
+  var actionBusy = false;
+  var statusMsgEl = el("span", { class: "card-status-msg" });
+
+  var actionsChildren = [statusMsgEl];
+  if (showDiscard) {
+    var dBtn = el("button", {
+      class: "discard-btn",
+      type: "button",
+      text: "Discard"
+    });
+    dBtn.addEventListener("click", function() {
+      if (actionBusy) return;
+      actionBusy = true;
+      dBtn.disabled = true;
+      statusMsgEl.textContent = "Discarding…";
+      statusMsgEl.className = "card-status-msg";
+      if (onDiscard) onDiscard(cardEl);
+    });
+    actionsChildren = [dBtn, statusMsgEl];
+  }
+
+  var bodyEl = el("div", { class: "flag-body" },
+    el("div", { class: "flag-slug", text: slug }),
+    el("div", { class: "flag-hint", text: subtitle })
+  );
+
+  var cardEl = el("div", { class: "flag-card" },
+    el("div", { class: "flag-icon", text: icon }),
+    bodyEl,
+    el("div", { class: "flag-actions" }, actionsChildren[0],
+      actionsChildren.length > 1 ? actionsChildren[1] : null)
+  );
+
+  return cardEl;
+}
+
+/* ── Shared discard helper ─────────────────────────────────
+   Calls DELETE /wiki/qa/{slug}. On 204 → mark card as discarded.
+   On 409 → server decided this page is live; show message.
+   statusMsgEl / setActionBusy may be null in the flag-card path.    */
+function doDiscard(slug, cardEl, statusMsgEl, setActionBusy) {
+  fetch("/wiki/qa/" + encodeURIComponent(slug), { method: "DELETE" })
+    .then(function(resp) {
+      if (resp.status === 409) {
+        /* Server refused — this page is live (ADR-0012 §12.5 server decides) */
+        var msg = "Cannot discard: page is live (status=live). Use re-ingest to refresh.";
+        if (statusMsgEl) {
+          statusMsgEl.textContent = msg;
+          statusMsgEl.className = "card-status-msg err";
+        }
+        if (setActionBusy) setActionBusy(false);
+        return;
+      }
+      if (!resp.ok) {
+        return resp.text().then(function(t) {
+          var msg = "Error: HTTP " + resp.status + " " + t;
+          if (statusMsgEl) {
+            statusMsgEl.textContent = msg;
+            statusMsgEl.className = "card-status-msg err";
+          }
+          if (setActionBusy) setActionBusy(false);
+        });
+      }
+      /* 204 No Content — success */
+      if (statusMsgEl) {
+        statusMsgEl.textContent = "Discarded.";
+        statusMsgEl.className = "card-status-msg ok";
+      }
+      cardEl.style.opacity = "0.5";
+      /* Visually strike out the card title if present */
+      var slug_el = cardEl.querySelector(".flag-slug");
+      if (slug_el) slug_el.style.textDecoration = "line-through";
+    })
+    .catch(function(err) {
+      var msg = "Error: " + (err.message || String(err));
+      if (statusMsgEl) {
+        statusMsgEl.textContent = msg;
+        statusMsgEl.className = "card-status-msg err";
+      }
+      if (setActionBusy) setActionBusy(false);
+    });
 }
 
 /* ── Boot ──────────────────────────────────────────────────── */
