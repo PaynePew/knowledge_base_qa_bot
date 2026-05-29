@@ -47,6 +47,11 @@ __pycache__/
 venv/
 *.egg-info/
 .pytest_cache/
+.ruff_cache/
+
+# DeepEval (Phase 8 eval framework) — machine-local telemetry + cache, regenerable.
+.deepeval/
+.deepeval-cache.json
 
 # Secrets
 .env
