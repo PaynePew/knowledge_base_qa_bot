@@ -530,7 +530,7 @@ Each signal has a **severity** that determines the reviewer's action:
 
 ### Git hygiene
 
-- [ ] **FAIL** — A PRD-encoded invariant is broken (most notable: `wiki/log.md` must remain committed, not gitignored — see `prd.md`).
+- [ ] **FAIL** — A PRD-encoded invariant is broken. (Note: prd.md's original "`wiki/log.md` committed, not gitignored" intent was **superseded** by the `wiki/` artifact taxonomy — `wiki/README.md`, commit `d00d9e3`. `wiki/index.md` / `wiki/log.md` / `wiki/hot.md` and every `<package>/log.md` are generated / runtime-trace artifacts and stay **gitignored** per §5.1; *committing* one is now the drift.)
 - [ ] **FAIL** — An ADR-tagged `**Invariant**` is broken **without** a paired new ADR superseding it. Locate them via `grep -nE "Invariant" project-docs/adr/*.md`.
 
 ### Frontend drift (§12)
