@@ -103,7 +103,7 @@ That pattern has a hard precondition: **a persistent agent.** This project does 
 
 **Seam correction (important for the Phase 12 grill):** Phase 11 left `ConversationStore.dump(session_id)` open as "the Phase 10 Hot Cache seam." That was predicated on the now-rejected browser-reader framing. The MCP host does **not** go through `/chat/stream`; it calls MCP tools directly, so the MCP Hot Cache's input is the **host's own MCP session**, not the Conversation Store. Do not build the MCP Hot Cache on top of `dump()`. The `dump()` docstring and the CONTEXT.md Conversation Store term have been neutralised accordingly (no longer claim to be "the Phase 10 seam").
 
-**Open decision deferred to the Phase 12 grill:** is KB-local agent-agnostic working memory worth it vs. just letting the MCP host keep its own memory (CLAUDE.md / host memory)? We leaned yes, but it is the real make-or-break call and should be re-litigated when MCP is actually scoped.
+**Make-or-break decision — RESOLVED (2026-05-29): Option A.** Build a server-side `wiki/hot.md` as **KB-local, agent-agnostic working memory** rather than relying on the MCP host's own memory. Rationale: it fits the project's enterprise-KB-management positioning (the KB is a handoff-able, audit-able artifact that carries its own "where were we?" and survives agent/install/teammate turnover). Commitments this locks in for Phase 12: (1) expose `wiki/hot.md` as an MCP resource (e.g. `kb://hot`) the host reads first + a write path; (2) the **server only persists bytes — the host agent writes the summary** (claude-obsidian `/save` pattern); (3) `wiki/hot.md` stays excluded from the Section Index corpus (working memory, not retrieval content — existing invariant). **One sub-question still open for the Phase 12 grill:** the write trigger — a manual `kb_save_hot(summary)` tool (no clean MCP "session end" signal, so leaning manual) vs. some automatic mechanism.
 
 ### Phase 11 (Conversation Memory) — filing × toggle interaction (locked at Phase 9 grill, 2026-05-28)
 
@@ -131,7 +131,8 @@ Not yet grilled — a future session will grill this from scratch. This note han
 - Expose `wiki/hot.md` as an MCP **resource** (e.g. `kb://hot`) the host reads first each session, plus a write tool (e.g. `kb_save_hot(summary)`) — mirrors `claude-obsidian`'s `/save`.
 - **The server only persists bytes; the host agent (which holds the session context) writes the summary.** No server-side LLM summariser, no "when does the session end" trigger on the server — those problems dissolve in the MCP model.
 - Input is the **host's MCP session**, NOT `ConversationStore.dump()` (that seam was aimed at the rejected browser-reader framing — see the Phase 10 prep note).
-- Make-or-break question to settle in the grill: is KB-local, agent-agnostic working memory worth it vs. the host keeping its own memory? Leaned yes (fits the enterprise-KB handoff/audit positioning), but re-litigate.
+- Make-or-break question — **RESOLVED 2026-05-29: Option A** (build server-side `wiki/hot.md` as KB-local, agent-agnostic working memory; the KB carries its own "where were we?", surviving agent/install/teammate turnover — fits the enterprise-KB handoff/audit positioning). Do NOT skip it in favour of host-only memory.
+- Only sub-question left for this grill: the **write trigger** — manual `kb_save_hot(summary)` tool (leaning this, since MCP has no clean "session end" signal) vs. an automatic mechanism.
 
 ### Phase 13 (Hybrid Retrieval over Wiki) — design decisions already locked
 
