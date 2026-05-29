@@ -201,6 +201,5 @@ def test_verify_empty_sections_no_llm_call(tmp_path, monkeypatch) -> None:
     assert outcome.result.passed is False
     # The draft itself should appear in unsupported_claims
     assert any(
-        EMPTY_SECTIONS.draft.lower() in uc.lower()
-        for uc in outcome.result.unsupported_claims
+        EMPTY_SECTIONS.draft.lower() in uc.lower() for uc in outcome.result.unsupported_claims
     ), f"Draft not found in unsupported_claims: {outcome.result.unsupported_claims}"
