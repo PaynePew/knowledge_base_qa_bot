@@ -53,6 +53,8 @@ import textwrap
 from dataclasses import dataclass
 from pathlib import Path
 
+from dotenv import find_dotenv, load_dotenv
+
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 FAKE_DOCS_DIR = _REPO_ROOT / "docs" / "fake-docs"
 
@@ -581,6 +583,9 @@ def main(argv: list[str] | None = None) -> int:
         help=f"Output directory (default: {FAKE_DOCS_DIR}).",
     )
     args = parser.parse_args(argv)
+    load_dotenv(
+        find_dotenv(usecwd=True)
+    )  # pick up OPENAI_API_KEY from a repo-root .env
 
     output_dir = Path(args.output_dir)
 
