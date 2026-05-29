@@ -6,13 +6,16 @@
 <title>ask.Wiki&amp;RAG — grounded Q&amp;A</title>
 
 <!--
-  KB Gateway browser UI — Phase 9 Slice 6 (#122).
+  KB Gateway browser UI — Phase 9 Slice 6 (#122) + Phase 11 Slice 4 (#162).
   Single vanilla HTML/CSS/JS file. NO framework, NO build step (CODING_STANDARD §12.1).
   SSE client: fetch() + ReadableStream — EventSource is GET-only (§12.2).
   XSS: all server/LLM-derived content inserted via textContent, never innerHTML (§12.4).
   Sources render before any answer token (§12.3 sources-first invariant).
   Cannot Confirm is uniform: token(s) of fixed phrase + done{passed:false} (§12.3).
   No business logic: grounding/filing/citation decisions consumed from server events (§12.5).
+  Phase 11 Slice 4 (#162): session id captured from done.session, echoed via ?session= on
+  subsequent requests; stack toggle keeps the same session; status:rewriting renders
+  "understanding your question…" indicator (textContent-only, §12.4).
 -->
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -443,6 +446,9 @@ var REASON_TEXT = {
 var stack = "wiki";
 var answerEl = null, answerBody = null, verifyEl = null;
 var currentQuery = "";
+/* Phase 11 Slice 4: session id captured from done.session; echoed on next request.
+   Never cleared — stack toggle preserves history across Wiki↔RAG switches. */
+var sessionId = null;
 var stream, segWiki, segRag, input;
 
 /* ── LAYOUT ──────────────────────────────────────────────────────────────── */
@@ -625,12 +631,22 @@ function animateDetails(det) {
   });
 }
 
-function onStatus() {
+function onStatus(d) {
+  /* Phase 11 Slice 4: status event is phase-aware.
+     phase="rewriting"  → "understanding your question…" (turn 2+ pre-retrieval)
+     phase="verifying"  → "Checking each claim against the cited record…" (post-sources)
+     Unknown phases → use "verifying" text as a safe fallback. */
+  var isRewriting = d && d.phase === "rewriting";
+  var labelText = isRewriting ? "Rewriting" : "Verification";
+  var statusText = isRewriting
+    ? "Understanding your question…"
+    : "Checking each claim against the cited record…";
+
   var entry = el("div", { class: "entry" });
-  entry.append(makeLabel("Verification"));
+  entry.append(makeLabel(labelText));
   verifyEl = el("div", { class: "verify" },
     el("span", { class: "dots" }, el("i"), el("i"), el("i")),
-    el("span", { text: "Checking each claim against the cited record…" }),
+    el("span", { text: statusText }),
   );
   entry.append(verifyEl);
   add(entry);
@@ -658,7 +674,11 @@ function onToken(t) {
 }
 
 function onDone(d) {
-  /* d shape (PRD #116): { grounding: { passed, reason }, filed, stack } */
+  /* d shape (PRD #116 + Phase 11): { grounding: { passed, reason }, filed, stack, session } */
+  /* Phase 11 Slice 4: capture session id for subsequent requests (§12.5 — no client logic).
+     textContent-only rendering; the session id is used only as a query param, never rendered. */
+  if (d.session) sessionId = d.session;
+
   var cur = answerEl ? answerEl.querySelector(".cursor") : null;
   if (cur) cur.remove();
   if (!answerEl) return;
@@ -711,7 +731,7 @@ function onError(e) {
 function dispatch(ev, data) {
   /* §12.2: unknown event types are ignored (forward-compat) */
   if (ev === "sources") onSources(data.sources);
-  else if (ev === "status") onStatus();
+  else if (ev === "status") onStatus(data);  /* Phase 11 Slice 4: pass data for phase-awareness */
   else if (ev === "token") onToken(data);
   else if (ev === "done") onDone(data);
   else if (ev === "error") onError(data);
@@ -721,7 +741,11 @@ function dispatch(ev, data) {
 /* ── REAL SSE REQUEST (fetch + ReadableStream, §12.2) ────────────────────── */
 function startRequest(query) {
   var parser = createSSEParser();
+  /* Phase 11 Slice 4: echo session id on turn 2+ so the gateway continues the
+     conversation.  Stack toggle is a fresh request but keeps the same sessionId
+     (history preserved across Wiki↔RAG — PRD #158 decision E). */
   var url = "/chat/stream?stack=" + encodeURIComponent(stack);
+  if (sessionId) url += "&session=" + encodeURIComponent(sessionId);
 
   fetch(url, {
     method: "POST",
