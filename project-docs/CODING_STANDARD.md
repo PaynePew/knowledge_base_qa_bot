@@ -38,7 +38,7 @@ This document is the **reviewer agent's** standards reference (see [`project-doc
 - **§6 Testing** — if test files are in the diff
 - **§7 Dependencies** — if `pyproject.toml` or `uv.lock` is in the diff
 - **§10 Design patterns in use** — when pattern-recognition is needed (e.g. reviewer suspects an anti-pattern is being introduced)
-- **§12 Frontend (Gateway UI)** — if the diff touches the Gateway UI, the SSE client, or static assets
+- **§12 Frontend (Gateway UI)** — if the diff touches any Gateway frontend (the reader chat UI or the Operator Console), the SSE client, or static assets
 
 **Out of reviewer scope** (these are author-time / orchestrator-time):
 - **§0** (Reading order, Authority, this section)
@@ -533,6 +533,8 @@ Each signal has a **severity** that determines the reviewer's action:
 - [ ] **FAIL** — An answer area renders before the `sources` event arrives (violates sources-first; §12.3).
 - [ ] **FIX** — The client branches on a special `cannot_confirm` event instead of the uniform `token` + `done{passed:false}` representation (§12.3).
 - [ ] **FLAG** — Grounding / citation / filing logic is re-implemented client-side instead of consumed verbatim from the server events (§12.5).
+- [ ] **FAIL** — The Operator Console issues per-file `/ingest` calls in a loop instead of one batch call over the (≤5) named sources; breaks the per-call `used_slugs` cross-source slug-collision guarantee (#54; §12.8).
+- [ ] **FIX** — A frontend shows a fake / time-eased progress percentage where the client has no real progress signal; use an indeterminate indicator or a client-owned counter ("Batch k/N") instead (§12.8).
 
 The reviewer's job is to spot these and act per the severity. The implementer's job is to not write them in the first place — reading this section before writing code is cheaper than re-doing it after a `FAIL`.
 
@@ -540,7 +542,9 @@ The reviewer's job is to spot these and act per the severity. The implementer's 
 
 ## 12. Frontend (Gateway UI)
 
-The repo's only frontend is the Gateway's browser UI (Phase 9 — [ADR-0009](adr/0009-streaming-verify-then-stream.md), [ADR-0010](adr/0010-gateway-mounts-both-apps.md)). It is a **presentation shell** over the SSE stream; all retrieval, grounding, and filing logic stays server-side.
+The repo has **two** Gateway-served browser frontends: the **reader chat UI** (Phase 9 — [ADR-0009](adr/0009-streaming-verify-then-stream.md), [ADR-0010](adr/0010-gateway-mounts-both-apps.md)), a presentation shell over the SSE stream; and the **Operator Console** (Phase 15 — [ADR-0011](adr/0011-upload-separate-from-import.md), [ADR-0012](adr/0012-delete-inert-filed-answers-only.md)), served at `/console`, a curator-facing management surface (Upload drop zone, pipeline stepper, Curation Queue, resource browser) that is **not** SSE-based. Both are presentation shells — all retrieval, grounding, filing, and lifecycle logic stays server-side.
+
+**Scope of this section:** §12.1 (vanilla single-file / no build), §12.4 (textContent XSS), §12.5 (no business logic in the client), and §12.7 (testing) apply to **both** frontends. §12.2 (SSE client) and §12.3 (grounding-inspector invariants) are **reader-UI-specific**. §12.8 covers the Operator Console.
 
 ### 12.1 Stack — vanilla, single-file, no build
 
@@ -579,3 +583,11 @@ Generating multiple visual variations (`frontend-design` / `prototype` skills, o
 - **SSE parser:** unit-tested as a pure function (hermetic).
 - **Event-sequence behaviour:** asserted at the gateway/endpoint level with a mocked LLM, no `OPENAI_API_KEY` (per §6.3 / §6.4) — same discipline as the backend.
 - **DOM rendering / visuals:** verified manually / via Preview tooling (screenshots), NOT unit-tested. State this honestly — do not claim coverage of visual rendering.
+
+### 12.8 Operator Console (Phase 15)
+
+The Operator Console (`/console` — [ADR-0011](adr/0011-upload-separate-from-import.md), [ADR-0012](adr/0012-delete-inert-filed-answers-only.md)) is a second vanilla single-file page (§12.1) sharing the reader's design tokens via a `shared.css`. It drives the existing lifecycle endpoints; it is a presentation shell with no business logic (§12.5) and inserts all server-derived content via `textContent` (§12.4) — including raw Markdown in the read-only resource browser, which is shown verbatim, never rendered to HTML.
+
+- **Batch Ingest is ONE call, never a per-file loop.** `ingest_sources` resolves cross-source slug collisions via an in-memory `used_slugs` set scoped to a **single call** (`resolve_slug_collision`, "within a single batch call"). The console MUST send a drop batch (capped at 5 files) as one `POST /ingest` over the named sources; more than 5 files are chunked into **sequential** single calls ("Batch k/N"). A client loop of single-source `/ingest` calls resets `used_slugs` and silently overwrites a colliding slug — breaking the "a Section is never silently overwritten" guarantee (#54). This is a correctness invariant, not a performance choice.
+- **No fake progress.** Without SSE the client has no intra-call visibility. Show an indeterminate indicator + status label for single blocking calls (Import / Index / Lint / Ingest-within-a-batch). A determinate percentage or counter appears **only** where the client owns the count ("Batch k/N", "k/N files"). A time-eased fake percentage is a drift signal.
+- **Destructive actions are server-gated.** Promote (`/qa/{slug}/promote`) and Discard (`DELETE /qa/{slug}`, inert-only, refuses `status: live`) are server decisions; the client does not replicate the inert/live eligibility policy (§12.5).
