@@ -164,9 +164,13 @@ class ConversationStore:
     def dump(self, session_id: str) -> list[dict]:
         """Return a full copy of the session's surviving turn window.
 
-        This is the **Phase 10 Hot Cache seam**: the Hot Cache writer calls
-        ``dump(session_id)`` to summarise a completed session without
-        re-deriving session state.
+        A full session-window export kept for any future consumer that needs a
+        session's complete turn history (debugging, analytics, export). It was
+        originally introduced as a "Phase 10 Hot Cache seam"; that framing has
+        been retired — Phase 10 (Hot Cache) is deferred and folded into the
+        Phase 12 (MCP) grill, whose Hot Cache input is the MCP host's own
+        session, NOT this browser-reader Conversation Store. See
+        ``project-docs/roadmap.md`` Phase 10 / Phase 12 prep notes.
 
         After a TTL eviction or window-cap eviction, ``dump`` returns only
         the turns that survived (i.e. the current window), not the discarded
