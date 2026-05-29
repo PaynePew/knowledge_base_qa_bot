@@ -77,6 +77,18 @@ The literal phrase `"I cannot confirm from the knowledge base."` returned as the
 All three situations produce the identical surface response (`"I cannot confirm from the knowledge base."`); the `grounding` field on `ChatResponse` carries the structured reason. The score threshold is configured via the `KB_SCORE_THRESHOLD` env var (default `0.5` for the current sample corpus; recalibrate as the corpus grows).
 _Avoid_: "I don't know" (sounds like a model limitation rather than a KB boundary), "Out of scope" (overloaded with product-feature language).
 
+### Phase 11 — Conversation Memory vocabulary
+
+> These terms name code in the Phase 11 Conversation Memory feature (PRD #158, slices #159–#163). Promoted from `## Reserved (not yet implemented)` to active Language (2026-05-29, post-grill) per CODING_STANDARD §3.2 — they are now usable as class/variable names. See ADR-0013 for the cross-stack design decisions.
+
+**Query Rewriting**:
+Reformulating a follow-up user question into a self-contained query that carries the necessary conversational context, so retrieval can be performed without the multi-turn history. Implemented as the **Gateway's first LLM-facing module** (`gateway/app/query_rewriting.py` — ADR-0005, ADR-0013). Triggers on turn 2+ only (turn 1 is a passthrough — no LLM call, no latency). Uses `OPENAI_REWRITE_MODEL` with a two-layer fallback (`OPENAI_REWRITE_MODEL` → `OPENAI_MODEL` → `gpt-4o-mini`). The four-rule rewriter prompt governs: (1) resolve references / fill ellipsis only; (2) an already-self-contained query is returned unchanged; (3) output only the rewritten string; (4) on ambiguous reference, conservatively keep the original. The raw follow-up is discarded after rewriting; `gateway/log.md` records `chat_rewrite` kind for debugging.
+_Avoid_: Query expansion (a different technique that adds synonyms to a single-turn query), Question reformulation (verbose).
+
+**Conversation Store**:
+A session-scoped in-memory store of recent turns, keyed by `session_id` (a UUID minted by the Gateway), used to feed Query Rewriting in multi-turn flows. Implemented in `gateway/app/conversation_store.py` (Phase 11 — ADR-0013). **Keyed by `session_id` only** — `stack` is per-turn metadata, not a partition key, so a Wiki↔RAG toggle within one session shares history. Holds a sliding window of 10 turns (oldest evicted on the 11th append); idle sessions are TTL-evicted after 30 min idle. A turn is written only on a normal `done` event (grounding-pass, grounding-fail, or Cannot Confirm); `error`-before-`done` writes nothing. Exposes `dump(session_id)` as the Phase 10 Hot Cache seam. `evict_expired()` is called at the top of `chat_stream` (before the history lookup) so sweeps are lazy and request-driven.
+_Avoid_: Session store (overloaded with auth/cookie usage), Chat history (vague).
+
 ### Phase 8 — Paraphrase Comparison vocabulary
 
 > These terms name code in the Phase 8 retrieval comparison (PRD #100, slices #101-#105). Resolved during the Phase 8 grill (2026-05-28) and placed in **active Language** — not Reserved — so they are usable as class/variable names (per CODING_STANDARD §3.2, Reserved terms are off-limits as names). Most are scoped to the `eval/paraphrase_comparison/` package and `vector_rag/`.
@@ -124,14 +136,6 @@ _Avoid_: Working memory (overloaded with LLM-architecture terms), Session cache 
 **Lint Pass** _(future)_:
 A periodic health check over the Wiki: contradiction detection, stale claims, orphan pages, missing cross-references, gaps suggested by repeated cannot-confirm queries. Karpathy's third core operation, alongside Ingest and Query. Operates on the **horizontal axis** — page-vs-page consistency — which is structurally orthogonal to [[grounding-check]]'s vertical axis (page-vs-Source). Neither subsumes the other: a Wiki Page can be individually grounded yet still contradict another grounded page (e.g., two summaries that each cherry-pick different parts of the same nuanced Source). The horizontal axis is therefore Lint Pass's exclusive responsibility — Grounding Check is structurally page-isolated and cannot see it.
 _Avoid_: Sanity check (vague), Audit (compliance overtone).
-
-**Query Rewriting** _(future)_:
-Reformulating a follow-up user question into a self-contained query that carries the necessary conversational context, so retrieval can be performed without the multi-turn history. Required for the PROMPT.md "Conversation Memory" stretch goal.
-_Avoid_: Query expansion (a different technique that adds synonyms to a single-turn query), Question reformulation (verbose).
-
-**Conversation Store** _(future)_:
-A session-scoped store of recent turns, keyed by session id, used to feed Query Rewriting in multi-turn flows. Planned with a sliding window (~10 turns) and TTL eviction. Does not exist in the prototype.
-_Avoid_: Session store (overloaded with auth/cookie usage), Chat history (vague).
 
 **Filed Answer** _(future)_:
 A Wiki Page in `wiki/qa/*.md` produced by `POST /chat` when a Grounded Answer passes the filing gate. Closes the Two-output rule on the query side (Sources close on the ingest side via Phase 3). Carries the standard 7-field frontmatter plus a literal `question` field and inherits the `status: draft|live` lifecycle from the schema (entity/concept pages default to `live` at ingest; Filed Answers default to `draft` and only pages with `status: live` enter the BM25 corpus). The draft→live transition is the **promotion gate** — an explicit decision (human curator or `/lint`-driven rule) that separates *filing* (capture every Grounded Answer) from *consumption* (only review-approved content is retrievable). Phase 6 ships the filing path; promotion candidates are surfaced by Phase 5 `/lint` via the read-only C8 check, while the actual draft→live mutation is owned by Phase 6's `POST /qa/{slug}/promote` endpoint (Slice 6-4), invoked by the curator after reviewing `lint-report.md`.
