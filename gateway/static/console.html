@@ -241,6 +241,110 @@
     display: flex; align-items: center;
   }
 
+  /* ── Resource Browser ───────────────────────────────────── */
+  .browser-breadcrumb {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px; letter-spacing: .02em;
+    color: var(--ink-3);
+    margin-bottom: 14px;
+  }
+  .browser-breadcrumb .crumb-btn {
+    background: none; border: none;
+    color: var(--ink-2); cursor: pointer; padding: 0;
+    font: inherit; font-size: 11.5px;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .browser-breadcrumb .crumb-btn:hover { color: var(--ink); }
+  .browser-breadcrumb .crumb-sep { color: var(--ink-4); user-select: none; }
+  .browser-breadcrumb .crumb-current { color: var(--ink-3); }
+
+  .browser-entries {
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    background: var(--surface);
+    overflow: hidden;
+  }
+  .browser-empty {
+    padding: 20px 16px;
+    font-size: 13px;
+    color: var(--ink-3);
+    text-align: center;
+  }
+
+  /* Entry rows */
+  .entry-row {
+    display: grid;
+    grid-template-columns: 20px 1fr auto;
+    column-gap: 10px;
+    padding: 11px 16px;
+    border-top: 1px solid var(--rule-2);
+    cursor: pointer;
+    transition: background .12s ease;
+  }
+  .entry-row:first-child { border-top: none; }
+  .entry-row:hover { background: var(--rule-2); }
+  .entry-icon {
+    font-size: 13px;
+    color: var(--ink-3);
+    padding-top: 1px;
+    user-select: none;
+  }
+  .entry-name {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12.5px;
+    color: var(--ink);
+    font-weight: 500;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .entry-row.is-dir .entry-name { color: var(--ink-2); }
+  .entry-meta {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    color: var(--ink-4);
+    padding-top: 2px;
+    text-align: right;
+  }
+
+  /* File content viewer */
+  .file-viewer {
+    margin-top: 20px;
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    background: var(--surface);
+    overflow: hidden;
+  }
+  .file-viewer-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--rule);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px; letter-spacing: .04em;
+    color: var(--ink-3);
+  }
+  .file-viewer-head .file-name { color: var(--ink-2); }
+  .file-viewer-close {
+    margin-left: auto;
+    background: none; border: 1px solid var(--rule);
+    border-radius: 3px; padding: 2px 8px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px; color: var(--ink-3); cursor: pointer;
+  }
+  .file-viewer-close:hover { color: var(--ink); border-color: var(--ink-3); }
+  .file-content {
+    padding: 16px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--ink);
+    white-space: pre-wrap;
+    overflow-x: auto;
+    max-height: 600px;
+    overflow-y: auto;
+    word-break: break-word;
+  }
+
   @media (max-width: 540px) {
     .page { padding: 0 20px 48px; }
   }
@@ -260,6 +364,10 @@
 
     <div id="upload-section">
       <!-- Drop zone and result card are built by JS below -->
+    </div>
+
+    <div id="browser-section">
+      <!-- Resource browser built by JS below -->
     </div>
   </div>
 
@@ -448,6 +556,195 @@ function renderError(message) {
   );
   resultContainer.replaceChildren(card);
 }
+
+/* ══════════════════════════════════════════════════════════
+   Resource Browser (Phase 15 S5, issue #171)
+   §12.4: all server-derived text via textContent (never innerHTML)
+   §12.5: no business logic in the client (paths validated server-side)
+   ══════════════════════════════════════════════════════════ */
+
+/* ── Browser state ───────────────────────────────────────── */
+var browserPath = "";   /* current relpath in the tree */
+var browserBusy = false;
+
+/* ── Browser containers ──────────────────────────────────── */
+var browserSection = document.getElementById("browser-section");
+var breadcrumbEl = el("div", { class: "browser-breadcrumb" });
+var entriesEl = el("div", { class: "browser-entries" });
+var fileViewerEl = el("div", { id: "file-viewer-container" });
+
+browserSection.append(
+  el("div", { class: "section-label", text: "Browse" }),
+  breadcrumbEl,
+  entriesEl,
+  fileViewerEl
+);
+
+/* ── Breadcrumb builder ──────────────────────────────────── */
+function renderBreadcrumb(relpath) {
+  /* §12.4: all textContent */
+  var parts = relpath ? relpath.split("/") : [];
+  var kids = [];
+
+  /* Root crumb — always a clickable button when inside a subpath */
+  if (relpath === "") {
+    kids.push(el("span", { class: "crumb-current", text: "root" }));
+  } else {
+    kids.push(el("button", {
+      class: "crumb-btn", type: "button", text: "root",
+      onclick: function() { navigateTo(""); }
+    }));
+  }
+
+  /* Intermediate segments */
+  for (var i = 0; i < parts.length; i++) {
+    kids.push(el("span", { class: "crumb-sep", text: "/" }));
+    var segPath = parts.slice(0, i + 1).join("/");
+    var segName = parts[i];
+    if (i === parts.length - 1) {
+      kids.push(el("span", { class: "crumb-current", text: segName }));
+    } else {
+      (function(p, n) {
+        kids.push(el("button", {
+          class: "crumb-btn", type: "button", text: n,
+          onclick: function() { navigateTo(p); }
+        }));
+      })(segPath, segName);
+    }
+  }
+
+  breadcrumbEl.replaceChildren.apply(breadcrumbEl, kids);
+}
+
+/* ── Format bytes helper ─────────────────────────────────── */
+function fmtBytes(n) {
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+  return (n / (1024 * 1024)).toFixed(1) + " MB";
+}
+
+/* ── Navigate to a directory ─────────────────────────────── */
+function navigateTo(relpath) {
+  if (browserBusy) return;
+  browserBusy = true;
+  /* Close any open file viewer */
+  fileViewerEl.replaceChildren();
+
+  /* Show spinner inside entries box */
+  entriesEl.replaceChildren(
+    el("div", { class: "busy-row" },
+      el("span", { class: "spinner" }),
+      el("span", { text: relpath ? "Loading " + relpath + "…" : "Loading roots…" })
+    )
+  );
+
+  fetch("/read/tree?" + new URLSearchParams({ path: relpath }))
+    .then(function(r) {
+      if (!r.ok) return r.json().then(function(j) { throw new Error(j.detail || ("HTTP " + r.status)); });
+      return r.json();
+    })
+    .then(function(data) {
+      browserPath = relpath;
+      renderBreadcrumb(relpath);
+      renderEntries(data.entries || []);
+    })
+    .catch(function(err) {
+      entriesEl.replaceChildren(
+        el("div", { class: "busy-row" },
+          el("span", { style: "color:var(--fail);", text: "Failed to load: " + (err.message || String(err)) })
+        )
+      );
+    })
+    .finally(function() { browserBusy = false; });
+}
+
+/* ── Render directory entries ────────────────────────────── */
+function renderEntries(entries) {
+  if (entries.length === 0) {
+    entriesEl.replaceChildren(
+      el("div", { class: "browser-empty", text: "(empty directory)" })
+    );
+    return;
+  }
+
+  var rows = entries.map(function(entry) {
+    /* §12.4: all textContent via el() */
+    var icon = entry.is_dir ? "▸" : "·";
+    var meta = entry.is_dir ? "" : fmtBytes(entry.size);
+    var rowClass = "entry-row" + (entry.is_dir ? " is-dir" : "");
+
+    return el("div", { class: rowClass,
+      onclick: function() {
+        if (entry.is_dir) {
+          navigateTo(entry.relpath);
+        } else {
+          openFile(entry.relpath, entry.name);
+        }
+      }
+    },
+      el("span", { class: "entry-icon", text: icon }),
+      el("span", { class: "entry-name", text: entry.name }),
+      el("span", { class: "entry-meta", text: meta })
+    );
+  });
+
+  entriesEl.replaceChildren.apply(entriesEl, rows);
+}
+
+/* ── Open and display a file ─────────────────────────────── */
+function openFile(relpath, name) {
+  if (browserBusy) return;
+  browserBusy = true;
+
+  /* Show loading in viewer area */
+  fileViewerEl.replaceChildren(
+    el("div", { class: "file-viewer" },
+      el("div", { class: "file-viewer-head" },
+        el("span", { class: "file-name", text: relpath }),
+        el("span", { text: "loading…" })
+      )
+    )
+  );
+
+  fetch("/read/file?" + new URLSearchParams({ path: relpath }))
+    .then(function(r) {
+      if (!r.ok) return r.json().then(function(j) { throw new Error(j.detail || ("HTTP " + r.status)); });
+      return r.json();
+    })
+    .then(function(data) {
+      /* §12.4: raw Markdown shown via textContent (NOT rendered HTML) */
+      var content = data.content;
+      var closeBtn = el("button", {
+        class: "file-viewer-close", type: "button", text: "close",
+        onclick: function() { fileViewerEl.replaceChildren(); }
+      });
+
+      fileViewerEl.replaceChildren(
+        el("div", { class: "file-viewer" },
+          el("div", { class: "file-viewer-head" },
+            el("span", { text: "raw" }),
+            el("span", { text: "·" }),
+            el("span", { class: "file-name", text: relpath }),
+            closeBtn
+          ),
+          el("pre", { class: "file-content", text: content })
+        )
+      );
+    })
+    .catch(function(err) {
+      fileViewerEl.replaceChildren(
+        el("div", { class: "file-viewer" },
+          el("div", { class: "file-viewer-head" },
+            el("span", { style: "color:var(--fail);", text: "Failed: " + (err.message || String(err)) })
+          )
+        )
+      );
+    })
+    .finally(function() { browserBusy = false; });
+}
+
+/* ── Boot the browser ────────────────────────────────────── */
+navigateTo("");
 </script>
 </body>
 </html>
