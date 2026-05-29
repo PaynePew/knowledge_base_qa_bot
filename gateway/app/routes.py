@@ -48,8 +48,14 @@ import json
 import uuid
 from collections.abc import Callable, Iterator
 
-from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi import APIRouter, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
+from markdown_kb.app.read import FileNotFound as _ReadFileNotFound
+from markdown_kb.app.read import NotAFile as _ReadNotAFile
+from markdown_kb.app.read import PathRejected as _ReadPathRejected
+from markdown_kb.app.read import TreeEntry as _TreeEntry
+from markdown_kb.app.read import list_tree as _list_tree
+from markdown_kb.app.read import read_file as _read_file
 from markdown_kb.app.retrieval import stream_query as _wiki_stream_query
 from markdown_kb.app.schemas import ChatRequest
 from markdown_kb.app.sse import encode_event, events_for_result
@@ -380,3 +386,110 @@ async def upload(files: list[UploadFile]) -> UploadBatchResultSchema:
             for r in batch.results
         ]
     )
+
+
+# ---------------------------------------------------------------------------
+# GET /read/tree — Phase 15 S5 (issue #171)
+# GET /read/file — Phase 15 S5 (issue #171)
+# ---------------------------------------------------------------------------
+
+
+class TreeEntrySchema(BaseModel):
+    """One entry in a directory listing returned by GET /read/tree."""
+
+    name: str
+    relpath: str
+    is_dir: bool
+    size: int = 0
+
+
+class TreeListSchema(BaseModel):
+    """Response body for GET /read/tree."""
+
+    entries: list[TreeEntrySchema]
+
+
+class FileContentSchema(BaseModel):
+    """Response body for GET /read/file."""
+
+    relpath: str
+    content: str
+
+
+def _tree_entry_to_schema(e: _TreeEntry) -> TreeEntrySchema:
+    return TreeEntrySchema(name=e.name, relpath=e.relpath, is_dir=e.is_dir, size=e.size)
+
+
+@router.get("/read/tree", response_model=TreeListSchema)
+def read_tree(
+    path: str = Query(
+        default="", description="Relative path within the whitelist tree. Empty = list roots."
+    ),
+) -> TreeListSchema:
+    """List one level of the whitelisted corpus tree.
+
+    Whitelisted roots: ``docs/``, ``raw/``, ``wiki/``.  ``.kb/`` is excluded.
+
+    Args:
+        path: Relative path string (e.g. ``''``, ``'docs'``, ``'wiki/sub'``).
+            Empty string returns the three root entries.
+
+    Returns:
+        ``TreeListSchema`` with a list of ``TreeEntrySchema`` entries, sorted
+        directories first then files (alphabetical within each group).
+
+    Raises:
+        HTTP 400: ``path`` contains ``..``, is absolute, or otherwise rejected.
+        HTTP 404: the resolved path does not exist.
+        HTTP 400: the resolved path is a file (call ``GET /read/file`` instead).
+    """
+    try:
+        entries = _list_tree(path)
+    except _ReadPathRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except _ReadFileNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except _ReadNotAFile as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Path is a file; use GET /read/file to read it: {exc}",
+        ) from exc
+
+    return TreeListSchema(entries=[_tree_entry_to_schema(e) for e in entries])
+
+
+@router.get("/read/file", response_model=FileContentSchema)
+def read_file_endpoint(
+    path: str = Query(description="Relative path of the file to read (e.g. 'docs/policy.md')."),
+) -> FileContentSchema:
+    """Return the raw UTF-8 text of a file inside the whitelisted roots.
+
+    Whitelisted roots: ``docs/``, ``raw/``, ``wiki/`` (including the
+    ``index.md`` / ``log.md`` / ``lint-report.md`` runtime artifacts).
+    ``.kb/`` is excluded.
+
+    Args:
+        path: Relative path string (e.g. ``'docs/policy.md'``,
+            ``'wiki/log.md'``).
+
+    Returns:
+        ``FileContentSchema`` with ``relpath`` and ``content`` (raw text).
+
+    Raises:
+        HTTP 400: ``path`` contains ``..``, is absolute, or otherwise rejected.
+        HTTP 404: the resolved path does not exist.
+        HTTP 400: the resolved path is a directory (call ``GET /read/tree``).
+    """
+    try:
+        content = _read_file(path)
+    except _ReadPathRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except _ReadFileNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except _ReadNotAFile as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Path is a directory; use GET /read/tree to list it: {exc}",
+        ) from exc
+
+    return FileContentSchema(relpath=path, content=content)
