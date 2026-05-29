@@ -106,14 +106,117 @@ files_indexed = 0
 
 
 def slugify(text: str) -> str:
-    """Lowercase, replace non-alphanumeric runs with hyphens, strip edges."""
-    slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    """Lowercase ASCII chars, preserve CJK/Unicode letters, replace separators with hyphens.
+
+    Follows the GitHub/Obsidian Unicode anchor convention (Phase 16):
+    - ASCII letters are lowercased.
+    - CJK characters (and other Unicode letters) are kept verbatim.
+    - Runs of characters that are neither ASCII alphanumeric nor Unicode
+      letters are collapsed to a single hyphen.
+    - Leading/trailing hyphens are stripped.
+    - When nothing slug-able remains, returns "section".
+
+    Pure-ASCII input produces byte-identical output to the pre-Phase-16
+    implementation (``re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")``).
+    """
+    # Build slug character by character:
+    # - ASCII letter/digit → keep (lowercased)
+    # - Unicode letter outside ASCII range → keep verbatim (CJK, etc.)
+    # - Anything else → treated as a separator
+    parts: list[str] = []
+    sep_pending = False
+    for ch in text:
+        if ch.isalpha():
+            if sep_pending and parts:
+                parts.append("-")
+                sep_pending = False
+            parts.append(ch.lower() if ch.isascii() else ch)
+        elif ch.isdigit() and ch.isascii():
+            if sep_pending and parts:
+                parts.append("-")
+                sep_pending = False
+            parts.append(ch)
+        else:
+            # Separator: emit a hyphen later (only if we have content before it)
+            if parts:
+                sep_pending = True
+    slug = "".join(parts)
     return slug or "section"
 
 
+# CJK Unified Ideographs range (most common block; covers Traditional/Simplified Chinese).
+# Extended blocks (CJK Ext-A, B, C, …) are also handled via unicodedata below.
+_CJK_RANGE_START = ord("一")  # 一
+_CJK_RANGE_END = ord("鿿")  # 鿿
+
+
+def _is_cjk(ch: str) -> bool:
+    """Return True when ``ch`` is a CJK Unified Ideograph or Extension."""
+    cp = ord(ch)
+    # CJK Unified Ideographs: U+4E00–U+9FFF
+    if _CJK_RANGE_START <= cp <= _CJK_RANGE_END:
+        return True
+    # CJK Extension A: U+3400–U+4DBF
+    if 0x3400 <= cp <= 0x4DBF:
+        return True
+    # CJK Extension B: U+20000–U+2A6DF (supplementary plane)
+    if 0x20000 <= cp <= 0x2A6DF:
+        return True
+    # CJK Compatibility Ideographs: U+F900–U+FAFF
+    return 0xF900 <= cp <= 0xFAFF
+
+
+def _bigrams(run: str) -> list[str]:
+    """Produce sliding character bigrams from a CJK run.
+
+    For a run of length 1 (single CJK character), return the character itself
+    as a unigram fallback so single-character queries are never silently dropped.
+    """
+    if len(run) == 1:
+        return [run]
+    return [run[i : i + 2] for i in range(len(run) - 1)]
+
+
 def tokenize(text: str) -> list[str]:
-    """Split text into lowercase alphanumeric tokens, removing stop words."""
-    return [t for t in TOKEN_RE.findall(text.lower()) if t not in STOP_WORDS]
+    """Split text into tokens, removing stop words.
+
+    Language-agnostic strategy (Phase 16):
+    - CJK runs tokenise as sliding character bigrams (unigram fallback for
+      length-1 runs). CJK bigrams are never filtered by STOP_WORDS (which
+      contains only ASCII words).
+    - All other text (Latin, digits, punctuation) tokenises exactly as before:
+      ``TOKEN_RE.findall(text.lower())`` with STOP_WORDS removal.
+    - Pure-ASCII input produces a byte-identical token list to the pre-change
+      implementation (new CJK logic only triggers on codepoints > 127).
+    """
+    tokens: list[str] = []
+    # Walk through the text, extracting CJK runs and non-CJK segments
+    # alternately so each is handled by its own rule.
+    current_cjk: list[str] = []
+    non_cjk_buf: list[str] = []
+
+    def _flush_cjk() -> None:
+        if current_cjk:
+            tokens.extend(_bigrams("".join(current_cjk)))
+            current_cjk.clear()
+
+    def _flush_non_cjk() -> None:
+        if non_cjk_buf:
+            segment = "".join(non_cjk_buf)
+            tokens.extend(t for t in TOKEN_RE.findall(segment.lower()) if t not in STOP_WORDS)
+            non_cjk_buf.clear()
+
+    for ch in text:
+        if _is_cjk(ch):
+            _flush_non_cjk()
+            current_cjk.append(ch)
+        else:
+            _flush_cjk()
+            non_cjk_buf.append(ch)
+
+    _flush_cjk()
+    _flush_non_cjk()
+    return tokens
 
 
 def split_frontmatter(text: str) -> tuple[dict, str]:
