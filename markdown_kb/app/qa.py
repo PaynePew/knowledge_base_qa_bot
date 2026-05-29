@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``compute_slug``, ``normalize_question``, ``maybe_file_answer``, ``dispatch_filing``, ``promote``, ``QaPageNotFound``, ``QaPageCorrupt``.
+"""Deep module per Ousterhout. Public surface: ``compute_slug``, ``normalize_question``, ``maybe_file_answer``, ``dispatch_filing``, ``promote``, ``delete``, ``QaPageNotFound``, ``QaPageCorrupt``, ``QaPageLive``.
 
 Phase 6 Slice 6-2 — Answer Filing for ``POST /chat``.
 Phase 6 Slice 6-4 — curator-driven ``promote(slug)`` flips ``status: draft -> live``.
@@ -664,3 +664,109 @@ def promote(slug: str) -> FiledStatus:
 
         log_event("qa_reflect", f"slug={slug} op=promoted by=curator")
         return FiledStatus(slug=slug, status="live", op="touched", count=existing_count)
+
+
+# ---------------------------------------------------------------------------
+# Delete (Phase 15 Slice 6 / ADR-0012)
+# ---------------------------------------------------------------------------
+
+
+class QaPageLive(Exception):
+    """Raised by ``delete`` when the page's ``status`` is ``live``.
+
+    Live pages are the only pages that enter the BM25 corpus and are the
+    "precious" state that must not be removed via a one-click console action.
+    The Console UI gate and the route layer both map this to ``HTTP 409``
+    (Conflict) per ADR-0012.
+
+    Not a subclass of ``ValueError`` or ``OSError`` — a distinct sentinel
+    keeps the route handler dispatch clean without overloading exception
+    meaning (same reasoning as ``QaPageNotFound`` / ``QaPageCorrupt``).
+    """
+
+
+class DeletedQaPage:
+    """Lightweight result returned by ``delete``.
+
+    Carries the slug and the status the page had before deletion so the
+    caller (route + tests) can assert on what was removed without reaching
+    back into the filesystem.
+
+    Not a Pydantic model: this is purely a route-internal result; it never
+    crosses an HTTP boundary as a response body (the route returns HTTP 204
+    No Content). Using a plain dataclass keeps the qa module free of Pydantic
+    concerns for a value that is never serialised.
+    """
+
+    __slots__ = ("slug", "prev_status")
+
+    def __init__(self, slug: str, prev_status: str) -> None:
+        self.slug = slug
+        self.prev_status = prev_status
+
+
+def delete(slug: str) -> DeletedQaPage:
+    """Curator-driven delete: remove an inert ``wiki/qa/<slug>.md`` page.
+
+    Acceptance criteria (issue #174 / ADR-0012):
+
+    - Acquires ``_filing_lock`` so delete and filing/promote cannot
+      interleave on the same slug (same lock used by all qa mutators).
+    - Not found → raise ``QaPageNotFound`` (route → 404).
+    - Reads frontmatter; if ``status == "live"`` → raise ``QaPageLive``
+      (route → 409 Conflict).  Live is the precious corpus state — refuse
+      to delete it via a console button (ADR-0012).
+    - All other cases are **inert** and safe to delete:
+        - ``status == "draft"`` — explicitly deletable.
+        - Frontmatter unparseable (``_read_existing_frontmatter`` returns
+          ``None``) — the page was never in the corpus; curator typo or
+          corrupt file.
+        - ``status`` not in ``{draft, live}`` (e.g. ``stale``, ``Live``
+          typo, forward-compat reserved value) — also inert; delete is
+          the safe remediation surfaced by the C10 lint check.
+    - Deletes the file via ``path.unlink()``.
+    - Emits a ``qa_deleted`` log event inside the same lock critical
+      section (atomically with the delete).
+
+    Returns:
+        ``DeletedQaPage`` with the slug and the ``prev_status`` the page
+        had before deletion (``"<unparseable>"`` when frontmatter could not
+        be parsed).
+
+    Raises:
+        QaPageNotFound: no ``wiki/qa/<slug>.md`` on disk (route → 404).
+        QaPageLive: existing ``status`` is ``"live"`` — delete refused
+            (route → 409).
+    """
+    qa_dir = _qa_dir()
+    path = qa_dir / f"{slug}.md"
+
+    with _filing_lock:
+        if not path.exists():
+            raise QaPageNotFound(f"wiki/qa/{slug}.md not found")
+
+        existing = _read_existing_frontmatter(path)
+        # Determine the pre-deletion status for the log event.
+        if existing is None:
+            # Frontmatter could not be parsed at all (corrupt YAML, missing
+            # fences, etc.).  The page is inert — it was never in the corpus
+            # because the indexer filter rejects unparseable frontmatter.
+            # Delete it: this is the C10 "fix-or-discard" use case.
+            prev_status = "<unparseable>"
+        else:
+            prev_status = str(existing.get("status", "<missing>"))
+            # The ONLY refusal: live pages are precious corpus content.
+            # Everything else (draft, invalid status value, missing status)
+            # is inert and may be deleted.
+            if prev_status == "live":
+                raise QaPageLive(
+                    f"wiki/qa/{slug}.md has status=live and cannot be deleted "
+                    "via the Console. Use re-ingest to refresh a stale live page."
+                )
+
+        path.unlink()
+        log_event(
+            "qa_deleted",
+            f"slug={slug} prev_status={prev_status}",
+        )
+        return DeletedQaPage(slug=slug, prev_status=prev_status)

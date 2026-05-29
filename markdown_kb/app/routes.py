@@ -158,6 +158,37 @@ def promote_qa(slug: str) -> FiledStatus:
         ) from exc
 
 
+@router.delete("/qa/{slug}", status_code=204)
+def delete_qa(slug: str) -> None:
+    """Curator endpoint: delete an inert ``wiki/qa/<slug>.md`` page.
+
+    Phase 15 Slice 6 (issue #174) / ADR-0012. Complements the Promote
+    endpoint: discards a Filed Answer that has never entered the BM25 corpus
+    (``status: draft`` or schema-invalid / unparseable frontmatter) and
+    **refuses** to delete a ``status: live`` page (the precious corpus state).
+
+    Shallow wrapper around ``qa.delete(slug)`` (CODING_STANDARD §2.3 — all
+    business logic lives in ``qa.py``). Exception mapping:
+
+    - ``QaPageNotFound`` → ``404`` (slug has never been filed)
+    - ``QaPageLive``     → ``409`` (live page delete refused — ADR-0012)
+
+    Returns HTTP 204 No Content on success (the resource is gone; no body).
+    """
+    try:
+        qa_module.delete(slug)
+    except qa_module.QaPageNotFound as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"wiki/qa/{slug}.md not found",
+        ) from exc
+    except qa_module.QaPageLive as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"wiki/qa/{slug}.md has status=live; delete refused (ADR-0012)",
+        ) from exc
+
+
 @router.post("/lint", response_model=LintResponse)
 def lint() -> LintResponse:
     """Run the wiki lint pass and return a structured findings report.
