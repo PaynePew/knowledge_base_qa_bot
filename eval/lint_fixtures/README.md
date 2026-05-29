@@ -5,8 +5,9 @@ Used for demos and hermetic e2e testing; **never pollutes the production wiki**.
 
 ## Purpose
 
-The production corpus (`docs/` + `fake-docs/`) is clean — running `POST /lint` against it
-returns 0 findings (proof of corpus health). Demo material lives here and is opt-in.
+The production corpus (`docs/`, which now includes the `docs/fake-docs/` pool) is
+clean — running `POST /lint` against it returns 0 findings (proof of corpus
+health). Demo material lives here and is opt-in.
 
 ## Demo Flow
 
@@ -57,7 +58,8 @@ candidate pairs *before* LLM judging.
 
 ## Production vs Fixture Separation Invariant
 
-1. `eval/lint_fixtures/sources/` are **never** copied to `docs/` or `fake-docs/`.
+1. `eval/lint_fixtures/sources/` are **never** copied to `docs/` (including the
+   `docs/fake-docs/` pool).
 2. `eval/lint_fixtures/wiki/` pages are **only** loaded by `scripts/load_lint_fixtures.py`.
 3. The loader is idempotent: re-running overwrites without erroring.
 4. Reverting is a single command: `git checkout wiki/ && rm -f wiki/lint-report.md`.
