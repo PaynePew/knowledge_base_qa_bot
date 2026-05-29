@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Operator Console — KB Gateway</title>
+
+<!--
+  KB Gateway Operator Console — Phase 15 S1 (#169).
+  Single vanilla HTML/CSS/JS file. NO framework, NO build step (CODING_STANDARD §12.1).
+  XSS: all server-derived content inserted via textContent, never innerHTML (§12.4).
+  No business logic: validation and routing decisions are server-derived (§12.5).
+  Drag-drop Upload drop zone: POST /upload (multipart) → renders result card.
+  Shared design tokens: linked from shared.css (Phase 15 S1).
+-->
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<!-- Shared design tokens (Phase 15 S1 / issue #169) -->
+<link rel="stylesheet" href="/static/shared.css">
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  button { font: inherit; cursor: pointer; }
+  a { color: inherit; }
+  ::selection { background: var(--selection); color: var(--ink); }
+
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 680px;
+    margin: 0 auto;
+    padding: 0 32px 48px;
+  }
+
+  /* ── Masthead (shared with reader, §12.1) ────────────────── */
+  .masthead {
+    flex: none;
+    padding: 22px 0 16px;
+    display: flex; align-items: center; gap: 16px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .mast-logo {
+    font-family: "IBM Plex Sans", sans-serif;
+    font-weight: 500; font-size: 15px;
+    letter-spacing: -.005em; color: var(--ink);
+    text-decoration: none;
+  }
+  .mast-logo .dot { color: var(--ink-4); margin: 0 1px; }
+  .mast-logo .amp { color: var(--ink-4); margin: 0 1px; font-weight: 400; }
+
+  /* Breadcrumb separator */
+  .mast-sep {
+    color: var(--ink-4);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+  }
+  .mast-page {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    letter-spacing: .04em;
+    color: var(--ink-2);
+    text-transform: uppercase;
+  }
+
+  /* Reader link — navigates back */
+  .mast-reader {
+    margin-left: auto;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .04em;
+    color: var(--ink-3);
+    text-decoration: none;
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 5px 10px;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .mast-reader:hover {
+    color: var(--ink);
+    border-color: var(--ink-3);
+  }
+
+  /* ── Section labels ──────────────────────────────────────── */
+  .section-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 32px 0 16px;
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  /* ── Upload drop zone ────────────────────────────────────── */
+  .drop-zone {
+    border: 1.5px dashed var(--rule);
+    border-radius: 6px;
+    padding: 36px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .2s ease, background .2s ease;
+    background: var(--surface);
+  }
+  .drop-zone.drag-over {
+    border-color: var(--ink-3);
+    background: var(--rule-2);
+  }
+  .drop-zone.busy {
+    opacity: .65;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+  .drop-hint {
+    font-size: 14px;
+    color: var(--ink-3);
+    line-height: 1.6;
+  }
+  .drop-hint strong {
+    color: var(--ink-2);
+    font-weight: 500;
+  }
+  .drop-ext {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    color: var(--ink-4);
+    margin-top: 8px;
+    letter-spacing: .03em;
+  }
+  .drop-btn {
+    display: inline-block;
+    margin-top: 16px;
+    background: var(--ink);
+    color: var(--surface);
+    border: 0;
+    padding: 8px 16px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .04em;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .drop-btn:hover { background: #000; }
+
+  /* ── Result card ─────────────────────────────────────────── */
+  .result-card {
+    margin-top: 20px;
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    background: var(--surface);
+    overflow: hidden;
+  }
+  .result-card-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--rule);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .result-card-head .badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 10.5px;
+    letter-spacing: .04em;
+  }
+  .result-card-head .badge .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+  }
+  .badge-written .dot  { background: var(--pass); }
+  .badge-written       { color: var(--pass); }
+  .badge-rejected .dot { background: var(--fail); }
+  .badge-rejected      { color: var(--fail); }
+  .badge-error .dot    { background: var(--fail); }
+  .badge-error         { color: var(--fail); }
+
+  /* File rows inside result card — reuse .rec layout from the reader */
+  .rec {
+    display: grid;
+    grid-template-columns: 24px 1fr auto;
+    column-gap: 12px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--rule-2);
+  }
+  .rec:first-child { border-top: none; }
+  .rec .num {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px; color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+    padding-top: 2px;
+  }
+  .rec .body { min-width: 0; }
+  .rec .id {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12.5px; color: var(--ink); font-weight: 500;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .rec .crumb {
+    font-size: 12px; color: var(--ink-3); margin-top: 2px;
+  }
+  .rec .status-col {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    padding-top: 2px;
+    text-align: right;
+    min-width: 60px;
+  }
+  .status-written  { color: var(--pass); }
+  .status-rejected { color: var(--fail); }
+  .status-error    { color: var(--fail); }
+
+  /* ── Spinner (busy state) ────────────────────────────────── */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border: 2px solid var(--rule);
+    border-top-color: var(--ink-3);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+    vertical-align: middle;
+    margin-right: 8px;
+  }
+  .busy-row {
+    padding: 14px 16px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    color: var(--ink-3);
+    letter-spacing: .04em;
+    display: flex; align-items: center;
+  }
+
+  @media (max-width: 540px) {
+    .page { padding: 0 20px 48px; }
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <header class="masthead">
+      <!-- §12.4: all text via textContent; no innerHTML -->
+      <a class="mast-logo" href="/">
+        <span>ask</span><span class="dot">.</span><span>Wiki</span><span class="amp">&amp;</span><span>RAG</span>
+      </a>
+      <span class="mast-sep">/</span>
+      <span class="mast-page">console</span>
+      <a class="mast-reader" href="/">reader</a>
+    </header>
+
+    <div id="upload-section">
+      <!-- Drop zone and result card are built by JS below -->
+    </div>
+  </div>
+
+<script>
+"use strict";
+
+/* §12.4: textContent-only DOM helper — innerHTML is banned */
+function el(tag, props) {
+  var kids = Array.prototype.slice.call(arguments, 2);
+  var n = document.createElement(tag);
+  if (props) {
+    var entries = Object.entries(props);
+    for (var i = 0; i < entries.length; i++) {
+      var k = entries[i][0], v = entries[i][1];
+      if (v == null) continue;
+      if (k === "class") n.className = v;
+      else if (k === "text") n.textContent = v;
+      else if (k === "html") throw new Error("innerHTML banned");
+      else if (k.startsWith("on") && typeof v === "function") n.addEventListener(k.slice(2).toLowerCase(), v);
+      else n.setAttribute(k, v);
+    }
+  }
+  for (var j = 0; j < kids.length; j++) {
+    var kid = kids[j];
+    if (kid == null || kid === false) continue;
+    n.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  }
+  return n;
+}
+
+/* ── State ───────────────────────────────────────────────────── */
+var busy = false;
+
+/* ── Build drop zone ─────────────────────────────────────────── */
+var fileInput = el("input", { type: "file", multiple: "", accept: ".html,.txt,.md", style: "display:none" });
+fileInput.addEventListener("change", function() {
+  if (fileInput.files && fileInput.files.length > 0) {
+    handleFiles(Array.from(fileInput.files));
+  }
+});
+
+var dropZone = el("div", { class: "drop-zone" },
+  el("div", { class: "drop-hint" },
+    el("strong", { text: "Drag and drop files here" }),
+    el("br"),
+    "or click to select files"
+  ),
+  el("div", { class: "drop-ext", text: "Accepts .html · .txt · .md — max 10 MB each" }),
+  el("button", { class: "drop-btn", type: "button", text: "Choose files",
+    onclick: function() { if (!busy) fileInput.click(); }
+  }),
+  fileInput
+);
+
+/* Drag and drop handlers */
+dropZone.addEventListener("dragover", function(e) {
+  e.preventDefault();
+  if (!busy) dropZone.classList.add("drag-over");
+});
+dropZone.addEventListener("dragleave", function() {
+  dropZone.classList.remove("drag-over");
+});
+dropZone.addEventListener("drop", function(e) {
+  e.preventDefault();
+  dropZone.classList.remove("drag-over");
+  if (busy) return;
+  var files = e.dataTransfer.files;
+  if (files && files.length > 0) {
+    handleFiles(Array.from(files));
+  }
+});
+
+/* Assemble upload section */
+var uploadSection = document.getElementById("upload-section");
+uploadSection.append(
+  el("div", { class: "section-label", text: "Upload" }),
+  dropZone
+);
+
+/* Result card container (populated after upload) */
+var resultContainer = el("div", { id: "result-container" });
+uploadSection.append(resultContainer);
+
+/* ── Upload handler ──────────────────────────────────────────── */
+function handleFiles(files) {
+  if (busy) return;
+  busy = true;
+  dropZone.classList.add("busy");
+
+  /* Show spinner while in flight */
+  resultContainer.replaceChildren(
+    el("div", { class: "result-card" },
+      el("div", { class: "busy-row" },
+        el("span", { class: "spinner" }),
+        el("span", { text: "Uploading " + files.length + " file" + (files.length !== 1 ? "s" : "") + "…" })
+      )
+    )
+  );
+
+  var formData = new FormData();
+  for (var i = 0; i < files.length; i++) {
+    formData.append("files", files[i], files[i].name);
+  }
+
+  fetch("/upload", {
+    method: "POST",
+    body: formData,
+  }).then(function(resp) {
+    if (!resp.ok) {
+      return resp.text().then(function(text) {
+        throw new Error("HTTP " + resp.status + ": " + text);
+      });
+    }
+    return resp.json();
+  }).then(function(data) {
+    renderResultCard(data.results || []);
+  }).catch(function(err) {
+    renderError(err.message || String(err));
+  }).finally(function() {
+    busy = false;
+    dropZone.classList.remove("busy");
+  });
+}
+
+/* ── Render result card ──────────────────────────────────────── */
+function renderResultCard(results) {
+  var written  = results.filter(function(r) { return r.status === "written"; }).length;
+  var rejected = results.filter(function(r) { return r.status === "rejected"; }).length;
+  var errors   = results.filter(function(r) { return r.status === "error"; }).length;
+
+  /* Summary badge in header */
+  var summaryParts = [];
+  if (written > 0)  summaryParts.push(written  + " staged");
+  if (rejected > 0) summaryParts.push(rejected + " rejected");
+  if (errors > 0)   summaryParts.push(errors   + " error" + (errors !== 1 ? "s" : ""));
+  var summaryText = summaryParts.join(" · ") || "0 files";
+
+  var head = el("div", { class: "result-card-head" },
+    el("span", { text: "Upload result" }),
+    el("span", { text: "·" }),
+    el("span", { text: summaryText })
+  );
+
+  var rows = el("div", { class: "recs-body" });
+  results.forEach(function(r, i) {
+    /* §12.4: all server-derived text via textContent */
+    var statusClass = "status-" + r.status;
+    var statusLabel = r.status === "written" ? "staged" : r.status;
+
+    var bodyEl = el("div", { class: "body" });
+    /* Filename — §12.4 textContent */
+    bodyEl.append(el("div", { class: "id", text: r.filename }));
+
+    /* Subtitle: target_dir when written, reason when rejected/error */
+    var subtitle = "";
+    if (r.status === "written" && r.target_dir) {
+      subtitle = "→ " + r.target_dir;
+    } else if ((r.status === "rejected" || r.status === "error") && r.reason) {
+      subtitle = r.reason;
+    }
+    if (subtitle) {
+      bodyEl.append(el("div", { class: "crumb", text: subtitle }));
+    }
+
+    rows.append(
+      el("div", { class: "rec" },
+        el("div", { class: "num", text: String(i + 1).padStart(2, "0") }),
+        bodyEl,
+        el("div", { class: "status-col " + statusClass, text: statusLabel })
+      )
+    );
+  });
+
+  var card = el("div", { class: "result-card" }, head, rows);
+  resultContainer.replaceChildren(card);
+}
+
+/* ── Render error ────────────────────────────────────────────── */
+function renderError(message) {
+  var card = el("div", { class: "result-card" },
+    el("div", { class: "result-card-head" },
+      el("span", { text: "Upload failed" })
+    ),
+    el("div", { style: "padding:14px 16px; font-size:14px; color:var(--fail);",
+      text: message })
+  );
+  resultContainer.replaceChildren(card);
+}
+</script>
+</body>
+</html>

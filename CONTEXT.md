@@ -109,6 +109,18 @@ _Avoid_: Keywords (overloaded with BM25 query terms), Tokens (the bare word is t
 The optional Phase 8 L2 validation step: a cross-family LLM judge (Claude) re-judges the deterministic hit metric's verdicts over an ambiguous subset, validating the metric's edge cases. Opt-in via `--judge`. Produces no headline numbers — the deterministic L1 metric does; the Spot-check only reports an agreement rate.
 _Avoid_: Audit (compliance overtone), Review (overloaded), Validation (too generic).
 
+### Phase 15 — Operator Console vocabulary
+
+> These terms name the Phase 15 curator-facing management surface and its staging operation (PRD #168; [[adr-0011]] / [[adr-0012]]). Promoted from Reserved to **active Language** in Slice S1 (#169) so they are usable as module / function / variable names — per CODING_STANDARD §3.2, Reserved terms are off-limits as names, so `upload`, `upload_files`, … are now legal.
+
+**Operator Console**:
+The curator-facing management surface served by the [[gateway]] at `GET /console` — the write/maintain counterpart to the reader chat UI. Drives the existing Wiki lifecycle operations (Import → Ingest → Index → Lint → Filed Answer promotion) and exposes RAG index rebuild as a single parallel action; it orchestrates each Retrieval Stack's operations but does not merge them (ADR-0002). Wiki-centric by design — the RAG stack has no Ingest/Lint/Filing, so only its index build is operable. Also hosts a resource browser over `docs/` and `wiki/`. Scope is a single local operator (no auth, no multi-user); demo posture shapes scope, not engineering rigor.
+_Avoid_: Admin panel (implies user/role administration — out of scope), Dashboard (implies metrics/monitoring, not lifecycle actions), Backend page (vague).
+
+**Upload**:
+The transport/staging operation behind the Operator Console drop zone: writes dropped browser file bytes onto the server via `POST /upload`. `.html`/`.txt` land in `raw/` (becoming Import candidates); `.md` lands directly in `docs/` (already canonical Markdown — skips Import). Distinct from Import — Upload only moves bytes onto the server, it never converts. As a system boundary, all untrusted-input validation (type allow-list, size limit, traversal-safe filename) lives in the Upload module. See [[adr-0011]].
+_Avoid_: Import (Import converts raw→docs; Upload only stages bytes), Ingest (LLM synthesis docs→wiki).
+
 ## Reserved (not yet implemented)
 
 > The future wiki layer (curated synthesis above immutable Sources) is modelled on the patterns in `AgriciDaniel/claude-obsidian` (5.4K⭐ — see ADR-0003), which is the most-starred reference implementation of Karpathy's LLM Wiki gist. We borrow the patterns; the project's positioning is enterprise KB management (FAQ / policy / customer-support), where the curated layer enables governance (ownership, review cadence, audit) on top of the raw Source layer. Vocabulary reserved below mirrors the reference repo's structure so vocabulary aligns from day one. Operational patterns we want to remember but that are not vocabulary live in [`project-docs/inspiration.md#deferred-patterns`](project-docs/inspiration.md) — re-read that section before starting any phase beyond the current prototype.
@@ -140,14 +152,6 @@ _Avoid_: Q&A page (collides casually with "Q&A bot" — the product), Saved answ
 **Gateway** _(future, Phase 9)_:
 The single-origin parent app that fronts both Retrieval Stacks. Mounts `markdown_kb` and `vector_rag` as sub-apps, serves the browser UI, and exposes one `POST /chat/stream?stack=wiki|rag` that dispatches to the selected Stack. The designated home for cross-stack and session-scoped concerns: the Retrieval Stack toggle (Phase 9) and Conversation Memory (Phase 11 — [[query-rewriting]] + [[conversation-store]]) live here, so the sub-apps stay stateless and single-turn. Distinct from a Retrieval Stack — a Stack owns retrieval + grounding; the Gateway owns composition, not retrieval. See [[adr-0010]] (and [[adr-0002]] for why the Stacks stay independent).
 _Avoid_: Proxy (it dispatches in-process, not via HTTP forwarding), Router (collides with FastAPI's APIRouter), Server (every app is a server).
-
-**Operator Console** _(future, Phase 15)_:
-The curator-facing management surface served by the [[gateway]] — the write/maintain counterpart to the reader chat UI. Drives the existing Wiki lifecycle operations (Import → Ingest → Index → Lint → Filed Answer promotion) and exposes RAG index rebuild as a single parallel action; it orchestrates each Retrieval Stack's operations but does not merge them (ADR-0002). Wiki-centric by design — the RAG stack has no Ingest/Lint/Filing, so only its index build is operable. Also hosts a resource browser over `docs/` and `wiki/`. Scope is a single local operator (no auth, no multi-user); demo posture shapes scope, not engineering rigor.
-_Avoid_: Admin panel (implies user/role administration — out of scope), Dashboard (implies metrics/monitoring, not lifecycle actions), Backend page (vague).
-
-**Upload** _(future, Phase 15)_:
-The transport/staging operation behind the Operator Console drop zone: writes dropped browser file bytes onto the server. `.html`/`.txt` land in `raw/` (becoming Import candidates); `.md` lands directly in `docs/` (already canonical Markdown — skips Import). Distinct from Import — Upload only moves bytes onto the server, it never converts.
-_Avoid_: Import (Import converts raw→docs; Upload only stages bytes), Ingest (LLM synthesis docs→wiki).
 
 ## Flagged ambiguities
 
