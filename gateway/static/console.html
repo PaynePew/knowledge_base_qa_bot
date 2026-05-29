@@ -6,7 +6,7 @@
 <title>Operator Console — KB Gateway</title>
 
 <!--
-  KB Gateway Operator Console — Phase 15 S3 (#172).
+  KB Gateway Operator Console — Phase 15 (S1–S5).
   Single vanilla HTML/CSS/JS file. NO framework, NO build step (CODING_STANDARD §12.1).
   XSS: all server-derived content inserted via textContent, never innerHTML (§12.4).
   No business logic: validation and routing decisions are server-derived (§12.5).
@@ -26,6 +26,16 @@
       IngestResponse carries no red-link field — surfaced on the Lint card. AC #14 amended
       accordingly; see #172/#168.)
     - Sources tracked from Import step results; falls back to all-docs if not available.
+  Phase 15 S4 (#173): Index + Lint full result cards, RAG rebuild action, staleness guard.
+    - Index step calls POST /wiki/index → renders IndexResponse: files/sections counts +
+      wiki_index_written confirmation. Indeterminate spinner only (§12.8 — no fake %).
+    - Lint step calls POST /wiki/lint → renders LintResponse findings grouped by check
+      (orphan / stale / contradiction / coverage gap / promotion candidates / stale-qa /
+      invalid-qa / failed-grounding / slug-collision / red-links). Indeterminate only.
+    - RAG rebuild action: POST /rag/index → parallel track (independent of Wiki chain).
+    - Staleness guard: module-level indexStale flag set by Ingest run, cleared by Index run.
+      Integration point: slice #172 Ingest run() calls markIngestDone() on resolve;
+      markIndexDone() is called in the Index run.finally block.
   Shared design tokens: linked from shared.css (Phase 15 S1).
 -->
 
@@ -503,6 +513,68 @@
     word-break: break-word;
   }
 
+  /* ── Staleness guard banner ──────────────────────────────── */
+  .staleness-banner {
+    display: none; /* shown via JS when indexStale=true */
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    background: #fff8eb;
+    border: 1px solid #e8c66a;
+    border-radius: 6px;
+    margin-bottom: 16px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .03em;
+    color: #7a5a00;
+  }
+  .staleness-banner.visible { display: flex; }
+  .staleness-banner .stale-icon { font-size: 13px; flex-shrink: 0; }
+  .staleness-banner .stale-msg { flex: 1; }
+
+  /* ── RAG rebuild panel ───────────────────────────────────── */
+  .rag-track {
+    margin-top: 32px;
+  }
+  .rag-track-header {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--ink-3);
+    margin-bottom: 16px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .rag-track-note {
+    font-size: 12px;
+    color: var(--ink-3);
+    font-family: "IBM Plex Sans", sans-serif;
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 400;
+  }
+
+  /* Lint check group heading inside result card */
+  .lint-group-head {
+    padding: 8px 16px 4px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    border-top: 1px solid var(--rule);
+    background: var(--bg);
+  }
+  .lint-group-head:first-child { border-top: none; }
+
+  /* Lint finding rows — extend .rec with a note subrow */
+  .rec .note {
+    grid-column: 2 / -1;
+    font-size: 11.5px;
+    color: var(--ink-3);
+    margin-top: 2px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
   @media (max-width: 540px) {
     .page { padding: 0 20px 48px; }
   }
@@ -520,7 +592,16 @@
       <a class="mast-reader" href="/">reader</a>
     </header>
 
+    <!-- Staleness guard: warns when Ingest ran but Index hasn't been rebuilt (#173) -->
+    <div id="staleness-banner" class="staleness-banner" role="alert" aria-live="polite">
+      <span class="stale-icon">&#9888;</span>
+      <span class="stale-msg">Section Index may be stale — Ingest has run since the last Index build. Run the Index step to rebuild.</span>
+    </div>
+
     <div id="pipeline-root"></div>
+
+    <!-- RAG rebuild track: parallel to Wiki chain (#173) -->
+    <div id="rag-track-root"></div>
 
     <div id="browser-section">
       <!-- Resource browser built by JS below (Phase 15 S5, issue #171) -->
@@ -923,6 +1004,208 @@ function runIngestBatches(sourceNames, resultEl, setStepBusy) {
   runBatch(0);
 }
 
+/* Index result card — renders IndexResponse (files_indexed / sections_indexed / wiki_index_written) */
+function renderIndexCard(data) {
+  var filesIndexed    = data.files_indexed    != null ? data.files_indexed    : "?";
+  var sectionsIndexed = data.sections_indexed != null ? data.sections_indexed : "?";
+  var written         = data.wiki_index_written === true;
+  var wikiPath        = data.wiki_index_path   || null;
+  var wikiError       = data.wiki_index_error  || null;
+
+  var summaryText = filesIndexed + " file" + (filesIndexed !== 1 ? "s" : "") +
+                    " · " + sectionsIndexed + " section" + (sectionsIndexed !== 1 ? "s" : "");
+  var badgeClass = wikiError ? "badge badge-warn" : "badge badge-ok";
+  var badgeLabel = wikiError ? "index partial" : "index rebuilt";
+
+  var head = el("div", { class: "result-card-head" },
+    el("span", { text: "Index" }),
+    el("span", { text: "·" }),
+    el("span", { class: badgeClass },
+      el("span", { class: "dot" }),
+      el("span", { text: badgeLabel })
+    )
+  );
+
+  /* Counts row */
+  var bodyEl = el("div");
+  bodyEl.append(el("div", { class: "rec" },
+    el("div", { class: "num", text: "01" }),
+    el("div", { class: "body" },
+      el("div", { class: "id",   text: "Files indexed" }),
+      el("div", { class: "crumb", text: "wiki/ Markdown files parsed" })
+    ),
+    el("div", { class: "label label-created", text: String(filesIndexed) })
+  ));
+  bodyEl.append(el("div", { class: "rec" },
+    el("div", { class: "num", text: "02" }),
+    el("div", { class: "body" },
+      el("div", { class: "id",   text: "Sections indexed" }),
+      el("div", { class: "crumb", text: "searchable BM25 units" })
+    ),
+    el("div", { class: "label label-created", text: String(sectionsIndexed) })
+  ));
+  /* Wiki index write confirmation */
+  if (written && wikiPath) {
+    bodyEl.append(el("div", { class: "rec" },
+      el("div", { class: "num", text: "03" }),
+      el("div", { class: "body" },
+        el("div", { class: "id",   text: "Wiki Index written" }),
+        el("div", { class: "crumb", text: wikiPath })
+      ),
+      el("div", { class: "label label-created", text: "ok" })
+    ));
+  } else if (wikiError) {
+    bodyEl.append(el("div", { class: "rec" },
+      el("div", { class: "num", text: "03" }),
+      el("div", { class: "body" },
+        el("div", { class: "id",   text: "Wiki Index write failed" }),
+        el("div", { class: "crumb", text: wikiError })
+      ),
+      el("div", { class: "label label-error", text: "warn" })
+    ));
+  }
+
+  return el("div", { class: "result-card" }, head, bodyEl);
+}
+
+/* Lint result card — renders LintResponse findings grouped by check */
+function renderLintCard(data) {
+  var summary  = data.summary  || {};
+  var findings = data.findings || {};
+  var checkErrors = data.check_errors || {};
+
+  var total       = summary.total_findings != null ? summary.total_findings : "?";
+  var badgeClass  = total === 0 ? "badge badge-ok" : "badge badge-warn";
+  var badgeLabel  = total === "?" ? "?" : (total + " finding" + (total !== 1 ? "s" : ""));
+
+  var head = el("div", { class: "result-card-head" },
+    el("span", { text: "Lint" }),
+    el("span", { text: "·" }),
+    el("span", { class: badgeClass },
+      el("span", { class: "dot" }),
+      el("span", { text: badgeLabel })
+    )
+  );
+
+  var bodyEl = el("div");
+
+  /* Helper: emit a group section heading */
+  function groupHead(label, count) {
+    var countStr = count != null ? " (" + count + ")" : "";
+    return el("div", { class: "lint-group-head", text: label + countStr });
+  }
+
+  /* Helper: emit one finding row */
+  function findingRow(idx, title, subtitle, labelText, labelClass) {
+    var numStr = String(idx).padStart(2, "0");
+    var rowBodyEl = el("div", { class: "body" },
+      el("div", { class: "id", text: title })
+    );
+    if (subtitle) rowBodyEl.append(el("div", { class: "crumb", text: subtitle }));
+    return el("div", { class: "rec" },
+      el("div", { class: "num",    text: numStr }),
+      rowBodyEl,
+      el("div", { class: "label " + labelClass, text: labelText })
+    );
+  }
+
+  /* Helper: emit a group (skipped if empty array) */
+  function renderGroup(label, items, rowFn) {
+    if (!items || items.length === 0) return;
+    bodyEl.append(groupHead(label, items.length));
+    items.forEach(function(item, i) { bodyEl.append(rowFn(i + 1, item)); });
+  }
+
+  /* C11 Orphan pages */
+  renderGroup("Orphan pages (C11)", findings.orphans, function(i, f) {
+    return findingRow(i, f.page_slug,
+      "missing: " + (f.missing_sources || []).join(", "),
+      "orphan", "label-failed");
+  });
+
+  /* C6 Stale pages */
+  renderGroup("Stale pages (C6)", findings.stale_pages, function(i, f) {
+    var drift = f.drift_days != null ? f.drift_days.toFixed(1) + "d drift" : "";
+    return findingRow(i, f.page_slug,
+      f.source + (drift ? " · " + drift : ""),
+      "stale", "label-updated");
+  });
+
+  /* C5 Contradictions */
+  renderGroup("Contradictions (C5)", findings.page_pairs, function(i, f) {
+    return findingRow(i, f.page_a + " / " + f.page_b,
+      f.severity + ": " + (f.summary || "").slice(0, 80),
+      f.severity, f.severity === "direct" ? "label-failed" : "label-updated");
+  });
+
+  /* C1 Coverage gaps */
+  renderGroup("Coverage gaps (C1)", findings.coverage_gaps, function(i, f) {
+    return findingRow(i, f.query_canonical,
+      f.reason + " · " + f.hit_count + " hit" + (f.hit_count !== 1 ? "s" : ""),
+      "gap", "label-skipped");
+  });
+
+  /* C8 Promotion candidates */
+  renderGroup("Promotion candidates (C8)", findings.promotion_candidates, function(i, f) {
+    return findingRow(i, f.slug,
+      f.question,
+      "count:" + f.count, "label-created");
+  });
+
+  /* C9 Stale filed answers */
+  renderGroup("Stale filed answers (C9)", findings.stale_filed_answers, function(i, f) {
+    return findingRow(i, f.page_slug,
+      f.max_drift_days.toFixed(1) + "d drift",
+      "stale-qa", "label-updated");
+  });
+
+  /* C10 Invalid qa schema */
+  renderGroup("Invalid qa schema (C10)", findings.invalid_qa_schemas, function(i, f) {
+    return findingRow(i, f.page_slug,
+      f.property_name + " = " + f.offending_value,
+      "invalid", "label-failed");
+  });
+
+  /* C3 Failed grounding */
+  renderGroup("Failed grounding (C3)", findings.failed_grounding, function(i, f) {
+    return findingRow(i, f.page_slug,
+      f.reason,
+      "grounding", "label-failed");
+  });
+
+  /* C4-a Slug collisions */
+  renderGroup("Slug collisions (C4a)", findings.slug_collisions, function(i, f) {
+    return findingRow(i, f.base_slug,
+      (f.pages_in_group || []).join(", "),
+      "collision", "label-updated");
+  });
+
+  /* C2 Red links */
+  renderGroup("Red links (C2)", findings.red_links, function(i, f) {
+    return findingRow(i, f.slug,
+      f.mention_count + " mention" + (f.mention_count !== 1 ? "s" : "") +
+      " · " + (f.referenced_by || []).slice(0, 3).join(", "),
+      "red-link", "label-failed");
+  });
+
+  /* Check errors */
+  var errKeys = Object.keys(checkErrors);
+  if (errKeys.length > 0) {
+    bodyEl.append(groupHead("Check errors", errKeys.length));
+    errKeys.forEach(function(k, i) {
+      bodyEl.append(findingRow(i + 1, k, checkErrors[k], "error", "label-failed"));
+    });
+  }
+
+  /* No findings at all */
+  if (bodyEl.children.length === 0) {
+    bodyEl.append(el("div", { style: "padding:12px 16px; font-size:13px; color:var(--pass);",
+      text: "No findings — wiki is clean." }));
+  }
+
+  return el("div", { class: "result-card" }, head, bodyEl);
+}
+
 /* Generic error card — used by any step on network/HTTP error */
 function renderErrorCard(stepLabel, message) {
   return el("div", { class: "result-card" },
@@ -941,6 +1224,30 @@ function makeBusyCard(label) {
       el("span", { text: label + "…" })
     )
   );
+}
+
+/* ============================================================
+   Staleness guard — module-level flag (#173)
+   indexStale is set to true when Ingest completes and cleared when
+   Index completes. The flag drives a persistent banner above the stepper.
+
+   Integration point for slice #172 (Ingest expansion):
+   - Call markIngestDone() at the end of the Ingest run().finally (or .then)
+     block so the staleness banner appears after a successful ingest.
+   - markIndexDone() is already called in the Index run().finally here.
+   ============================================================ */
+var indexStale = false;
+
+function markIngestDone() {
+  indexStale = true;
+  var banner = document.getElementById("staleness-banner");
+  if (banner) banner.classList.add("visible");
+}
+
+function markIndexDone() {
+  indexStale = false;
+  var banner = document.getElementById("staleness-banner");
+  if (banner) banner.classList.remove("visible");
 }
 
 /* ============================================================
@@ -1085,14 +1392,23 @@ var STEP_DEFS = [
     buildBody: null,
     run: function(resultEl, setStepBusy) {
       /* Phase 15 S3 (#172): single-batch-call rule (§12.8 / ADR-0011).
-         Sources come from the last Import run (lastImportedDocFilenames).
-         Falls back to all-docs if no Import has been run this session.
+         Sources come from the last Import run (lastImportedDocFilenames);
+         falls back to all-docs if no Import has been run this session.
+         >5 sources → sequential single-batch calls with "Batch k/N" indicator
+         (client owns the counter; no fake % — §12.8); within each batch an
+         indeterminate spinner only.
 
-         >5 sources → sequential single-batch calls with "Batch k/N" indicator.
-         Client owns the batch counter; no fake % (§12.8).
-         Within each batch: indeterminate spinner only. */
+         #173 staleness-guard integration: markIngestDone() must fire when the
+         batch sequence finishes (success OR error) so the stale banner appears
+         regardless of ingest outcome. runIngestBatches calls setStepBusy(false)
+         exactly once at completion, so we wrap that callback to also set the
+         stale signal then — keeping runIngestBatches free of guard coupling. */
       setStepBusy(true);
-      runIngestBatches(lastImportedDocFilenames, resultEl, setStepBusy);
+      var onIngestStepDone = function(b) {
+        setStepBusy(b);
+        if (b === false) markIngestDone();
+      };
+      runIngestBatches(lastImportedDocFilenames, resultEl, onIngestStepDone);
     },
   },
   {
@@ -1101,23 +1417,21 @@ var STEP_DEFS = [
     desc: "Rebuild BM25 search index from wiki/",
     buildBody: null,
     run: function(resultEl, setStepBusy) {
-      /* Slice #173 will implement this run function. Stub for stepper completeness. */
+      /* Phase 15 S4 (#173): real IndexResponse card + staleness guard clear */
       setStepBusy(true);
-      resultEl.replaceChildren(makeBusyCard("Running Index"));
+      resultEl.replaceChildren(makeBusyCard("Rebuilding Section Index…"));
 
       fetch("/wiki/index", { method: "POST" })
         .then(function(resp) {
           if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
           return resp.json();
         })
-        .then(function(data) {
-          var summaryText = data.files_indexed + " files, " + data.sections_indexed + " sections";
-          resultEl.replaceChildren(el("div", { class: "result-card" },
-            el("div", { class: "result-card-head" }, el("span", { text: "Index · " + summaryText }))
-          ));
-        })
+        .then(function(data) { resultEl.replaceChildren(renderIndexCard(data)); })
         .catch(function(err)  { resultEl.replaceChildren(renderErrorCard("Index", err.message || String(err))); })
-        .finally(function()   { setStepBusy(false); });
+        .finally(function()   {
+          setStepBusy(false);
+          markIndexDone(); /* staleness guard: clear stale signal after Index run */
+        });
     },
   },
   {
@@ -1126,21 +1440,16 @@ var STEP_DEFS = [
     desc: "Audit wiki for orphans, red links, contradictions",
     buildBody: null,
     run: function(resultEl, setStepBusy) {
-      /* Slice #173 will implement this run function. Stub for stepper completeness. */
+      /* Phase 15 S4 (#173): real LintResponse card with per-check grouped findings */
       setStepBusy(true);
-      resultEl.replaceChildren(makeBusyCard("Running Lint"));
+      resultEl.replaceChildren(makeBusyCard("Running Lint audit…"));
 
       fetch("/wiki/lint", { method: "POST" })
         .then(function(resp) {
           if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
           return resp.json();
         })
-        .then(function(data) {
-          var total = data.summary ? data.summary.total_findings : "?";
-          resultEl.replaceChildren(el("div", { class: "result-card" },
-            el("div", { class: "result-card-head" }, el("span", { text: "Lint · " + total + " finding" + (total !== 1 ? "s" : "") }))
-          ));
-        })
+        .then(function(data) { resultEl.replaceChildren(renderLintCard(data)); })
         .catch(function(err)  { resultEl.replaceChildren(renderErrorCard("Lint", err.message || String(err))); })
         .finally(function()   { setStepBusy(false); });
     },
@@ -1224,6 +1533,91 @@ function buildPipeline(rootEl) {
 
 /* ── Boot ──────────────────────────────────────────────────── */
 buildPipeline(document.getElementById("pipeline-root"));
+
+/* ============================================================
+   RAG rebuild track (#173)
+   POST /rag/index — runs in parallel with the Wiki pipeline chain.
+   RAG depends only on docs/ so it is a separate, independent track.
+   No fake progress: single blocking call + indeterminate spinner (§12.8).
+   ============================================================ */
+function buildRagTrack(rootEl) {
+  var ragResultEl = el("div", { class: "step-result" });
+  var ragRunBtn;
+
+  function setRagBusy(busy) {
+    if (ragRunBtn) ragRunBtn.disabled = busy;
+  }
+
+  ragRunBtn = el("button", { class: "run-btn", type: "button", text: "Rebuild",
+    onclick: function() {
+      setRagBusy(true);
+      ragResultEl.replaceChildren(makeBusyCard("Rebuilding RAG index…"));
+
+      fetch("/rag/index", { method: "POST" })
+        .then(function(resp) {
+          if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+          return resp.json();
+        })
+        .then(function(data) {
+          /* RAG IndexResponse: files_indexed + chunks_indexed */
+          var filesIdx  = data.files_indexed  != null ? data.files_indexed  : "?";
+          var chunksIdx = data.chunks_indexed != null ? data.chunks_indexed : "?";
+          var summaryText = filesIdx + " file" + (filesIdx !== 1 ? "s" : "") +
+                            " · " + chunksIdx + " chunk" + (chunksIdx !== 1 ? "s" : "");
+          var card = el("div", { class: "result-card" },
+            el("div", { class: "result-card-head" },
+              el("span", { text: "RAG Index" }),
+              el("span", { text: "·" }),
+              el("span", { class: "badge badge-ok" },
+                el("span", { class: "dot" }),
+                el("span", { text: "rebuilt" })
+              )
+            ),
+            el("div", { class: "rec" },
+              el("div", { class: "num", text: "01" }),
+              el("div", { class: "body" },
+                el("div", { class: "id",   text: "Files indexed" }),
+                el("div", { class: "crumb", text: "docs/ files embedded" })
+              ),
+              el("div", { class: "label label-created", text: String(filesIdx) })
+            ),
+            el("div", { class: "rec" },
+              el("div", { class: "num", text: "02" }),
+              el("div", { class: "body" },
+                el("div", { class: "id",   text: "Chunks indexed" }),
+                el("div", { class: "crumb", text: "vector units stored" })
+              ),
+              el("div", { class: "label label-created", text: String(chunksIdx) })
+            )
+          );
+          ragResultEl.replaceChildren(card);
+        })
+        .catch(function(err) {
+          ragResultEl.replaceChildren(renderErrorCard("RAG Index", err.message || String(err)));
+        })
+        .finally(function() { setRagBusy(false); });
+    }
+  });
+
+  var headLeft = el("div", { style: "display:flex; align-items:center; gap:12px; min-width:0; flex:1;" },
+    el("span", { class: "step-panel-title", text: "RAG Index" }),
+    el("span", { class: "step-panel-desc",  text: "Rebuild vector embeddings from docs/ (runs in parallel)" })
+  );
+  var headEl = el("div", { class: "step-panel-head" }, headLeft, ragRunBtn);
+  var panel  = el("div", { class: "step-panel" }, headEl, ragResultEl);
+
+  rootEl.append(
+    el("div", { class: "rag-track" },
+      el("div", { class: "rag-track-header" },
+        el("span", { text: "RAG Track" }),
+        el("span", { class: "rag-track-note", text: "— independent of Wiki pipeline; runs against docs/ only" })
+      ),
+      panel
+    )
+  );
+}
+
+buildRagTrack(document.getElementById("rag-track-root"));
 
 /* ══════════════════════════════════════════════════════════
    Resource Browser (Phase 15 S5, issue #171)
