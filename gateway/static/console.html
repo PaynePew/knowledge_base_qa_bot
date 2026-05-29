@@ -21,7 +21,10 @@
     - Single POST /wiki/ingest call per batch of ≤5 named sources (§12.8 single-batch rule).
     - >5 sources → sequential single-batch calls with "Batch k/N" indicator (client-owned).
     - Indeterminate spinner within each batch (NO fake percentage — §12.8).
-    - Per-page grounding pass/fail badge, red-link count, hash-skip (unchanged) status.
+    - Per-page grounding pass/fail badge + hash-skip (unchanged) status from IngestResponse.
+      (Red-link counts are NOT an ingest concern: they are a cross-page Lint C2 finding —
+      IngestResponse carries no red-link field — surfaced on the Lint card. AC #14 amended
+      accordingly; see #172/#168.)
     - Sources tracked from Import step results; falls back to all-docs if not available.
   Shared design tokens: linked from shared.css (Phase 15 S1).
 -->
@@ -704,7 +707,8 @@ function renderImportCard(data) {
 }
 
 /* Ingest result card — renders IngestResponse (results + skipped_sources + failed_sources).
-   Per-page grounding pass/fail badge, red-link count, hash-skip status.
+   Per-page grounding pass/fail badge + hash-skip status. (Red-link counts live on the Lint
+   card — they are a cross-page Lint C2 finding, not present in IngestResponse; AC amended.)
    §12.4: all server-derived text via textContent. */
 function renderIngestCard(data, batchLabel) {
   var results  = data.results          || [];
@@ -773,7 +777,8 @@ function renderIngestCard(data, batchLabel) {
       var pageName = pageRelPath.split("/").pop().replace(/\.md$/, "");
       var slug = pageName;
 
-      /* Red-link count from pages_deleted is not available per-page; use grounding status */
+      /* Per-page status badge comes from the grounding outcome. Red-link counts are a
+         cross-page Lint C2 finding (not in IngestResponse) — shown on the Lint card. */
       var lbl      = groundingLabel(slug);
       var lblClass = groundingLabelClass(slug);
 
