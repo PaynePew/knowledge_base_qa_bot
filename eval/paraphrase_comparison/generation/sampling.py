@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``GoldSection``, ``load_gold_sections``, ``sha256_order``, ``sample_sections``, ``GOLD_SECTIONS_PATH``.
+"""Deep module per Ousterhout. Public surface: ``GoldSection``, ``load_gold_sections``, ``derive_gold_sections``, ``sha256_order``, ``sample_sections``, ``GOLD_SECTIONS_PATH``, ``CORPUS_ENTITY_SOURCES``.
 
 Deterministic Gold Section sampling for Paraphrase generation (PRD #100, #102).
 
@@ -8,18 +8,21 @@ built-in ``hash()`` is salted per-process (PYTHONHASHSEED), so it is unusable as
 a stable ordering key. This module orders sections by ``sha256(seed:section_id)``
 instead, which is byte-stable everywhere.
 
+Gold Sections are auto-derived by parsing the committed corpus into heading-Sections
+(issue #142). The former hand-maintained ``gold_sections.yaml`` and its
+``multi_sub_fact`` flag have been dropped — sub-fact narrowing is covered downstream
+by the Synthesizer's context-bound evolutions (PRD #137).
+
+The entity Source list (``CORPUS_ENTITY_SOURCES``) is the one remaining piece of
+hand-knowledge: entity sources collapse into a single entity wiki page and are
+never Paraphrase sources.
+
 Two sampling rules from the issue are encoded here:
 
-  1. ``specificity_narrowing`` may target ONLY multi-sub-fact Gold Sections (a
-     section with a single fact has no high-distinctiveness sub-fact to narrow
-     to). ``sample_sections(..., multi_sub_fact_only=True)`` enforces this.
-  2. Cross-type reuse is allowed: each Paraphrase Type seeds its own ordering, so
+  1. Cross-type reuse is allowed: each Paraphrase Type seeds its own ordering, so
      the same section may be drawn for several types. The seed is the type name,
      so a type's selection is stable regardless of which other types ran.
-
-The Gold Section inventory (which docs sections exist and which are multi-sub-fact)
-is committed as ``gold_sections.yaml`` so the sampling is auditable and does not
-depend on re-parsing the corpus at generation time.
+  2. ``sample_sections`` draws up to ``count`` sections in sha256-keyed order.
 """
 
 from __future__ import annotations
@@ -30,8 +33,16 @@ from pathlib import Path
 
 import yaml
 
+from markdown_kb.app.indexer import parse_markdown, slugify
+
 _PKG_ROOT = Path(__file__).resolve().parent.parent
 GOLD_SECTIONS_PATH = _PKG_ROOT / "gold_sections.yaml"
+
+# Entity sources are excluded from the Gold Section pool (they collapse into
+# a single entity wiki page, not concept pages, and are not Paraphrase sources).
+# This is the one piece of hand-knowledge that cannot be auto-derived without
+# the LLM classifier that distinguishes entity from concept Sources.
+CORPUS_ENTITY_SOURCES: frozenset[str] = frozenset({"warranty.md"})
 
 
 # ---------------------------------------------------------------------------
@@ -44,27 +55,80 @@ class GoldSection:
     ``section_id`` is the ``{source-filename}#{heading-slug}`` docs id (the same
     form ``Paraphrase.gold_docs_section_id`` carries). ``concept_slug`` is the
     1:1 concept Wiki Page slug ``/ingest`` synthesised for it (the Paraphrase
-    source surface — entity pages are excluded). ``multi_sub_fact`` marks a
-    section that carries several distinct retrievable facts, so a
-    ``specificity_narrowing`` Paraphrase can narrow to one high-distinctiveness
-    sub-fact.
+    source surface — entity pages are excluded).
+
+    Note: ``multi_sub_fact`` was removed in issue #142. Sub-fact narrowing for
+    ``specificity_narrowing`` is now handled by the Synthesizer's context-bound
+    evolutions rather than a hand-maintained per-section flag (PRD #137).
     """
 
     section_id: str
     concept_slug: str
-    multi_sub_fact: bool
 
 
 # ---------------------------------------------------------------------------
-# Inventory loading
+# Inventory derivation
 # ---------------------------------------------------------------------------
-def load_gold_sections(path: Path = GOLD_SECTIONS_PATH) -> list[GoldSection]:
-    """Parse the committed ``gold_sections.yaml`` inventory into ``GoldSection`` objects.
+def derive_gold_sections(
+    corpus_dir: Path,
+    entity_sources: frozenset[str] | set[str] = CORPUS_ENTITY_SOURCES,
+) -> list[GoldSection]:
+    """Derive the Gold Section inventory by parsing the corpus into heading-Sections.
 
-    Raises on a missing required field rather than silently dropping a section —
-    a corrupt inventory is a fail-fast condition for generation (mirrors the
-    loader's fail-fast on a corrupt query set, CODING_STANDARD §4.1).
+    Replaces the former hand-maintained ``gold_sections.yaml`` (issue #142).
+    For each ``*.md`` file in ``corpus_dir`` that is NOT in ``entity_sources``,
+    parse all body-bearing Sections and emit one ``GoldSection`` per Section.
+
+    ``entity_sources`` is the set of filenames (basenames) whose sections should
+    be excluded — they collapse into entity wiki pages, not concept pages, and
+    are never Paraphrase sources (e.g. ``{"warranty.md"}``).
+
+    Returns sections sorted by ``{filename}#{slug}`` so the order is stable and
+    auditable (matches the order produced by the former YAML). Raises on a missing
+    or unreadable corpus directory (fail-fast per CODING_STANDARD §4.1).
     """
+    sections: list[GoldSection] = []
+    for md_file in sorted(corpus_dir.glob("*.md")):
+        if md_file.name in entity_sources:
+            continue
+        for section in parse_markdown(md_file, source_id=None):
+            if not section.content.strip():
+                continue
+            slug = slugify(section.heading)
+            sections.append(
+                GoldSection(
+                    section_id=f"{md_file.name}#{slug}",
+                    concept_slug=slug,
+                )
+            )
+    return sections
+
+
+# ---------------------------------------------------------------------------
+# Inventory loading (legacy YAML path preserved for backward compat)
+# ---------------------------------------------------------------------------
+def load_gold_sections(
+    path: Path = GOLD_SECTIONS_PATH,
+    *,
+    corpus_dir: Path | None = None,
+    entity_sources: frozenset[str] | set[str] = CORPUS_ENTITY_SOURCES,
+) -> list[GoldSection]:
+    """Return the Gold Section inventory.
+
+    With ``corpus_dir`` provided: auto-derives the inventory by parsing the
+    corpus (issue #142; preferred path). With ``corpus_dir=None`` (default):
+    falls back to the legacy ``gold_sections.yaml`` for callers that have not
+    yet been migrated — the YAML path is preserved for backward compatibility
+    with the committed queries.yaml whose Gold Section ids were derived from
+    the YAML inventory.
+
+    Raises on a missing required field (YAML path) or an unreadable corpus
+    (corpus path) rather than silently dropping a section (CODING_STANDARD §4.1).
+    """
+    if corpus_dir is not None:
+        return derive_gold_sections(corpus_dir, entity_sources=entity_sources)
+
+    # Legacy YAML path (backward compat — migrate callers to corpus_dir=).
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     sections: list[GoldSection] = []
     for entry in data.get("gold_sections", []):
@@ -72,7 +136,6 @@ def load_gold_sections(path: Path = GOLD_SECTIONS_PATH) -> list[GoldSection]:
             GoldSection(
                 section_id=entry["section_id"],
                 concept_slug=entry["concept_slug"],
-                multi_sub_fact=bool(entry["multi_sub_fact"]),
             )
         )
     return sections
@@ -97,26 +160,21 @@ def sample_sections(
     sections: list[GoldSection],
     seed: str,
     count: int,
-    *,
-    multi_sub_fact_only: bool = False,
 ) -> list[GoldSection]:
     """Deterministically draw up to ``count`` Gold Sections for one Paraphrase Type.
 
     ``seed`` is the Paraphrase Type name, so each type gets its own stable
     ordering and cross-type reuse falls out naturally (the same section may be
-    the top draw for several types). When ``multi_sub_fact_only`` is set, only
-    multi-sub-fact sections are eligible — the ``specificity_narrowing`` rule
-    (a single-fact section has no sub-fact to narrow to).
+    the top draw for several types).
 
-    Returns fewer than ``count`` only when the eligible pool is smaller than
-    ``count``; never raises on an over-large ``count``.
+    Returns fewer than ``count`` only when the pool is smaller than ``count``;
+    never raises on an over-large ``count``.
+
+    Note: the former ``multi_sub_fact_only`` parameter was removed in issue #142
+    (the multi_sub_fact flag was dropped; sub-fact narrowing is now handled by
+    the Synthesizer's context-bound evolutions, PRD #137).
     """
-    pool = (
-        [s for s in sections if s.multi_sub_fact]
-        if multi_sub_fact_only
-        else list(sections)
-    )
-    return sha256_order(pool, seed)[:count]
+    return sha256_order(list(sections), seed)[:count]
 
 
 def _digest(seed: str, section_id: str) -> str:

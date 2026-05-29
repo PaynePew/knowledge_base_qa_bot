@@ -44,20 +44,6 @@ def test_queries_yaml_holds_full_seven_type_set():
         assert p.key_tokens_wiki
 
 
-def test_specificity_narrowing_targets_multi_sub_fact_sections():
-    # specificity_narrowing may only target multi-sub-fact Gold Sections; cross-
-    # check each such Paraphrase's gold against the committed inventory's flag.
-    from eval.paraphrase_comparison.generation.sampling import load_gold_sections
-
-    multi = {s.section_id for s in load_gold_sections() if s.multi_sub_fact}
-    spec = [
-        p for p in load_paraphrases() if p.paraphrase_type == "specificity_narrowing"
-    ]
-    assert spec, "expected specificity_narrowing Paraphrases in the set"
-    for p in spec:
-        assert p.gold_docs_section_id in multi
-
-
 def test_run_comparison_produces_a_row_per_type(tmp_path, fake_vector_index):
     report_path = tmp_path / "report.md"
     stack_a, stack_b = run_comparison(report_path=report_path, embedding_mode="fake")

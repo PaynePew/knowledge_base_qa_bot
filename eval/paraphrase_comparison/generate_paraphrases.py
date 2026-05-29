@@ -11,10 +11,10 @@ content is non-deterministic and never asserted (CODING_STANDARD §6.2).
 
 Pipeline:
 
-    1. Load the Gold Section inventory (gold_sections.yaml) and, per Core
-       Paraphrase Type, sha256-sample which Gold Sections to target
-       (generation.sampling — specificity_narrowing samples multi-sub-fact
-       sections only; cross-type reuse allowed).
+    1. Derive the Gold Section inventory from the corpus (issue #142: no longer
+       read from gold_sections.yaml) and, per Core Paraphrase Type, sha256-sample
+       which Gold Sections to target (generation.sampling — cross-type reuse
+       allowed).
     2. For each (type, section), render the type's per-type prompt template
        over the docs Section body + concept Wiki Page body, and call gpt-4o-mini
        (temperature=0.7, seed=42, one-shot) with with_structured_output into the
@@ -135,8 +135,13 @@ def generate_core(per_type_count: int = PER_TYPE_COUNT) -> list[Paraphrase]:
     Deterministic sampling picks the target Gold Sections (seed = type name);
     each (type, section) yields one gpt-4o-mini structured-output call. Requires
     OPENAI_API_KEY — callers gate on it (see ``main``).
+
+    Gold Sections are now auto-derived from the corpus rather than read from
+    gold_sections.yaml (issue #142). The multi_sub_fact_only filter for
+    specificity_narrowing has been dropped — sub-fact narrowing is handled by
+    the Synthesizer's context-bound evolutions (PRD #137).
     """
-    gold = sampling.load_gold_sections()
+    gold = sampling.load_gold_sections(corpus_dir=CORPUS_DIR)
     docs_bodies = _docs_section_bodies()
     llm = _get_generator_llm()
 
@@ -147,7 +152,6 @@ def generate_core(per_type_count: int = PER_TYPE_COUNT) -> list[Paraphrase]:
             gold,
             seed=ptype,
             count=per_type_count,
-            multi_sub_fact_only=(ptype == "specificity_narrowing"),
         )
         for idx, sec in enumerate(sections, start=1):
             heading, docs_body = docs_bodies[sec.section_id]
@@ -236,7 +240,10 @@ def run_qc(paraphrases: list[Paraphrase]) -> list[qc.QcVerdict]:
     matchable, so the distinctiveness judgement must see both corpora.
     """
     docs_bodies = _docs_section_bodies()
-    wiki_bodies = [_concept_body(s.concept_slug) for s in sampling.load_gold_sections()]
+    wiki_bodies = [
+        _concept_body(s.concept_slug)
+        for s in sampling.load_gold_sections(corpus_dir=CORPUS_DIR)
+    ]
     idf = qc.build_idf([body for _, body in docs_bodies.values()] + wiki_bodies)
     return [
         qc.check_key_tokens(p.paraphrase_id, sorted(p.key_tokens), idf)
