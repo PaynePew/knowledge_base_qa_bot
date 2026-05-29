@@ -418,3 +418,51 @@ def test_promote_then_index_makes_page_retrievable(grounded_client, tmp_path):
     body = index_resp.json()
     # Sanity check — sections_indexed must be positive (file system has docs + the qa page)
     assert body["sections_indexed"] > 0
+
+
+# ---------------------------------------------------------------------------
+# Regression: an LLM-emitted Cannot-Confirm answer must NOT be filed.
+# (Verification finding 2026-05: dispatch_filing gated only on outcome.passed,
+# so the sentinel — which passes grounding trivially — got filed as a draft and
+# polluted the Curation Queue as a promotion candidate.)
+# ---------------------------------------------------------------------------
+
+
+def test_dispatch_filing_skips_llm_emitted_cannot_confirm(monkeypatch):
+    """The Cannot-Confirm sentence passes grounding trivially (passed=True, no
+    unsupported claims) but is a non-answer — dispatch_filing must NOT file it."""
+    from app import qa
+    from app.retrieval import CANNOT_CONFIRM_PHRASE
+
+    calls: list = []
+    monkeypatch.setattr(qa, "maybe_file_answer", lambda *a, **k: calls.append(a))
+
+    result = {
+        "answer": CANNOT_CONFIRM_PHRASE,
+        "grounding_outcome": _approved_outcome(),
+        "sources": [{"source": REFUND_SECTION_ID}],
+    }
+    assert qa.dispatch_filing("How long do refunds take?", result) is None
+    assert calls == [], "maybe_file_answer must not be called for the CC sentinel"
+
+
+def test_dispatch_filing_still_files_real_grounded_answer(monkeypatch):
+    """Control: a genuine grounded answer is still filed — the CC guard must not
+    regress normal filing."""
+    from app import qa
+
+    calls: list = []
+    monkeypatch.setattr(
+        qa, "maybe_file_answer", lambda *a, **k: (calls.append(a), "FILED")[1]
+    )
+
+    result = {
+        "answer": (
+            "Approved refunds are processed within 5-7 business days. "
+            f"[Source: {REFUND_SECTION_ID}]"
+        ),
+        "grounding_outcome": _approved_outcome(),
+        "sources": [{"source": REFUND_SECTION_ID}],
+    }
+    assert qa.dispatch_filing("How long do refunds take?", result) == "FILED"
+    assert len(calls) == 1

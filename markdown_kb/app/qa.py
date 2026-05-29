@@ -512,10 +512,14 @@ def dispatch_filing(query: str, result: dict) -> FiledStatus | None:
     ``stream_query`` path (retrieval.py) to avoid duplicated dispatch logic
     (Phase 9 Slice 4 / issue #121 AC1).
 
-    Gating rules (behaviour-preserving — identical to the inline block that
-    previously lived in routes.chat):
-    - ``result["grounding_outcome"].passed`` must be True; Cannot Confirm
-      paths return ``None`` without calling ``maybe_file_answer``.
+    Gating rules:
+    - ``result["grounding_outcome"].passed`` must be True; early-exit Cannot
+      Confirm paths (``passed == False``) return ``None`` without calling
+      ``maybe_file_answer``.
+    - ``result["answer"]`` must not be the Cannot-Confirm sentinel. An LLM can
+      emit that sentence itself; it then trivially passes grounding
+      (``passed == True``, no unsupported claims) yet is a non-answer that must
+      never be filed as a curatable draft.
     - RAG paths never call this function (caller contract; enforcement is
       the caller's responsibility — this function does not inspect the stack).
 
@@ -532,6 +536,17 @@ def dispatch_filing(query: str, result: dict) -> FiledStatus | None:
     """
     outcome = result["grounding_outcome"]
     if not outcome.passed:
+        return None
+    # An LLM can emit the Cannot-Confirm sentence as its own answer. That text
+    # carries no factual claims, so the grounding check trivially passes
+    # (outcome.passed == True) — but it is a non-answer, not a curatable Q&A.
+    # Filing it plants an "I cannot confirm…" draft in wiki/qa/ that the
+    # Curation Queue then surfaces as a promotion candidate. Gate it out here so
+    # the LLM-emitted CC case is skipped too (early-exit CC already returned via
+    # passed == False above). Lazy import keeps qa <-> retrieval one-directional.
+    from .retrieval import CANNOT_CONFIRM_PHRASE
+
+    if result.get("answer", "").strip() == CANNOT_CONFIRM_PHRASE:
         return None
     cited_refs = [_SectionRef(id=s["source"]) for s in result["sources"]]
     return maybe_file_answer(query, result["answer"], cited_refs)

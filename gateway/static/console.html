@@ -2049,7 +2049,10 @@ function buildDraftCard(f) {
           var ln = fmLines[j];
           if (/^sources\s*:/.test(ln)) { inSources = true; continue; }
           if (inSources) {
-            var m = ln.match(/^\s+-\s+(.*)/);
+            /* List items are written at column 0 (`- slug#heading`) by the
+               filing layer, so allow zero-or-more leading spaces (\s*), not
+               one-or-more (\s+) — otherwise the sources never render. */
+            var m = ln.match(/^\s*-\s+(.*)/);
             if (m) {
               srcs.push(m[1].trim());
             } else {
