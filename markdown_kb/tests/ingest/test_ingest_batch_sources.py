@@ -26,7 +26,6 @@ import pytest
 
 import app.templates as templates_module
 
-
 # ---------------------------------------------------------------------------
 # Shared helpers (mirrors test_ingest_integration.py pattern)
 # ---------------------------------------------------------------------------
@@ -90,8 +89,9 @@ def client_and_wiki(tmp_path, monkeypatch):
 
     monkeypatch.setattr(indexer_module, "WIKI_DIR", tmp_path / "wiki")
 
-    from app.main import app
     from fastapi.testclient import TestClient
+
+    from app.main import app
 
     client = TestClient(app)
     return client, tmp_path / "wiki"
@@ -146,8 +146,9 @@ def test_ingest_sources_list_via_http(tmp_path, monkeypatch):
     monkeypatch.setattr(indexer_module, "WIKI_DIR", wiki_dir)
     monkeypatch.setattr(ingest_module, "DOCS_DIR", docs_dir)
 
-    from app.main import app
     from fastapi.testclient import TestClient
+
+    from app.main import app
 
     client = TestClient(app)
     resp = client.post("/ingest", json={"sources": ["x.md", "y.md"]})
@@ -187,12 +188,8 @@ def test_batch_sources_colliding_slugs_disambiguated(tmp_path, monkeypatch):
 
     docs_dir = tmp_path / "docs"
     docs_dir.mkdir()
-    (docs_dir / "alpha.md").write_text(
-        "## Overview\n\nAlpha overview text.\n", encoding="utf-8"
-    )
-    (docs_dir / "beta.md").write_text(
-        "## Overview\n\nBeta overview text.\n", encoding="utf-8"
-    )
+    (docs_dir / "alpha.md").write_text("## Overview\n\nAlpha overview text.\n", encoding="utf-8")
+    (docs_dir / "beta.md").write_text("## Overview\n\nBeta overview text.\n", encoding="utf-8")
 
     wiki_dir = tmp_path / "wiki"
 
@@ -202,8 +199,9 @@ def test_batch_sources_colliding_slugs_disambiguated(tmp_path, monkeypatch):
     monkeypatch.setattr(indexer_module, "WIKI_DIR", wiki_dir)
     monkeypatch.setattr(ingest_module, "DOCS_DIR", docs_dir)
 
-    from app.main import app
     from fastapi.testclient import TestClient
+
+    from app.main import app
 
     client = TestClient(app)
 
@@ -217,9 +215,7 @@ def test_batch_sources_colliding_slugs_disambiguated(tmp_path, monkeypatch):
     all_pages = [p for r in body["results"] for p in r["pages_written"]]
 
     # One source gets "overview", the other gets "overview-2"
-    assert "concepts/overview.md" in all_pages, (
-        f"Expected concepts/overview.md in {all_pages}"
-    )
+    assert "concepts/overview.md" in all_pages, f"Expected concepts/overview.md in {all_pages}"
     assert "concepts/overview-2.md" in all_pages, (
         f"Expected concepts/overview-2.md (disambiguation suffix) in {all_pages}\n"
         "If only 'overview' appears, the sources list was sent as two separate "
@@ -257,8 +253,9 @@ def test_single_source_backcompat_still_works(tmp_path, monkeypatch):
     monkeypatch.setattr(indexer_module, "WIKI_DIR", wiki_dir)
     monkeypatch.setattr(ingest_module, "DOCS_DIR", docs_dir)
 
-    from app.main import app
     from fastapi.testclient import TestClient
+
+    from app.main import app
 
     client = TestClient(app)
     resp = client.post("/ingest", json={"source": "x.md"})
@@ -295,8 +292,9 @@ def test_empty_sources_list_falls_through_to_all_docs(tmp_path, monkeypatch):
     monkeypatch.setattr(indexer_module, "WIKI_DIR", wiki_dir)
     monkeypatch.setattr(ingest_module, "DOCS_DIR", docs_dir)
 
-    from app.main import app
     from fastapi.testclient import TestClient
+
+    from app.main import app
 
     client = TestClient(app)
     resp = client.post("/ingest", json={"sources": []})
@@ -333,8 +331,9 @@ def test_sources_list_takes_priority_over_source_singular(tmp_path, monkeypatch)
     monkeypatch.setattr(indexer_module, "WIKI_DIR", wiki_dir)
     monkeypatch.setattr(ingest_module, "DOCS_DIR", docs_dir)
 
-    from app.main import app
     from fastapi.testclient import TestClient
+
+    from app.main import app
 
     client = TestClient(app)
     # sources wins over source
