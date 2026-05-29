@@ -311,8 +311,8 @@ If you want a debug-only channel, instead either:
 
 - **Many** integration tests (`TestClient` + fake LLM) covering PROMPT.md verification cases.
 - **Some** component tests for parsing, indexing, and BM25 ranking order.
-- **Few-to-zero** unit tests on trivial helpers (tokenisation, slugification).
-- **One live test per LLM-facing surface** (see §6.4). Opt-in only; auto-skipped via the conftest collection hook.
+- **Few-to-zero** unit tests on trivial helpers (tokenisation, slugification) — **but a helper graduates the moment it carries a hard invariant or a non-trivial algorithm, and then unit-testing it is not over-testing.** Phase 16 makes `tokenize` (language-agnostic: CJK character bigram + unigram fallback) and `slugify` (Unicode-preserving) non-trivial: the **ASCII-byte-identical invariant** — pure-ASCII input must tokenise/slug exactly as before, the guard against English BM25 / `KB_SCORE_THRESHOLD` / Phase 8 baseline regression — plus the bigram and Unicode behaviour each warrant focused unit tests. The "trivial helper" guidance above applies only while the helper stays trivial.
+- **One live test per LLM-facing surface** (see §6.4). Opt-in only; auto-skipped via the conftest collection hook. A new language/script (e.g. Phase 16 Chinese) does **not** earn a second live test on a surface that already has one (`/chat`, `/ingest`); validate it with hermetic mocked-LLM integration tests instead, and assert language **structurally** (CJK code-point presence + directive-presence in the prompt constant), never specific model wording (§6.2).
 
 ### 6.2 What to assert vs not
 
@@ -503,7 +503,8 @@ Each signal has a **severity** that determines the reviewer's action:
 - [ ] **FAIL** — A test mocks any deep-module entry point (indexer search, grounding verify, etc.) instead of the LLM getter; per §6.3.
 - [ ] **FAIL** — A new `@pytest.mark.live` test appears on a surface already covered by an existing live test, OR a live test is added to a new LLM-facing surface without explicit PRD authorisation (one-per-surface is the policy; per §6.4).
 - [ ] **FAIL** — A test asserts an absolute BM25 score value (corpus-sensitive, brittle; per §6.2 — assert ranking order or shape instead).
-- [ ] **FLAG** — A test asserts specific LLM output text content beyond shape + `[Source:` marker (will break across model updates; per §6.2).
+- [ ] **FAIL** — A change to `tokenize` / `slugify` alters the token or slug output for **pure-ASCII** input, or lacks the regression test that pins byte-identical pure-ASCII behaviour (breaks the Phase 16 ASCII-byte-identical invariant; silently regresses English BM25 / `KB_SCORE_THRESHOLD` / the Phase 8 baseline). See §6.1.
+- [ ] **FLAG** — A test asserts specific LLM output text content beyond shape + `[Source:` marker (will break across model updates; per §6.2). For Phase 16, asserting an answer is "in Chinese" means CJK code-point presence, not specific words.
 - [ ] **FIX** — A test mutates the module-level sections list without restoring via `monkeypatch` or explicit teardown (per §6.5).
 
 ### Dependencies drift (§7)
