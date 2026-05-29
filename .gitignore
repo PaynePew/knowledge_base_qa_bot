@@ -29,6 +29,10 @@ wiki/hot.md
 # (issue #103); same append-only Wiki Log discipline, own file.
 vector_rag/log.md
 
+# gateway/ runtime trace — per-app log channel for the Gateway composition layer
+# (issue #161 Phase 11 Slice 3); same append-only discipline, own file.
+gateway/log.md
+
 # Python
 __pycache__/
 *.py[cod]
