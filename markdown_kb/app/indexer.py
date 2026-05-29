@@ -145,7 +145,8 @@ def slugify(text: str) -> str:
 
 
 # CJK Unified Ideographs range (most common block; covers Traditional/Simplified Chinese).
-# Extended blocks (CJK Ext-A, B, C, …) are also handled via unicodedata below.
+# Extension A/B and Compatibility Ideographs are handled by explicit codepoint
+# ranges in _is_cjk() below (no unicodedata dependency).
 _CJK_RANGE_START = ord("一")  # 一
 _CJK_RANGE_END = ord("鿿")  # 鿿
 
