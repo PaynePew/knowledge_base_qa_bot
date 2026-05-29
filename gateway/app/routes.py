@@ -1,6 +1,6 @@
 """Shallow module per Ousterhout. Public surface: ``router``.
 
-Gateway HTTP wiring for ``POST /chat/stream``.
+Gateway HTTP wiring for ``POST /chat/stream`` and ``POST /upload``.
 
 Phase 9 Slice 1 — Wiki SSE happy-path tracer bullet (ADR-0009, ADR-0010).
 Phase 9 Slice 2 (issue #119) — Full SSE event contract: status event (liveness
@@ -11,6 +11,11 @@ Phase 9 Slice 3 (issue #120) — RAG dispatch added; ``stack=rag`` routes to
 Phase 11 Slice 1 (issue #159) — Conversation Memory tracer bullet: session
 lifecycle, Query Rewriting (Wiki turn 2+), Conversation Store write-on-done,
 ``done.session`` field injection.  Sub-apps unchanged (ADR-0010).
+Phase 15 S1 (issue #169) — ``POST /upload`` (multipart) added; delegates to
+``markdown_kb.app.upload.upload_files`` (deep module).  Upload is a Gateway
+concern per ADR-0010 (gateway is the composition layer that owns the Console
+and all Console-adjacent system boundaries) and ADR-0011 (Upload only stages
+bytes; Import stays unchanged).
 
 All streaming complexity lives in the per-stack ``stream_query()`` functions and
 the shared ``markdown_kb.app.sse.events_for_result()`` serializer; this module is
@@ -37,17 +42,40 @@ import json
 import uuid
 from collections.abc import Callable, Iterator
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from markdown_kb.app.retrieval import stream_query as _wiki_stream_query
 from markdown_kb.app.schemas import ChatRequest
 from markdown_kb.app.sse import encode_event, events_for_result
+from markdown_kb.app.upload import upload_files as _upload_files
+from pydantic import BaseModel
 from vector_rag.app.retrieval import stream_query as _rag_stream_query
 
 from . import conversation_store as _conv_store_module
 from .query_rewriting import rewrite_query
 
 router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+# Upload response schema (Phase 15 S1, issue #169)
+# ---------------------------------------------------------------------------
+
+
+class UploadFileResultSchema(BaseModel):
+    """Per-file result returned by POST /upload."""
+
+    filename: str
+    status: str  # "written" | "rejected" | "error"
+    target_dir: str = ""
+    reason: str = ""
+
+
+class UploadBatchResultSchema(BaseModel):
+    """Response body for POST /upload."""
+
+    results: list[UploadFileResultSchema]
+
 
 # Per-stack dispatch mapping.  Adding a new stack = one entry here; the
 # generator body below is identical for every stack (ADR-0010).
@@ -244,4 +272,66 @@ def chat_stream(
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
         },
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /upload — Phase 15 S1 (issue #169, ADR-0011)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/upload", response_model=UploadBatchResultSchema)
+async def upload(files: list[UploadFile]) -> UploadBatchResultSchema:
+    """Stage a batch of uploaded files onto the server.
+
+    Accepts multipart/form-data with one or more ``files`` fields.  Delegates
+    all validation and routing logic to ``markdown_kb.app.upload.upload_files``
+    (deep module — CODING_STANDARD §2.3).
+
+    Per ADR-0011: Upload only stages bytes; Import (``POST /wiki/import``) is
+    unchanged and still converts ``raw/`` → ``docs/``.
+
+    Routing:
+      ``.html`` / ``.txt``  →  ``raw/``   (then Import converts to ``docs/``)
+      ``.md``               →  ``docs/``  (already canonical Markdown)
+      Other extensions      →  rejected with reason
+
+    Validation (system boundary — all untrusted-input checks live here):
+      - Traversal-safe filename (no ``..``, no path separators, no bidi chars)
+      - Type allow-list (``.html`` / ``.txt`` / ``.md``)
+      - Size limit (10 MB per file)
+
+    Always returns HTTP 200.  Per-file failures (rejections, errors) are
+    recorded in the ``results`` list; the batch never aborts on a single
+    file failure (continue-on-error semantics mirror ``/import``).
+
+    Wiki Log events emitted (``project-docs/log-kinds.md`` Phase 15 section):
+      ``upload_batch_started`` / ``upload_file`` / ``upload_rejected`` /
+      ``upload_error`` / ``upload_batch_completed``.
+
+    Args:
+        files: One or more ``UploadFile`` items from the multipart body.
+
+    Returns:
+        ``UploadBatchResultSchema`` with one ``UploadFileResultSchema`` per
+        input file, in the same order.
+    """
+    # Read all file bytes first (UploadFile is async).
+    file_pairs: list[tuple[str, bytes]] = []
+    for uf in files:
+        content = await uf.read()
+        file_pairs.append((uf.filename or "", content))
+
+    batch = _upload_files(file_pairs)
+
+    return UploadBatchResultSchema(
+        results=[
+            UploadFileResultSchema(
+                filename=r.filename,
+                status=r.status,
+                target_dir=r.target_dir,
+                reason=r.reason,
+            )
+            for r in batch.results
+        ]
     )
