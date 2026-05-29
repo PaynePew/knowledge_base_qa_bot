@@ -33,7 +33,12 @@ load_dotenv(find_dotenv(usecwd=True))
 import app.indexer as _indexer  # noqa: E402
 import app.logger as _logger  # noqa: E402
 
-REAL_DOCS = Path(__file__).resolve().parents[2] / "docs"
+# Hermetic 3-doc sample corpus (account_help / refund_policy / shipping_faq),
+# NOT the live repo ``docs/`` — since #142 that tree also holds the 20-doc
+# ``docs/fake-docs/`` demo corpus, which pollutes BM25 rankings these tests
+# assert (issue #145: a richer regenerated fake-docs doc out-ranked the intended
+# sample Section). The fixture files are byte-identical copies of the originals.
+REAL_DOCS = Path(__file__).resolve().parent / "fixtures" / "docs"
 
 
 @dataclass(frozen=True)
