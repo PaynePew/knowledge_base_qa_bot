@@ -6,7 +6,7 @@
 <title>Operator Console — KB Gateway</title>
 
 <!--
-  KB Gateway Operator Console — Phase 15 S4 (#173).
+  KB Gateway Operator Console — Phase 15 (S1–S5).
   Single vanilla HTML/CSS/JS file. NO framework, NO build step (CODING_STANDARD §12.1).
   XSS: all server-derived content inserted via textContent, never innerHTML (§12.4).
   No business logic: validation and routing decisions are server-derived (§12.5).
@@ -17,6 +17,15 @@
     - Controls are disabled while the step's request is in flight.
     - Import step calls POST /wiki/import → renders ImportResponse per-file result card.
     - Generic step renderer + per-step card renderer pattern for Ingest/Index/Lint reuse.
+  Phase 15 S3 (#172): Ingest step wired with batch chunker + per-page grounding cards.
+    - Single POST /wiki/ingest call per batch of ≤5 named sources (§12.8 single-batch rule).
+    - >5 sources → sequential single-batch calls with "Batch k/N" indicator (client-owned).
+    - Indeterminate spinner within each batch (NO fake percentage — §12.8).
+    - Per-page grounding pass/fail badge + hash-skip (unchanged) status from IngestResponse.
+      (Red-link counts are NOT an ingest concern: they are a cross-page Lint C2 finding —
+      IngestResponse carries no red-link field — surfaced on the Lint card. AC #14 amended
+      accordingly; see #172/#168.)
+    - Sources tracked from Import step results; falls back to all-docs if not available.
   Phase 15 S4 (#173): Index + Lint full result cards, RAG rebuild action, staleness guard.
     - Index step calls POST /wiki/index → renders IndexResponse: files/sections counts +
       wiki_index_written confirmation. Indeterminate spinner only (§12.8 — no fake %).
@@ -25,8 +34,8 @@
       invalid-qa / failed-grounding / slug-collision / red-links). Indeterminate only.
     - RAG rebuild action: POST /rag/index → parallel track (independent of Wiki chain).
     - Staleness guard: module-level indexStale flag set by Ingest run, cleared by Index run.
-      Integration point: slice #172 (Ingest expansion) must call markIngestDone() when its
-      run() resolves; markIndexDone() is called in the Index run.finally block here.
+      Integration point: slice #172 Ingest run() calls markIngestDone() on resolve;
+      markIndexDone() is called in the Index run.finally block.
   Shared design tokens: linked from shared.css (Phase 15 S1).
 -->
 
@@ -365,6 +374,10 @@
   .label-written  { color: var(--pass); }
   .label-rejected { color: var(--fail); }
   .label-error    { color: var(--fail); }
+  /* Ingest grounding labels */
+  .label-grounded   { color: var(--pass); }
+  .label-failed-grounding { color: var(--fail); }
+  .label-skipped-hash { color: var(--ink-3); }
 
   /* ── Spinner (busy state) ────────────────────────────────── */
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -774,6 +787,223 @@ function renderImportCard(data) {
   return el("div", { class: "result-card" }, head, rows);
 }
 
+/* Ingest result card — renders IngestResponse (results + skipped_sources + failed_sources).
+   Per-page grounding pass/fail badge + hash-skip status. (Red-link counts live on the Lint
+   card — they are a cross-page Lint C2 finding, not present in IngestResponse; AC amended.)
+   §12.4: all server-derived text via textContent. */
+function renderIngestCard(data, batchLabel) {
+  var results  = data.results          || [];
+  var skipped  = data.skipped_sources  || [];
+  var failed   = data.failed_sources   || [];
+  var grounding_failed = data.pages_with_failed_grounding || [];
+
+  /* Summary line */
+  var parts = [];
+  if (results.length > 0) {
+    var liveCount   = results.filter(function(r) { return r.status !== "skipped"; }).length;
+    var skippedCount = skipped.length;
+    if (liveCount > 0)   parts.push(liveCount + " ingested");
+    if (skippedCount > 0) parts.push(skippedCount + " unchanged");
+  }
+  if (failed.length > 0) parts.push(failed.length + " failed");
+  var summaryText = parts.join(" · ") || "0 sources";
+  if (batchLabel) summaryText = batchLabel + " · " + summaryText;
+
+  var hasFailures = failed.length > 0 || grounding_failed.length > 0;
+  var badgeClass  = hasFailures ? "badge badge-fail"
+                  : skipped.length > 0 ? "badge badge-warn"
+                  : "badge badge-ok";
+
+  var head = el("div", { class: "result-card-head" },
+    el("span", { text: "Ingest" }),
+    el("span", { text: "·" }),
+    el("span", { class: badgeClass },
+      el("span", { class: "dot" }),
+      el("span", { text: summaryText })
+    )
+  );
+
+  var rows = el("div");
+  var rowIndex = 0;
+
+  /* Helper: grounding label for a page slug */
+  function groundingLabel(slug) {
+    if (grounding_failed.indexOf(slug) !== -1) return "failed grounding";
+    return "grounded";
+  }
+  function groundingLabelClass(slug) {
+    if (grounding_failed.indexOf(slug) !== -1) return "label label-failed-grounding";
+    return "label label-grounded";
+  }
+
+  /* Render IngestSourceResult rows (created / updated) */
+  results.forEach(function(r) {
+    var pages = r.pages_written || [];
+    if (pages.length === 0) {
+      /* Source had no pages (should not happen for non-skipped, but be defensive) */
+      rowIndex++;
+      rows.append(el("div", { class: "rec" },
+        el("div", { class: "num", text: String(rowIndex).padStart(2, "0") }),
+        el("div", { class: "body" },
+          el("div", { class: "id",   text: r.source }),
+          el("div", { class: "crumb", text: "no pages written" })
+        ),
+        el("div", { class: "label label-failed-grounding", text: r.status || "?" })
+      ));
+      return;
+    }
+
+    pages.forEach(function(pageRelPath) {
+      rowIndex++;
+      var pageName = pageRelPath.split("/").pop().replace(/\.md$/, "");
+      var slug = pageName;
+
+      /* Per-page status badge comes from the grounding outcome. Red-link counts are a
+         cross-page Lint C2 finding (not in IngestResponse) — shown on the Lint card. */
+      var lbl      = groundingLabel(slug);
+      var lblClass = groundingLabelClass(slug);
+
+      var crumbParts = [r.source];
+      if (r.status === "updated") crumbParts.push("updated");
+      else if (r.status === "created") crumbParts.push("created");
+
+      var bodyEl = el("div", { class: "body" },
+        el("div", { class: "id",   text: pageName }),
+        el("div", { class: "crumb", text: crumbParts.join(" · ") })
+      );
+      rows.append(el("div", { class: "rec" },
+        el("div", { class: "num", text: String(rowIndex).padStart(2, "0") }),
+        bodyEl,
+        el("div", { class: lblClass, text: lbl })
+      ));
+    });
+  });
+
+  /* Skipped (hash-match, unchanged) rows */
+  skipped.forEach(function(r) {
+    rowIndex++;
+    rows.append(el("div", { class: "rec" },
+      el("div", { class: "num", text: String(rowIndex).padStart(2, "0") }),
+      el("div", { class: "body" },
+        el("div", { class: "id",   text: r.source }),
+        el("div", { class: "crumb", text: "unchanged (hash match)" })
+      ),
+      el("div", { class: "label label-skipped-hash", text: "skipped" })
+    ));
+  });
+
+  /* Failed source rows */
+  failed.forEach(function(sourceName) {
+    rowIndex++;
+    rows.append(el("div", { class: "rec" },
+      el("div", { class: "num", text: String(rowIndex).padStart(2, "0") }),
+      el("div", { class: "body" },
+        el("div", { class: "id",   text: sourceName })
+      ),
+      el("div", { class: "label label-failed-grounding", text: "failed" })
+    ));
+  });
+
+  return el("div", { class: "result-card" }, head, rows);
+}
+
+/* ── Batch chunker helpers (§12.8: client owns the batch count) ──────────── */
+
+/* Split array into chunks of at most `size` items. */
+function chunkArray(arr, size) {
+  var chunks = [];
+  for (var i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
+/* Run sequential ingest batches with "Batch k/N" indicator.
+   §12.8: NO fake percentage. "Batch k/N" is the only determinate progress
+   (client owns the counter). Within each batch an indeterminate spinner runs.
+
+   sourceNames: array of bare filenames (e.g. ["a.md", "b.md"]).
+                null/empty → POST /ingest with no sources (all-docs batch).
+   resultEl:    DOM element to update with progress + result cards.
+   setStepBusy: function(bool) — disables/enables the Run button.
+*/
+function runIngestBatches(sourceNames, resultEl, setStepBusy) {
+  var BATCH_SIZE = 5;
+
+  /* Normalise: null / empty → all-docs (single call, no sources field) */
+  var useAllDocs = !sourceNames || sourceNames.length === 0;
+  var batches    = useAllDocs ? [null] : chunkArray(sourceNames, BATCH_SIZE);
+  var totalBatches = batches.length;
+
+  /* Accumulate results across batches for the final combined card */
+  var accumulatedResults  = [];
+  var accumulatedSkipped  = [];
+  var accumulatedFailed   = [];
+  var accumulatedGrFailed = [];
+
+  function runBatch(batchIndex) {
+    if (batchIndex >= batches.length) {
+      /* All batches done — render combined result card */
+      setStepBusy(false);
+      var combined = {
+        results:                    accumulatedResults,
+        skipped_sources:            accumulatedSkipped,
+        failed_sources:             accumulatedFailed,
+        pages_with_failed_grounding: accumulatedGrFailed,
+      };
+      resultEl.replaceChildren(renderIngestCard(combined, null));
+      return;
+    }
+
+    var batchSources = batches[batchIndex];
+    var batchLabel   = totalBatches > 1
+      ? "Batch " + (batchIndex + 1) + "/" + totalBatches
+      : null;
+    var spinnerLabel = batchLabel ? batchLabel + "…" : "Running Ingest…";
+
+    /* Show indeterminate spinner with honest batch label (no fake %) */
+    resultEl.replaceChildren(makeBusyCard(spinnerLabel));
+
+    var body = batchSources ? JSON.stringify({ sources: batchSources }) : null;
+    var fetchOpts = {
+      method: "POST",
+      headers: body ? { "Content-Type": "application/json" } : {},
+    };
+    if (body) fetchOpts.body = body;
+
+    fetch("/wiki/ingest", fetchOpts)
+      .then(function(resp) {
+        if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+        return resp.json();
+      })
+      .then(function(data) {
+        /* Accumulate across batches */
+        accumulatedResults  = accumulatedResults.concat(data.results          || []);
+        accumulatedSkipped  = accumulatedSkipped.concat(data.skipped_sources  || []);
+        accumulatedFailed   = accumulatedFailed.concat(data.failed_sources    || []);
+        accumulatedGrFailed = accumulatedGrFailed.concat(data.pages_with_failed_grounding || []);
+
+        /* Show intermediate partial card if multiple batches remain */
+        if (totalBatches > 1 && batchIndex < batches.length - 1) {
+          var partial = {
+            results:                    accumulatedResults,
+            skipped_sources:            accumulatedSkipped,
+            failed_sources:             accumulatedFailed,
+            pages_with_failed_grounding: accumulatedGrFailed,
+          };
+          resultEl.replaceChildren(renderIngestCard(partial, batchLabel + " done"));
+        }
+        runBatch(batchIndex + 1);
+      })
+      .catch(function(err) {
+        setStepBusy(false);
+        resultEl.replaceChildren(renderErrorCard("Ingest", err.message || String(err)));
+      });
+  }
+
+  runBatch(0);
+}
+
 /* Index result card — renders IndexResponse (files_indexed / sections_indexed / wiki_index_written) */
 function renderIndexCard(data) {
   var filesIndexed    = data.files_indexed    != null ? data.files_indexed    : "?";
@@ -1102,10 +1332,15 @@ function buildUploadBody(resultEl) {
   return dropZone;
 }
 
+/* ── Pipeline state ────────────────────────────────────────── */
+/* Tracks the bare doc filenames from the last Import run so the Ingest step
+   can send exactly those sources in the batch call (§12.8 single-batch rule).
+   null = no import has been run this session → Ingest falls back to all-docs. */
+var lastImportedDocFilenames = null;
+
 /* ── Step definitions ─────────────────────────────────────── */
 /* §12.8 / §12.5: No fake progress percentages. Use indeterminate spinner only.
-   Ingest (#172) and Index/Lint (#173) run-functions will be wired in their slices.
-   The stub placeholders below show the hook point without locking the API shape. */
+   Index/Lint (#173) run-functions will be wired in their slice. */
 
 var STEP_DEFS = [
   {
@@ -1132,7 +1367,20 @@ var STEP_DEFS = [
           if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
           return resp.json();
         })
-        .then(function(data) { resultEl.replaceChildren(renderImportCard(data)); })
+        .then(function(data) {
+          resultEl.replaceChildren(renderImportCard(data));
+          /* Capture imported filenames for the Ingest step.
+             Extract the bare filename from docs_path (e.g. "docs/x.md" → "x.md").
+             imported_sources + skipped_sources both represent available docs/ files.
+             §12.5: extraction logic is trivial (basename), not business logic. */
+          var allImported = (data.imported_sources || []).concat(data.skipped_sources || []);
+          if (allImported.length > 0) {
+            lastImportedDocFilenames = allImported.map(function(r) {
+              var p = r.docs_path || "";
+              return p.split(/[/\\]/).pop();
+            }).filter(Boolean);
+          }
+        })
         .catch(function(err)  { resultEl.replaceChildren(renderErrorCard("Import", err.message || String(err))); })
         .finally(function()   { setStepBusy(false); });
     },
@@ -1143,33 +1391,24 @@ var STEP_DEFS = [
     desc: "Synthesise wiki pages from docs/ (LLM call)",
     buildBody: null,
     run: function(resultEl, setStepBusy) {
-      /* Slice #172 will replace the card renderer. Stub retained for stepper completeness.
-         NOTE (#173 staleness guard): markIngestDone() is called in .finally so the stale
-         banner appears regardless of ingest outcome. Slice #172 must NOT remove this call
-         when it replaces the .then() body — the integration point is in .finally only. */
-      setStepBusy(true);
-      resultEl.replaceChildren(makeBusyCard("Running Ingest"));
+      /* Phase 15 S3 (#172): single-batch-call rule (§12.8 / ADR-0011).
+         Sources come from the last Import run (lastImportedDocFilenames);
+         falls back to all-docs if no Import has been run this session.
+         >5 sources → sequential single-batch calls with "Batch k/N" indicator
+         (client owns the counter; no fake % — §12.8); within each batch an
+         indeterminate spinner only.
 
-      fetch("/wiki/ingest", { method: "POST" })
-        .then(function(resp) {
-          if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
-          return resp.json();
-        })
-        .then(function(data) {
-          /* Stub: render raw JSON summary until slice #172 wires the full card */
-          var results  = data.results         || [];
-          var failed   = data.failed_sources  || [];
-          var skipped  = data.skipped_sources || [];
-          var summaryText = results.length + " ingested, " + skipped.length + " skipped, " + failed.length + " failed";
-          resultEl.replaceChildren(el("div", { class: "result-card" },
-            el("div", { class: "result-card-head" }, el("span", { text: "Ingest · " + summaryText }))
-          ));
-        })
-        .catch(function(err)  { resultEl.replaceChildren(renderErrorCard("Ingest", err.message || String(err))); })
-        .finally(function()   {
-          setStepBusy(false);
-          markIngestDone(); /* staleness guard: set stale signal after Ingest run */
-        });
+         #173 staleness-guard integration: markIngestDone() must fire when the
+         batch sequence finishes (success OR error) so the stale banner appears
+         regardless of ingest outcome. runIngestBatches calls setStepBusy(false)
+         exactly once at completion, so we wrap that callback to also set the
+         stale signal then — keeping runIngestBatches free of guard coupling. */
+      setStepBusy(true);
+      var onIngestStepDone = function(b) {
+        setStepBusy(b);
+        if (b === false) markIngestDone();
+      };
+      runIngestBatches(lastImportedDocFilenames, resultEl, onIngestStepDone);
     },
   },
   {
