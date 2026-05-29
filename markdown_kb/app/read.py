@@ -159,8 +159,10 @@ def _resolve_and_check(root_dir: Path, sub_parts: list[str]) -> Path:
     resolved_target = target.resolve()
 
     # is_relative_to is Python 3.9+; the project already requires >=3.9.
+    # The message deliberately omits the resolved absolute paths so a symlink
+    # escape cannot disclose the server's on-disk layout to the HTTP client.
     if not resolved_target.is_relative_to(resolved_root):
-        raise PathRejected(f"Path escapes the allowed root {resolved_root}: {resolved_target}")
+        raise PathRejected("Path escapes the allowed root (symlink escape rejected).")
 
     return resolved_target
 
