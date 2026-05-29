@@ -2,6 +2,34 @@
 
 A grounded Q&A bot over a small Markdown knowledge base, with citations back to the original `filename#heading`. The repo holds two parallel retrieval strategies; the prototype targets the Markdown KB strategy first, with the Vector RAG app preserved for post-prototype comparison work (see [ADR-0002](project-docs/adr/0002-two-parallel-retrieval-apps.md)).
 
+## Quick start (demo)
+
+The retrieval indexes for **both** stacks ship pre-built and committed (see
+[First-run guarantee](#first-run-guarantee)), so a fresh clone answers questions
+immediately — no `ingest`/`index` step required on first run.
+
+```bash
+# 1. Install all workspace members (single .venv at the repo root)
+uv sync --all-packages
+
+# 2. Provide an OpenAI key — both stacks call OpenAI for the final grounded
+#    answer. A repo-root .env is loaded automatically:
+echo 'OPENAI_API_KEY=sk-...' > .env          # or: export OPENAI_API_KEY="sk-..."
+
+# 3. Launch the Gateway — serves the browser UI and BOTH stacks on one origin.
+#    Run from the repo root (not from inside a stack folder).
+uv run uvicorn gateway.app.main:app --port 8000
+```
+
+Then open <http://localhost:8000/> and use the **Wiki / RAG toggle** to ask the
+same question against either retrieval stack. The Gateway mounts the Wiki stack
+at `/wiki`, the RAG stack at `/rag`, and exposes `POST /chat/stream` (Server-Sent
+Events, sources-first) which the UI consumes.
+
+> The Gateway is the recommended demo surface. To run a single stack on its own,
+> see [Running a single stack](#running-a-single-stack). To rebuild the indexes
+> after editing the corpus, see [Rebuilding the indexes](#rebuilding-the-indexes).
+
 ## Positioning
 
 This is a grounded Q&A service designed for **enterprise knowledge management** — FAQ automation, policy lookup, customer-support routing — where the answers must trace back to source documents (no hallucination) and the knowledge base itself benefits from a curator-maintained synthesis layer above the immutable Sources. The prototype implements the retrieval + grounded-answer path (`/chat`); the layered architecture (ADR-0003) supports LLM-maintained synthesis pages (`/ingest`, Phase 3) and Answer Filing (`/chat` → `wiki/qa/`, Phase 6) without architectural rewrite.
@@ -19,15 +47,17 @@ For the exercise spec and verification, see [`PROMPT.md`](PROMPT.md). For the pr
 
 A head-to-head retrieval comparison of these two strategies on the same raw corpus — per-Paraphrase-Type `hit_rate@3` and MRR, charts, a cost log, and six honest-limitation disclosures — lives in [`eval/paraphrase_comparison/report.md`](eval/paraphrase_comparison/report.md) (Phase 8).
 
-Both apps expose the same external API:
+Both apps share a core API; the Wiki stack additionally implements the curated-layer endpoints (`/import`, `/ingest`):
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/health` | Liveness check |
-| `POST` | `/import` | Convert `raw/**/*.{html,txt}` → `docs/*.md` with provenance frontmatter |
-| `POST` | `/ingest` | Synthesise `docs/*.md` Sources → curated `wiki/` pages (LLM) |
-| `POST` | `/index` | Build the retrieval Section Index from `wiki/entities/` + `wiki/concepts/` |
-| `POST` | `/chat` | Answer a question with grounded Sections and Citations |
+| Method | Endpoint | Description | Wiki | RAG |
+|--------|----------|-------------|:----:|:---:|
+| `GET` | `/health` | Liveness check | ✓ | ✓ |
+| `POST` | `/import` | Convert `raw/**/*.{html,txt}` → `docs/*.md` with provenance frontmatter | ✓ | — |
+| `POST` | `/ingest` | Synthesise `docs/*.md` Sources → curated `wiki/` pages (LLM) | ✓ | — |
+| `POST` | `/index` | Build the retrieval index (Wiki: `wiki/concepts` + `wiki/entities`; RAG: chunk + embed `docs/`) | ✓ | ✓ |
+| `POST` | `/chat` | Answer a question with grounded Sections and Citations | ✓ | ✓ |
+
+The Gateway (Phase 9) adds `POST /chat/stream` (SSE) for the browser UI and routes to either stack via a `?stack=wiki|rag` query param.
 
 After calling `POST /index`, each strategy persists its retrieval artifact under `.kb/`:
 
@@ -36,32 +66,58 @@ After calling `POST /index`, each strategy persists its retrieval artifact under
 | Markdown KB | `.kb/index.json` (Section Index) | Loads the index into memory on startup |
 | Vector RAG | `.kb/faiss_index/` | Loads the FAISS index into memory on startup |
 
-Restarting the server does not require rebuilding immediately. Re-run `POST /index` after editing `docs/*.md`.
+Each app loads its persisted index on startup; if the artifact is missing it
+serves an **empty** index (every query returns *"I cannot confirm"*) until you
+rebuild. That is why the indexes are committed — see below.
 
-## Running the Markdown KB app
+### First-run guarantee
 
-Dependencies are managed with [uv](https://docs.astral.sh/uv/) (single `.venv/` at the repo root, single `uv.lock`). See [`pyproject.toml`](pyproject.toml) for the workspace layout.
+Both retrieval artifacts under `.kb/` are committed as a demo seed, so the bot
+answers `/chat` on the very first run without `/ingest` or `/index`:
+
+| Stack | Committed artifact | Coverage |
+|-------|--------------------|----------|
+| Wiki (markdown_kb) | `.kb/index.json` | 9 curated concepts from `wiki/concepts/` |
+| Vector RAG (vector_rag) | `.kb/faiss_index/` | all 25 Sources in `docs/` (282 chunks) |
+
+`.kb/` stays gitignored; these two artifacts are intentionally force-added (`git
+add -f`). Rebuild and re-commit them whenever `docs/` or `wiki/` change — see
+[Rebuilding the indexes](#rebuilding-the-indexes).
+
+> **Coverage note (Wiki vs RAG).** The Wiki stack answers only from the curated
+> `wiki/` layer — 9 concepts synthesised from the original policy/FAQ Sources.
+> The RAG stack indexes the *raw* `docs/` corpus, including the 20
+> `docs/fake-docs/` files (loyalty program, gift cards, bulk orders, …) that were
+> never run through `/ingest`. So a question about a fake-docs-only topic answers
+> on **RAG** but returns *"I cannot confirm from the knowledge base"* on **Wiki**.
+> This is correct grounded behaviour (no hallucination), not a bug. To give the
+> Wiki stack the same coverage, run `POST /wiki/ingest` then `POST /wiki/index`
+> and re-commit `.kb/index.json` (an LLM synthesis step — see Rebuilding).
+
+## Running a single stack
+
+Dependencies are managed with [uv](https://docs.astral.sh/uv/) (single `.venv/` at the repo root, single `uv.lock`). See [`pyproject.toml`](pyproject.toml) for the workspace layout. The [Gateway](#quick-start-demo) is the usual entry point; to exercise one stack directly:
 
 ```bash
-# One-time: install deps for all workspace members
-uv sync --all-packages
-
-# Run the server (relative imports require running from markdown_kb/)
+# Wiki stack (markdown_kb) — relative imports require running from markdown_kb/
 cd markdown_kb
 export OPENAI_API_KEY="sk-..."
 export KB_SCORE_THRESHOLD="0.5"    # optional; default 0.5
-uv run uvicorn app.main:app --reload
+uv run uvicorn app.main:app --reload --port 8000
+
+# RAG stack (vector_rag) — run from the repo root so markdown_kb resolves
+export OPENAI_API_KEY="sk-..."
+uv run uvicorn vector_rag.app.main:app --reload --port 8001
 ```
 
-Run the tests with:
+Each stack exposes the shared API (`/health`, `/index`, `/chat`; the Wiki stack adds `/import` and `/ingest`) directly at its own root, e.g. `curl -X POST http://localhost:8000/chat -d '{"query":"..."}'`. Run the curl verification cases listed in [`PROMPT.md`](PROMPT.md).
+
+Run the tests from the repo root (collects every workspace member's suite):
 
 ```bash
-cd markdown_kb
 uv run pytest                       # default: skips live OpenAI tests
 uv run pytest -m live               # opt-in: real OpenAI API calls
 ```
-
-Then run the curl verification cases listed in [`PROMPT.md`](PROMPT.md).
 
 ### Multi-format import demo (Phase 7)
 
@@ -95,15 +151,51 @@ try the pipeline immediately.
 
 > `vector_rag/` is a uv workspace member running langchain 1.x (migrated in Phase 8). Run `uv sync --all-packages` from the repo root to install all workspace members together.
 
-## Prerequisites
+## Rebuilding the indexes
 
-Both apps use OpenAI for final answer generation:
+`.kb/` is regenerable. Rebuild and re-commit after editing `docs/` (RAG + Wiki
+Sources) or `wiki/` (the Wiki curated layer). With the Gateway running on `:8000`:
 
 ```bash
-export OPENAI_API_KEY="sk-..."
+# (optional) regenerate the curated Wiki layer from docs/ first — LLM synthesis
+# that rewrites wiki/concepts/. Skip this to keep the existing curated pages.
+curl -s -X POST http://localhost:8000/wiki/ingest | jq .
+
+# Wiki BM25 index  -> .kb/index.json   (local; no embeddings, no key needed)
+curl -s -X POST http://localhost:8000/wiki/index | jq .
+
+# RAG FAISS index  -> .kb/faiss_index/ (re-embeds docs/ via OpenAI; key required)
+curl -s -X POST http://localhost:8000/rag/index | jq .
+
+# Persist the demo seed (these paths are gitignored, so force-add)
+git add -f .kb/index.json .kb/faiss_index/
+git commit -m "chore: rebuild .kb demo seed"
 ```
 
-The Markdown KB app does not need embeddings. The Vector RAG app uses OpenAI embeddings.
+> **Rebuild the Wiki index via `POST /wiki/index`, never from an eval run.** The
+> [`eval/paraphrase_comparison/`](eval/paraphrase_comparison/) harness builds a
+> *`docs/`-based* index for its own comparison and overwrites `.kb/index.json`
+> with ~76 raw-doc sections. If that snapshot is committed by mistake, the Wiki
+> stack retrieves over the wrong layer (raw docs instead of the 9 curated
+> concepts). After any eval run, re-run `POST /wiki/index` before committing.
+
+## Prerequisites
+
+Both apps call OpenAI for the final grounded answer (`/chat`), so an
+`OPENAI_API_KEY` is required to answer questions on either stack:
+
+```bash
+export OPENAI_API_KEY="sk-..."     # or put it in a repo-root .env (auto-loaded)
+```
+
+| Stack | Needs OpenAI for answering (`/chat`) | Needs OpenAI for indexing (`/index`) |
+|-------|--------------------------------------|--------------------------------------|
+| Wiki (markdown_kb) | yes | no — BM25 is local |
+| Vector RAG (vector_rag) | yes | yes — uses `text-embedding-3-small` |
+
+Because both indexes ship pre-built, you only need the key for indexing when you
+[rebuild](#rebuilding-the-indexes) (and the RAG rebuild is the only step that
+spends embedding tokens).
 
 ## Layout
 
@@ -115,11 +207,13 @@ The Markdown KB app does not need embeddings. The Vector RAG app uses OpenAI emb
 ├── README.md                  ← this file
 ├── docs/                      ← Sources (the bot's runtime knowledge base)
 ├── wiki/                      ← generated/curated wiki layer (see wiki/README.md)
+├── .kb/                       ← committed demo seed: index.json (Wiki) + faiss_index/ (RAG)
 ├── project-docs/
 │   ├── adr/                   ← architectural decisions
 │   └── agents/                ← issue-tracker, triage-labels, domain docs
-├── markdown_kb/               ← active retrieval app (BM25 + Section Index)
-└── vector_rag/                ← Stack B retrieval app (langchain 1.x, served via Gateway)
+├── gateway/                   ← Gateway app + browser UI (mounts both stacks; demo entry point)
+├── markdown_kb/               ← Wiki retrieval app (BM25 + Section Index)
+└── vector_rag/                ← RAG retrieval app (langchain 1.x, FAISS over docs/)
 ```
 
 ## Stretch goals
