@@ -18,22 +18,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<!-- Shared design tokens (Phase 15 S1 / issue #169) -->
+<link rel="stylesheet" href="/static/shared.css">
 
 <style>
-  :root {
-    --bg:      #fafaf9;
-    --surface: #ffffff;
-    --ink:     #111111;
-    --ink-2:   #555555;
-    --ink-3:   #8a8a8a;
-    --ink-4:   #b8b8b8;
-    --rule:    #e5e5e3;
-    --rule-2:  #ececea;
-    --accent:  #1f1f1f;
-    --pass:    #2f6b3e;
-    --fail:    #a83a26;
-    --selection: #e9e9e7;
-  }
 
   *, *::before, *::after { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; height: 100%; }
@@ -358,6 +346,23 @@
     color: var(--ink-3);
   }
 
+  /* ── Console nav link ───────────────────────────────────── */
+  .mast-console {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .04em;
+    color: var(--ink-3);
+    text-decoration: none;
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 5px 10px;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .mast-console:hover {
+    color: var(--ink);
+    border-color: var(--ink-3);
+  }
+
   @media (max-width: 540px) {
     .page { padding: 0 20px; }
     .query { font-size: 17px; }
@@ -454,6 +459,14 @@ function build() {
   var send = el("button", { class: "send", type: "button", text: "Ask", onclick: submit });
   input.addEventListener("keydown", function(e) { if (e.key === "Enter") submit(); });
 
+  /* Console link — navigates to GET /console (full page nav, not SPA) */
+  var consoleBtn = el("a", {
+    href: "/console",
+    class: "mast-console",
+    "aria-label": "Open Operator Console",
+    text: "console",
+  });
+
   var masthead = el("header", { class: "masthead" },
     el("div", { class: "mast-logo" },
       "ask",
@@ -463,6 +476,7 @@ function build() {
       "RAG",
     ),
     el("div", { class: "mast-toggle", role: "tablist" }, segWiki, segRag),
+    consoleBtn,
   );
 
   var composer = el("div", { class: "composer" },
