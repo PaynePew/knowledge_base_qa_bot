@@ -900,7 +900,7 @@ function renderUploadCard(results) {
   var errors   = results.filter(function(r) { return r.status === "error";    }).length;
 
   var parts = [];
-  if (written > 0)  parts.push(written  + " staged");
+  if (written > 0)  parts.push(written  + " written");
   if (rejected > 0) parts.push(rejected + " rejected");
   if (errors > 0)   parts.push(errors   + " error" + (errors !== 1 ? "s" : ""));
   var summaryText = parts.join(" · ") || "0 files";
@@ -921,17 +921,29 @@ function renderUploadCard(results) {
   var rows = el("div");
   results.forEach(function(r, i) {
     var labelClass = "label label-" + r.status;
-    var labelText  = r.status === "written" ? "staged" : r.status;
+    var labelText  = r.status;
+    var subtitle   = "";
+
+    if (r.status === "written") {
+      /* .md routes straight to docs/ (final Source — it SKIPS the Import step);
+         .html/.txt land in raw/ and still need Import to convert. Make that
+         distinction explicit so a user who uploaded a .md sees it succeeded
+         here, instead of looking for it (in vain) on the Import card. */
+      var lastSeg = r.target_dir ? r.target_dir.split(/[/\\]/).filter(Boolean).pop() : "";
+      if (lastSeg === "docs") {
+        labelText = "in docs";
+        subtitle  = "→ docs/ · saved, no Import needed";
+      } else {
+        labelText = "staged";
+        subtitle  = "→ raw/ · run Import to convert";
+      }
+    } else if ((r.status === "rejected" || r.status === "error") && r.reason) {
+      subtitle = r.reason;
+    }
 
     var bodyEl = el("div", { class: "body" },
       el("div", { class: "id", text: r.filename })
     );
-    var subtitle = "";
-    if (r.status === "written" && r.target_dir) {
-      subtitle = "→ " + r.target_dir;
-    } else if ((r.status === "rejected" || r.status === "error") && r.reason) {
-      subtitle = r.reason;
-    }
     if (subtitle) bodyEl.append(el("div", { class: "crumb", text: subtitle }));
 
     rows.append(el("div", { class: "rec" },
