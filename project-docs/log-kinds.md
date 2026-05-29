@@ -152,6 +152,12 @@ three kinds here; the emitters arrive across slices 6-1 / 6-2 / 6-3.
 | `touched` | Re-ask of an existing question (B2 touch semantics — body preserved, `count` and `updated` bumped) | PRD #78 §"Reflect step" (Q5) |
 | `promoted` | `POST /qa/{slug}/promote` flipped `status: draft -> live` | PRD #78 §"Two-stage curation lifecycle" (Q1) |
 
+### `qa_deleted` kind
+
+| Kind | When fired | Summary template |
+|---|---|---|
+| `qa_deleted` | `DELETE /qa/{slug}` successfully removed an inert `wiki/qa/<slug>.md` page. Only fires when the delete succeeds — `QaPageLive` refusals and `QaPageNotFound` errors are surfaced via HTTP status and do not emit a log entry. Authorized by [ADR-0012](adr/0012-delete-inert-filed-answers-only.md) (Phase 15 Slice 6, issue #174). | `slug=<slug> prev_status=<draft\|<unparseable>\|<other-invalid-status>>` |
+
 ### `qa_filing_error` `reason=` sub-tags
 
 | Sub-reason | When | Source |
