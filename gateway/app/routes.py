@@ -58,6 +58,7 @@ from pydantic import BaseModel
 from vector_rag.app.retrieval import stream_query as _rag_stream_query
 
 from . import conversation_store as _conv_store_module
+from .logger import log_event as _gateway_log_event
 from .query_rewriting import rewrite_query
 
 router = APIRouter()
@@ -161,6 +162,13 @@ def chat_stream(
             status_code=400, detail=f"Unknown stack={stack!r}. Use 'wiki' or 'rag'."
         )
 
+    # Sweep idle sessions at request entry (CODING_STANDARD §2.6: the TTL sweep
+    # iterates over a snapshot of keys so it never mutates during iteration).
+    # This is the only production call site for evict_expired(); wiring it here
+    # keeps TTL eviction lazy (triggered by incoming traffic) without a background
+    # thread — sufficient for the single-process prototype model.
+    _conv_store_module.store.evict_expired()
+
     # Session lifecycle: mint a new UUID when no session is supplied.
     session_id: str = session if session else str(uuid.uuid4())
 
@@ -207,6 +215,14 @@ def chat_stream(
             yield encode_event("status", {"phase": "rewriting"})
             try:
                 self_contained_query = rewrite_query(req.query, history=history)
+                # Emit chat_rewrite log entry only when a rewrite actually happened
+                # (turn 2+).  raw and rewritten are bounded to 60 chars per §5.3.
+                _gateway_log_event(
+                    "chat_rewrite",
+                    f"session={session_id} "
+                    f'raw="{req.query[:60].replace(chr(34), chr(39))}" '
+                    f'rewritten="{self_contained_query[:60].replace(chr(34), chr(39))}"',
+                )
             except Exception:  # noqa: BLE001
                 # Rewrite error after status:rewriting is committed (HTTP 200
                 # already sent) — surface as terminal SSE error event and do NOT
