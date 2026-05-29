@@ -332,7 +332,13 @@ class TestCheckC5PagePair:
         assert results[0].severity == "direct"
 
     def test_continue_on_error_partial_findings_retained(self, tmp_wiki_dir, monkeypatch):
-        """If LLM raises mid-batch, prior findings are retained."""
+        """If the LLM raises for some pairs, findings from the others are retained.
+
+        Keyed by slug content rather than call order so it holds regardless of
+        the (now concurrent, issue #194) judge completion order.
+        """
+        import re
+
         import app.lint as lint_module
         from app.schemas import PagePairFinding
 
@@ -341,21 +347,21 @@ class TestCheckC5PagePair:
         _write_wiki_page(tmp_wiki_dir, "beta", ["shared.md#s"], "Beta says no.")
         _write_wiki_page(tmp_wiki_dir, "gamma", ["shared.md#s"], "Gamma says maybe.")
 
-        call_count = [0]
-
         def mock_invoke(messages):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return PagePairFinding(
-                    severity="direct",
-                    page_a="alpha",
-                    page_b="beta",
-                    page_a_claim="yes",
-                    page_b_claim="no",
-                    summary="conflict",
-                    suggested_action="fix",
-                )
-            raise RuntimeError("LLM error mid-batch")
+            slugs = re.findall(r"slug: `([^`]+)`", str(messages))
+            a, b = min(slugs), max(slugs)
+            # Every pair touching gamma fails; the alpha-beta pair succeeds.
+            if "gamma" in (a, b):
+                raise RuntimeError("LLM error for a gamma pair")
+            return PagePairFinding(
+                severity="direct",
+                page_a=a,
+                page_b=b,
+                page_a_claim="yes",
+                page_b_claim="no",
+                summary="conflict",
+                suggested_action="fix",
+            )
 
         mock_chain = MagicMock()
         mock_chain.invoke = mock_invoke
@@ -365,9 +371,8 @@ class TestCheckC5PagePair:
             lambda: MagicMock(with_structured_output=lambda s: mock_chain),
         )
 
-        # Should not raise; should return at least the first finding
+        # Should not raise; the alpha-beta finding survives the gamma failures.
         results = lint_module._check_c5_page_pair(tmp_wiki_dir)
-        # At least one direct finding retained (the one before the error)
         assert any(f.severity == "direct" for f in results), (
-            "Expected at least one retained finding before error"
+            "Expected the non-failing alpha-beta finding to be retained"
         )

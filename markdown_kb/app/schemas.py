@@ -599,12 +599,20 @@ class LintSummary(BaseModel):
     ``findings_by_check`` maps check identifier (``"c11"``, ``"c3"``, …) to
     finding count.  Slice 5-1 only includes ``"c11"``; later slices extend.
     ``llm_calls`` and ``cost_usd`` are 0 in Slice 5-1 (no LLM used by C11).
+
+    ``c5_pairs_capped`` (issue #194) is the number of C5 candidate page-pairs
+    that were NOT sent to the LLM judge because they fell below the
+    ``KB_LINT_C5_MAX_PAIRS`` similarity cap. ``llm_calls`` is the judged count;
+    ``llm_calls + c5_pairs_capped`` is the total candidate count. Surfaced so a
+    capped audit is honest rather than silently partial; 0 when nothing was
+    capped (small wiki) or C5 was skipped (``include_c5=False``).
     """
 
     total_findings: int
     findings_by_check: dict[str, int]
     llm_calls: int = 0
     cost_usd: float = 0.0
+    c5_pairs_capped: int = 0
     generated_at: str  # ISO-8601 UTC string
 
 

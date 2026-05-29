@@ -105,6 +105,7 @@ import re
 import string
 import tempfile
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -136,11 +137,16 @@ from .schemas import (
 # Module-level sentinel; monkeypatched in tests.
 _lint_llm = None
 
-# Best-effort LLM call counter for cost accounting. Uses a mutable list so it
-# can be incremented inside _judge_page_pair and reset in run_lint without
-# relying on global statement (consistent with existing module-level patterns).
-# Index 0 holds the current count; run_lint reads and resets it after C5 runs.
+# Best-effort C5 metrics for cost accounting / report honesty. Mutable lists so
+# _check_c5_page_pair can write them and run_lint can read-then-reset, without a
+# global statement (consistent with existing module-level patterns). Index 0
+# holds the current value; run_lint reads and resets both after C5 runs.
+#   _c5_llm_call_counter — pairs actually sent to the LLM judge (== judged count, ≤ cap)
+#   _c5_capped_counter   — candidate pairs NOT judged because they fell below the cap
+# Counting happens once in _check_c5_page_pair (not per-call inside
+# _judge_page_pair) so the bounded-concurrency judge has no shared-counter race.
 _c5_llm_call_counter: list[int] = [0]
+_c5_capped_counter: list[int] = [0]
 
 
 def get_lint_llm():
@@ -955,6 +961,13 @@ def _check_c1_coverage_gaps(log_path: Path) -> list[CoverageGapFinding]:
 _KB_LINT_BM25_TOP_K_DEFAULT = 3
 _KB_LINT_BM25_THRESHOLD_DEFAULT = 1.0
 
+# env vars for the C5 scaling fix (issue #194)
+# KB_LINT_C5_MAX_PAIRS: judge at most this many candidate pairs (top-K by
+#   similarity). Caps LLM cost/time to a constant regardless of corpus size.
+# KB_LINT_C5_CONCURRENCY: bounded worker count for the surviving LLM calls.
+_KB_LINT_C5_MAX_PAIRS_DEFAULT = 30
+_KB_LINT_C5_CONCURRENCY_DEFAULT = 5
+
 
 def _load_wiki_pages(wiki_dir: Path) -> dict[str, dict]:
     """Load all wiki pages from entities/, concepts/, and qa/ into a dict.
@@ -1121,6 +1134,63 @@ def _candidate_pairs(
     return pairs
 
 
+# ---------------------------------------------------------------------------
+# C5 similarity pre-filter (issue #194) — rank candidate pairs by lexical
+# token-overlap so the LLM judge only sees the top-K most-similar pairs.
+# ---------------------------------------------------------------------------
+
+
+def _body_tokens(body: str) -> frozenset[str]:
+    """Tokenise a page body into a set of comparison tokens.
+
+    Reuses ``indexer.tokenize`` — the same tokeniser BM25 retrieval (and the F3
+    candidate filter) already use — so the similarity signal is consistent with
+    the rest of the lint pipeline and inherits its CJK-bigram + stop-word
+    handling (Phase 16) for free. A set (not a multiset) is sufficient: Jaccard
+    is defined over sets and the goal is only a cheap relative ranking.
+    """
+    from .indexer import tokenize
+
+    return frozenset(tokenize(body))
+
+
+def _pair_similarity(tokens_a: frozenset[str], tokens_b: frozenset[str]) -> float:
+    """Return the Jaccard similarity |A∩B| / |A∪B| of two token sets (0.0–1.0).
+
+    "Shares a source" (F1) is a weak proxy for "might contradict"; topical token
+    overlap is the better discriminator for which pairs are worth an LLM call.
+    Empty-token pages score 0.0 (they sort to the bottom and are capped first).
+    """
+    if not tokens_a or not tokens_b:
+        return 0.0
+    union = len(tokens_a | tokens_b)
+    return len(tokens_a & tokens_b) / union if union else 0.0
+
+
+def _rank_candidate_pairs(
+    pairs: set[tuple[str, str]],
+    pages: dict[str, dict],
+) -> list[tuple[str, str]]:
+    """Return ``pairs`` ordered most- to least-similar (deterministic).
+
+    Sort key: similarity descending, then the canonical ``(page_a, page_b)``
+    tuple ascending as a stable tie-break so the ranking — and therefore which
+    pairs survive the top-K cap — is fully reproducible across runs.
+    """
+    token_cache: dict[str, frozenset[str]] = {}
+    for slug_a, slug_b in pairs:
+        if slug_a not in token_cache:
+            token_cache[slug_a] = _body_tokens(pages[slug_a]["body"])
+        if slug_b not in token_cache:
+            token_cache[slug_b] = _body_tokens(pages[slug_b]["body"])
+
+    def sort_key(pair: tuple[str, str]) -> tuple[float, str, str]:
+        a, b = pair
+        return (-_pair_similarity(token_cache[a], token_cache[b]), a, b)
+
+    return sorted(pairs, key=sort_key)
+
+
 # Prompt for the C5 LLM call — instructs the model to compare two wiki page bodies
 _C5_SYSTEM_PROMPT = """You are a knowledge-base health auditor. Two wiki pages from the same knowledge base are shown below. Your task is to judge whether they contradict, overlap, or duplicate each other.
 
@@ -1174,8 +1244,6 @@ def _judge_page_pair(
     ]
 
     finding: PagePairFinding = chain.invoke(messages)
-    # Increment cost counter (best-effort; one call per pair)
-    _c5_llm_call_counter[0] += 1
 
     # Enforce canonical slug order in the finding (LLM may swap them)
     if finding.page_a != slug_a or finding.page_b != slug_b:
@@ -1200,32 +1268,64 @@ def _check_c5_page_pair(
     Steps:
     1. Load all wiki pages (slug, body, sources) via ``_load_wiki_pages``.
     2. Build candidate pairs via ``_candidate_pairs`` (F1 ∪ F3 filter).
-    3. For each candidate pair, call ``_judge_page_pair``.
-    4. Filter out findings with severity == "none".
-    5. Continue-on-error: if the LLM raises for a pair, log the pair skipped
+    3. Rank candidates by lexical similarity and judge at most
+       ``KB_LINT_C5_MAX_PAIRS`` (env, default 30) of them — the similarity
+       pre-filter (issue #194). Pairs below the cap are NOT judged; their count
+       is recorded in ``_c5_capped_counter`` so the report can surface them as
+       "not judged (capped)" rather than dropping them silently.
+    4. Judge the surviving pairs via ``_judge_page_pair``.
+    5. Filter out findings with severity == "none".
+    6. Continue-on-error: if the LLM raises for a pair, log the pair skipped
        and retain prior findings.
 
+    Records C5 run metrics for ``run_lint`` (read-then-reset there):
+    ``_c5_llm_call_counter`` (judged == LLM calls) and ``_c5_capped_counter``
+    (candidates not judged because they fell below the cap).
+
     Returns findings sorted by severity order (direct → tension → duplicate),
-    then alphabetically by page_a slug.
+    then alphabetically by page_a slug. The sort makes output order independent
+    of judge completion order, so concurrency does not affect the result.
     """
+    max_pairs = int(os.getenv("KB_LINT_C5_MAX_PAIRS", str(_KB_LINT_C5_MAX_PAIRS_DEFAULT)))
+    if max_pairs < 0:
+        max_pairs = _KB_LINT_C5_MAX_PAIRS_DEFAULT
+    concurrency = int(os.getenv("KB_LINT_C5_CONCURRENCY", str(_KB_LINT_C5_CONCURRENCY_DEFAULT)))
+    if concurrency < 1:
+        concurrency = _KB_LINT_C5_CONCURRENCY_DEFAULT
+
     pages = _load_wiki_pages(wiki_dir)
     pairs = _candidate_pairs(pages, wiki_dir)
+
+    ranked = _rank_candidate_pairs(pairs, pages)
+    # Drop any pair whose pages vanished (defensive — candidates come from pages).
+    judged_pairs = [(a, b) for a, b in ranked[:max_pairs] if a in pages and b in pages]
+    capped_pairs = ranked[max_pairs:]
+
+    # Record metrics up front so they reflect intent even if judging is empty.
+    _c5_capped_counter[0] = len(capped_pairs)
+    _c5_llm_call_counter[0] = len(judged_pairs)
 
     findings: list[PagePairFinding] = []
     errors: list[str] = []
 
-    for slug_a, slug_b in sorted(pairs):
-        data_a = pages.get(slug_a)
-        data_b = pages.get(slug_b)
-        if not data_a or not data_b:
-            continue
-        try:
-            finding = _judge_page_pair(slug_a, data_a["body"], slug_b, data_b["body"])
-            if finding.severity != "none":
-                findings.append(finding)
-        except Exception as exc:  # noqa: BLE001
-            errors.append(f"({slug_a},{slug_b}): {type(exc).__name__}: {exc}")
-            continue
+    def _judge(pair: tuple[str, str]) -> PagePairFinding:
+        slug_a, slug_b = pair
+        return _judge_page_pair(slug_a, pages[slug_a]["body"], slug_b, pages[slug_b]["body"])
+
+    # Bounded concurrency: the surviving (≤cap) calls are network-bound LLM
+    # round-trips, so a small thread pool cuts wall-time without unbounded fan-out.
+    # Continue-on-error is per-pair: one failed judge never sinks the others.
+    if judged_pairs:
+        with ThreadPoolExecutor(max_workers=min(concurrency, len(judged_pairs))) as executor:
+            future_to_pair = {executor.submit(_judge, pair): pair for pair in judged_pairs}
+            for future in as_completed(future_to_pair):
+                slug_a, slug_b = future_to_pair[future]
+                try:
+                    finding = future.result()
+                    if finding.severity != "none":
+                        findings.append(finding)
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(f"({slug_a},{slug_b}): {type(exc).__name__}: {exc}")
 
     if errors:
         # Log errors without breaking; the check returns partial results
@@ -1760,6 +1860,16 @@ def _render_report_markdown(
     n_c5 = len(findings.page_pairs)
     lines.append(f"## C5 Contradictions ({n_c5} findings)")
     lines.append("")
+    # Honesty note for the similarity cap (issue #194): when candidate pairs
+    # exceed KB_LINT_C5_MAX_PAIRS, only the top-K most-similar are judged. Surface
+    # the remainder so a capped audit reads as partial-by-design, not silent.
+    if summary.c5_pairs_capped > 0:
+        lines.append(
+            f"> Judged the {summary.llm_calls} most-similar candidate page-pair(s); "
+            f"{summary.c5_pairs_capped} further pair(s) were **not judged (capped** by "
+            f"`KB_LINT_C5_MAX_PAIRS`). Raise the cap to audit more pairs."
+        )
+        lines.append("")
     if not findings.page_pairs:
         lines.append("_No page-pair contradictions found._")
         lines.append("")
@@ -1996,27 +2106,22 @@ def run_lint(
         page_pairs: list[PagePairFinding] = []
         llm_calls: int = 0
         cost_usd: float = 0.0
+        c5_pairs_capped: int = 0
         if include_c5:
             try:
                 page_pairs = _check_c5_page_pair(resolved_wiki)
-                # Cost accounting (best-effort): count candidate pairs judged
-                # _check_c5_page_pair calls _judge_page_pair once per pair.
-                # We approximate llm_calls by counting all findings + "none" judgements
-                # via the candidate pair count. Since we don't have direct access to
-                # that count post-run, we count findings (severity != none) as a
-                # lower bound and note this is approximate.
-                # A more exact count would require _check_c5_page_pair to return the
-                # call count; that is the content-hash-cache trigger improvement.
-                # For now: count all page_pairs as each required one LLM call.
-                # Non-"none" findings + estimated filtered pairs is tracked via the
-                # module-level _c5_llm_call_counter which _judge_page_pair updates.
+                # _check_c5_page_pair records exact run metrics in module-level
+                # counters (one LLM call per judged pair, capped at
+                # KB_LINT_C5_MAX_PAIRS): llm_calls is the judged count and
+                # c5_pairs_capped the not-judged remainder. Read then reset both
+                # so a later run in the same process starts clean.
                 llm_calls = _c5_llm_call_counter[0]
-                # gpt-4o-mini pricing (2025): $0.15/1M input tokens, $0.60/1M output tokens
-                # Rough estimate: ~500 input + 150 output tokens per pair call = ~$0.000165/call
-                # Best-effort: $0.000165 * llm_calls
+                c5_pairs_capped = _c5_capped_counter[0]
+                # gpt-4o-mini pricing (2025): $0.15/1M input tokens, $0.60/1M output tokens.
+                # Rough estimate ~500 input + 150 output tokens/call ≈ $0.000165/call.
                 cost_usd = round(llm_calls * 0.000165, 6)
-                # Reset counter for next run
                 _c5_llm_call_counter[0] = 0
+                _c5_capped_counter[0] = 0
             except Exception as exc:  # noqa: BLE001
                 err_msg = f"{type(exc).__name__}: {exc}"
                 check_errors["c5"] = err_msg
@@ -2065,6 +2170,7 @@ def run_lint(
         findings_by_check=findings_by_check,
         llm_calls=llm_calls,
         cost_usd=cost_usd,
+        c5_pairs_capped=c5_pairs_capped,
         generated_at=generated_at,
     )
 
