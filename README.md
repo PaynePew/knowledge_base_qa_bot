@@ -4,9 +4,9 @@
 
 A grounded Q&A bot over a small Markdown knowledge base. Every answer is built
 from cited records — if the sources don't support a claim, the bot says
-*"I cannot confirm"* instead of guessing. It ships **two** retrieval stacks you
-can compare side by side: a curated **Wiki** stack (BM25), whose curated-layer
-design follows [Karpathy's LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f),
+_"I cannot confirm"_ instead of guessing. It ships **two** retrieval stacks you
+can compare side by side: a **Wiki** stack (BM25), whose design follows
+[Karpathy's LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f),
 and a **Vector RAG** stack (FAISS), both served from one browser UI.
 
 ## The interface
@@ -15,8 +15,8 @@ and a **Vector RAG** stack (FAISS), both served from one browser UI.
 
 ![Reader UI](project-docs/screenshots/reader.png)
 
-**Operator Console** — the curator surface: upload documents, run the build
-pipeline, and keep the knowledge base healthy.
+**Operator Console** — the back-office surface: upload documents, run the build
+pipeline, and keep your company or personal knowledge base healthy.
 
 ![Operator Console](project-docs/screenshots/console.png)
 
@@ -49,12 +49,12 @@ for the Console.
 
 ## Using the Reader
 
-- **Ask anything** in the box (English *or* Chinese) and press Enter.
+- **Ask anything** in the box (English _or_ Chinese) and press Enter.
 - **Toggle Wiki / RAG** to run the same question against either retrieval stack.
 - **Sources appear first** — the records the answer is grounded in — then the
   answer streams in below them.
 - A **grounding badge** confirms every claim traces back to a cited source; if
-  it can't, you get *"I cannot confirm"* rather than a hallucination.
+  it can't, you get _"I cannot confirm"_ rather than a hallucination.
 - **Follow-up questions** continue the same conversation (multi-turn).
 
 Both files and questions can be in **English or Traditional/Simplified Chinese** —
@@ -62,20 +62,21 @@ the Wiki stack tokenises CJK text and keeps Chinese answers in Chinese.
 
 ## Using the Console
 
-The Console is where a curator grows and maintains the knowledge base. The
-**pipeline stepper** runs a file through five steps; each is a card with its own
-**Run** button.
+The Console is where you grow and maintain a personal or company knowledge base.
+Before the Wiki stack can retrieve a file, it must pass through the five steps of
+the **pipeline stepper**, each with its own **Run** button.
 
 **A file's journey — Upload → Import → Ingest → Index:**
 
-| Step | What it does |
-|------|--------------|
+| Step       | What it does                                                                      |
+| ---------- | --------------------------------------------------------------------------------- |
 | **Upload** | Drag-drop files. `.html` / `.txt` land in `raw/`; `.md` goes straight to `docs/`. |
-| **Import** | Convert `raw/` sources into clean Markdown in `docs/` (with provenance). |
-| **Ingest** | An LLM synthesises `docs/` Sources into curated `wiki/` pages. |
-| **Index** | Build the BM25 search index so the new content is answerable. |
+| **Import** | Convert `raw/` sources into clean Markdown in `docs/` (with provenance).          |
+| **Ingest** | An LLM synthesises `docs/` Sources into curated `wiki/` pages.                    |
+| **Index**  | Build the BM25 search index so the new content is answerable.                     |
 
-The **RAG track** (separate panel) rebuilds the vector index from `docs/`,
+The **RAG track** (separate panel): a new file becomes retrievable only after
+indexing — click **Rebuild** to rebuild the vector index from `docs/`,
 independent of the Wiki chain.
 
 **When to run Lint — and what it gives you:**
@@ -111,25 +112,22 @@ knowledge_base_qa_bot/
 
 ## Evaluation: Wiki vs RAG
 
-Does a curated Wiki + BM25 out-retrieve a traditional Vector RAG pipeline on the
-**same** corpus? The harness scores both stacks across seven paraphrase types.
-
 **Test set.** 260 queries over one 20-Source / ~51-Gold-Section corpus:
 **250 Core paraphrases** (5 LLM-generated rewrite types × 50) plus **10
 hand-written structural probes** (2 types × 5). A "hit" requires the retrieved
-unit to match the gold section *and* share content key-tokens, so a
+unit to match the gold section _and_ share content key-tokens, so a
 right-document-wrong-content result counts as a miss.
 
 **Cross-platform L2 check.** The deterministic metric's edge-case verdicts are
-re-judged by a *different model family* — **Claude (`claude-sonnet-4-6`)**, not
+re-judged by a _different model family_ — **Claude (`claude-sonnet-4-6`)**, not
 the OpenAI family that powers RAG's embeddings — so the second opinion shares no
 blind spot with the stack it checks. 207 ambiguous items were re-judged.
 
 **Statistical honesty.** On the Core types, no per-type difference reaches
 statistical significance after a paired McNemar test with Holm correction. The
-structural probes are only **n=5 each** — too small to support any statistical
-inference — so they are reported as descriptive *expected-limit confirmation*,
-never averaged into a headline number.
+structural probes are only **n=5 each** — still too small to support any
+statistical inference — so they are reported as descriptive _expected-limit
+confirmation_, never averaged into a headline number.
 
 **What the results show:**
 
@@ -147,9 +145,9 @@ never averaged into a headline number.
   boundaries.
 
 **How they should perform, objectively** ([`why-wiki.md`](project-docs/why-wiki.md)).
-The two differ in *when* synthesis happens — Wiki synthesises once at ingest (a
-compounding, auditable artifact); RAG re-derives every query from raw chunks. The
-expected verdict is therefore scale-dependent: **under ~1000 pages → Wiki**
+The two differ in _when_ synthesis happens — Wiki synthesises once at ingest (a
+compounding, auditable artifact — this is where its cost is paid); RAG re-derives
+every query from raw chunks. The expected verdict is therefore scale-dependent: **under ~1000 pages → Wiki**
 (cheap index navigation, zero per-query embedding cost, structured provenance);
 **over ~100K pages → RAG** (the index outgrows full-scan navigation); **in
 between → hybrid**. This corpus sits squarely in Wiki's regime — which is exactly
@@ -177,8 +175,8 @@ Full methodology, statistical tests, cost log, and honest limitations are in
 [English](#knowledge-base-qa-bot) · **繁體中文**
 
 一個建立在小型 Markdown 知識庫之上的「有根據」問答機器人。每個答案都由引用的
-來源組成——如果來源無法支持某個說法,機器人會回答 *"I cannot confirm"*,而不是
-亂猜。它內建**兩套**可並排比較的檢索引擎:精選的 **Wiki** 引擎(BM25,其精選層
+來源組成——如果來源無法支持某個說法,機器人會回答 _"I cannot confirm"_,而不是
+亂猜。內建**兩套**可並排比較的檢索引擎: **Wiki** 引擎(BM25,
 設計參考 [Karpathy 的 LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f))
 與 **Vector RAG** 引擎(FAISS),兩者由同一個瀏覽器介面提供服務。
 
@@ -188,8 +186,8 @@ Full methodology, statistical tests, cost log, and honest limitations are in
 
 ![Reader 介面](project-docs/screenshots/reader.png)
 
-**Operator Console(操作主控台)**——策展人的介面:上傳文件、執行建置流程、
-維護知識庫的健康度。
+**Operator Console(操作主控台)**——後台介面:上傳文件、執行建置流程、
+維護公司或個人知識庫的健康度。
 
 ![Operator Console](project-docs/screenshots/console.png)
 
@@ -224,9 +222,9 @@ uv run uvicorn gateway.app.main:app --port 8000
 
 - 在輸入框**輸入任何問題**(英文**或**中文),按 Enter。
 - **切換 Wiki / RAG**,用同一個問題去問兩套不同的檢索引擎。
-- **來源會先出現**——也就是答案所依據的記錄——接著答案會在下方逐字串流出現。
+- **資料來源先行**——也就是答案所依據的記錄——接著答案會在下方逐字串流出現。
 - **grounding 標章**會確認每個說法都能追溯到引用來源;若無法,你會看到
-  *"I cannot confirm"*,而不是幻覺式的答案。
+  _"I cannot confirm"_,而不是幻覺式的答案。
 - **後續追問**會延續同一段對話(多輪)。
 
 檔案與問題都可以是**英文或繁/簡中文**——Wiki 引擎會對中文做 CJK 斷詞,並讓
@@ -234,19 +232,19 @@ uv run uvicorn gateway.app.main:app --port 8000
 
 ## 操作 Console
 
-Console 是策展人擴充與維護知識庫的地方。**流程步驟器(pipeline stepper)**
-會讓一份檔案走過五個步驟,每個步驟都是一張卡片,各有自己的 **Run** 按鈕。
+Console 是使用者擴充與維護個人或公司知識庫的地方。**流程步驟器(pipeline stepper)**
+Wiki要能檢索檔案必須經過五個步驟,各有自己的 **Run** 按鈕。
 
 **一份檔案的旅程 —— Upload → Import → Ingest → Index:**
 
-| 步驟 | 做什麼 |
-|------|--------|
+| 步驟       | 做什麼                                                          |
+| ---------- | --------------------------------------------------------------- |
 | **Upload** | 拖放檔案。`.html` / `.txt` 進入 `raw/`;`.md` 直接進入 `docs/`。 |
-| **Import** | 把 `raw/` 的來源轉成乾淨的 Markdown 放進 `docs/`(含出處)。 |
-| **Ingest** | 由 LLM 把 `docs/` 的 Sources 合成為精選的 `wiki/` 頁面。 |
-| **Index** | 建立 BM25 搜尋索引,讓新內容可被問答。 |
+| **Import** | 把 `raw/` 的來源轉成乾淨的 Markdown 放進 `docs/`(含出處)。      |
+| **Ingest** | 由 LLM 把 `docs/` 的 Sources 合成為精選的 `wiki/` 頁面。        |
+| **Index**  | 建立 BM25 搜尋索引,讓新內容可被問答。                           |
 
-**RAG track**(獨立面板)會從 `docs/` 重建向量索引,與 Wiki 流程互不相干。
+**RAG track**(獨立面板)，新增的檔案要經過**Index**才能檢索。**Rebuild**會從 `docs/` 重建向量索引,與 Wiki 流程互不相干。
 
 **什麼時候該跑 Lint —— 它能幫你什麼:**
 
@@ -279,9 +277,6 @@ knowledge_base_qa_bot/
 
 ## 評測:Wiki vs RAG
 
-在**相同**語料下,精選 Wiki + BM25 的檢索能不能勝過傳統的 Vector RAG?這個工具
-會針對七種改寫類型為兩套引擎評分。
-
 **測試資料量。** 在一份 20-Source / 約 51 個 Gold Section 的語料上,共 260 筆
 查詢:**250 筆 Core 改寫**(5 種 LLM 生成的改寫類型 × 50)加上 **10 筆手寫的
 結構性探針**(2 種 × 5)。「命中(hit)」必須是檢索結果的來源符合 gold section
@@ -292,7 +287,7 @@ knowledge_base_qa_bot/
 第二意見與它所檢核的引擎沒有共同盲點。共重新評判了 207 筆模稜兩可的項目。
 
 **統計上的誠實。** 在 Core 類型上,經過配對 McNemar 檢定 + Holm 校正後,**沒有
-任何一種類型的差異達到統計顯著**。結構性探針每種只有 **n=5**——數量太少,
+任何一種類型的差異達到統計顯著**。結構性探針每種只有 **n=5**——數量依舊太少,
 無法支撐任何統計推論——所以它們僅作為描述性的「**預期極限驗證**」呈現,絕不併入
 任何頭條數字。
 
@@ -310,7 +305,7 @@ knowledge_base_qa_bot/
 
 **客觀上兩者應該如何表現**([`why-wiki.md`](project-docs/why-wiki.md))。兩者的
 差別在於**合成發生的時機**——Wiki 在 ingest 時合成一次(形成可稽核、會累積的
-產物);RAG 則在每次查詢時從原始 chunk 重新推導。因此預期的結論取決於規模:
+產物，Cost花費在這裡發生。);RAG 則在每次查詢時從原始 chunk 重新推導。因此預期的結論取決於規模:
 **約 1000 頁以下 → Wiki**(索引導覽便宜、每次查詢零嵌入成本、出處結構化);
 **約 10 萬頁以上 → RAG**(索引大到無法全掃導覽);**兩者之間 → 混合**。這份語料
 正好落在 Wiki 的範圍——而這正是數據所顯示的:在統計上幾乎打平,但 Wiki 用更簡單、
