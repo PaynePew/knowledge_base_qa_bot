@@ -190,18 +190,24 @@ def delete_qa(slug: str) -> None:
 
 
 @router.post("/lint", response_model=LintResponse)
-def lint() -> LintResponse:
+def lint(include_c5: bool = True) -> LintResponse:
     """Run the wiki lint pass and return a structured findings report.
 
-    Executes all lint checks (Slice 5-1: C11 orphan detection only) and writes
-    ``wiki/lint-report.md``.  Returns 200 with a ``LintResponse`` in all cases,
-    including when one or more checks raised (errors recorded in
-    ``LintResponse.check_errors``).
+    Executes the lint checks and writes ``wiki/lint-report.md``.  Returns 200
+    with a ``LintResponse`` in all cases, including when one or more checks
+    raised (errors recorded in ``LintResponse.check_errors``).
+
+    Query params:
+        include_c5: When ``true`` (default) run the full audit including C5
+            (page-pair contradiction detection — the only LLM-backed check,
+            one call per candidate pair). Pass ``?include_c5=false`` for the
+            fast, LLM-free path used to populate the Console's Curation Queue
+            (which needs only the local C8/C9/C10 checks).
 
     Shallow wrapper around ``lint.run_lint()``.  All domain logic lives in
     ``lint.py`` (CODING_STANDARD §2.3).
     """
-    return run_lint()
+    return run_lint(include_c5=include_c5)
 
 
 @router.post("/ingest", response_model=IngestResponse)

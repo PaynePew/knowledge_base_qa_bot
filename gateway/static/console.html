@@ -1924,7 +1924,9 @@ function makeRefreshBtn() {
     btn.disabled = true;
     btn.textContent = "Refreshing…";
 
-    fetch("/wiki/lint", { method: "POST" })
+    /* Fast path (include_c5=false): the queue needs only the local C8/C9/C10
+       checks, so skip the slow C5 LLM contradiction audit. */
+    fetch("/wiki/lint?include_c5=false", { method: "POST" })
       .then(function(resp) {
         if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
         return resp.json();
@@ -2181,6 +2183,22 @@ function doDiscard(slug, cardEl, statusMsgEl, setActionBusy) {
 
 /* ── Boot ──────────────────────────────────────────────────── */
 buildPipeline(document.getElementById("pipeline-root"));
+
+/* Populate the Curation Queue immediately via the fast (LLM-free) lint path.
+   The queue only needs the local C8/C9/C10 checks, so it must not wait on the
+   slow C5 contradiction audit (one LLM call per page-pair, minutes on a large
+   wiki). The full Lint button still runs C5 for the deliberate audit; the queue
+   Refresh button also uses this fast path. */
+(function loadCurationQueueFast() {
+  fetch("/wiki/lint?include_c5=false", { method: "POST" })
+    .then(function(resp) { return resp.ok ? resp.json() : null; })
+    .then(function(data) {
+      if (!data) return;
+      lastLintData = data;
+      renderCurationQueue(document.getElementById("curation-queue-root"), data);
+    })
+    .catch(function() { /* non-fatal: queue stays empty until Lint/Refresh */ });
+})();
 
 /* ============================================================
    RAG rebuild track (#173)

@@ -301,23 +301,30 @@ def _read_frontmatter_sources(page_path: Path) -> list[str]:
 def _parse_frontmatter(page_path: Path) -> dict | None:
     """Parse the YAML frontmatter of a wiki page; return the dict or None.
 
-    Returns None if the page has no frontmatter block, the block cannot be
-    parsed, or the result is not a dict.
+    Locates the first ``---`` … ``---`` fence by scanning for fence *lines* (a
+    line that is exactly ``---`` after stripping) rather than requiring the file
+    to *start* with ``---``. Filed qa pages are written with a leading sentinel
+    HTML comment before the fence (``<!-- Auto-filed by POST /chat… -->``), so a
+    ``startswith("---")`` test skipped every filed draft — which made C8/C9/C10
+    silently ignore real Filed Answers and mis-flag them as invalid schema (#4).
+    This mirrors ``qa._read_frontmatter``, which already parses these files.
+
+    Returns None if the page has no fence pair, the block cannot be parsed, or
+    the result is not a dict.
     """
     try:
         text = page_path.read_text(encoding="utf-8")
     except OSError:
         return None
 
-    if not text.startswith("---"):
+    lines = text.splitlines()
+    dash_indices = [i for i, line in enumerate(lines) if line.strip() == "---"]
+    if len(dash_indices) < 2:
         return None
 
-    parts = text.split("---", 2)
-    if len(parts) < 3:
-        return None
-
+    fm_text = "\n".join(lines[dash_indices[0] + 1 : dash_indices[1]])
     try:
-        fm = yaml.safe_load(parts[1])
+        fm = yaml.safe_load(fm_text)
     except yaml.YAMLError:
         return None
 
@@ -1865,8 +1872,9 @@ def run_lint(
     wiki_dir: Path | None = None,
     docs_dir: Path | None = None,
     log_path: Path | None = None,
+    include_c5: bool = True,
 ) -> LintResponse:
-    """Run all lint checks; write wiki/lint-report.md; return LintResponse.
+    """Run the lint checks; write wiki/lint-report.md; return LintResponse.
 
     Read-only with respect to wiki page frontmatter.
     Holds ``indexer._index_lock`` for the full duration.
@@ -1875,6 +1883,13 @@ def run_lint(
 
     Parameters default to the module-level constants (``WIKI_DIR``, ``DOCS_DIR``,
     ``LOG_PATH``) so tests can monkeypatch those attributes without passing kwargs.
+
+    ``include_c5`` (default True) controls the only LLM-backed check, C5
+    (page-pair contradiction detection). C5 makes one LLM call per candidate
+    page-pair, so it dominates lint wall-time and cost on a large wiki. Callers
+    that only need the fast, local checks — notably the Console's Curation
+    Queue, which reads C8/C9/C10 — pass ``include_c5=False`` to skip it; the
+    response then carries ``page_pairs == []`` and ``llm_calls == 0``.
 
     Returns a LintResponse (which is also JSON-serialisable via FastAPI).
     """
@@ -1974,33 +1989,38 @@ def run_lint(
             log_event("lint_check_error", f"check=c10 exc={err_msg}", log_path=resolved_log)
 
         # --- C5 Page-pair contradiction detection (most expensive — last) ---
+        # The only LLM-backed check: one call per candidate page-pair, so it
+        # dominates wall-time and cost on a large wiki. Skipped wholesale when
+        # include_c5 is False (fast path for the Curation Queue) — page_pairs,
+        # llm_calls and cost_usd then keep their zero defaults below.
         page_pairs: list[PagePairFinding] = []
         llm_calls: int = 0
         cost_usd: float = 0.0
-        try:
-            page_pairs = _check_c5_page_pair(resolved_wiki)
-            # Cost accounting (best-effort): count candidate pairs judged
-            # _check_c5_page_pair calls _judge_page_pair once per pair.
-            # We approximate llm_calls by counting all findings + "none" judgements
-            # via the candidate pair count. Since we don't have direct access to
-            # that count post-run, we count findings (severity != none) as a
-            # lower bound and note this is approximate.
-            # A more exact count would require _check_c5_page_pair to return the
-            # call count; that is the content-hash-cache trigger improvement.
-            # For now: count all page_pairs as each required one LLM call.
-            # Non-"none" findings + estimated filtered pairs is tracked via the
-            # module-level _c5_llm_call_counter which _judge_page_pair updates.
-            llm_calls = _c5_llm_call_counter[0]
-            # gpt-4o-mini pricing (2025): $0.15/1M input tokens, $0.60/1M output tokens
-            # Rough estimate: ~500 input + 150 output tokens per pair call = ~$0.000165/call
-            # Best-effort: $0.000165 * llm_calls
-            cost_usd = round(llm_calls * 0.000165, 6)
-            # Reset counter for next run
-            _c5_llm_call_counter[0] = 0
-        except Exception as exc:  # noqa: BLE001
-            err_msg = f"{type(exc).__name__}: {exc}"
-            check_errors["c5"] = err_msg
-            log_event("lint_check_error", f"check=c5 exc={err_msg}", log_path=resolved_log)
+        if include_c5:
+            try:
+                page_pairs = _check_c5_page_pair(resolved_wiki)
+                # Cost accounting (best-effort): count candidate pairs judged
+                # _check_c5_page_pair calls _judge_page_pair once per pair.
+                # We approximate llm_calls by counting all findings + "none" judgements
+                # via the candidate pair count. Since we don't have direct access to
+                # that count post-run, we count findings (severity != none) as a
+                # lower bound and note this is approximate.
+                # A more exact count would require _check_c5_page_pair to return the
+                # call count; that is the content-hash-cache trigger improvement.
+                # For now: count all page_pairs as each required one LLM call.
+                # Non-"none" findings + estimated filtered pairs is tracked via the
+                # module-level _c5_llm_call_counter which _judge_page_pair updates.
+                llm_calls = _c5_llm_call_counter[0]
+                # gpt-4o-mini pricing (2025): $0.15/1M input tokens, $0.60/1M output tokens
+                # Rough estimate: ~500 input + 150 output tokens per pair call = ~$0.000165/call
+                # Best-effort: $0.000165 * llm_calls
+                cost_usd = round(llm_calls * 0.000165, 6)
+                # Reset counter for next run
+                _c5_llm_call_counter[0] = 0
+            except Exception as exc:  # noqa: BLE001
+                err_msg = f"{type(exc).__name__}: {exc}"
+                check_errors["c5"] = err_msg
+                log_event("lint_check_error", f"check=c5 exc={err_msg}", log_path=resolved_log)
 
     # --- Aggregate findings ---
     findings = LintFindings(

@@ -118,6 +118,26 @@ class TestLintRoute:
         assert orphan["page_slug"] == "orphan-page"
         assert "missing_source.md" in orphan["missing_sources"]
 
+    def test_post_lint_include_c5_false_skips_c5(self, tmp_wiki_dir, monkeypatch):
+        """POST /lint?include_c5=false threads the flag through to run_lint and
+        skips the C5 (LLM) check — the fast path the Curation Queue uses."""
+        import app.lint as lint_module
+        from app.main import app
+
+        called: list = []
+        monkeypatch.setattr(
+            lint_module,
+            "_check_c5_page_pair",
+            lambda *a, **k: (called.append(a), [])[1],
+        )
+
+        client = TestClient(app)
+        resp = client.post("/lint?include_c5=false")
+        assert resp.status_code == 200
+        assert called == [], "C5 must not run when ?include_c5=false"
+        assert resp.json()["findings"]["page_pairs"] == []
+        assert resp.json()["summary"]["llm_calls"] == 0
+
 
 # ---------------------------------------------------------------------------
 # run_lint() direct tests
@@ -335,3 +355,91 @@ class TestRunLint:
         log_text = lint_env["log_path"].read_text(encoding="utf-8")
         # summary line format: "findings=N by_check=c11:X ..."
         assert "c11:1" in log_text
+
+
+# ---------------------------------------------------------------------------
+# include_c5 flag — fast (LLM-free) path for the Console Curation Queue (#3).
+# C5 is the only LLM-backed check (one call per candidate page-pair), so on a
+# large wiki it dominates lint wall-time; the queue needs only C8/C9/C10.
+# ---------------------------------------------------------------------------
+
+
+def test_run_lint_include_c5_false_skips_c5(lint_env, monkeypatch):
+    """include_c5=False must skip C5 entirely: the candidate-pair function is
+    never called, no page-pair findings, zero llm_calls, no c5 check error."""
+    import app.lint as lint_module
+    from app.lint import run_lint
+
+    calls: list = []
+
+    def _must_not_run(*a, **k):
+        calls.append(a)
+        raise AssertionError("C5 must not run when include_c5=False")
+
+    monkeypatch.setattr(lint_module, "_check_c5_page_pair", _must_not_run)
+
+    result = run_lint(**lint_env, include_c5=False)
+
+    assert calls == [], "_check_c5_page_pair must not be called"
+    assert result.findings.page_pairs == []
+    assert result.summary.llm_calls == 0
+    assert "c5" not in result.check_errors
+
+
+def test_run_lint_include_c5_true_runs_c5(lint_env, monkeypatch):
+    """Control: the default (include_c5=True) still invokes the C5 check."""
+    import app.lint as lint_module
+    from app.lint import run_lint
+
+    calls: list = []
+    monkeypatch.setattr(
+        lint_module, "_check_c5_page_pair", lambda *a, **k: (calls.append(a), [])[1]
+    )
+
+    run_lint(**lint_env, include_c5=True)
+
+    assert len(calls) == 1, "_check_c5_page_pair must run when include_c5=True"
+
+
+# ---------------------------------------------------------------------------
+# Regression (#4): filed qa drafts begin with a sentinel HTML comment BEFORE the
+# `---` fence. _parse_frontmatter must locate the fence (not require it at byte
+# 0), so C8 surfaces such drafts as promotion candidates and C10 does NOT
+# mis-flag them as invalid schema.
+# ---------------------------------------------------------------------------
+
+
+def test_run_lint_c8_finds_comment_prefixed_draft(lint_env):
+    """A draft written in the real filing format (HTML comment, blank line, then
+    the `---` fence) must be parsed: it appears in C8 and not in C10."""
+    from app.lint import run_lint
+
+    qa_dir = lint_env["wiki_dir"] / "qa"
+    qa_dir.mkdir(parents=True, exist_ok=True)
+    (qa_dir / "comment-first.md").write_text(
+        "<!-- Auto-filed by POST /chat. -->\n"
+        "\n"
+        "---\n"
+        "count: 2\n"
+        "created: '2026-05-30T00:00:00Z'\n"
+        "id: comment-first\n"
+        "open_questions: []\n"
+        "question: Comment-first draft\n"
+        "sources:\n"
+        "- volume-discounts#volume-discounts\n"
+        "status: draft\n"
+        "type: qa\n"
+        "updated: '2026-05-30T00:00:00Z'\n"
+        "---\n"
+        "\n"
+        "Body text.\n",
+        encoding="utf-8",
+    )
+
+    result = run_lint(**lint_env, include_c5=False)
+
+    c8_slugs = [c.slug for c in result.findings.promotion_candidates]
+    assert "comment-first" in c8_slugs, "C8 must surface a comment-prefixed draft"
+
+    c10_slugs = [c.page_slug for c in result.findings.invalid_qa_schemas]
+    assert "comment-first" not in c10_slugs, "comment-first draft must not be flagged invalid"
