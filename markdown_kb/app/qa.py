@@ -128,12 +128,11 @@ def compute_slug(question: str) -> str:
     expected number of collisions across a demo-scale pool (~10k questions)
     is sub-1%. The slugified prefix keeps slugs grep-able by the curator.
 
-    CJK / fully-punctuation questions degrade gracefully: ``slugify`` returns
-    the literal string ``"section"`` for inputs that contain no ASCII
-    alphanumerics (existing indexer.slugify contract). The hash suffix then
-    discriminates: ``section-<hash>``. We special-case ``"section"`` to
-    ``"qa"`` so the produced slug reads as ``qa-<hash>`` — a small lipstick
-    edit on top of the indexer helper so the qa subdir is self-describing.
+    Phase 16: ``slugify`` now preserves CJK (and other Unicode) characters
+    verbatim, so a CJK question like "如何取消订单？" produces a readable
+    prefix "如何取消订单" rather than the degenerate "section". The ``"section"``
+    → ``"qa"`` special-case is retained as a safety net for fully-punctuation
+    inputs that produce no slug-able characters at all.
     """
     prefix = slugify(question)[:40]
     if prefix == "section":
