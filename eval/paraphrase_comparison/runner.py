@@ -384,9 +384,10 @@ def _render_tldr(
     core_a = _macro_average(stack_a.by_type, CORE_PARAPHRASE_TYPES)
     core_b = _macro_average(stack_b.by_type, CORE_PARAPHRASE_TYPES)
     qualifier = "offline tracer" if offline else "L1 (deterministic)"
+    n_sources = len(list(stacks.FIXTURES["corpus"].glob("*.md")))
     return (
         "## TL;DR\n\n"
-        f"On this 16-Source Acme Shop corpus, the Core macro-average hit_rate@{k} is "
+        f"On this {n_sources}-Source Acme Shop corpus, the Core macro-average hit_rate@{k} is "
         f"**Stack A {core_a:.3f}** vs **Stack B {core_b:.3f}** ({qualifier} numbers). "
         "The per-type breakdown is the real signal — the macro-average is a "
         "researcher-chosen type mix and is reported only with the caveat below. "
@@ -405,6 +406,24 @@ def _render_setup(
     generator = metadata.get("generator_model", "gpt-4o-mini")
     seed = metadata.get("seed", "n/a")
     snapshot = metadata.get("corpus_snapshot_git_sha", "n/a")
+    # Counts are derived from the actual corpus + query set so the narrative never
+    # drifts from the data after a regeneration (issue #145).
+    paras = load_paraphrases()
+    n_sources = len(list(stacks.FIXTURES["corpus"].glob("*.md")))
+    core_per = {
+        t: sum(p.paraphrase_type == t for p in paras) for t in CORE_PARAPHRASE_TYPES
+    }
+    probe_per = {
+        t: sum(p.paraphrase_type == t for p in paras) for t in PROBE_PARAPHRASE_TYPES
+    }
+    n_core, n_probes = sum(core_per.values()), sum(probe_per.values())
+    core_sz, probe_sz = sorted(set(core_per.values())), sorted(set(probe_per.values()))
+    core_mult = (
+        f"× {core_sz[0]}" if len(core_sz) == 1 else f"× {core_sz[0]}–{core_sz[-1]}"
+    )
+    probe_mult = (
+        f"× {probe_sz[0]}" if len(probe_sz) == 1 else f"× {probe_sz[0]}–{probe_sz[-1]}"
+    )
     judge_cost_line = (
         f"| L2 cross-family judge Spot-check ({spotcheck.judge_model}) | "
         f"{spotcheck.total_size} item(s) judged; per-call Anthropic cost |\n"
@@ -413,14 +432,15 @@ def _render_setup(
     )
     return (
         "## Experiment Setup\n\n"
-        "- **Corpus**: 16 raw Acme Shop Sources (`corpus/`), fed identically to both "
-        "Stacks. Stack A runs `/ingest` over them into `wiki/{entities,concepts}/` "
+        f"- **Corpus**: {n_sources} raw Acme Shop Sources (`corpus/`), fed identically "
+        "to both Stacks. Stack A runs `/ingest` over them into `wiki/{entities,concepts}/` "
         "then BM25; Stack B chunks + embeds the raw Sources into FAISS and never runs "
         "`/ingest`. This isolates curated-synthesis-then-keyword vs raw-chunk-then-vector "
         "as the single variable.\n"
         f"- **Paraphrases**: `queries.yaml` (generator `{generator}`, seed `{seed}`, "
-        f"corpus snapshot `{snapshot}`). 40 Core (5 LLM types × 8) + 10 hand-written "
-        "Structural probes (2 types × 5).\n"
+        f"corpus snapshot `{snapshot}`). {n_core} Core "
+        f"({len(CORE_PARAPHRASE_TYPES)} LLM types {core_mult}) + {n_probes} hand-written "
+        f"Structural probes ({len(PROBE_PARAPHRASE_TYPES)} types {probe_mult}).\n"
         f"- **Metric**: C5c L1 deterministic — hit_rate@{k} and MRR. A hit requires the "
         "retrieved unit's source to equal the Gold Section AND its content to share at "
         "least one dual-side Key Token, so a correct-id-wrong-content chunk is a miss.\n"
@@ -556,12 +576,30 @@ def _render_statistical_tests(core_stats: CoreStats, k: int) -> str:
             f"| {holm_p:.4f} "
             f"| {sig} |"
         )
+    # Power note derived from the actual per-Core-type sample size (issue #145),
+    # so it never claims "underpowered, regenerate" once the Demo tier is reached.
+    _paras = load_paraphrases()
+    _core_ns = sorted(
+        {sum(p.paraphrase_type == t for p in _paras) for t in CORE_PARAPHRASE_TYPES}
+    )
+    _n_desc = (
+        f"{_core_ns[0]}"
+        if _core_ns[0] == _core_ns[-1]
+        else f"{_core_ns[0]}–{_core_ns[-1]}"
+    )
+    _power_note = (
+        f"At n≈{_n_desc} per type the 95% Wilson CIs (see table) are tight enough to "
+        "support a per-type claim; a non-significant result then means the two Stacks "
+        "are statistically indistinguishable on that type, not merely underpowered."
+        if _core_ns[0] >= 30
+        else f"Wide CIs at n≈{_n_desc} per type mean the corpus is underpowered — "
+        "regenerate with ~50 Paraphrases/type to reach ±0.13."
+    )
     lines += [
         "",
         "> **Interpretation.** sig=✓ (Holm p < 0.05) means the two Stacks' "
         "hit_rate differ significantly on that type after family-wise correction.  "
-        "Wide CIs (e.g. ±0.30) at n≈8 per type mean the current corpus is "
-        "underpowered — regenerate with ~50 Paraphrases/type to reach ±0.13.  "
+        f"{_power_note}  "
         "Probes are descriptive-only and excluded from this correction family.",
     ]
     return "\n".join(lines)

@@ -72,6 +72,31 @@ def _install_fake_embeddings() -> None:
     vr_indexer._build_faiss = lambda documents: _FakeVectorStore(documents)
 
 
+def _isolate_production_paths() -> None:
+    """Redirect markdown_kb + vector_rag persisted-index/log paths to a temp dir.
+
+    The pytest suite does this via an autouse fixture; the standalone CLI must do
+    it too. Otherwise indexing Stack A/B writes the production ``.kb/index.json``
+    and ``wiki/log.md`` at the repo root — which then pollutes hermetic tests that
+    lazy-load the persisted index (#148/#133). Mirrors the test conftest's
+    ``_redirect_markdown_kb_paths`` (issue #145).
+    """
+    import tempfile
+    from pathlib import Path
+
+    import markdown_kb.app.indexer as mk_indexer
+    import markdown_kb.app.logger as mk_logger
+    import vector_rag.app.indexer as vr_indexer
+    import vector_rag.app.logger as vr_logger
+
+    iso = Path(tempfile.mkdtemp(prefix="phase8_cmp_iso_"))
+    mk_indexer.INDEX_PATH = iso / ".kb" / "index.json"
+    mk_indexer.WIKI_DIR = iso / "wiki"
+    mk_logger.LOG_PATH = iso / "wiki" / "log.md"
+    vr_indexer.FAISS_INDEX_DIR = iso / ".kb" / "faiss_index"
+    vr_logger.LOG_PATH = iso / "vector_rag" / "log.md"
+
+
 def _judge_config(args: argparse.Namespace) -> JudgeConfig | None:
     """Build the opt-in L2 Spot-check config from the ``--judge*`` flags (or None).
 
@@ -143,6 +168,9 @@ def main(argv: list[str] | None = None) -> int:
     mode = "fake" if fake else "real"
     if fake:
         _install_fake_embeddings()
+
+    # Never write the production .kb/ or wiki/log.md from the standalone CLI.
+    _isolate_production_paths()
 
     judge = _judge_config(args)
     try:

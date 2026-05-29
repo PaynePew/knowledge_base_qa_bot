@@ -1,1210 +1,6639 @@
 metadata:
   generator_model: gpt-4o-mini
-  generated_at: '2026-05-28T20:44:12Z'
+  generated_at: '2026-05-29T10:52:40Z'
   seed: 42
   temperature: 0.7
   prompt_template_version: v1
-  corpus_snapshot_git_sha: f70536f
-  total: 50
-  cost_usd: n/a (offline re-key)
-  key_tokens_source: 'deterministic corpus IDF (issue #139)'
+  corpus_snapshot_git_sha: c999f15
+  total: 260
+  cost_usd: see run log
 paraphrases:
-- paraphrase_id: synonym_swap-001
+- paraphrase_id: synonym--001
   paraphrase_type: synonym_swap
-  text: What happens if I try to log in from a place that isn't recognized?
+  text: How can I escalate my order issue to get faster help from Acme Shop's specialist
+    team?
+  gold_docs_section_id: customer_support.md#escalation-process
+  key_tokens_docs:
+  - escalation
+  - deserve
+  - contacted
+  - unresolved
+  - escalated
+  - specialist
+  - specialists
+  - glitches
+  - escalate
+  - document
+  key_tokens_wiki:
+  - escalation
+  - deserve
+  - contacted
+  - unresolved
+  - escalated
+  - specialist
+  - specialists
+  - glitches
+  - escalate
+  - document
+- paraphrase_id: synonym--002
+  paraphrase_type: synonym_swap
+  text: How do I update my password and set up two-factor authentication after getting
+    a security alert?
   gold_docs_section_id: account_security.md#suspicious-activity
   key_tokens_docs:
-  - attempts
-  - unrecognised
-  - location
-  - detected
-  - temporarily
-  - verification
-  - lock
-  - clears
-  - soon
-  - confirms
+  - detects
+  - suspicious
+  - activity
+  - concern
+  - irregularities
+  - logins
+  - unfamiliar
+  - ip
+  - identified
+  - unrecognized
   key_tokens_wiki:
-  - attempts
-  - unrecognised
-  - location
-  - detected
-  - temporarily
-  - verification
-  - lock
-  - clears
-  - soon
-  - confirms
-  generation_notes: Stripped subject for general inquiry about account security.
-- paraphrase_id: synonym_swap-002
+  - detects
+  - suspicious
+  - activity
+  - concern
+  - irregularities
+  - logins
+  - unfamiliar
+  - ip
+  - identified
+  - unrecognized
+- paraphrase_id: synonym--003
   paraphrase_type: synonym_swap
-  text: How can I find out if an item is running low and what should I do if it’s
-    out of stock?
+  text: What do I need to provide to qualify for bulk orders at Acme Shop?
+  gold_docs_section_id: bulk_orders.md#eligibility-and-minimum-order
+  key_tokens_docs:
+  - businesses
+  - organizations
+  - profit
+  - educational
+  - institutions
+  - agencies
+  - individuals
+  - unregistered
+  - entities
+  - tax
+  key_tokens_wiki:
+  - businesses
+  - organizations
+  - profit
+  - educational
+  - institutions
+  - agencies
+  - individuals
+  - unregistered
+  - entities
+  - tax
+- paraphrase_id: synonym--004
+  paraphrase_type: synonym_swap
+  text: How can I get notified when an item is back in stock at Acme Shop?
   gold_docs_section_id: product_information.md#stock-availability
   key_tokens_docs:
-  - count
-  - drawn
-  - nearest
-  - fulfilment
-  - centre
-  - fewer
-  - remain
-  - displays
+  - title
+  - format
   - low
-  - banner
+  - acting
+  - sell
+  - easy
+  - me
+  - reserve
+  - served
+  - popular
   key_tokens_wiki:
-  - count
-  - drawn
-  - nearest
-  - fulfilment
-  - centre
-  - fewer
-  - remain
-  - displays
+  - title
+  - format
   - low
-  - banner
-  generation_notes: targeted sub-fact about stock availability and actions for low
-    or out of stock items.
-- paraphrase_id: synonym_swap-003
+  - acting
+  - sell
+  - easy
+  - me
+  - reserve
+  - served
+  - popular
+- paraphrase_id: synonym--005
   paraphrase_type: synonym_swap
-  text: What is the cost for faster shipping, and when do I need to order to get it
-    sent out today?
+  text: How can I qualify for expedited delivery at Acme Shop, and are there any extra
+    fees?
   gold_docs_section_id: shipping_options.md#expedited-delivery
   key_tokens_docs:
-  - guarantees
+  - getting
+  - hurry
+  - instantly
+  - very
+  - rural
   - surcharge
-  - clock
-  - morning
-  - unavailable
-  - contiguous
-  - arrival
-  - afternoon
-  - local
-  - later
+  - proactively
+  - work
+  - urgent
+  - guarantees
   key_tokens_wiki:
-  - guarantees
+  - getting
+  - hurry
+  - instantly
+  - very
+  - rural
   - surcharge
-  - clock
-  - morning
-  - unavailable
-  - contiguous
-  - arrival
-  - afternoon
-  - local
-  - later
-  generation_notes: Avoided key terms for expedited delivery and shipping timelines.
-- paraphrase_id: synonym_swap-004
+  - proactively
+  - work
+  - urgent
+  - guarantees
+- paraphrase_id: synonym--006
   paraphrase_type: synonym_swap
-  text: Which locations does Acme Shop deliver to?
+  text: Can you tell me if Acme Shop ships to my country and what the customs fees
+    might be?
   gold_docs_section_id: international_shipping.md#supported-countries
   key_tokens_docs:
-  - canada
-  - kingdom
-  - european
-  - union
-  - australia
-  - japan
-  - countries
-  - expands
+  - continually
+  - expand
   - periodically
-  - display
+  - incurred
+  - packages
+  - regions
+  - logistical
+  - political
+  - instability
+  - disasters
   key_tokens_wiki:
-  - canada
-  - kingdom
-  - european
-  - union
-  - australia
-  - japan
-  - countries
-  - expands
+  - continually
+  - expand
   - periodically
-  - display
-  generation_notes: focused on the locations for delivery
-- paraphrase_id: synonym_swap-005
+  - incurred
+  - packages
+  - regions
+  - logistical
+  - political
+  - instability
+  - disasters
+- paraphrase_id: synonym--007
   paraphrase_type: synonym_swap
-  text: What happens if my payment is rejected, and how long do I have to fix my card
-    details?
+  text: Why was my payment declined at Acme Shop, and how can I fix it?
   gold_docs_section_id: payment_methods.md#failed-payments
   key_tokens_docs:
-  - held
-  - pending
-  - state
-  - update
-  - common
-  - decline
-  - reasons
-  - incorrect
-  - expired
-  - records
+  - rejected
+  - payments
+  - triggered
+  - unusual
+  - patterns
+  - verifying
+  - above
+  - banks
+  - authorize
+  - accepted
   key_tokens_wiki:
-  - held
-  - pending
-  - state
-  - update
-  - common
-  - decline
-  - reasons
-  - incorrect
-  - expired
-  - records
-  generation_notes: 'targeted sub-fact: details on rejected payments and time frame
-    for updates.'
-- paraphrase_id: synonym_swap-006
+  - rejected
+  - payments
+  - triggered
+  - unusual
+  - patterns
+  - verifying
+  - above
+  - banks
+  - authorize
+  - accepted
+- paraphrase_id: synonym--008
   paraphrase_type: synonym_swap
-  text: How can I set up an extra layer of security for my account, and when will
-    I need to verify my identity again?
+  text: How do I set up two-factor authentication on my Acme Shop account to ensure
+    it's secure?
   gold_docs_section_id: account_security.md#two-factor-authentication
   key_tokens_docs:
+  - adds
+  - second
+  - just
   - enable
-  - authentication
-  - choosing
+  - compatible
+  - linked
   - authenticator
-  - app
-  - text
-  - enabled
-  - required
-  - routine
-  - ins
+  - google
+  - authy
+  - setup
   key_tokens_wiki:
+  - adds
+  - second
+  - just
   - enable
-  - authentication
-  - choosing
+  - compatible
+  - linked
   - authenticator
-  - app
-  - text
-  - enabled
-  - required
-  - routine
-  - ins
-  generation_notes: Synonyms used for key terms like 'enable', 'security', and 'verify'.
-- paraphrase_id: synonym_swap-007
+  - google
+  - authy
+  - setup
+- paraphrase_id: synonym--009
   paraphrase_type: synonym_swap
-  text: What options do I have to adjust my subscription, and when do those changes
-    go into effect?
+  text: How can I pause my Acme Shop subscription for up to three months?
   gold_docs_section_id: subscription_orders.md#managing-a-subscription
   key_tokens_docs:
-  - paused
-  - skipped
-  - rescheduled
-  - subscriptions
-  - tab
-  - made
-  - stops
-  - changes
-  - scheduled
-  - effect
+  - skip
+  - upcoming
+  - instead
+  - skipping
+  - asked
+  - ending
+  - deliveries
+  - fulfilled
+  - prorated
+  - reactivating
   key_tokens_wiki:
-  - paused
-  - skipped
-  - rescheduled
-  - subscriptions
-  - tab
-  - made
-  - stops
-  - changes
-  - scheduled
-  - effect
-  generation_notes: Focused on options for adjusting the subscription and the timing
-    of those adjustments.
-- paraphrase_id: synonym_swap-008
+  - skip
+  - upcoming
+  - instead
+  - skipping
+  - asked
+  - ending
+  - deliveries
+  - fulfilled
+  - prorated
+  - reactivating
+- paraphrase_id: synonym--010
   paraphrase_type: synonym_swap
-  text: How quickly can I set aside something online and pick it up at the shop?
+  text: How can I change the pickup location for my order after I've already bought
+    it?
   gold_docs_section_id: store_pickup.md#buy-online-pick-up-in-store
   key_tokens_docs:
-  - marked
-  - reserved
-  - online
-  - chosen
-  - ready
-  - opening
-  - sends
-  - waiting
-  - counter
+  - browsing
+  - catalog
+  - preferred
+  - zip
+  - accommodate
+  - bring
+  - collected
+  - associates
   - pickup
+  - adding
   key_tokens_wiki:
-  - marked
-  - reserved
-  - online
-  - chosen
-  - ready
-  - opening
-  - sends
-  - waiting
-  - counter
+  - browsing
+  - catalog
+  - preferred
+  - zip
+  - accommodate
+  - bring
+  - collected
+  - associates
   - pickup
-  generation_notes: Targeting the time frame and process for reserving and picking
-    up items.
-- paraphrase_id: word_reorder-001
-  paraphrase_type: word_reorder
-  text: How long might it take for the tracking information to appear after the shipping
-    confirmation email is sent?
-  gold_docs_section_id: shipping_options.md#order-tracking
-  key_tokens_docs:
-  - generates
-  - tracking
-  - scans
-  - view
-  - populate
-  - also
-  - live
-  - information
-  - emailed
-  - carrier
-  key_tokens_wiki:
-  - generates
-  - tracking
-  - scans
-  - view
-  - populate
-  - also
-  - live
-  - information
-  - emailed
-  - carrier
-  generation_notes: Recast as an indirect question.
-- paraphrase_id: word_reorder-002
-  paraphrase_type: word_reorder
-  text: What is the processing time for standard delivery on orders placed on Friday
-    afternoons?
-  gold_docs_section_id: shipping_options.md#standard-delivery
-  key_tokens_docs:
-  - over
-  - fifty
-  - dollars
-  - continental
-  - below
-  - threshold
-  - weekend
-  - handling
-  - friday
-  - monday
-  key_tokens_wiki:
-  - over
-  - fifty
-  - dollars
-  - continental
-  - below
-  - threshold
-  - weekend
-  - handling
-  - friday
-  - monday
-  generation_notes: Recast as an indirect question focusing on processing time.
-- paraphrase_id: word_reorder-003
-  paraphrase_type: word_reorder
-  text: From which page can customers change the email address tied to their account?
-  gold_docs_section_id: account_management.md#update-email-address
-  key_tokens_docs:
-  - tied
-  - followed
-  - previous
-  - continues
-  - notifications
-  - submitting
-  - message
-  - takes
-  - effect
-  - verified
-  key_tokens_wiki:
-  - tied
-  - followed
-  - previous
-  - continues
-  - notifications
-  - submitting
-  - message
-  - takes
-  - effect
-  - verified
-  generation_notes: restructured to focus on the page for changing email
-- paraphrase_id: word_reorder-004
-  paraphrase_type: word_reorder
-  text: From which section of profile settings can a customer permanently close an
-    account?
+  - adding
+- paraphrase_id: synonym--011
+  paraphrase_type: synonym_swap
+  text: How do I quickly close my Acme Shop account?
   gold_docs_section_id: account_management.md#close-account
   key_tokens_docs:
+  - decided
   - permanently
-  - close
-  - privacy
-  - closing
-  - removes
-  - saved
-  - methods
-  - addresses
-  - retained
-  - years
+  - closure
+  - menu
+  - prompts
+  - closed
+  - deleted
+  - undone
+  - proceeding
+  - outstanding
   key_tokens_wiki:
+  - decided
   - permanently
-  - close
-  - privacy
-  - closing
-  - removes
-  - saved
-  - methods
-  - addresses
-  - retained
-  - years
-  generation_notes: restructured as an indirect question
-- paraphrase_id: word_reorder-005
-  paraphrase_type: word_reorder
-  text: How many business days does expedited delivery guarantee arrival for a twelve-dollar
-    surcharge?
-  gold_docs_section_id: shipping_options.md#expedited-delivery
+  - closure
+  - menu
+  - prompts
+  - closed
+  - deleted
+  - undone
+  - proceeding
+  - outstanding
+- paraphrase_id: synonym--012
+  paraphrase_type: synonym_swap
+  text: How do I update my email address on my Acme Shop account?
+  gold_docs_section_id: account_management.md#update-email-address
   key_tokens_docs:
-  - guarantees
-  - surcharge
-  - clock
-  - morning
-  - unavailable
-  - contiguous
-  - arrival
-  - afternoon
-  - local
-  - later
+  - profile
+  - locate
+  - revert
+  - done
+  - old
+  - go
+  - update
+  - credentials
+  - found
+  - top
   key_tokens_wiki:
-  - guarantees
-  - surcharge
-  - clock
-  - morning
-  - unavailable
-  - contiguous
-  - arrival
-  - afternoon
-  - local
-  - later
-  generation_notes: restructured as a direct question
-- paraphrase_id: word_reorder-006
-  paraphrase_type: word_reorder
-  text: How long does it take for the issuing bank to release the authorisation hold
-    if an order is cancelled before shipment?
-  gold_docs_section_id: payment_methods.md#payment-authorization
+  - profile
+  - locate
+  - revert
+  - done
+  - old
+  - go
+  - update
+  - credentials
+  - found
+  - top
+- paraphrase_id: synonym--013
+  paraphrase_type: synonym_swap
+  text: What do I need to spend to reach the Gold tier at Acme Shop, and what perks
+    come with it?
+  gold_docs_section_id: loyalty_program.md#membership-tiers
   key_tokens_docs:
-  - authorise
-  - funds
-  - issuing
-  - split
-  - shipments
-  - see
-  - several
-  - smaller
-  - we
-  - capture
+  - distinct
+  - silver
+  - gold
+  - platinum
+  - tier
+  - crafted
+  - increasing
+  - levels
+  - annual
+  - joining
   key_tokens_wiki:
-  - authorise
-  - funds
-  - issuing
-  - split
-  - shipments
-  - see
-  - several
-  - smaller
-  - we
-  - capture
-  generation_notes: Recast as an indirect question.
-- paraphrase_id: word_reorder-007
-  paraphrase_type: word_reorder
-  text: What is the one exception that allows a free-shipping code to be combined
-    with a single percentage-off code, given that promotional codes cannot be stacked
-    with each other?
-  gold_docs_section_id: promo_codes.md#stacking-rules
+  - distinct
+  - silver
+  - gold
+  - platinum
+  - tier
+  - crafted
+  - increasing
+  - levels
+  - annual
+  - joining
+- paraphrase_id: synonym--014
+  paraphrase_type: synonym_swap
+  text: How do I get a refund if I find a lower price elsewhere after buying from
+    Acme Shop?
+  gold_docs_section_id: price_matching.md#requesting-a-price-match
   key_tokens_docs:
-  - codes
-  - stacked
-  - percentage
-  - loyalty
-  - redemption
-  - discounts
-  - different
-  - parts
-  - promotional
-  - other
+  - qualifying
+  - screenshot
+  - specifications
+  - clubs
+  - bundled
+  - received
+  - affordable
+  - satisfying
+  - prices
+  - valued
   key_tokens_wiki:
-  - codes
-  - stacked
-  - percentage
-  - loyalty
-  - redemption
-  - discounts
-  - different
-  - parts
-  - promotional
-  - other
-  generation_notes: Recast as an indirect question.
-- paraphrase_id: word_reorder-008
-  paraphrase_type: word_reorder
-  text: How can an order be cancelled from the order history page, provided it hasn't
-    entered the packing stage?
-  gold_docs_section_id: order_management.md#cancel-an-order
+  - qualifying
+  - screenshot
+  - specifications
+  - clubs
+  - bundled
+  - received
+  - affordable
+  - satisfying
+  - prices
+  - valued
+- paraphrase_id: synonym--015
+  paraphrase_type: synonym_swap
+  text: How can I check my order status at Acme Shop, and are there any virtual assistant
+    options available?
+  gold_docs_section_id: customer_support.md#self-service-resources
   key_tokens_docs:
-  - long
-  - cancel
-  - button
-  - disappears
-  - refuse
-  - start
-  - multi
-  - cancels
-  - partial
-  - cancellation
-  key_tokens_wiki:
-  - long
-  - cancel
-  - button
-  - disappears
-  - refuse
-  - start
-  - multi
-  - cancels
-  - partial
-  - cancellation
-  generation_notes: Recast as an indirect question, maintaining original key terms.
-- paraphrase_id: verbosity_expansion-001
-  paraphrase_type: verbosity_expansion
-  text: Hey there! I hope you’re having a great day. I was just browsing through a
-    few product pages and got a bit curious about how the stock information works.
-    Could you please let me know how often the stock counts are updated? I want to
-    make sure I have the most accurate information when I'm ready to make my purchase!
-  gold_docs_section_id: product_information.md#stock-availability
-  key_tokens_docs:
-  - count
-  - drawn
-  - nearest
-  - fulfilment
+  - self
+  - resources
+  - empower
   - centre
-  - fewer
-  - remain
-  - displays
-  - low
-  - banner
+  - faqs
+  - intelligent
+  - virtual
+  - extensive
+  - library
+  - articles
   key_tokens_wiki:
-  - count
-  - drawn
-  - nearest
-  - fulfilment
+  - self
+  - resources
+  - empower
   - centre
-  - fewer
-  - remain
-  - displays
-  - low
-  - banner
-  generation_notes: Expanded question with casual conversation style.
-- paraphrase_id: verbosity_expansion-002
-  paraphrase_type: verbosity_expansion
-  text: Hey there! I hope you're having a great day! I was just looking into the options
-    for expedited delivery and had a quick question. If I want to make sure my order
-    arrives in two business days, can you remind me of the cutoff time for placing
-    my order? Also, I just want to double-check that this service isn't available
-    for certain larger items or for shipments going outside the contiguous states,
-    right? Thanks so much for your help!
-  gold_docs_section_id: shipping_options.md#expedited-delivery
+  - faqs
+  - intelligent
+  - virtual
+  - extensive
+  - library
+  - articles
+- paraphrase_id: synonym--016
+  paraphrase_type: synonym_swap
+  text: How long does it usually take to receive a digital gift card from Acme Shop
+    after buying it?
+  gold_docs_section_id: gift_cards.md#purchase-and-delivery
   key_tokens_docs:
-  - guarantees
-  - surcharge
-  - clock
-  - morning
-  - unavailable
-  - contiguous
-  - arrival
-  - afternoon
-  - local
-  - later
+  - convenience
+  - folders
+  - continental
+  - reroute
+  - sending
+  - redeemable
+  - ultimate
+  - physical
+  - buy
+  - recipient
   key_tokens_wiki:
-  - guarantees
-  - surcharge
-  - clock
-  - morning
-  - unavailable
-  - contiguous
-  - arrival
-  - afternoon
-  - local
-  - later
-  generation_notes: Expanded the question to include a greeting and context about
-    the inquiry.
-- paraphrase_id: verbosity_expansion-003
-  paraphrase_type: verbosity_expansion
-  text: Hey there! I hope you're having a great day. I was just browsing through your
-    apparel listings and noticed that there's a size guide included, which is super
-    helpful! However, I'm a little unclear about how to interpret it, especially when
-    it comes to choosing the right size. Could you please explain how the size guide
-    works, particularly if my measurements land between two sizes? Like, should I
-    size up for outerwear or down for fitted base layers? Thanks so much for your
-    help!
-  gold_docs_section_id: product_information.md#size-guide
+  - convenience
+  - folders
+  - continental
+  - reroute
+  - sending
+  - redeemable
+  - ultimate
+  - physical
+  - buy
+  - recipient
+- paraphrase_id: synonym--017
+  paraphrase_type: synonym_swap
+  text: How can I update my shipping address for an order that's already being processed?
+  gold_docs_section_id: order_management.md#change-shipping-address
   key_tokens_docs:
-  - apparel
-  - listings
-  - size
-  - guide
-  - measured
-  - inches
-  - centimetres
-  - taken
-  - garment
-  - body
+  - transitions
+  - modifications
+  - unfortunately
+  - explore
+  - redirection
+  - possibilities
+  - success
+  - changing
+  - prior
+  - update
   key_tokens_wiki:
-  - apparel
-  - listings
-  - size
-  - guide
-  - measured
-  - inches
-  - centimetres
-  - taken
-  - garment
-  - body
-  generation_notes: added polite framing and context around the core question about
-    the size guide.
-- paraphrase_id: verbosity_expansion-004
-  paraphrase_type: verbosity_expansion
-  text: Hey there! I hope you're doing well today. I have a quick question regarding
-    my recent order that I placed. I was wondering, once my package has shipped, how
-    long does it typically take for the tracking number to be sent to my email? Also,
-    if there’s any way for me to check the live tracking status, I’d love to know
-    how that works. Thanks so much for your help!
-  gold_docs_section_id: shipping_options.md#order-tracking
+  - transitions
+  - modifications
+  - unfortunately
+  - explore
+  - redirection
+  - possibilities
+  - success
+  - changing
+  - prior
+  - update
+- paraphrase_id: synonym--018
+  paraphrase_type: synonym_swap
+  text: If Acme Shop doubled the point value, how would that change how I can redeem
+    my points?
+  gold_docs_section_id: loyalty_program.md#redeeming-points
   key_tokens_docs:
-  - generates
-  - tracking
-  - scans
-  - view
-  - populate
-  - also
-  - live
-  - information
-  - emailed
-  - carrier
+  - redeeming
+  - credits
+  - dashboard
+  - convert
+  - increments
+  - increment
+  - hard
+  - earned
+  - reflecting
+  - encountering
   key_tokens_wiki:
-  - generates
-  - tracking
-  - scans
-  - view
-  - populate
-  - also
-  - live
-  - information
-  - emailed
-  - carrier
-  generation_notes: added polite framing and background context around the core question
-    about tracking number and status
-- paraphrase_id: verbosity_expansion-005
-  paraphrase_type: verbosity_expansion
-  text: Hey there! I hope you're doing well today. I was just trying to use a promotional
-    code during my checkout process, but I'm having a bit of trouble figuring it out.
-    Could you please clarify how I should go about entering the code? Also, I’m curious
-    to know what might cause a code not to apply—like, are there specific requirements
-    I should be aware of, such as a minimum order value or certain items that might
-    be excluded? Thanks so much for your help!
-  gold_docs_section_id: promo_codes.md#applying-a-code
-  key_tokens_docs:
-  - field
-  - per
-  - fails
-  - unmet
-  - minimum
-  - category
-  - restriction
-  - excludes
-  - promotional
-  - entered
-  key_tokens_wiki:
-  - field
-  - per
-  - fails
-  - unmet
-  - minimum
-  - category
-  - restriction
-  - excludes
-  - promotional
-  - entered
-  generation_notes: Expanded the question to include politeness and context about
-    difficulty with the promotional code.
-- paraphrase_id: verbosity_expansion-006
-  paraphrase_type: verbosity_expansion
-  text: Hey there! I hope you're having a great day. I recently received a gift card
-    and I’m a bit curious about how to use it properly. Could you please let me know
-    how I can apply the balance at checkout? Also, just to clarify, if I don’t use
-    the entire amount on the card, will I still be able to access that remaining balance
-    later? Thanks so much for your help!
-  gold_docs_section_id: gift_cards.md#redeeming-a-gift-card
-  key_tokens_docs:
-  - entering
-  - pin
-  - above
-  - incur
-  - dormancy
-  - fees
-  - stays
-  - indefinitely
-  - balance
-  - charged
-  key_tokens_wiki:
-  - entering
-  - pin
-  - above
-  - incur
-  - dormancy
-  - fees
-  - stays
-  - indefinitely
-  - balance
-  - charged
-  generation_notes: Expanded with conversational filler and context around the usage
-    of a gift card.
-- paraphrase_id: verbosity_expansion-007
-  paraphrase_type: verbosity_expansion
-  text: Hey there! I hope you’re having a great day. I was just wondering about the
-    whole review system because I want to make sure my feedback counts for something.
-    Could you tell me how a verified-purchase review differs from an unverified one,
-    especially in terms of its impact on the overall rating? Also, how long do I have
-    to submit a review after receiving my product?
+  - redeeming
+  - credits
+  - dashboard
+  - convert
+  - increments
+  - increment
+  - hard
+  - earned
+  - reflecting
+  - encountering
+- paraphrase_id: synonym--019
+  paraphrase_type: synonym_swap
+  text: How long does it take for my product review to appear on your site after I
+    submit it?
   gold_docs_section_id: product_information.md#product-reviews
   key_tokens_docs:
-  - reviews
-  - badge
-  - weighted
-  - heavily
-  - average
-  - rating
-  - unverified
-  - review
-  - submitted
-  - containing
+  - opinions
+  - trustworthy
+  - invitation
+  - leave
+  - firsthand
+  - sharing
+  - thoughts
+  - authenticity
+  - buyers
+  - moderation
   key_tokens_wiki:
-  - reviews
-  - badge
-  - weighted
-  - heavily
-  - average
-  - rating
-  - unverified
-  - review
-  - submitted
-  - containing
-  generation_notes: Expanded on the question to include personal context and a desire
-    for understanding.
-- paraphrase_id: verbosity_expansion-008
-  paraphrase_type: verbosity_expansion
-  text: Hey there! I hope you're having a great day. I was just going through my security
-    settings and had a quick question about managing my trusted devices. If I decide
-    to remove a specific device from the list, does that mean I’ll have to go through
-    the two-factor authentication process again the next time I log in from that device?
-    Thanks for your help!
-  gold_docs_section_id: account_security.md#managing-trusted-devices
+  - opinions
+  - trustworthy
+  - invitation
+  - leave
+  - firsthand
+  - sharing
+  - thoughts
+  - authenticity
+  - buyers
+  - moderation
+- paraphrase_id: synonym--020
+  paraphrase_type: synonym_swap
+  text: Will my delivery be delayed if there's a sudden increase in orders?
+  gold_docs_section_id: shipping_options.md#standard-delivery
   key_tokens_docs:
-  - devices
-  - appears
-  - individually
-  - signed
-  - forces
-  - challenge
-  - signs
-  - all
-  - out
-  - removing
+  - doorstep
+  - otherwise
+  - great
+  - incentive
+  - specified
+  - heavy
+  - reliable
+  - stated
+  - periods
+  - domestic
   key_tokens_wiki:
-  - devices
-  - appears
-  - individually
-  - signed
-  - forces
-  - challenge
-  - signs
-  - all
-  - out
-  - removing
-  generation_notes: Expanded with polite framing and context around device management.
-- paraphrase_id: specificity_narrowing-001
-  paraphrase_type: specificity_narrowing
-  text: What is the discount percentage applied to subscription orders?
-  gold_docs_section_id: subscription_orders.md#setting-up-a-subscription
-  key_tokens_docs:
-  - consumable
-  - products
-  - such
-  - filters
-  - batteries
-  - recurring
-  - intervals
-  - sixty
-  - eligible
-  - ninety
-  key_tokens_wiki:
-  - consumable
-  - products
-  - such
-  - filters
-  - batteries
-  - recurring
-  - intervals
-  - sixty
-  - eligible
-  - ninety
-  generation_notes: targeted sub-fact = subscription orders five percent discount
-- paraphrase_id: specificity_narrowing-002
-  paraphrase_type: specificity_narrowing
-  text: What happens to the cancel button once the packing stage begins?
-  gold_docs_section_id: order_management.md#cancel-an-order
-  key_tokens_docs:
-  - long
-  - cancel
-  - button
-  - disappears
-  - refuse
-  - start
-  - multi
-  - cancels
-  - partial
-  - cancellation
-  key_tokens_wiki:
-  - long
-  - cancel
-  - button
-  - disappears
-  - refuse
-  - start
-  - multi
-  - cancels
-  - partial
-  - cancellation
-  generation_notes: targeted sub-fact = cancel button disappears after packing begins
-- paraphrase_id: specificity_narrowing-003
-  paraphrase_type: specificity_narrowing
-  text: What is the exception to the delivered-duty-paid arrangement for import duties
-    and taxes?
-  gold_docs_section_id: international_shipping.md#customs-and-duties
-  key_tokens_docs:
-  - import
-  - delivered
-  - duty
-  - paid
-  - arrangement
-  - bills
-  - assessed
-  - office
-  - hard
-  - estimate
-  key_tokens_wiki:
-  - import
-  - delivered
-  - duty
-  - paid
-  - arrangement
-  - bills
-  - assessed
-  - office
-  - hard
-  - estimate
-  generation_notes: targeted sub-fact = exception to delivered-duty-paid arrangement
-- paraphrase_id: specificity_narrowing-004
-  paraphrase_type: specificity_narrowing
-  text: What happens when the stock count for a product reaches zero?
-  gold_docs_section_id: product_information.md#stock-availability
-  key_tokens_docs:
-  - count
-  - drawn
-  - nearest
-  - fulfilment
-  - centre
-  - fewer
-  - remain
-  - displays
-  - low
-  - banner
-  key_tokens_wiki:
-  - count
-  - drawn
-  - nearest
-  - fulfilment
-  - centre
-  - fewer
-  - remain
-  - displays
-  - low
-  - banner
-  generation_notes: targeted sub-fact = stock count reaches zero
-- paraphrase_id: specificity_narrowing-005
-  paraphrase_type: specificity_narrowing
-  text: If I cancel my order before it ships, how long will it take for the authorisation
-    hold to be released by my bank?
-  gold_docs_section_id: payment_methods.md#payment-authorization
-  key_tokens_docs:
-  - authorise
-  - funds
-  - issuing
-  - split
-  - shipments
-  - see
-  - several
-  - smaller
-  - we
-  - capture
-  key_tokens_wiki:
-  - authorise
-  - funds
-  - issuing
-  - split
-  - shipments
-  - see
-  - several
-  - smaller
-  - we
-  - capture
-  generation_notes: targeted sub-fact = order cancellation + 3-5 business days
-- paraphrase_id: specificity_narrowing-006
-  paraphrase_type: specificity_narrowing
-  text: What are the three most common reasons for a payment decline?
-  gold_docs_section_id: payment_methods.md#failed-payments
-  key_tokens_docs:
-  - held
-  - pending
-  - state
-  - update
-  - common
-  - decline
-  - reasons
-  - incorrect
-  - expired
-  - records
-  key_tokens_wiki:
-  - held
-  - pending
-  - state
-  - update
-  - common
-  - decline
-  - reasons
-  - incorrect
-  - expired
-  - records
-  generation_notes: targeted sub-fact = common decline reasons
-- paraphrase_id: specificity_narrowing-007
-  paraphrase_type: specificity_narrowing
-  text: What is the time frame for the inspection team to verify the condition of
-    a returned item?
-  gold_docs_section_id: returns_policy.md#refund-processing-time
-  key_tokens_docs:
-  - warehouse
-  - inspection
-  - team
-  - verifies
-  - condition
-  - refunds
-  - paying
-  - transfer
-  - allow
-  - additional
-  key_tokens_wiki:
-  - warehouse
-  - inspection
-  - team
-  - verifies
-  - condition
-  - refunds
-  - paying
-  - transfer
-  - allow
-  - additional
-  generation_notes: targeted sub-fact = inspection time for returned items
-- paraphrase_id: specificity_narrowing-008
-  paraphrase_type: specificity_narrowing
-  text: What is the restocking fee for large appliances returned without a manufacturing
-    defect?
+  - doorstep
+  - otherwise
+  - great
+  - incentive
+  - specified
+  - heavy
+  - reliable
+  - stated
+  - periods
+  - domestic
+- paraphrase_id: synonym--021
+  paraphrase_type: synonym_swap
+  text: Will I be charged a restocking fee if I return a defective item from Acme
+    Shop?
   gold_docs_section_id: returns_policy.md#restocking-fee
   key_tokens_docs:
   - large
   - appliances
-  - custom
-  - configured
-  - restocking
-  - manufacturing
-  - defect
-  - catalogue
-  - have
-  - electronics
+  - manuals
+  - exceptions
+  - waived
+  - applies
+  - furniture
+  - managing
+  - inventory
+  - complications
   key_tokens_wiki:
   - large
   - appliances
-  - custom
-  - configured
-  - restocking
-  - manufacturing
-  - defect
-  - catalogue
-  - have
-  - electronics
-  generation_notes: targeted sub-fact = large appliances +15% restocking fee
-- paraphrase_id: implicit_reference-001
-  paraphrase_type: implicit_reference
-  text: Will a lower advertised price be matched if it's from a retailer on the approved
-    list?
+  - manuals
+  - exceptions
+  - waived
+  - applies
+  - furniture
+  - managing
+  - inventory
+  - complications
+- paraphrase_id: synonym--022
+  paraphrase_type: synonym_swap
+  text: How do I securely reset my password for my Acme Shop account?
+  gold_docs_section_id: account_management.md#password-reset
+  key_tokens_docs:
+  - forgotten
+  - don
+  - worry
+  - resetting
+  - homepage
+  - sign
+  - eight
+  - mix
+  - letters
+  - numbers
+  key_tokens_wiki:
+  - forgotten
+  - don
+  - worry
+  - resetting
+  - homepage
+  - sign
+  - eight
+  - mix
+  - letters
+  - numbers
+- paraphrase_id: synonym--023
+  paraphrase_type: synonym_swap
+  text: When will my backordered item be restocked, and how can I check its status?
+  gold_docs_section_id: order_management.md#backordered-items
+  key_tokens_docs:
+  - backordered
+  - assure
+  - diligently
+  - suppliers
+  - replenish
+  - won
+  - multiple
+  - adjustments
+  - compensation
+  - gesture
+  key_tokens_wiki:
+  - backordered
+  - assure
+  - diligently
+  - suppliers
+  - replenish
+  - won
+  - multiple
+  - adjustments
+  - compensation
+  - gesture
+- paraphrase_id: synonym--024
+  paraphrase_type: synonym_swap
+  text: Can I combine orders if they include perishable or backordered items at Acme
+    Shop?
+  gold_docs_section_id: order_management.md#combine-orders
+  key_tokens_docs:
+  - combine
+  - yet
+  - grouped
+  - together
+  - delaying
+  - combinations
+  - contains
+  - combining
+  - hesitate
+  - valued
+  key_tokens_wiki:
+  - combine
+  - yet
+  - grouped
+  - together
+  - delaying
+  - combinations
+  - contains
+  - combining
+  - hesitate
+  - valued
+- paraphrase_id: synonym--025
+  paraphrase_type: synonym_swap
+  text: How can I replace my lost Acme Shop gift card?
+  gold_docs_section_id: gift_cards.md#lost-gift-cards
+  key_tokens_docs:
+  - misplaced
+  - lost
+  - ability
+  - replace
+  - met
+  - streamlined
+  - nominal
+  - reissuance
+  - partially
+  - registering
+  key_tokens_wiki:
+  - misplaced
+  - lost
+  - ability
+  - replace
+  - met
+  - streamlined
+  - nominal
+  - reissuance
+  - partially
+  - registering
+- paraphrase_id: synonym--026
+  paraphrase_type: synonym_swap
+  text: How do I quickly file a damage claim with Acme Shop?
+  gold_docs_section_id: damaged_items.md#reporting-damage
+  key_tokens_docs:
+  - frustrating
+  - question
+  - showing
+  - returning
+  - preference
+  - extenuating
+  - exception
+  - reporting
+  - report
+  - navigating
+  key_tokens_wiki:
+  - frustrating
+  - question
+  - showing
+  - returning
+  - preference
+  - extenuating
+  - exception
+  - reporting
+  - report
+  - navigating
+- paraphrase_id: synonym--027
+  paraphrase_type: synonym_swap
+  text: How will changes in subscription prices affect my current and prepaid plans?
+  gold_docs_section_id: subscription_orders.md#subscription-pricing-changes
+  key_tokens_docs:
+  - ways
+  - increase
+  - subscribed
+  - ample
+  - decide
+  - effect
+  - existing
+  - concluded
+  - decrease
+  - reduced
+  key_tokens_wiki:
+  - ways
+  - increase
+  - subscribed
+  - ample
+  - decide
+  - effect
+  - existing
+  - concluded
+  - decrease
+  - reduced
+- paraphrase_id: synonym--028
+  paraphrase_type: synonym_swap
+  text: How do I request a price match at Acme Shop within 14 days of purchase?
   gold_docs_section_id: price_matching.md#price-match-eligibility
   key_tokens_docs:
-  - lower
-  - advertised
-  - identical
-  - short
-  - retailers
+  - guarantee
+  - deal
+  - color
   - competing
-  - sold
-  - shipped
-  - retailer
-  - third
-  key_tokens_wiki:
-  - lower
+  - competitors
   - advertised
-  - identical
-  - short
-  - retailers
+  - stores
+  - advertisement
+  - flash
+  - bundle
+  key_tokens_wiki:
+  - guarantee
+  - deal
+  - color
   - competing
-  - sold
-  - shipped
-  - retailer
-  - third
-  generation_notes: stripped subject = price match eligibility
-- paraphrase_id: implicit_reference-002
-  paraphrase_type: implicit_reference
-  text: How do I get the difference refunded if I find a lower price?
-  gold_docs_section_id: price_matching.md#requesting-a-price-match
-  key_tokens_docs:
-  - competitor
-  - listing
-  - refunded
-  - difference
-  - limited
-  - discourage
-  - reselling
-  - match
-  - requested
-  - fourteen
-  key_tokens_wiki:
-  - competitor
-  - listing
-  - refunded
-  - difference
-  - limited
-  - discourage
-  - reselling
-  - match
-  - requested
-  - fourteen
-  generation_notes: stripped subject = price match
-- paraphrase_id: implicit_reference-003
-  paraphrase_type: implicit_reference
-  text: How do I use the balance at checkout if it’s not enough to cover the total?
-  gold_docs_section_id: gift_cards.md#redeeming-a-gift-card
-  key_tokens_docs:
-  - entering
-  - pin
-  - above
-  - incur
-  - dormancy
-  - fees
-  - stays
-  - indefinitely
-  - balance
-  - charged
-  key_tokens_wiki:
-  - entering
-  - pin
-  - above
-  - incur
-  - dormancy
-  - fees
-  - stays
-  - indefinitely
-  - balance
-  - charged
-  generation_notes: stripped subject = gift card
-- paraphrase_id: implicit_reference-004
-  paraphrase_type: implicit_reference
-  text: Can different types of discounts be used together on an order?
+  - competitors
+  - advertised
+  - stores
+  - advertisement
+  - flash
+  - bundle
+- paraphrase_id: synonym--029
+  paraphrase_type: synonym_swap
+  text: Can I use multiple promo codes at once to save more on my Acme Shop order?
   gold_docs_section_id: promo_codes.md#stacking-rules
   key_tokens_docs:
-  - codes
+  - deals
+  - consistent
+  - stacking
+  - manner
+  - beneficial
+  - parties
+  - tied
   - stacked
-  - percentage
-  - loyalty
-  - redemption
-  - discounts
-  - different
-  - parts
-  - promotional
-  - other
+  - uncertainties
+  - rules
   key_tokens_wiki:
-  - codes
+  - deals
+  - consistent
+  - stacking
+  - manner
+  - beneficial
+  - parties
+  - tied
   - stacked
-  - percentage
-  - loyalty
-  - redemption
-  - discounts
-  - different
-  - parts
-  - promotional
-  - other
-  generation_notes: stripped subject = promotional codes
-- paraphrase_id: implicit_reference-005
-  paraphrase_type: implicit_reference
-  text: What happens to saved payment methods and order history when it's closed?
-  gold_docs_section_id: account_management.md#close-account
+  - uncertainties
+  - rules
+- paraphrase_id: synonym--030
+  paraphrase_type: synonym_swap
+  text: How can I make sure my Acme Shop order arrives on time and without extra customs
+    fees?
+  gold_docs_section_id: international_shipping.md#customs-and-duties
   key_tokens_docs:
-  - permanently
-  - close
-  - privacy
-  - closing
-  - removes
-  - saved
-  - methods
-  - addresses
-  - retained
-  - years
+  - handled
+  - referred
+  - control
+  - levied
+  - authority
+  - therefore
+  - regulations
+  - declared
+  - office
+  - frame
   key_tokens_wiki:
-  - permanently
-  - close
-  - privacy
-  - closing
-  - removes
-  - saved
-  - methods
-  - addresses
-  - retained
-  - years
-  generation_notes: stripped subject = account
-- paraphrase_id: implicit_reference-006
-  paraphrase_type: implicit_reference
-  text: How long will it take for the refund to show up after the item is returned?
-  gold_docs_section_id: returns_policy.md#refund-processing-time
+  - handled
+  - referred
+  - control
+  - levied
+  - authority
+  - therefore
+  - regulations
+  - declared
+  - office
+  - frame
+- paraphrase_id: synonym--031
+  paraphrase_type: synonym_swap
+  text: How do I keep my warranty valid at Acme Shop?
+  gold_docs_section_id: product_care.md#warranty-implications
   key_tokens_docs:
-  - warehouse
-  - inspection
-  - team
-  - verifies
-  - condition
-  - refunds
-  - paying
-  - transfer
-  - allow
-  - additional
+  - stand
+  - warranties
+  - failures
+  - void
+  - specifies
+  - result
+  - similarly
+  - exposed
+  - limits
+  - temperatures
   key_tokens_wiki:
-  - warehouse
-  - inspection
-  - team
-  - verifies
-  - condition
-  - refunds
-  - paying
-  - transfer
-  - allow
-  - additional
-  generation_notes: stripped subject = refund
-- paraphrase_id: implicit_reference-007
-  paraphrase_type: implicit_reference
-  text: Which countries can receive shipments?
-  gold_docs_section_id: international_shipping.md#supported-countries
+  - stand
+  - warranties
+  - failures
+  - void
+  - specifies
+  - result
+  - similarly
+  - exposed
+  - limits
+  - temperatures
+- paraphrase_id: synonym--032
+  paraphrase_type: synonym_swap
+  text: How can I quickly contact Acme Shop for urgent issues with my order?
+  gold_docs_section_id: customer_support.md#contact-channels
   key_tokens_docs:
-  - canada
-  - kingdom
-  - european
-  - union
-  - australia
-  - japan
-  - countries
-  - expands
-  - periodically
-  - display
+  - suit
+  - bottom
+  - connected
+  - emails
+  - channel
+  - useful
+  - explanations
+  - prefer
+  - speaking
+  - hotline
   key_tokens_wiki:
-  - canada
-  - kingdom
-  - european
-  - union
-  - australia
-  - japan
-  - countries
-  - expands
-  - periodically
-  - display
-  generation_notes: stripped subject = countries
-- paraphrase_id: implicit_reference-008
-  paraphrase_type: implicit_reference
-  text: What happens if I try to return something after 30 days?
+  - suit
+  - bottom
+  - connected
+  - emails
+  - channel
+  - useful
+  - explanations
+  - prefer
+  - speaking
+  - hotline
+- paraphrase_id: synonym--033
+  paraphrase_type: synonym_swap
+  text: What's the difference between returning regular items and perishable goods
+    at Acme Shop?
   gold_docs_section_id: returns_policy.md#return-window
   key_tokens_docs:
-  - accompanied
-  - handled
-  - case
-  - basis
-  - cash
-  - most
-  - full
-  - its
-  - packaging
-  - receipt
+  - sometimes
+  - expectations
+  - exchange
+  - unused
+  - tags
+  - intact
+  - standards
+  - customized
+  - intimate
+  - pleasant
   key_tokens_wiki:
-  - accompanied
+  - sometimes
+  - expectations
+  - exchange
+  - unused
+  - tags
+  - intact
+  - standards
+  - customized
+  - intimate
+  - pleasant
+- paraphrase_id: synonym--034
+  paraphrase_type: synonym_swap
+  text: What might cause delays in the delivery of my international order?
+  gold_docs_section_id: international_shipping.md#international-delivery-times
+  key_tokens_docs:
+  - estimates
+  - exclude
+  - weekends
+  - advise
+  - black
+  - holiday
+  - shipments
+  - faster
+  - reduce
+  - transit
+  key_tokens_wiki:
+  - estimates
+  - exclude
+  - weekends
+  - advise
+  - black
+  - holiday
+  - shipments
+  - faster
+  - reduce
+  - transit
+- paraphrase_id: synonym--035
+  paraphrase_type: synonym_swap
+  text: What happens to the leftover balance on my gift card if it's more than my
+    order total?
+  gold_docs_section_id: gift_cards.md#redeeming-a-gift-card
+  key_tokens_docs:
+  - finished
+  - deduct
+  - exceeds
+  - saved
+  - conversely
+  - surpasses
+  - attempting
+  - themselves
+  - typing
+  - errors
+  key_tokens_wiki:
+  - finished
+  - deduct
+  - exceeds
+  - saved
+  - conversely
+  - surpasses
+  - attempting
+  - themselves
+  - typing
+  - errors
+- paraphrase_id: synonym--036
+  paraphrase_type: synonym_swap
+  text: How do I cancel an order that's already processed compared to one that isn't
+    at Acme Shop?
+  gold_docs_section_id: order_management.md#cancel-an-order
+  key_tokens_docs:
+  - cancelled
+  - shortly
+  - thereafter
+  - cancelling
+  - act
+  - able
+  - swiftly
+  - means
+  - cancellation
+  - arrives
+  key_tokens_wiki:
+  - cancelled
+  - shortly
+  - thereafter
+  - cancelling
+  - act
+  - able
+  - swiftly
+  - means
+  - cancellation
+  - arrives
+- paraphrase_id: synonym--037
+  paraphrase_type: synonym_swap
+  text: How does tracking my order differ for domestic versus international shipments
+    at Acme Shop?
+  gold_docs_section_id: shipping_options.md#order-tracking
+  key_tokens_docs:
+  - knowing
+  - delayed
+  - end
+  - notice
+  - arrived
+  - delay
+  - frequent
+  - view
+  - track
+  - updates
+  key_tokens_wiki:
+  - knowing
+  - delayed
+  - end
+  - notice
+  - arrived
+  - delay
+  - frequent
+  - view
+  - track
+  - updates
+- paraphrase_id: synonym--038
+  paraphrase_type: synonym_swap
+  text: How do I remove a device from my trusted list on Acme Shop?
+  gold_docs_section_id: account_security.md#managing-trusted-devices
+  key_tokens_docs:
+  - trust
+  - last
+  - regularly
+  - recognize
+  - removed
+  - incurs
+  - removing
+  - interrupt
+  - suspect
+  - prioritize
+  key_tokens_wiki:
+  - trust
+  - last
+  - regularly
+  - recognize
+  - removed
+  - incurs
+  - removing
+  - interrupt
+  - suspect
+  - prioritize
+- paraphrase_id: synonym--039
+  paraphrase_type: synonym_swap
+  text: How long does it take for Acme Shop to process and deliver bulk orders domestically
+    and internationally?
+  gold_docs_section_id: bulk_orders.md#fulfilment-and-lead-times
+  key_tokens_docs:
+  - fulfilment
+  - reliability
+  - verifies
+  - prepares
+  - lead
+  - varying
+  - expect
+  - way
+  - adverse
+  - placement
+  key_tokens_wiki:
+  - fulfilment
+  - reliability
+  - verifies
+  - prepares
+  - lead
+  - varying
+  - expect
+  - way
+  - adverse
+  - placement
+- paraphrase_id: synonym--040
+  paraphrase_type: synonym_swap
+  text: Do you accept Visa and MasterCard at Acme Shop?
+  gold_docs_section_id: payment_methods.md#accepted-cards
+  key_tokens_docs:
+  - accept
+  - visa
+  - mastercard
+  - american
+  - discover
+  - processor
+  - protected
+  - foreign
+  - statement
+  - limit
+  key_tokens_wiki:
+  - accept
+  - visa
+  - mastercard
+  - american
+  - discover
+  - processor
+  - protected
+  - foreign
+  - statement
+  - limit
+- paraphrase_id: synonym--041
+  paraphrase_type: synonym_swap
+  text: How do I qualify for volume discounts at Acme Shop, and are sale items included?
+  gold_docs_section_id: bulk_orders.md#volume-discounts
+  key_tokens_docs:
+  - volume
+  - ordered
+  - increases
+  - sku
+  - coupon
+  - excluded
+  - planning
+  - projects
+  - recalculated
+  - revised
+  key_tokens_wiki:
+  - volume
+  - ordered
+  - increases
+  - sku
+  - coupon
+  - excluded
+  - planning
+  - projects
+  - recalculated
+  - revised
+- paraphrase_id: synonym--042
+  paraphrase_type: synonym_swap
+  text: What's the best way to figure out my size using your charts and instructions?
+  gold_docs_section_id: product_information.md#size-guide
+  key_tokens_docs:
+  - fit
+  - developed
+  - sizing
+  - charts
+  - effectively
+  - locating
+  - footwear
+  - chart
+  - measurements
+  - chest
+  key_tokens_wiki:
+  - fit
+  - developed
+  - sizing
+  - charts
+  - effectively
+  - locating
+  - footwear
+  - chart
+  - measurements
+  - chest
+- paraphrase_id: synonym--043
+  paraphrase_type: synonym_swap
+  text: How do I set up an auto-replenishment subscription on Acme Shop?
+  gold_docs_section_id: subscription_orders.md#setting-up-a-subscription
+  key_tokens_docs:
+  - enroll
+  - replenishment
+  - subscribe
+  - frequency
+  - weekly
+  - monthly
+  - intervals
+  - shorter
+  - shelf
+  - lives
+  key_tokens_wiki:
+  - enroll
+  - replenishment
+  - subscribe
+  - frequency
+  - weekly
+  - monthly
+  - intervals
+  - shorter
+  - shelf
+  - lives
+- paraphrase_id: synonym--044
+  paraphrase_type: synonym_swap
+  text: How do triple-point days work, and how can I maximize my points during these
+    events?
+  gold_docs_section_id: loyalty_program.md#earning-points
+  key_tokens_docs:
+  - rewards
+  - earning
+  - accumulate
+  - earn
+  - reward
+  - except
+  - completion
+  - boost
+  - bonus
+  - participating
+  key_tokens_wiki:
+  - rewards
+  - earning
+  - accumulate
+  - earn
+  - reward
+  - except
+  - completion
+  - boost
+  - bonus
+  - participating
+- paraphrase_id: synonym--045
+  paraphrase_type: synonym_swap
+  text: How long does it take to get a refund during busy times, and does my payment
+    method change that?
+  gold_docs_section_id: returns_policy.md#refund-processing-time
+  key_tokens_docs:
+  - volumes
+  - post
+  - wallets
+  - retained
+  - finalized
+  - allowed
+  - warehouse
+  - thoroughly
+  - slightly
+  - increased
+  key_tokens_wiki:
+  - volumes
+  - post
+  - wallets
+  - retained
+  - finalized
+  - allowed
+  - warehouse
+  - thoroughly
+  - slightly
+  - increased
+- paraphrase_id: synonym--046
+  paraphrase_type: synonym_swap
+  text: How does choosing expedited shipping affect the delivery time for a replacement
+    item?
+  gold_docs_section_id: damaged_items.md#replacement-process
+  key_tokens_docs:
+  - initiated
+  - covers
+  - report
+  - initial
+  - progress
+  - contingent
+  - reporting
+  - discontinued
+  - equivalent
+  - dispatch
+  key_tokens_wiki:
+  - initiated
+  - covers
+  - report
+  - initial
+  - progress
+  - contingent
+  - reporting
+  - discontinued
+  - equivalent
+  - dispatch
+- paraphrase_id: synonym--047
+  paraphrase_type: synonym_swap
+  text: How long does it take for my payment to be released after I cancel an order?
+  gold_docs_section_id: payment_methods.md#payment-authorization
+  key_tokens_docs:
+  - authorization
+  - goes
+  - initially
+  - sends
+  - actually
+  - transferred
+  - lasts
+  - captures
+  - capturing
+  - transferring
+  key_tokens_wiki:
+  - authorization
+  - goes
+  - initially
+  - sends
+  - actually
+  - transferred
+  - lasts
+  - captures
+  - capturing
+  - transferring
+- paraphrase_id: synonym--048
+  paraphrase_type: synonym_swap
+  text: What do I need to give someone else to pick up my order for me?
+  gold_docs_section_id: store_pickup.md#pickup-identification
+  key_tokens_docs:
+  - identification
+  - collecting
+  - issued
+  - acceptable
+  - forms
+  - driver
+  - passport
+  - state
+  - safely
+  - handed
+  key_tokens_wiki:
+  - identification
+  - collecting
+  - issued
+  - acceptable
+  - forms
+  - driver
+  - passport
+  - state
+  - safely
+  - handed
+- paraphrase_id: synonym--049
+  paraphrase_type: synonym_swap
+  text: Can you tell me who can use promo codes on Acme Shop orders?
+  gold_docs_section_id: promo_codes.md#applying-a-code
+  key_tokens_docs:
+  - applying
+  - precisely
+  - sensitivity
+  - validated
+  - summary
+  - exclusions
+  - glitch
+  - problem
+  - explicitly
+  - added
+  key_tokens_wiki:
+  - applying
+  - precisely
+  - sensitivity
+  - validated
+  - summary
+  - exclusions
+  - glitch
+  - problem
+  - explicitly
+  - added
+- paraphrase_id: synonym--050
+  paraphrase_type: synonym_swap
+  text: What's the best way to clean my Acme device after it's been in a dust storm?
+  gold_docs_section_id: product_care.md#cleaning-instructions
+  key_tokens_docs:
+  - aesthetic
+  - appeal
+  - upholstery
+  - gentle
+  - detergent
+  - cold
+  - water
+  - delicate
+  - protective
+  - mesh
+  key_tokens_wiki:
+  - aesthetic
+  - appeal
+  - upholstery
+  - gentle
+  - detergent
+  - cold
+  - water
+  - delicate
+  - protective
+  - mesh
+- paraphrase_id: word-reo-001
+  paraphrase_type: word_reorder
+  text: How can I track my Acme Shop order, especially if there are delays or it's
+    being shipped internationally?
+  gold_docs_section_id: shipping_options.md#order-tracking
+  key_tokens_docs:
+  - knowing
+  - delayed
+  - end
+  - notice
+  - arrived
+  - delay
+  - frequent
+  - view
+  - track
+  - updates
+  key_tokens_wiki:
+  - knowing
+  - delayed
+  - end
+  - notice
+  - arrived
+  - delay
+  - frequent
+  - view
+  - track
+  - updates
+- paraphrase_id: word-reo-002
+  paraphrase_type: word_reorder
+  text: How long does it usually take for international orders to arrive with your
+    Standard Delivery service?
+  gold_docs_section_id: shipping_options.md#standard-delivery
+  key_tokens_docs:
+  - doorstep
+  - otherwise
+  - great
+  - incentive
+  - specified
+  - heavy
+  - reliable
+  - stated
+  - periods
+  - domestic
+  key_tokens_wiki:
+  - doorstep
+  - otherwise
+  - great
+  - incentive
+  - specified
+  - heavy
+  - reliable
+  - stated
+  - periods
+  - domestic
+- paraphrase_id: word-reo-003
+  paraphrase_type: word_reorder
+  text: How do I safely update my email address on my Acme Shop account?
+  gold_docs_section_id: account_management.md#update-email-address
+  key_tokens_docs:
+  - profile
+  - locate
+  - revert
+  - done
+  - old
+  - go
+  - update
+  - credentials
+  - found
+  - top
+  key_tokens_wiki:
+  - profile
+  - locate
+  - revert
+  - done
+  - old
+  - go
+  - update
+  - credentials
+  - found
+  - top
+- paraphrase_id: word-reo-004
+  paraphrase_type: word_reorder
+  text: How do I permanently close my Acme Shop account and make sure everything is
+    done correctly?
+  gold_docs_section_id: account_management.md#close-account
+  key_tokens_docs:
+  - decided
+  - permanently
+  - closure
+  - menu
+  - prompts
+  - closed
+  - deleted
+  - undone
+  - proceeding
+  - outstanding
+  key_tokens_wiki:
+  - decided
+  - permanently
+  - closure
+  - menu
+  - prompts
+  - closed
+  - deleted
+  - undone
+  - proceeding
+  - outstanding
+- paraphrase_id: word-reo-005
+  paraphrase_type: word_reorder
+  text: What's the difference between your expedited and next-day delivery options?
+  gold_docs_section_id: shipping_options.md#expedited-delivery
+  key_tokens_docs:
+  - getting
+  - hurry
+  - instantly
+  - very
+  - rural
+  - surcharge
+  - proactively
+  - work
+  - urgent
+  - guarantees
+  key_tokens_wiki:
+  - getting
+  - hurry
+  - instantly
+  - very
+  - rural
+  - surcharge
+  - proactively
+  - work
+  - urgent
+  - guarantees
+- paraphrase_id: word-reo-006
+  paraphrase_type: word_reorder
+  text: How long does it take for a payment hold to be released after I cancel my
+    order?
+  gold_docs_section_id: payment_methods.md#payment-authorization
+  key_tokens_docs:
+  - authorization
+  - goes
+  - initially
+  - sends
+  - actually
+  - transferred
+  - lasts
+  - captures
+  - capturing
+  - transferring
+  key_tokens_wiki:
+  - authorization
+  - goes
+  - initially
+  - sends
+  - actually
+  - transferred
+  - lasts
+  - captures
+  - capturing
+  - transferring
+- paraphrase_id: word-reo-007
+  paraphrase_type: word_reorder
+  text: How do I get help from a specialist if my issue isn't resolved?
+  gold_docs_section_id: customer_support.md#escalation-process
+  key_tokens_docs:
+  - escalation
+  - deserve
+  - contacted
+  - unresolved
+  - escalated
+  - specialist
+  - specialists
+  - glitches
+  - escalate
+  - document
+  key_tokens_wiki:
+  - escalation
+  - deserve
+  - contacted
+  - unresolved
+  - escalated
+  - specialist
+  - specialists
+  - glitches
+  - escalate
+  - document
+- paraphrase_id: word-reo-008
+  paraphrase_type: word_reorder
+  text: Can I use multiple promo codes at once to save more on my Acme Shop order?
+  gold_docs_section_id: promo_codes.md#stacking-rules
+  key_tokens_docs:
+  - deals
+  - consistent
+  - stacking
+  - manner
+  - beneficial
+  - parties
+  - tied
+  - stacked
+  - uncertainties
+  - rules
+  key_tokens_wiki:
+  - deals
+  - consistent
+  - stacking
+  - manner
+  - beneficial
+  - parties
+  - tied
+  - stacked
+  - uncertainties
+  - rules
+- paraphrase_id: word-reo-009
+  paraphrase_type: word_reorder
+  text: How do I cancel my order with Acme Shop before it's processed?
+  gold_docs_section_id: order_management.md#cancel-an-order
+  key_tokens_docs:
+  - cancelled
+  - shortly
+  - thereafter
+  - cancelling
+  - act
+  - able
+  - swiftly
+  - means
+  - cancellation
+  - arrives
+  key_tokens_wiki:
+  - cancelled
+  - shortly
+  - thereafter
+  - cancelling
+  - act
+  - able
+  - swiftly
+  - means
+  - cancellation
+  - arrives
+- paraphrase_id: word-reo-010
+  paraphrase_type: word_reorder
+  text: What should I do to change my pickup location if the store suddenly closes?
+  gold_docs_section_id: store_pickup.md#buy-online-pick-up-in-store
+  key_tokens_docs:
+  - browsing
+  - catalog
+  - preferred
+  - zip
+  - accommodate
+  - bring
+  - collected
+  - associates
+  - pickup
+  - adding
+  key_tokens_wiki:
+  - browsing
+  - catalog
+  - preferred
+  - zip
+  - accommodate
+  - bring
+  - collected
+  - associates
+  - pickup
+  - adding
+- paraphrase_id: word-reo-011
+  paraphrase_type: word_reorder
+  text: How can I authorize someone else to pick up my order for me?
+  gold_docs_section_id: store_pickup.md#pickup-identification
+  key_tokens_docs:
+  - identification
+  - collecting
+  - issued
+  - acceptable
+  - forms
+  - driver
+  - passport
+  - state
+  - safely
+  - handed
+  key_tokens_wiki:
+  - identification
+  - collecting
+  - issued
+  - acceptable
+  - forms
+  - driver
+  - passport
+  - state
+  - safely
+  - handed
+- paraphrase_id: word-reo-012
+  paraphrase_type: word_reorder
+  text: How do I start a product subscription on Acme Shop?
+  gold_docs_section_id: subscription_orders.md#setting-up-a-subscription
+  key_tokens_docs:
+  - enroll
+  - replenishment
+  - subscribe
+  - frequency
+  - weekly
+  - monthly
+  - intervals
+  - shorter
+  - shelf
+  - lives
+  key_tokens_wiki:
+  - enroll
+  - replenishment
+  - subscribe
+  - frequency
+  - weekly
+  - monthly
+  - intervals
+  - shorter
+  - shelf
+  - lives
+- paraphrase_id: word-reo-013
+  paraphrase_type: word_reorder
+  text: How long does it take to receive a digital gift card during busy times, and
+    are there any extra charges?
+  gold_docs_section_id: gift_cards.md#purchase-and-delivery
+  key_tokens_docs:
+  - convenience
+  - folders
+  - continental
+  - reroute
+  - sending
+  - redeemable
+  - ultimate
+  - physical
+  - buy
+  - recipient
+  key_tokens_wiki:
+  - convenience
+  - folders
+  - continental
+  - reroute
+  - sending
+  - redeemable
+  - ultimate
+  - physical
+  - buy
+  - recipient
+- paraphrase_id: word-reo-014
+  paraphrase_type: word_reorder
+  text: How can I get expedited shipping for a replacement item from Acme Shop?
+  gold_docs_section_id: damaged_items.md#replacement-process
+  key_tokens_docs:
+  - initiated
+  - covers
+  - report
+  - initial
+  - progress
+  - contingent
+  - reporting
+  - discontinued
+  - equivalent
+  - dispatch
+  key_tokens_wiki:
+  - initiated
+  - covers
+  - report
+  - initial
+  - progress
+  - contingent
+  - reporting
+  - discontinued
+  - equivalent
+  - dispatch
+- paraphrase_id: word-reo-015
+  paraphrase_type: word_reorder
+  text: How do I remove a device from my trusted list in Acme Shop's security settings?
+  gold_docs_section_id: account_security.md#managing-trusted-devices
+  key_tokens_docs:
+  - trust
+  - last
+  - regularly
+  - recognize
+  - removed
+  - incurs
+  - removing
+  - interrupt
+  - suspect
+  - prioritize
+  key_tokens_wiki:
+  - trust
+  - last
+  - regularly
+  - recognize
+  - removed
+  - incurs
+  - removing
+  - interrupt
+  - suspect
+  - prioritize
+- paraphrase_id: word-reo-016
+  paraphrase_type: word_reorder
+  text: How do I securely reset my password for my Acme Shop account?
+  gold_docs_section_id: account_management.md#password-reset
+  key_tokens_docs:
+  - forgotten
+  - don
+  - worry
+  - resetting
+  - homepage
+  - sign
+  - eight
+  - mix
+  - letters
+  - numbers
+  key_tokens_wiki:
+  - forgotten
+  - don
+  - worry
+  - resetting
+  - homepage
+  - sign
+  - eight
+  - mix
+  - letters
+  - numbers
+- paraphrase_id: word-reo-017
+  paraphrase_type: word_reorder
+  text: How do I return an item I bought at Acme Shop within 30 days?
+  gold_docs_section_id: returns_policy.md#return-window
+  key_tokens_docs:
+  - sometimes
+  - expectations
+  - exchange
+  - unused
+  - tags
+  - intact
+  - standards
+  - customized
+  - intimate
+  - pleasant
+  key_tokens_wiki:
+  - sometimes
+  - expectations
+  - exchange
+  - unused
+  - tags
+  - intact
+  - standards
+  - customized
+  - intimate
+  - pleasant
+- paraphrase_id: word-reo-018
+  paraphrase_type: word_reorder
+  text: How would doubling the discount rates at Acme Shop impact my bulk purchase
+    plans?
+  gold_docs_section_id: bulk_orders.md#volume-discounts
+  key_tokens_docs:
+  - volume
+  - ordered
+  - increases
+  - sku
+  - coupon
+  - excluded
+  - planning
+  - projects
+  - recalculated
+  - revised
+  key_tokens_wiki:
+  - volume
+  - ordered
+  - increases
+  - sku
+  - coupon
+  - excluded
+  - planning
+  - projects
+  - recalculated
+  - revised
+- paraphrase_id: word-reo-019
+  paraphrase_type: word_reorder
+  text: What happens if my order is delayed for a long time due to backorder issues?
+  gold_docs_section_id: order_management.md#backordered-items
+  key_tokens_docs:
+  - backordered
+  - assure
+  - diligently
+  - suppliers
+  - replenish
+  - won
+  - multiple
+  - adjustments
+  - compensation
+  - gesture
+  key_tokens_wiki:
+  - backordered
+  - assure
+  - diligently
+  - suppliers
+  - replenish
+  - won
+  - multiple
+  - adjustments
+  - compensation
+  - gesture
+- paraphrase_id: word-reo-020
+  paraphrase_type: word_reorder
+  text: How do I request a price match at Acme Shop, and what are the conditions?
+  gold_docs_section_id: price_matching.md#requesting-a-price-match
+  key_tokens_docs:
+  - qualifying
+  - screenshot
+  - specifications
+  - clubs
+  - bundled
+  - received
+  - affordable
+  - satisfying
+  - prices
+  - valued
+  key_tokens_wiki:
+  - qualifying
+  - screenshot
+  - specifications
+  - clubs
+  - bundled
+  - received
+  - affordable
+  - satisfying
+  - prices
+  - valued
+- paraphrase_id: word-reo-021
+  paraphrase_type: word_reorder
+  text: How can I check the status of my order on my own?
+  gold_docs_section_id: customer_support.md#self-service-resources
+  key_tokens_docs:
+  - self
+  - resources
+  - empower
+  - centre
+  - faqs
+  - intelligent
+  - virtual
+  - extensive
+  - library
+  - articles
+  key_tokens_wiki:
+  - self
+  - resources
+  - empower
+  - centre
+  - faqs
+  - intelligent
+  - virtual
+  - extensive
+  - library
+  - articles
+- paraphrase_id: word-reo-022
+  paraphrase_type: word_reorder
+  text: How long does it take for my review to show up after it's been checked?
+  gold_docs_section_id: product_information.md#product-reviews
+  key_tokens_docs:
+  - opinions
+  - trustworthy
+  - invitation
+  - leave
+  - firsthand
+  - sharing
+  - thoughts
+  - authenticity
+  - buyers
+  - moderation
+  key_tokens_wiki:
+  - opinions
+  - trustworthy
+  - invitation
+  - leave
+  - firsthand
+  - sharing
+  - thoughts
+  - authenticity
+  - buyers
+  - moderation
+- paraphrase_id: word-reo-023
+  paraphrase_type: word_reorder
+  text: How do I change my password if I got a suspicious activity alert on my account?
+  gold_docs_section_id: account_security.md#suspicious-activity
+  key_tokens_docs:
+  - detects
+  - suspicious
+  - activity
+  - concern
+  - irregularities
+  - logins
+  - unfamiliar
+  - ip
+  - identified
+  - unrecognized
+  key_tokens_wiki:
+  - detects
+  - suspicious
+  - activity
+  - concern
+  - irregularities
+  - logins
+  - unfamiliar
+  - ip
+  - identified
+  - unrecognized
+- paraphrase_id: word-reo-024
+  paraphrase_type: word_reorder
+  text: What other ways can I contact Acme Shop if the live chat isn't working?
+  gold_docs_section_id: customer_support.md#contact-channels
+  key_tokens_docs:
+  - suit
+  - bottom
+  - connected
+  - emails
+  - channel
+  - useful
+  - explanations
+  - prefer
+  - speaking
+  - hotline
+  key_tokens_wiki:
+  - suit
+  - bottom
+  - connected
+  - emails
+  - channel
+  - useful
+  - explanations
+  - prefer
+  - speaking
+  - hotline
+- paraphrase_id: word-reo-025
+  paraphrase_type: word_reorder
+  text: How do I redeem my loyalty points at Acme Shop, and is it different from other
+    stores?
+  gold_docs_section_id: loyalty_program.md#redeeming-points
+  key_tokens_docs:
+  - redeeming
+  - credits
+  - dashboard
+  - convert
+  - increments
+  - increment
+  - hard
+  - earned
+  - reflecting
+  - encountering
+  key_tokens_wiki:
+  - redeeming
+  - credits
+  - dashboard
+  - convert
+  - increments
+  - increment
+  - hard
+  - earned
+  - reflecting
+  - encountering
+- paraphrase_id: word-reo-026
+  paraphrase_type: word_reorder
+  text: What credit cards can I use at Acme Shop without worrying about extra fees?
+  gold_docs_section_id: payment_methods.md#accepted-cards
+  key_tokens_docs:
+  - accept
+  - visa
+  - mastercard
+  - american
+  - discover
+  - processor
+  - protected
+  - foreign
+  - statement
+  - limit
+  key_tokens_wiki:
+  - accept
+  - visa
+  - mastercard
+  - american
+  - discover
+  - processor
+  - protected
+  - foreign
+  - statement
+  - limit
+- paraphrase_id: word-reo-027
+  paraphrase_type: word_reorder
+  text: How can I change my shipping address before my order is sent out?
+  gold_docs_section_id: order_management.md#change-shipping-address
+  key_tokens_docs:
+  - transitions
+  - modifications
+  - unfortunately
+  - explore
+  - redirection
+  - possibilities
+  - success
+  - changing
+  - prior
+  - update
+  key_tokens_wiki:
+  - transitions
+  - modifications
+  - unfortunately
+  - explore
+  - redirection
+  - possibilities
+  - success
+  - changing
+  - prior
+  - update
+- paraphrase_id: word-reo-028
+  paraphrase_type: word_reorder
+  text: What's the best way to clean my Acme device after it's been in a dust storm?
+  gold_docs_section_id: product_care.md#cleaning-instructions
+  key_tokens_docs:
+  - aesthetic
+  - appeal
+  - upholstery
+  - gentle
+  - detergent
+  - cold
+  - water
+  - delicate
+  - protective
+  - mesh
+  key_tokens_wiki:
+  - aesthetic
+  - appeal
+  - upholstery
+  - gentle
+  - detergent
+  - cold
+  - water
+  - delicate
+  - protective
+  - mesh
+- paraphrase_id: word-reo-029
+  paraphrase_type: word_reorder
+  text: What should I do if my payment is declined during a limited-stock sale?
+  gold_docs_section_id: payment_methods.md#failed-payments
+  key_tokens_docs:
+  - rejected
+  - payments
+  - triggered
+  - unusual
+  - patterns
+  - verifying
+  - above
+  - banks
+  - authorize
+  - accepted
+  key_tokens_wiki:
+  - rejected
+  - payments
+  - triggered
+  - unusual
+  - patterns
+  - verifying
+  - above
+  - banks
+  - authorize
+  - accepted
+- paraphrase_id: word-reo-030
+  paraphrase_type: word_reorder
+  text: What do I need to spend to reach Gold tier at Acme Shop, and what perks come
+    with it?
+  gold_docs_section_id: loyalty_program.md#membership-tiers
+  key_tokens_docs:
+  - distinct
+  - silver
+  - gold
+  - platinum
+  - tier
+  - crafted
+  - increasing
+  - levels
+  - annual
+  - joining
+  key_tokens_wiki:
+  - distinct
+  - silver
+  - gold
+  - platinum
+  - tier
+  - crafted
+  - increasing
+  - levels
+  - annual
+  - joining
+- paraphrase_id: word-reo-031
+  paraphrase_type: word_reorder
+  text: What should I do to keep my Acme Shop warranty valid by following care instructions?
+  gold_docs_section_id: product_care.md#warranty-implications
+  key_tokens_docs:
+  - stand
+  - warranties
+  - failures
+  - void
+  - specifies
+  - result
+  - similarly
+  - exposed
+  - limits
+  - temperatures
+  key_tokens_wiki:
+  - stand
+  - warranties
+  - failures
+  - void
+  - specifies
+  - result
+  - similarly
+  - exposed
+  - limits
+  - temperatures
+- paraphrase_id: word-reo-032
+  paraphrase_type: word_reorder
+  text: How can I get notified when an item is back in stock at Acme Shop?
+  gold_docs_section_id: product_information.md#stock-availability
+  key_tokens_docs:
+  - title
+  - format
+  - low
+  - acting
+  - sell
+  - easy
+  - me
+  - reserve
+  - served
+  - popular
+  key_tokens_wiki:
+  - title
+  - format
+  - low
+  - acting
+  - sell
+  - easy
+  - me
+  - reserve
+  - served
+  - popular
+- paraphrase_id: word-reo-033
+  paraphrase_type: word_reorder
+  text: What affects how long it takes for my international order to arrive from Acme
+    Shop?
+  gold_docs_section_id: international_shipping.md#international-delivery-times
+  key_tokens_docs:
+  - estimates
+  - exclude
+  - weekends
+  - advise
+  - black
+  - holiday
+  - shipments
+  - faster
+  - reduce
+  - transit
+  key_tokens_wiki:
+  - estimates
+  - exclude
+  - weekends
+  - advise
+  - black
+  - holiday
+  - shipments
+  - faster
+  - reduce
+  - transit
+- paraphrase_id: word-reo-034
+  paraphrase_type: word_reorder
+  text: How can I earn more Acme Rewards points through referrals and special promotions?
+  gold_docs_section_id: loyalty_program.md#earning-points
+  key_tokens_docs:
+  - rewards
+  - earning
+  - accumulate
+  - earn
+  - reward
+  - except
+  - completion
+  - boost
+  - bonus
+  - participating
+  key_tokens_wiki:
+  - rewards
+  - earning
+  - accumulate
+  - earn
+  - reward
+  - except
+  - completion
+  - boost
+  - bonus
+  - participating
+- paraphrase_id: word-reo-035
+  paraphrase_type: word_reorder
+  text: How will the new indefinite pause feature affect my subscription management
+    at Acme Shop?
+  gold_docs_section_id: subscription_orders.md#managing-a-subscription
+  key_tokens_docs:
+  - skip
+  - upcoming
+  - instead
+  - skipping
+  - asked
+  - ending
+  - deliveries
+  - fulfilled
+  - prorated
+  - reactivating
+  key_tokens_wiki:
+  - skip
+  - upcoming
+  - instead
+  - skipping
+  - asked
+  - ending
+  - deliveries
+  - fulfilled
+  - prorated
+  - reactivating
+- paraphrase_id: word-reo-036
+  paraphrase_type: word_reorder
+  text: What should I expect in terms of customs fees and delivery times for international
+    orders with Acme Shop?
+  gold_docs_section_id: international_shipping.md#customs-and-duties
+  key_tokens_docs:
   - handled
-  - case
-  - basis
-  - cash
-  - most
-  - full
-  - its
-  - packaging
-  - receipt
-  generation_notes: stripped subject = item
+  - referred
+  - control
+  - levied
+  - authority
+  - therefore
+  - regulations
+  - declared
+  - office
+  - frame
+  key_tokens_wiki:
+  - handled
+  - referred
+  - control
+  - levied
+  - authority
+  - therefore
+  - regulations
+  - declared
+  - office
+  - frame
+- paraphrase_id: word-reo-037
+  paraphrase_type: word_reorder
+  text: How can I replace my lost Acme Shop gift card, and are there any fees involved?
+  gold_docs_section_id: gift_cards.md#lost-gift-cards
+  key_tokens_docs:
+  - misplaced
+  - lost
+  - ability
+  - replace
+  - met
+  - streamlined
+  - nominal
+  - reissuance
+  - partially
+  - registering
+  key_tokens_wiki:
+  - misplaced
+  - lost
+  - ability
+  - replace
+  - met
+  - streamlined
+  - nominal
+  - reissuance
+  - partially
+  - registering
+- paraphrase_id: word-reo-038
+  paraphrase_type: word_reorder
+  text: How can I check if Acme Shop ships to my address?
+  gold_docs_section_id: international_shipping.md#supported-countries
+  key_tokens_docs:
+  - continually
+  - expand
+  - periodically
+  - incurred
+  - packages
+  - regions
+  - logistical
+  - political
+  - instability
+  - disasters
+  key_tokens_wiki:
+  - continually
+  - expand
+  - periodically
+  - incurred
+  - packages
+  - regions
+  - logistical
+  - political
+  - instability
+  - disasters
+- paraphrase_id: word-reo-039
+  paraphrase_type: word_reorder
+  text: How do I redeem a gift card at Acme Shop, and what issues might I face?
+  gold_docs_section_id: gift_cards.md#redeeming-a-gift-card
+  key_tokens_docs:
+  - finished
+  - deduct
+  - exceeds
+  - saved
+  - conversely
+  - surpasses
+  - attempting
+  - themselves
+  - typing
+  - errors
+  key_tokens_wiki:
+  - finished
+  - deduct
+  - exceeds
+  - saved
+  - conversely
+  - surpasses
+  - attempting
+  - themselves
+  - typing
+  - errors
+- paraphrase_id: word-reo-040
+  paraphrase_type: word_reorder
+  text: How does combining perishable items with other products affect the shipping
+    process at Acme Shop?
+  gold_docs_section_id: order_management.md#combine-orders
+  key_tokens_docs:
+  - combine
+  - yet
+  - grouped
+  - together
+  - delaying
+  - combinations
+  - contains
+  - combining
+  - hesitate
+  - valued
+  key_tokens_wiki:
+  - combine
+  - yet
+  - grouped
+  - together
+  - delaying
+  - combinations
+  - contains
+  - combining
+  - hesitate
+  - valued
+- paraphrase_id: word-reo-041
+  paraphrase_type: word_reorder
+  text: How do I request a price match if I find a competitor offering a lower price?
+  gold_docs_section_id: price_matching.md#price-match-eligibility
+  key_tokens_docs:
+  - guarantee
+  - deal
+  - color
+  - competing
+  - competitors
+  - advertised
+  - stores
+  - advertisement
+  - flash
+  - bundle
+  key_tokens_wiki:
+  - guarantee
+  - deal
+  - color
+  - competing
+  - competitors
+  - advertised
+  - stores
+  - advertisement
+  - flash
+  - bundle
+- paraphrase_id: word-reo-042
+  paraphrase_type: word_reorder
+  text: When does Acme Shop waive restocking fees, and how does that compare to your
+    usual return policy?
+  gold_docs_section_id: returns_policy.md#restocking-fee
+  key_tokens_docs:
+  - large
+  - appliances
+  - manuals
+  - exceptions
+  - waived
+  - applies
+  - furniture
+  - managing
+  - inventory
+  - complications
+  key_tokens_wiki:
+  - large
+  - appliances
+  - manuals
+  - exceptions
+  - waived
+  - applies
+  - furniture
+  - managing
+  - inventory
+  - complications
+- paraphrase_id: word-reo-043
+  paraphrase_type: word_reorder
+  text: What's the best way to figure out my size using your sizing charts?
+  gold_docs_section_id: product_information.md#size-guide
+  key_tokens_docs:
+  - fit
+  - developed
+  - sizing
+  - charts
+  - effectively
+  - locating
+  - footwear
+  - chart
+  - measurements
+  - chest
+  key_tokens_wiki:
+  - fit
+  - developed
+  - sizing
+  - charts
+  - effectively
+  - locating
+  - footwear
+  - chart
+  - measurements
+  - chest
+- paraphrase_id: word-reo-044
+  paraphrase_type: word_reorder
+  text: How do domestic and international bulk order delivery times compare, and what
+    factors might affect them?
+  gold_docs_section_id: bulk_orders.md#fulfilment-and-lead-times
+  key_tokens_docs:
+  - fulfilment
+  - reliability
+  - verifies
+  - prepares
+  - lead
+  - varying
+  - expect
+  - way
+  - adverse
+  - placement
+  key_tokens_wiki:
+  - fulfilment
+  - reliability
+  - verifies
+  - prepares
+  - lead
+  - varying
+  - expect
+  - way
+  - adverse
+  - placement
+- paraphrase_id: word-reo-045
+  paraphrase_type: word_reorder
+  text: How do I set up two-factor authentication on my Acme Shop account for international
+    use?
+  gold_docs_section_id: account_security.md#two-factor-authentication
+  key_tokens_docs:
+  - adds
+  - second
+  - just
+  - enable
+  - compatible
+  - linked
+  - authenticator
+  - google
+  - authy
+  - setup
+  key_tokens_wiki:
+  - adds
+  - second
+  - just
+  - enable
+  - compatible
+  - linked
+  - authenticator
+  - google
+  - authy
+  - setup
+- paraphrase_id: word-reo-046
+  paraphrase_type: word_reorder
+  text: How do I use a promo code when checking out on Acme Shop?
+  gold_docs_section_id: promo_codes.md#applying-a-code
+  key_tokens_docs:
+  - applying
+  - precisely
+  - sensitivity
+  - validated
+  - summary
+  - exclusions
+  - glitch
+  - problem
+  - explicitly
+  - added
+  key_tokens_wiki:
+  - applying
+  - precisely
+  - sensitivity
+  - validated
+  - summary
+  - exclusions
+  - glitch
+  - problem
+  - explicitly
+  - added
+- paraphrase_id: word-reo-047
+  paraphrase_type: word_reorder
+  text: How long does it usually take to get a refund from Acme Shop, especially during
+    busy times?
+  gold_docs_section_id: returns_policy.md#refund-processing-time
+  key_tokens_docs:
+  - volumes
+  - post
+  - wallets
+  - retained
+  - finalized
+  - allowed
+  - warehouse
+  - thoroughly
+  - slightly
+  - increased
+  key_tokens_wiki:
+  - volumes
+  - post
+  - wallets
+  - retained
+  - finalized
+  - allowed
+  - warehouse
+  - thoroughly
+  - slightly
+  - increased
+- paraphrase_id: word-reo-048
+  paraphrase_type: word_reorder
+  text: What happens to my current subscription if Acme Shop changes its pricing?
+  gold_docs_section_id: subscription_orders.md#subscription-pricing-changes
+  key_tokens_docs:
+  - ways
+  - increase
+  - subscribed
+  - ample
+  - decide
+  - effect
+  - existing
+  - concluded
+  - decrease
+  - reduced
+  key_tokens_wiki:
+  - ways
+  - increase
+  - subscribed
+  - ample
+  - decide
+  - effect
+  - existing
+  - concluded
+  - decrease
+  - reduced
+- paraphrase_id: word-reo-049
+  paraphrase_type: word_reorder
+  text: How can I make sure my electronics last longer and work well?
+  gold_docs_section_id: product_care.md#storage-guidelines
+  key_tokens_docs:
+  - storage
+  - cosmetics
+  - textiles
+  - stable
+  - environment
+  - stored
+  - cool
+  - away
+  - sunlight
+  - internal
+  key_tokens_wiki:
+  - storage
+  - cosmetics
+  - textiles
+  - stable
+  - environment
+  - stored
+  - cool
+  - away
+  - sunlight
+  - internal
+- paraphrase_id: word-reo-050
+  paraphrase_type: word_reorder
+  text: What do I need to show to qualify for bulk purchasing at Acme Shop?
+  gold_docs_section_id: bulk_orders.md#eligibility-and-minimum-order
+  key_tokens_docs:
+  - businesses
+  - organizations
+  - profit
+  - educational
+  - institutions
+  - agencies
+  - individuals
+  - unregistered
+  - entities
+  - tax
+  key_tokens_wiki:
+  - businesses
+  - organizations
+  - profit
+  - educational
+  - institutions
+  - agencies
+  - individuals
+  - unregistered
+  - entities
+  - tax
+- paraphrase_id: verbosit-001
+  paraphrase_type: verbosity_expansion
+  text: How do I safely clean my electronic devices from Acme Shop?
+  gold_docs_section_id: product_care.md#cleaning-instructions
+  key_tokens_docs:
+  - aesthetic
+  - appeal
+  - upholstery
+  - gentle
+  - detergent
+  - cold
+  - water
+  - delicate
+  - protective
+  - mesh
+  key_tokens_wiki:
+  - aesthetic
+  - appeal
+  - upholstery
+  - gentle
+  - detergent
+  - cold
+  - water
+  - delicate
+  - protective
+  - mesh
+- paraphrase_id: verbosit-002
+  paraphrase_type: verbosity_expansion
+  text: How long will it take for my bulk order to arrive during peak season?
+  gold_docs_section_id: bulk_orders.md#fulfilment-and-lead-times
+  key_tokens_docs:
+  - fulfilment
+  - reliability
+  - verifies
+  - prepares
+  - lead
+  - varying
+  - expect
+  - way
+  - adverse
+  - placement
+  key_tokens_wiki:
+  - fulfilment
+  - reliability
+  - verifies
+  - prepares
+  - lead
+  - varying
+  - expect
+  - way
+  - adverse
+  - placement
+- paraphrase_id: verbosit-003
+  paraphrase_type: verbosity_expansion
+  text: What's the difference between stock notifications and restock alerts at Acme
+    Shop?
+  gold_docs_section_id: product_information.md#stock-availability
+  key_tokens_docs:
+  - title
+  - format
+  - low
+  - acting
+  - sell
+  - easy
+  - me
+  - reserve
+  - served
+  - popular
+  key_tokens_wiki:
+  - title
+  - format
+  - low
+  - acting
+  - sell
+  - easy
+  - me
+  - reserve
+  - served
+  - popular
+- paraphrase_id: verbosit-004
+  paraphrase_type: verbosity_expansion
+  text: If I order at 2 PM on Friday, when will my expedited delivery arrive?
+  gold_docs_section_id: shipping_options.md#expedited-delivery
+  key_tokens_docs:
+  - getting
+  - hurry
+  - instantly
+  - very
+  - rural
+  - surcharge
+  - proactively
+  - work
+  - urgent
+  - guarantees
+  key_tokens_wiki:
+  - getting
+  - hurry
+  - instantly
+  - very
+  - rural
+  - surcharge
+  - proactively
+  - work
+  - urgent
+  - guarantees
+- paraphrase_id: verbosit-005
+  paraphrase_type: verbosity_expansion
+  text: How can I make sure I pick the right size using your sizing charts?
+  gold_docs_section_id: product_information.md#size-guide
+  key_tokens_docs:
+  - fit
+  - developed
+  - sizing
+  - charts
+  - effectively
+  - locating
+  - footwear
+  - chart
+  - measurements
+  - chest
+  key_tokens_wiki:
+  - fit
+  - developed
+  - sizing
+  - charts
+  - effectively
+  - locating
+  - footwear
+  - chart
+  - measurements
+  - chest
+- paraphrase_id: verbosit-006
+  paraphrase_type: verbosity_expansion
+  text: How does tracking my order differ for domestic versus international shipments
+    at Acme Shop?
+  gold_docs_section_id: shipping_options.md#order-tracking
+  key_tokens_docs:
+  - knowing
+  - delayed
+  - end
+  - notice
+  - arrived
+  - delay
+  - frequent
+  - view
+  - track
+  - updates
+  key_tokens_wiki:
+  - knowing
+  - delayed
+  - end
+  - notice
+  - arrived
+  - delay
+  - frequent
+  - view
+  - track
+  - updates
+- paraphrase_id: verbosit-007
+  paraphrase_type: verbosity_expansion
+  text: How do I use a promo code when checking out at Acme Shop?
+  gold_docs_section_id: promo_codes.md#applying-a-code
+  key_tokens_docs:
+  - applying
+  - precisely
+  - sensitivity
+  - validated
+  - summary
+  - exclusions
+  - glitch
+  - problem
+  - explicitly
+  - added
+  key_tokens_wiki:
+  - applying
+  - precisely
+  - sensitivity
+  - validated
+  - summary
+  - exclusions
+  - glitch
+  - problem
+  - explicitly
+  - added
+- paraphrase_id: verbosit-008
+  paraphrase_type: verbosity_expansion
+  text: What happens to the leftover balance on my gift card if it's more than my
+    order total?
+  gold_docs_section_id: gift_cards.md#redeeming-a-gift-card
+  key_tokens_docs:
+  - finished
+  - deduct
+  - exceeds
+  - saved
+  - conversely
+  - surpasses
+  - attempting
+  - themselves
+  - typing
+  - errors
+  key_tokens_wiki:
+  - finished
+  - deduct
+  - exceeds
+  - saved
+  - conversely
+  - surpasses
+  - attempting
+  - themselves
+  - typing
+  - errors
+- paraphrase_id: verbosit-009
+  paraphrase_type: verbosity_expansion
+  text: How does Acme Shop ensure the integrity of its review system?
+  gold_docs_section_id: product_information.md#product-reviews
+  key_tokens_docs:
+  - opinions
+  - trustworthy
+  - invitation
+  - leave
+  - firsthand
+  - sharing
+  - thoughts
+  - authenticity
+  - buyers
+  - moderation
+  key_tokens_wiki:
+  - opinions
+  - trustworthy
+  - invitation
+  - leave
+  - firsthand
+  - sharing
+  - thoughts
+  - authenticity
+  - buyers
+  - moderation
+- paraphrase_id: verbosit-010
+  paraphrase_type: verbosity_expansion
+  text: How do I remove a device from my account if I suspect unauthorized access?
+  gold_docs_section_id: account_security.md#managing-trusted-devices
+  key_tokens_docs:
+  - trust
+  - last
+  - regularly
+  - recognize
+  - removed
+  - incurs
+  - removing
+  - interrupt
+  - suspect
+  - prioritize
+  key_tokens_wiki:
+  - trust
+  - last
+  - regularly
+  - recognize
+  - removed
+  - incurs
+  - removing
+  - interrupt
+  - suspect
+  - prioritize
+- paraphrase_id: verbosit-011
+  paraphrase_type: verbosity_expansion
+  text: What can I expect if my backordered item takes more than 30 days to arrive?
+  gold_docs_section_id: order_management.md#backordered-items
+  key_tokens_docs:
+  - backordered
+  - assure
+  - diligently
+  - suppliers
+  - replenish
+  - won
+  - multiple
+  - adjustments
+  - compensation
+  - gesture
+  key_tokens_wiki:
+  - backordered
+  - assure
+  - diligently
+  - suppliers
+  - replenish
+  - won
+  - multiple
+  - adjustments
+  - compensation
+  - gesture
+- paraphrase_id: verbosit-012
+  paraphrase_type: verbosity_expansion
+  text: How much do I need to spend to move up in Acme Shop's membership levels?
+  gold_docs_section_id: loyalty_program.md#membership-tiers
+  key_tokens_docs:
+  - distinct
+  - silver
+  - gold
+  - platinum
+  - tier
+  - crafted
+  - increasing
+  - levels
+  - annual
+  - joining
+  key_tokens_wiki:
+  - distinct
+  - silver
+  - gold
+  - platinum
+  - tier
+  - crafted
+  - increasing
+  - levels
+  - annual
+  - joining
+- paraphrase_id: verbosit-013
+  paraphrase_type: verbosity_expansion
+  text: How can someone else pick up my order for me at the store?
+  gold_docs_section_id: store_pickup.md#pickup-identification
+  key_tokens_docs:
+  - identification
+  - collecting
+  - issued
+  - acceptable
+  - forms
+  - driver
+  - passport
+  - state
+  - safely
+  - handed
+  key_tokens_wiki:
+  - identification
+  - collecting
+  - issued
+  - acceptable
+  - forms
+  - driver
+  - passport
+  - state
+  - safely
+  - handed
+- paraphrase_id: verbosit-014
+  paraphrase_type: verbosity_expansion
+  text: What do I need to know about placing a bulk order at Acme Shop?
+  gold_docs_section_id: bulk_orders.md#eligibility-and-minimum-order
+  key_tokens_docs:
+  - businesses
+  - organizations
+  - profit
+  - educational
+  - institutions
+  - agencies
+  - individuals
+  - unregistered
+  - entities
+  - tax
+  key_tokens_wiki:
+  - businesses
+  - organizations
+  - profit
+  - educational
+  - institutions
+  - agencies
+  - individuals
+  - unregistered
+  - entities
+  - tax
+- paraphrase_id: verbosit-015
+  paraphrase_type: verbosity_expansion
+  text: How long will my international order take with express shipping, considering
+    customs delays?
+  gold_docs_section_id: international_shipping.md#international-delivery-times
+  key_tokens_docs:
+  - estimates
+  - exclude
+  - weekends
+  - advise
+  - black
+  - holiday
+  - shipments
+  - faster
+  - reduce
+  - transit
+  key_tokens_wiki:
+  - estimates
+  - exclude
+  - weekends
+  - advise
+  - black
+  - holiday
+  - shipments
+  - faster
+  - reduce
+  - transit
+- paraphrase_id: verbosit-016
+  paraphrase_type: verbosity_expansion
+  text: How do I use my loyalty points to get credits on my Acme Shop account?
+  gold_docs_section_id: loyalty_program.md#redeeming-points
+  key_tokens_docs:
+  - redeeming
+  - credits
+  - dashboard
+  - convert
+  - increments
+  - increment
+  - hard
+  - earned
+  - reflecting
+  - encountering
+  key_tokens_wiki:
+  - redeeming
+  - credits
+  - dashboard
+  - convert
+  - increments
+  - increment
+  - hard
+  - earned
+  - reflecting
+  - encountering
+- paraphrase_id: verbosit-017
+  paraphrase_type: verbosity_expansion
+  text: Will I be charged a restocking fee if I return a defective item from Acme
+    Shop?
+  gold_docs_section_id: returns_policy.md#restocking-fee
+  key_tokens_docs:
+  - large
+  - appliances
+  - manuals
+  - exceptions
+  - waived
+  - applies
+  - furniture
+  - managing
+  - inventory
+  - complications
+  key_tokens_wiki:
+  - large
+  - appliances
+  - manuals
+  - exceptions
+  - waived
+  - applies
+  - furniture
+  - managing
+  - inventory
+  - complications
+- paraphrase_id: verbosit-018
+  paraphrase_type: verbosity_expansion
+  text: How do I set up two-factor authentication on my Acme Shop account to ensure
+    it's secure?
+  gold_docs_section_id: account_security.md#two-factor-authentication
+  key_tokens_docs:
+  - adds
+  - second
+  - just
+  - enable
+  - compatible
+  - linked
+  - authenticator
+  - google
+  - authy
+  - setup
+  key_tokens_wiki:
+  - adds
+  - second
+  - just
+  - enable
+  - compatible
+  - linked
+  - authenticator
+  - google
+  - authy
+  - setup
+- paraphrase_id: verbosit-019
+  paraphrase_type: verbosity_expansion
+  text: How will changes in subscription pricing affect my current prepaid service
+    plan?
+  gold_docs_section_id: subscription_orders.md#subscription-pricing-changes
+  key_tokens_docs:
+  - ways
+  - increase
+  - subscribed
+  - ample
+  - decide
+  - effect
+  - existing
+  - concluded
+  - decrease
+  - reduced
+  key_tokens_wiki:
+  - ways
+  - increase
+  - subscribed
+  - ample
+  - decide
+  - effect
+  - existing
+  - concluded
+  - decrease
+  - reduced
+- paraphrase_id: verbosit-020
+  paraphrase_type: verbosity_expansion
+  text: Are there any delays in getting refunds during busy shopping times at Acme
+    Shop?
+  gold_docs_section_id: returns_policy.md#refund-processing-time
+  key_tokens_docs:
+  - volumes
+  - post
+  - wallets
+  - retained
+  - finalized
+  - allowed
+  - warehouse
+  - thoroughly
+  - slightly
+  - increased
+  key_tokens_wiki:
+  - volumes
+  - post
+  - wallets
+  - retained
+  - finalized
+  - allowed
+  - warehouse
+  - thoroughly
+  - slightly
+  - increased
+- paraphrase_id: verbosit-021
+  paraphrase_type: verbosity_expansion
+  text: Why is there still a hold on my card after I canceled my order?
+  gold_docs_section_id: payment_methods.md#payment-authorization
+  key_tokens_docs:
+  - authorization
+  - goes
+  - initially
+  - sends
+  - actually
+  - transferred
+  - lasts
+  - captures
+  - capturing
+  - transferring
+  key_tokens_wiki:
+  - authorization
+  - goes
+  - initially
+  - sends
+  - actually
+  - transferred
+  - lasts
+  - captures
+  - capturing
+  - transferring
+- paraphrase_id: verbosit-022
+  paraphrase_type: verbosity_expansion
+  text: Can you tell me how I can request a price match at Acme Shop?
+  gold_docs_section_id: price_matching.md#requesting-a-price-match
+  key_tokens_docs:
+  - qualifying
+  - screenshot
+  - specifications
+  - clubs
+  - bundled
+  - received
+  - affordable
+  - satisfying
+  - prices
+  - valued
+  key_tokens_wiki:
+  - qualifying
+  - screenshot
+  - specifications
+  - clubs
+  - bundled
+  - received
+  - affordable
+  - satisfying
+  - prices
+  - valued
+- paraphrase_id: verbosit-023
+  paraphrase_type: verbosity_expansion
+  text: How do I change the store where I want to pick up my order?
+  gold_docs_section_id: store_pickup.md#buy-online-pick-up-in-store
+  key_tokens_docs:
+  - browsing
+  - catalog
+  - preferred
+  - zip
+  - accommodate
+  - bring
+  - collected
+  - associates
+  - pickup
+  - adding
+  key_tokens_wiki:
+  - browsing
+  - catalog
+  - preferred
+  - zip
+  - accommodate
+  - bring
+  - collected
+  - associates
+  - pickup
+  - adding
+- paraphrase_id: verbosit-024
+  paraphrase_type: verbosity_expansion
+  text: Can I use more than one promo code on a single order at Acme Shop?
+  gold_docs_section_id: promo_codes.md#stacking-rules
+  key_tokens_docs:
+  - deals
+  - consistent
+  - stacking
+  - manner
+  - beneficial
+  - parties
+  - tied
+  - stacked
+  - uncertainties
+  - rules
+  key_tokens_wiki:
+  - deals
+  - consistent
+  - stacking
+  - manner
+  - beneficial
+  - parties
+  - tied
+  - stacked
+  - uncertainties
+  - rules
+- paraphrase_id: verbosit-025
+  paraphrase_type: verbosity_expansion
+  text: How do I change my shipping address for an order that's already being processed?
+  gold_docs_section_id: order_management.md#change-shipping-address
+  key_tokens_docs:
+  - transitions
+  - modifications
+  - unfortunately
+  - explore
+  - redirection
+  - possibilities
+  - success
+  - changing
+  - prior
+  - update
+  key_tokens_wiki:
+  - transitions
+  - modifications
+  - unfortunately
+  - explore
+  - redirection
+  - possibilities
+  - success
+  - changing
+  - prior
+  - update
+- paraphrase_id: verbosit-026
+  paraphrase_type: verbosity_expansion
+  text: Can I use my AmEx card for international purchases at Acme Shop without any
+    extra fees?
+  gold_docs_section_id: payment_methods.md#accepted-cards
+  key_tokens_docs:
+  - accept
+  - visa
+  - mastercard
+  - american
+  - discover
+  - processor
+  - protected
+  - foreign
+  - statement
+  - limit
+  key_tokens_wiki:
+  - accept
+  - visa
+  - mastercard
+  - american
+  - discover
+  - processor
+  - protected
+  - foreign
+  - statement
+  - limit
+- paraphrase_id: verbosit-027
+  paraphrase_type: verbosity_expansion
+  text: How can I earn more Acme Rewards points with my purchases and referrals?
+  gold_docs_section_id: loyalty_program.md#earning-points
+  key_tokens_docs:
+  - rewards
+  - earning
+  - accumulate
+  - earn
+  - reward
+  - except
+  - completion
+  - boost
+  - bonus
+  - participating
+  key_tokens_wiki:
+  - rewards
+  - earning
+  - accumulate
+  - earn
+  - reward
+  - except
+  - completion
+  - boost
+  - bonus
+  - participating
+- paraphrase_id: verbosit-028
+  paraphrase_type: verbosity_expansion
+  text: How do I update my email address on my Acme Shop account?
+  gold_docs_section_id: account_management.md#update-email-address
+  key_tokens_docs:
+  - profile
+  - locate
+  - revert
+  - done
+  - old
+  - go
+  - update
+  - credentials
+  - found
+  - top
+  key_tokens_wiki:
+  - profile
+  - locate
+  - revert
+  - done
+  - old
+  - go
+  - update
+  - credentials
+  - found
+  - top
+- paraphrase_id: verbosit-029
+  paraphrase_type: verbosity_expansion
+  text: How do I permanently close my Acme Shop account and handle any ongoing transactions
+    or subscriptions?
+  gold_docs_section_id: account_management.md#close-account
+  key_tokens_docs:
+  - decided
+  - permanently
+  - closure
+  - menu
+  - prompts
+  - closed
+  - deleted
+  - undone
+  - proceeding
+  - outstanding
+  key_tokens_wiki:
+  - decided
+  - permanently
+  - closure
+  - menu
+  - prompts
+  - closed
+  - deleted
+  - undone
+  - proceeding
+  - outstanding
+- paraphrase_id: verbosit-030
+  paraphrase_type: verbosity_expansion
+  text: Will my delivery take longer if there's a big increase in orders?
+  gold_docs_section_id: shipping_options.md#standard-delivery
+  key_tokens_docs:
+  - doorstep
+  - otherwise
+  - great
+  - incentive
+  - specified
+  - heavy
+  - reliable
+  - stated
+  - periods
+  - domestic
+  key_tokens_wiki:
+  - doorstep
+  - otherwise
+  - great
+  - incentive
+  - specified
+  - heavy
+  - reliable
+  - stated
+  - periods
+  - domestic
+- paraphrase_id: verbosit-031
+  paraphrase_type: verbosity_expansion
+  text: Why was my payment declined at Acme Shop, and how can I fix it?
+  gold_docs_section_id: payment_methods.md#failed-payments
+  key_tokens_docs:
+  - rejected
+  - payments
+  - triggered
+  - unusual
+  - patterns
+  - verifying
+  - above
+  - banks
+  - authorize
+  - accepted
+  key_tokens_wiki:
+  - rejected
+  - payments
+  - triggered
+  - unusual
+  - patterns
+  - verifying
+  - above
+  - banks
+  - authorize
+  - accepted
+- paraphrase_id: verbosit-032
+  paraphrase_type: verbosity_expansion
+  text: What can I do to cancel my order if I've missed the cancellation window?
+  gold_docs_section_id: order_management.md#cancel-an-order
+  key_tokens_docs:
+  - cancelled
+  - shortly
+  - thereafter
+  - cancelling
+  - act
+  - able
+  - swiftly
+  - means
+  - cancellation
+  - arrives
+  key_tokens_wiki:
+  - cancelled
+  - shortly
+  - thereafter
+  - cancelling
+  - act
+  - able
+  - swiftly
+  - means
+  - cancellation
+  - arrives
+- paraphrase_id: verbosit-033
+  paraphrase_type: verbosity_expansion
+  text: How can I replace my lost Acme Shop gift card?
+  gold_docs_section_id: gift_cards.md#lost-gift-cards
+  key_tokens_docs:
+  - misplaced
+  - lost
+  - ability
+  - replace
+  - met
+  - streamlined
+  - nominal
+  - reissuance
+  - partially
+  - registering
+  key_tokens_wiki:
+  - misplaced
+  - lost
+  - ability
+  - replace
+  - met
+  - streamlined
+  - nominal
+  - reissuance
+  - partially
+  - registering
+- paraphrase_id: verbosit-034
+  paraphrase_type: verbosity_expansion
+  text: How long does it usually take to receive a digital gift card from Acme Shop
+    after buying it?
+  gold_docs_section_id: gift_cards.md#purchase-and-delivery
+  key_tokens_docs:
+  - convenience
+  - folders
+  - continental
+  - reroute
+  - sending
+  - redeemable
+  - ultimate
+  - physical
+  - buy
+  - recipient
+  key_tokens_wiki:
+  - convenience
+  - folders
+  - continental
+  - reroute
+  - sending
+  - redeemable
+  - ultimate
+  - physical
+  - buy
+  - recipient
+- paraphrase_id: verbosit-035
+  paraphrase_type: verbosity_expansion
+  text: How can I pause my Acme Shop subscription for up to three months?
+  gold_docs_section_id: subscription_orders.md#managing-a-subscription
+  key_tokens_docs:
+  - skip
+  - upcoming
+  - instead
+  - skipping
+  - asked
+  - ending
+  - deliveries
+  - fulfilled
+  - prorated
+  - reactivating
+  key_tokens_wiki:
+  - skip
+  - upcoming
+  - instead
+  - skipping
+  - asked
+  - ending
+  - deliveries
+  - fulfilled
+  - prorated
+  - reactivating
+- paraphrase_id: verbosit-036
+  paraphrase_type: verbosity_expansion
+  text: Are there any special rules for returning certain items at Acme Shop?
+  gold_docs_section_id: returns_policy.md#return-window
+  key_tokens_docs:
+  - sometimes
+  - expectations
+  - exchange
+  - unused
+  - tags
+  - intact
+  - standards
+  - customized
+  - intimate
+  - pleasant
+  key_tokens_wiki:
+  - sometimes
+  - expectations
+  - exchange
+  - unused
+  - tags
+  - intact
+  - standards
+  - customized
+  - intimate
+  - pleasant
+- paraphrase_id: verbosit-037
+  paraphrase_type: verbosity_expansion
+  text: What steps should I follow to keep my warranty valid with Acme Shop's care
+    guidelines?
+  gold_docs_section_id: product_care.md#warranty-implications
+  key_tokens_docs:
+  - stand
+  - warranties
+  - failures
+  - void
+  - specifies
+  - result
+  - similarly
+  - exposed
+  - limits
+  - temperatures
+  key_tokens_wiki:
+  - stand
+  - warranties
+  - failures
+  - void
+  - specifies
+  - result
+  - similarly
+  - exposed
+  - limits
+  - temperatures
+- paraphrase_id: verbosit-038
+  paraphrase_type: verbosity_expansion
+  text: Will storing electronics in a humid attic affect their performance or lifespan?
+  gold_docs_section_id: product_care.md#storage-guidelines
+  key_tokens_docs:
+  - storage
+  - cosmetics
+  - textiles
+  - stable
+  - environment
+  - stored
+  - cool
+  - away
+  - sunlight
+  - internal
+  key_tokens_wiki:
+  - storage
+  - cosmetics
+  - textiles
+  - stable
+  - environment
+  - stored
+  - cool
+  - away
+  - sunlight
+  - internal
+- paraphrase_id: verbosit-039
+  paraphrase_type: verbosity_expansion
+  text: How do I set up automatic restocking for items I buy from Acme Shop?
+  gold_docs_section_id: subscription_orders.md#setting-up-a-subscription
+  key_tokens_docs:
+  - enroll
+  - replenishment
+  - subscribe
+  - frequency
+  - weekly
+  - monthly
+  - intervals
+  - shorter
+  - shelf
+  - lives
+  key_tokens_wiki:
+  - enroll
+  - replenishment
+  - subscribe
+  - frequency
+  - weekly
+  - monthly
+  - intervals
+  - shorter
+  - shelf
+  - lives
+- paraphrase_id: verbosit-040
+  paraphrase_type: verbosity_expansion
+  text: How do I get a price match refund at Acme Shop?
+  gold_docs_section_id: price_matching.md#price-match-eligibility
+  key_tokens_docs:
+  - guarantee
+  - deal
+  - color
+  - competing
+  - competitors
+  - advertised
+  - stores
+  - advertisement
+  - flash
+  - bundle
+  key_tokens_wiki:
+  - guarantee
+  - deal
+  - color
+  - competing
+  - competitors
+  - advertised
+  - stores
+  - advertisement
+  - flash
+  - bundle
+- paraphrase_id: verbosit-041
+  paraphrase_type: verbosity_expansion
+  text: Can I combine two orders at Acme Shop, and are there any restrictions?
+  gold_docs_section_id: order_management.md#combine-orders
+  key_tokens_docs:
+  - combine
+  - yet
+  - grouped
+  - together
+  - delaying
+  - combinations
+  - contains
+  - combining
+  - hesitate
+  - valued
+  key_tokens_wiki:
+  - combine
+  - yet
+  - grouped
+  - together
+  - delaying
+  - combinations
+  - contains
+  - combining
+  - hesitate
+  - valued
+- paraphrase_id: verbosit-042
+  paraphrase_type: verbosity_expansion
+  text: What are the requirements and discounts for buying in bulk at Acme Shop?
+  gold_docs_section_id: bulk_orders.md#volume-discounts
+  key_tokens_docs:
+  - volume
+  - ordered
+  - increases
+  - sku
+  - coupon
+  - excluded
+  - planning
+  - projects
+  - recalculated
+  - revised
+  key_tokens_wiki:
+  - volume
+  - ordered
+  - increases
+  - sku
+  - coupon
+  - excluded
+  - planning
+  - projects
+  - recalculated
+  - revised
+- paraphrase_id: verbosit-043
+  paraphrase_type: verbosity_expansion
+  text: What's the fastest way to fix an issue with my order from Acme Shop?
+  gold_docs_section_id: customer_support.md#contact-channels
+  key_tokens_docs:
+  - suit
+  - bottom
+  - connected
+  - emails
+  - channel
+  - useful
+  - explanations
+  - prefer
+  - speaking
+  - hotline
+  key_tokens_wiki:
+  - suit
+  - bottom
+  - connected
+  - emails
+  - channel
+  - useful
+  - explanations
+  - prefer
+  - speaking
+  - hotline
+- paraphrase_id: verbosit-044
+  paraphrase_type: verbosity_expansion
+  text: Can you tell me if Acme Shop ships to my country?
+  gold_docs_section_id: international_shipping.md#supported-countries
+  key_tokens_docs:
+  - continually
+  - expand
+  - periodically
+  - incurred
+  - packages
+  - regions
+  - logistical
+  - political
+  - instability
+  - disasters
+  key_tokens_wiki:
+  - continually
+  - expand
+  - periodically
+  - incurred
+  - packages
+  - regions
+  - logistical
+  - political
+  - instability
+  - disasters
+- paraphrase_id: verbosit-045
+  paraphrase_type: verbosity_expansion
+  text: How do I reset my Acme Shop password if I forgot it?
+  gold_docs_section_id: account_management.md#password-reset
+  key_tokens_docs:
+  - forgotten
+  - don
+  - worry
+  - resetting
+  - homepage
+  - sign
+  - eight
+  - mix
+  - letters
+  - numbers
+  key_tokens_wiki:
+  - forgotten
+  - don
+  - worry
+  - resetting
+  - homepage
+  - sign
+  - eight
+  - mix
+  - letters
+  - numbers
+- paraphrase_id: verbosit-046
+  paraphrase_type: verbosity_expansion
+  text: How do I report a damaged item I received from Acme Shop within 14 days?
+  gold_docs_section_id: damaged_items.md#reporting-damage
+  key_tokens_docs:
+  - frustrating
+  - question
+  - showing
+  - returning
+  - preference
+  - extenuating
+  - exception
+  - reporting
+  - report
+  - navigating
+  key_tokens_wiki:
+  - frustrating
+  - question
+  - showing
+  - returning
+  - preference
+  - extenuating
+  - exception
+  - reporting
+  - report
+  - navigating
+- paraphrase_id: verbosit-047
+  paraphrase_type: verbosity_expansion
+  text: What should I do if my issue isn't resolved after contacting Acme Shop support?
+  gold_docs_section_id: customer_support.md#escalation-process
+  key_tokens_docs:
+  - escalation
+  - deserve
+  - contacted
+  - unresolved
+  - escalated
+  - specialist
+  - specialists
+  - glitches
+  - escalate
+  - document
+  key_tokens_wiki:
+  - escalation
+  - deserve
+  - contacted
+  - unresolved
+  - escalated
+  - specialist
+  - specialists
+  - glitches
+  - escalate
+  - document
+- paraphrase_id: verbosit-048
+  paraphrase_type: verbosity_expansion
+  text: What should I know about customs fees when ordering internationally from Acme
+    Shop?
+  gold_docs_section_id: international_shipping.md#customs-and-duties
+  key_tokens_docs:
+  - handled
+  - referred
+  - control
+  - levied
+  - authority
+  - therefore
+  - regulations
+  - declared
+  - office
+  - frame
+  key_tokens_wiki:
+  - handled
+  - referred
+  - control
+  - levied
+  - authority
+  - therefore
+  - regulations
+  - declared
+  - office
+  - frame
+- paraphrase_id: verbosit-049
+  paraphrase_type: verbosity_expansion
+  text: How can I improve my Acme Shop account security after receiving a suspicious
+    login alert?
+  gold_docs_section_id: account_security.md#suspicious-activity
+  key_tokens_docs:
+  - detects
+  - suspicious
+  - activity
+  - concern
+  - irregularities
+  - logins
+  - unfamiliar
+  - ip
+  - identified
+  - unrecognized
+  key_tokens_wiki:
+  - detects
+  - suspicious
+  - activity
+  - concern
+  - irregularities
+  - logins
+  - unfamiliar
+  - ip
+  - identified
+  - unrecognized
+- paraphrase_id: verbosit-050
+  paraphrase_type: verbosity_expansion
+  text: How can I check my order status at Acme Shop?
+  gold_docs_section_id: customer_support.md#self-service-resources
+  key_tokens_docs:
+  - self
+  - resources
+  - empower
+  - centre
+  - faqs
+  - intelligent
+  - virtual
+  - extensive
+  - library
+  - articles
+  key_tokens_wiki:
+  - self
+  - resources
+  - empower
+  - centre
+  - faqs
+  - intelligent
+  - virtual
+  - extensive
+  - library
+  - articles
+- paraphrase_id: specific-001
+  paraphrase_type: specificity_narrowing
+  text: How can I set up a product subscription on Acme Shop and ensure my payment
+    method is valid?
+  gold_docs_section_id: subscription_orders.md#setting-up-a-subscription
+  key_tokens_docs:
+  - enroll
+  - replenishment
+  - subscribe
+  - frequency
+  - weekly
+  - monthly
+  - intervals
+  - shorter
+  - shelf
+  - lives
+  key_tokens_wiki:
+  - enroll
+  - replenishment
+  - subscribe
+  - frequency
+  - weekly
+  - monthly
+  - intervals
+  - shorter
+  - shelf
+  - lives
+- paraphrase_id: specific-002
+  paraphrase_type: specificity_narrowing
+  text: How can I cancel an order that's already been processed at Acme Shop?
+  gold_docs_section_id: order_management.md#cancel-an-order
+  key_tokens_docs:
+  - cancelled
+  - shortly
+  - thereafter
+  - cancelling
+  - act
+  - able
+  - swiftly
+  - means
+  - cancellation
+  - arrives
+  key_tokens_wiki:
+  - cancelled
+  - shortly
+  - thereafter
+  - cancelling
+  - act
+  - able
+  - swiftly
+  - means
+  - cancellation
+  - arrives
+- paraphrase_id: specific-003
+  paraphrase_type: specificity_narrowing
+  text: How do I set up two-factor authentication on my Acme Shop account for international
+    use?
+  gold_docs_section_id: account_security.md#two-factor-authentication
+  key_tokens_docs:
+  - adds
+  - second
+  - just
+  - enable
+  - compatible
+  - linked
+  - authenticator
+  - google
+  - authy
+  - setup
+  key_tokens_wiki:
+  - adds
+  - second
+  - just
+  - enable
+  - compatible
+  - linked
+  - authenticator
+  - google
+  - authy
+  - setup
+- paraphrase_id: specific-004
+  paraphrase_type: specificity_narrowing
+  text: How does Acme Shop handle unresolved safety issues with customer orders?
+  gold_docs_section_id: customer_support.md#escalation-process
+  key_tokens_docs:
+  - escalation
+  - deserve
+  - contacted
+  - unresolved
+  - escalated
+  - specialist
+  - specialists
+  - glitches
+  - escalate
+  - document
+  key_tokens_wiki:
+  - escalation
+  - deserve
+  - contacted
+  - unresolved
+  - escalated
+  - specialist
+  - specialists
+  - glitches
+  - escalate
+  - document
+- paraphrase_id: specific-005
+  paraphrase_type: specificity_narrowing
+  text: What can I expect if my backordered item is delayed for more than 30 days?
+  gold_docs_section_id: order_management.md#backordered-items
+  key_tokens_docs:
+  - backordered
+  - assure
+  - diligently
+  - suppliers
+  - replenish
+  - won
+  - multiple
+  - adjustments
+  - compensation
+  - gesture
+  key_tokens_wiki:
+  - backordered
+  - assure
+  - diligently
+  - suppliers
+  - replenish
+  - won
+  - multiple
+  - adjustments
+  - compensation
+  - gesture
+- paraphrase_id: specific-006
+  paraphrase_type: specificity_narrowing
+  text: What should I expect in terms of customs fees and delivery times for international
+    orders with Acme Shop?
+  gold_docs_section_id: international_shipping.md#customs-and-duties
+  key_tokens_docs:
+  - handled
+  - referred
+  - control
+  - levied
+  - authority
+  - therefore
+  - regulations
+  - declared
+  - office
+  - frame
+  key_tokens_wiki:
+  - handled
+  - referred
+  - control
+  - levied
+  - authority
+  - therefore
+  - regulations
+  - declared
+  - office
+  - frame
+- paraphrase_id: specific-007
+  paraphrase_type: specificity_narrowing
+  text: What should I do if I get a suspicious activity alert from Acme Shop?
+  gold_docs_section_id: account_security.md#suspicious-activity
+  key_tokens_docs:
+  - detects
+  - suspicious
+  - activity
+  - concern
+  - irregularities
+  - logins
+  - unfamiliar
+  - ip
+  - identified
+  - unrecognized
+  key_tokens_wiki:
+  - detects
+  - suspicious
+  - activity
+  - concern
+  - irregularities
+  - logins
+  - unfamiliar
+  - ip
+  - identified
+  - unrecognized
+- paraphrase_id: specific-008
+  paraphrase_type: specificity_narrowing
+  text: What do I need to know about placing a bulk order at Acme Shop?
+  gold_docs_section_id: bulk_orders.md#eligibility-and-minimum-order
+  key_tokens_docs:
+  - businesses
+  - organizations
+  - profit
+  - educational
+  - institutions
+  - agencies
+  - individuals
+  - unregistered
+  - entities
+  - tax
+  key_tokens_wiki:
+  - businesses
+  - organizations
+  - profit
+  - educational
+  - institutions
+  - agencies
+  - individuals
+  - unregistered
+  - entities
+  - tax
+- paraphrase_id: specific-009
+  paraphrase_type: specificity_narrowing
+  text: How can I get notified when an out-of-stock item is available again?
+  gold_docs_section_id: product_information.md#stock-availability
+  key_tokens_docs:
+  - title
+  - format
+  - low
+  - acting
+  - sell
+  - easy
+  - me
+  - reserve
+  - served
+  - popular
+  key_tokens_wiki:
+  - title
+  - format
+  - low
+  - acting
+  - sell
+  - easy
+  - me
+  - reserve
+  - served
+  - popular
+- paraphrase_id: specific-010
+  paraphrase_type: specificity_narrowing
+  text: How long does Acme Shop hold funds on my debit card, and will it affect my
+    balance?
+  gold_docs_section_id: payment_methods.md#payment-authorization
+  key_tokens_docs:
+  - authorization
+  - goes
+  - initially
+  - sends
+  - actually
+  - transferred
+  - lasts
+  - captures
+  - capturing
+  - transferring
+  key_tokens_wiki:
+  - authorization
+  - goes
+  - initially
+  - sends
+  - actually
+  - transferred
+  - lasts
+  - captures
+  - capturing
+  - transferring
+- paraphrase_id: specific-011
+  paraphrase_type: specificity_narrowing
+  text: Can you tell me how to qualify for volume discounts at Acme Shop?
+  gold_docs_section_id: bulk_orders.md#volume-discounts
+  key_tokens_docs:
+  - volume
+  - ordered
+  - increases
+  - sku
+  - coupon
+  - excluded
+  - planning
+  - projects
+  - recalculated
+  - revised
+  key_tokens_wiki:
+  - volume
+  - ordered
+  - increases
+  - sku
+  - coupon
+  - excluded
+  - planning
+  - projects
+  - recalculated
+  - revised
+- paraphrase_id: specific-012
+  paraphrase_type: specificity_narrowing
+  text: What should I do if I haven't received my password reset email from Acme Shop?
+  gold_docs_section_id: account_management.md#password-reset
+  key_tokens_docs:
+  - forgotten
+  - don
+  - worry
+  - resetting
+  - homepage
+  - sign
+  - eight
+  - mix
+  - letters
+  - numbers
+  key_tokens_wiki:
+  - forgotten
+  - don
+  - worry
+  - resetting
+  - homepage
+  - sign
+  - eight
+  - mix
+  - letters
+  - numbers
+- paraphrase_id: specific-013
+  paraphrase_type: specificity_narrowing
+  text: What should I do if my payment gets declined at Acme Shop?
+  gold_docs_section_id: payment_methods.md#failed-payments
+  key_tokens_docs:
+  - rejected
+  - payments
+  - triggered
+  - unusual
+  - patterns
+  - verifying
+  - above
+  - banks
+  - authorize
+  - accepted
+  key_tokens_wiki:
+  - rejected
+  - payments
+  - triggered
+  - unusual
+  - patterns
+  - verifying
+  - above
+  - banks
+  - authorize
+  - accepted
+- paraphrase_id: specific-014
+  paraphrase_type: specificity_narrowing
+  text: How long does it take to get a refund for credit card, PayPal, and gift card
+    payments?
+  gold_docs_section_id: returns_policy.md#refund-processing-time
+  key_tokens_docs:
+  - volumes
+  - post
+  - wallets
+  - retained
+  - finalized
+  - allowed
+  - warehouse
+  - thoroughly
+  - slightly
+  - increased
+  key_tokens_wiki:
+  - volumes
+  - post
+  - wallets
+  - retained
+  - finalized
+  - allowed
+  - warehouse
+  - thoroughly
+  - slightly
+  - increased
+- paraphrase_id: specific-015
+  paraphrase_type: specificity_narrowing
+  text: How long will it take for my large order to be delivered, including processing
+    and shipping?
+  gold_docs_section_id: bulk_orders.md#fulfilment-and-lead-times
+  key_tokens_docs:
+  - fulfilment
+  - reliability
+  - verifies
+  - prepares
+  - lead
+  - varying
+  - expect
+  - way
+  - adverse
+  - placement
+  key_tokens_wiki:
+  - fulfilment
+  - reliability
+  - verifies
+  - prepares
+  - lead
+  - varying
+  - expect
+  - way
+  - adverse
+  - placement
+- paraphrase_id: specific-016
+  paraphrase_type: specificity_narrowing
+  text: If I receive a defective item from Acme Shop, will I still have to pay a restocking
+    fee?
+  gold_docs_section_id: returns_policy.md#restocking-fee
+  key_tokens_docs:
+  - large
+  - appliances
+  - manuals
+  - exceptions
+  - waived
+  - applies
+  - furniture
+  - managing
+  - inventory
+  - complications
+  key_tokens_wiki:
+  - large
+  - appliances
+  - manuals
+  - exceptions
+  - waived
+  - applies
+  - furniture
+  - managing
+  - inventory
+  - complications
+- paraphrase_id: specific-017
+  paraphrase_type: specificity_narrowing
+  text: What's the fastest way to reach Acme Shop for urgent help with my order?
+  gold_docs_section_id: customer_support.md#contact-channels
+  key_tokens_docs:
+  - suit
+  - bottom
+  - connected
+  - emails
+  - channel
+  - useful
+  - explanations
+  - prefer
+  - speaking
+  - hotline
+  key_tokens_wiki:
+  - suit
+  - bottom
+  - connected
+  - emails
+  - channel
+  - useful
+  - explanations
+  - prefer
+  - speaking
+  - hotline
+- paraphrase_id: specific-018
+  paraphrase_type: specificity_narrowing
+  text: How long does it usually take for my order to arrive with your standard shipping?
+  gold_docs_section_id: shipping_options.md#standard-delivery
+  key_tokens_docs:
+  - doorstep
+  - otherwise
+  - great
+  - incentive
+  - specified
+  - heavy
+  - reliable
+  - stated
+  - periods
+  - domestic
+  key_tokens_wiki:
+  - doorstep
+  - otherwise
+  - great
+  - incentive
+  - specified
+  - heavy
+  - reliable
+  - stated
+  - periods
+  - domestic
+- paraphrase_id: specific-019
+  paraphrase_type: specificity_narrowing
+  text: Does Acme Shop ship to my country, and how can I check if they do?
+  gold_docs_section_id: international_shipping.md#supported-countries
+  key_tokens_docs:
+  - continually
+  - expand
+  - periodically
+  - incurred
+  - packages
+  - regions
+  - logistical
+  - political
+  - instability
+  - disasters
+  key_tokens_wiki:
+  - continually
+  - expand
+  - periodically
+  - incurred
+  - packages
+  - regions
+  - logistical
+  - political
+  - instability
+  - disasters
+- paraphrase_id: specific-020
+  paraphrase_type: specificity_narrowing
+  text: How do I quickly file a damage claim with Acme Shop?
+  gold_docs_section_id: damaged_items.md#reporting-damage
+  key_tokens_docs:
+  - frustrating
+  - question
+  - showing
+  - returning
+  - preference
+  - extenuating
+  - exception
+  - reporting
+  - report
+  - navigating
+  key_tokens_wiki:
+  - frustrating
+  - question
+  - showing
+  - returning
+  - preference
+  - extenuating
+  - exception
+  - reporting
+  - report
+  - navigating
+- paraphrase_id: specific-021
+  paraphrase_type: specificity_narrowing
+  text: Can I use a 10% electronics discount along with a free shipping code at Acme
+    Shop?
+  gold_docs_section_id: promo_codes.md#stacking-rules
+  key_tokens_docs:
+  - deals
+  - consistent
+  - stacking
+  - manner
+  - beneficial
+  - parties
+  - tied
+  - stacked
+  - uncertainties
+  - rules
+  key_tokens_wiki:
+  - deals
+  - consistent
+  - stacking
+  - manner
+  - beneficial
+  - parties
+  - tied
+  - stacked
+  - uncertainties
+  - rules
+- paraphrase_id: specific-022
+  paraphrase_type: specificity_narrowing
+  text: What are my options for getting a damaged product repaired under warranty
+    at Acme Shop?
+  gold_docs_section_id: product_care.md#warranty-implications
+  key_tokens_docs:
+  - stand
+  - warranties
+  - failures
+  - void
+  - specifies
+  - result
+  - similarly
+  - exposed
+  - limits
+  - temperatures
+  key_tokens_wiki:
+  - stand
+  - warranties
+  - failures
+  - void
+  - specifies
+  - result
+  - similarly
+  - exposed
+  - limits
+  - temperatures
+- paraphrase_id: specific-023
+  paraphrase_type: specificity_narrowing
+  text: What should I do if my promo code isn't working at checkout on Acme Shop?
+  gold_docs_section_id: promo_codes.md#applying-a-code
+  key_tokens_docs:
+  - applying
+  - precisely
+  - sensitivity
+  - validated
+  - summary
+  - exclusions
+  - glitch
+  - problem
+  - explicitly
+  - added
+  key_tokens_wiki:
+  - applying
+  - precisely
+  - sensitivity
+  - validated
+  - summary
+  - exclusions
+  - glitch
+  - problem
+  - explicitly
+  - added
+- paraphrase_id: specific-024
+  paraphrase_type: specificity_narrowing
+  text: What's the best way to figure out my size using your sizing charts?
+  gold_docs_section_id: product_information.md#size-guide
+  key_tokens_docs:
+  - fit
+  - developed
+  - sizing
+  - charts
+  - effectively
+  - locating
+  - footwear
+  - chart
+  - measurements
+  - chest
+  key_tokens_wiki:
+  - fit
+  - developed
+  - sizing
+  - charts
+  - effectively
+  - locating
+  - footwear
+  - chart
+  - measurements
+  - chest
+- paraphrase_id: specific-025
+  paraphrase_type: specificity_narrowing
+  text: Why might there be a delay in receiving my digital gift card from Acme Shop?
+  gold_docs_section_id: gift_cards.md#purchase-and-delivery
+  key_tokens_docs:
+  - convenience
+  - folders
+  - continental
+  - reroute
+  - sending
+  - redeemable
+  - ultimate
+  - physical
+  - buy
+  - recipient
+  key_tokens_wiki:
+  - convenience
+  - folders
+  - continental
+  - reroute
+  - sending
+  - redeemable
+  - ultimate
+  - physical
+  - buy
+  - recipient
+- paraphrase_id: specific-026
+  paraphrase_type: specificity_narrowing
+  text: How can someone else pick up my Acme Shop order for me?
+  gold_docs_section_id: store_pickup.md#pickup-identification
+  key_tokens_docs:
+  - identification
+  - collecting
+  - issued
+  - acceptable
+  - forms
+  - driver
+  - passport
+  - state
+  - safely
+  - handed
+  key_tokens_wiki:
+  - identification
+  - collecting
+  - issued
+  - acceptable
+  - forms
+  - driver
+  - passport
+  - state
+  - safely
+  - handed
+- paraphrase_id: specific-027
+  paraphrase_type: specificity_narrowing
+  text: What happens if my gift card balance is more than my purchase at Acme Shop?
+  gold_docs_section_id: gift_cards.md#redeeming-a-gift-card
+  key_tokens_docs:
+  - finished
+  - deduct
+  - exceeds
+  - saved
+  - conversely
+  - surpasses
+  - attempting
+  - themselves
+  - typing
+  - errors
+  key_tokens_wiki:
+  - finished
+  - deduct
+  - exceeds
+  - saved
+  - conversely
+  - surpasses
+  - attempting
+  - themselves
+  - typing
+  - errors
+- paraphrase_id: specific-028
+  paraphrase_type: specificity_narrowing
+  text: How do I permanently close my Acme Shop account?
+  gold_docs_section_id: account_management.md#close-account
+  key_tokens_docs:
+  - decided
+  - permanently
+  - closure
+  - menu
+  - prompts
+  - closed
+  - deleted
+  - undone
+  - proceeding
+  - outstanding
+  key_tokens_wiki:
+  - decided
+  - permanently
+  - closure
+  - menu
+  - prompts
+  - closed
+  - deleted
+  - undone
+  - proceeding
+  - outstanding
+- paraphrase_id: specific-029
+  paraphrase_type: specificity_narrowing
+  text: Can I combine two orders from Acme Shop, and if so, how do I do it?
+  gold_docs_section_id: order_management.md#combine-orders
+  key_tokens_docs:
+  - combine
+  - yet
+  - grouped
+  - together
+  - delaying
+  - combinations
+  - contains
+  - combining
+  - hesitate
+  - valued
+  key_tokens_wiki:
+  - combine
+  - yet
+  - grouped
+  - together
+  - delaying
+  - combinations
+  - contains
+  - combining
+  - hesitate
+  - valued
+- paraphrase_id: specific-030
+  paraphrase_type: specificity_narrowing
+  text: Can you tell me how I can request a price match at Acme Shop?
+  gold_docs_section_id: price_matching.md#requesting-a-price-match
+  key_tokens_docs:
+  - qualifying
+  - screenshot
+  - specifications
+  - clubs
+  - bundled
+  - received
+  - affordable
+  - satisfying
+  - prices
+  - valued
+  key_tokens_wiki:
+  - qualifying
+  - screenshot
+  - specifications
+  - clubs
+  - bundled
+  - received
+  - affordable
+  - satisfying
+  - prices
+  - valued
+- paraphrase_id: specific-031
+  paraphrase_type: specificity_narrowing
+  text: How long does expedited shipping take for international orders during busy
+    shopping times?
+  gold_docs_section_id: international_shipping.md#international-delivery-times
+  key_tokens_docs:
+  - estimates
+  - exclude
+  - weekends
+  - advise
+  - black
+  - holiday
+  - shipments
+  - faster
+  - reduce
+  - transit
+  key_tokens_wiki:
+  - estimates
+  - exclude
+  - weekends
+  - advise
+  - black
+  - holiday
+  - shipments
+  - faster
+  - reduce
+  - transit
+- paraphrase_id: specific-032
+  paraphrase_type: specificity_narrowing
+  text: How can I clean my Acme electronic device safely without causing moisture
+    damage?
+  gold_docs_section_id: product_care.md#cleaning-instructions
+  key_tokens_docs:
+  - aesthetic
+  - appeal
+  - upholstery
+  - gentle
+  - detergent
+  - cold
+  - water
+  - delicate
+  - protective
+  - mesh
+  key_tokens_wiki:
+  - aesthetic
+  - appeal
+  - upholstery
+  - gentle
+  - detergent
+  - cold
+  - water
+  - delicate
+  - protective
+  - mesh
+- paraphrase_id: specific-033
+  paraphrase_type: specificity_narrowing
+  text: How long does it take for my review to show up on your site after I submit
+    it?
+  gold_docs_section_id: product_information.md#product-reviews
+  key_tokens_docs:
+  - opinions
+  - trustworthy
+  - invitation
+  - leave
+  - firsthand
+  - sharing
+  - thoughts
+  - authenticity
+  - buyers
+  - moderation
+  key_tokens_wiki:
+  - opinions
+  - trustworthy
+  - invitation
+  - leave
+  - firsthand
+  - sharing
+  - thoughts
+  - authenticity
+  - buyers
+  - moderation
+- paraphrase_id: specific-034
+  paraphrase_type: specificity_narrowing
+  text: How do I get faster shipping for my replacement item from Acme Shop?
+  gold_docs_section_id: damaged_items.md#replacement-process
+  key_tokens_docs:
+  - initiated
+  - covers
+  - report
+  - initial
+  - progress
+  - contingent
+  - reporting
+  - discontinued
+  - equivalent
+  - dispatch
+  key_tokens_wiki:
+  - initiated
+  - covers
+  - report
+  - initial
+  - progress
+  - contingent
+  - reporting
+  - discontinued
+  - equivalent
+  - dispatch
+- paraphrase_id: specific-035
+  paraphrase_type: specificity_narrowing
+  text: How can I pause my Acme Shop subscription for three months?
+  gold_docs_section_id: subscription_orders.md#managing-a-subscription
+  key_tokens_docs:
+  - skip
+  - upcoming
+  - instead
+  - skipping
+  - asked
+  - ending
+  - deliveries
+  - fulfilled
+  - prorated
+  - reactivating
+  key_tokens_wiki:
+  - skip
+  - upcoming
+  - instead
+  - skipping
+  - asked
+  - ending
+  - deliveries
+  - fulfilled
+  - prorated
+  - reactivating
+- paraphrase_id: specific-036
+  paraphrase_type: specificity_narrowing
+  text: Can you explain the benefits and spending requirements for each membership
+    tier at Acme Shop?
+  gold_docs_section_id: loyalty_program.md#membership-tiers
+  key_tokens_docs:
+  - distinct
+  - silver
+  - gold
+  - platinum
+  - tier
+  - crafted
+  - increasing
+  - levels
+  - annual
+  - joining
+  key_tokens_wiki:
+  - distinct
+  - silver
+  - gold
+  - platinum
+  - tier
+  - crafted
+  - increasing
+  - levels
+  - annual
+  - joining
+- paraphrase_id: specific-037
+  paraphrase_type: specificity_narrowing
+  text: How do I change my shipping address, and are there any restrictions compared
+    to contacting the carrier directly?
+  gold_docs_section_id: order_management.md#change-shipping-address
+  key_tokens_docs:
+  - transitions
+  - modifications
+  - unfortunately
+  - explore
+  - redirection
+  - possibilities
+  - success
+  - changing
+  - prior
+  - update
+  key_tokens_wiki:
+  - transitions
+  - modifications
+  - unfortunately
+  - explore
+  - redirection
+  - possibilities
+  - success
+  - changing
+  - prior
+  - update
+- paraphrase_id: specific-038
+  paraphrase_type: specificity_narrowing
+  text: What should I do if I get a notice about a subscription price increase at
+    Acme Shop?
+  gold_docs_section_id: subscription_orders.md#subscription-pricing-changes
+  key_tokens_docs:
+  - ways
+  - increase
+  - subscribed
+  - ample
+  - decide
+  - effect
+  - existing
+  - concluded
+  - decrease
+  - reduced
+  key_tokens_wiki:
+  - ways
+  - increase
+  - subscribed
+  - ample
+  - decide
+  - effect
+  - existing
+  - concluded
+  - decrease
+  - reduced
+- paraphrase_id: specific-039
+  paraphrase_type: specificity_narrowing
+  text: How do I update my email address on my Acme Shop account?
+  gold_docs_section_id: account_management.md#update-email-address
+  key_tokens_docs:
+  - profile
+  - locate
+  - revert
+  - done
+  - old
+  - go
+  - update
+  - credentials
+  - found
+  - top
+  key_tokens_wiki:
+  - profile
+  - locate
+  - revert
+  - done
+  - old
+  - go
+  - update
+  - credentials
+  - found
+  - top
+- paraphrase_id: specific-040
+  paraphrase_type: specificity_narrowing
+  text: How can I track my Acme Shop order using the resources you provide?
+  gold_docs_section_id: shipping_options.md#order-tracking
+  key_tokens_docs:
+  - knowing
+  - delayed
+  - end
+  - notice
+  - arrived
+  - delay
+  - frequent
+  - view
+  - track
+  - updates
+  key_tokens_wiki:
+  - knowing
+  - delayed
+  - end
+  - notice
+  - arrived
+  - delay
+  - frequent
+  - view
+  - track
+  - updates
+- paraphrase_id: specific-041
+  paraphrase_type: specificity_narrowing
+  text: How can I earn more Acme Rewards points through promotions and referrals?
+  gold_docs_section_id: loyalty_program.md#earning-points
+  key_tokens_docs:
+  - rewards
+  - earning
+  - accumulate
+  - earn
+  - reward
+  - except
+  - completion
+  - boost
+  - bonus
+  - participating
+  key_tokens_wiki:
+  - rewards
+  - earning
+  - accumulate
+  - earn
+  - reward
+  - except
+  - completion
+  - boost
+  - bonus
+  - participating
+- paraphrase_id: specific-042
+  paraphrase_type: specificity_narrowing
+  text: How can I make sure my electronic devices last longer in different environments?
+  gold_docs_section_id: product_care.md#storage-guidelines
+  key_tokens_docs:
+  - storage
+  - cosmetics
+  - textiles
+  - stable
+  - environment
+  - stored
+  - cool
+  - away
+  - sunlight
+  - internal
+  key_tokens_wiki:
+  - storage
+  - cosmetics
+  - textiles
+  - stable
+  - environment
+  - stored
+  - cool
+  - away
+  - sunlight
+  - internal
+- paraphrase_id: specific-043
+  paraphrase_type: specificity_narrowing
+  text: How do I convert my loyalty points into account credits at Acme Shop?
+  gold_docs_section_id: loyalty_program.md#redeeming-points
+  key_tokens_docs:
+  - redeeming
+  - credits
+  - dashboard
+  - convert
+  - increments
+  - increment
+  - hard
+  - earned
+  - reflecting
+  - encountering
+  key_tokens_wiki:
+  - redeeming
+  - credits
+  - dashboard
+  - convert
+  - increments
+  - increment
+  - hard
+  - earned
+  - reflecting
+  - encountering
+- paraphrase_id: specific-044
+  paraphrase_type: specificity_narrowing
+  text: How can I qualify for Acme Shop's premium same-day delivery service?
+  gold_docs_section_id: shipping_options.md#expedited-delivery
+  key_tokens_docs:
+  - getting
+  - hurry
+  - instantly
+  - very
+  - rural
+  - surcharge
+  - proactively
+  - work
+  - urgent
+  - guarantees
+  key_tokens_wiki:
+  - getting
+  - hurry
+  - instantly
+  - very
+  - rural
+  - surcharge
+  - proactively
+  - work
+  - urgent
+  - guarantees
+- paraphrase_id: specific-045
+  paraphrase_type: specificity_narrowing
+  text: How can I track my order at Acme Shop using the help center or virtual assistant?
+  gold_docs_section_id: customer_support.md#self-service-resources
+  key_tokens_docs:
+  - self
+  - resources
+  - empower
+  - centre
+  - faqs
+  - intelligent
+  - virtual
+  - extensive
+  - library
+  - articles
+  key_tokens_wiki:
+  - self
+  - resources
+  - empower
+  - centre
+  - faqs
+  - intelligent
+  - virtual
+  - extensive
+  - library
+  - articles
+- paraphrase_id: specific-046
+  paraphrase_type: specificity_narrowing
+  text: What are the differences between using Visa, MasterCard, American Express,
+    and Discover at Acme Shop?
+  gold_docs_section_id: payment_methods.md#accepted-cards
+  key_tokens_docs:
+  - accept
+  - visa
+  - mastercard
+  - american
+  - discover
+  - processor
+  - protected
+  - foreign
+  - statement
+  - limit
+  key_tokens_wiki:
+  - accept
+  - visa
+  - mastercard
+  - american
+  - discover
+  - processor
+  - protected
+  - foreign
+  - statement
+  - limit
+- paraphrase_id: specific-047
+  paraphrase_type: specificity_narrowing
+  text: How do I return an item to Acme Shop if it's been less than 30 days since
+    purchase?
+  gold_docs_section_id: returns_policy.md#return-window
+  key_tokens_docs:
+  - sometimes
+  - expectations
+  - exchange
+  - unused
+  - tags
+  - intact
+  - standards
+  - customized
+  - intimate
+  - pleasant
+  key_tokens_wiki:
+  - sometimes
+  - expectations
+  - exchange
+  - unused
+  - tags
+  - intact
+  - standards
+  - customized
+  - intimate
+  - pleasant
+- paraphrase_id: specific-048
+  paraphrase_type: specificity_narrowing
+  text: How can I change the pickup location for my order after I've already bought
+    it?
+  gold_docs_section_id: store_pickup.md#buy-online-pick-up-in-store
+  key_tokens_docs:
+  - browsing
+  - catalog
+  - preferred
+  - zip
+  - accommodate
+  - bring
+  - collected
+  - associates
+  - pickup
+  - adding
+  key_tokens_wiki:
+  - browsing
+  - catalog
+  - preferred
+  - zip
+  - accommodate
+  - bring
+  - collected
+  - associates
+  - pickup
+  - adding
+- paraphrase_id: specific-049
+  paraphrase_type: specificity_narrowing
+  text: How do I request a price match at Acme Shop, and what are the conditions?
+  gold_docs_section_id: price_matching.md#price-match-eligibility
+  key_tokens_docs:
+  - guarantee
+  - deal
+  - color
+  - competing
+  - competitors
+  - advertised
+  - stores
+  - advertisement
+  - flash
+  - bundle
+  key_tokens_wiki:
+  - guarantee
+  - deal
+  - color
+  - competing
+  - competitors
+  - advertised
+  - stores
+  - advertisement
+  - flash
+  - bundle
+- paraphrase_id: specific-050
+  paraphrase_type: specificity_narrowing
+  text: How do I replace a lost Acme Shop gift card, and are there different steps
+    if it's registered?
+  gold_docs_section_id: gift_cards.md#lost-gift-cards
+  key_tokens_docs:
+  - misplaced
+  - lost
+  - ability
+  - replace
+  - met
+  - streamlined
+  - nominal
+  - reissuance
+  - partially
+  - registering
+  key_tokens_wiki:
+  - misplaced
+  - lost
+  - ability
+  - replace
+  - met
+  - streamlined
+  - nominal
+  - reissuance
+  - partially
+  - registering
+- paraphrase_id: implicit-001
+  paraphrase_type: implicit_reference
+  text: How do I request a price match at Acme Shop within 14 days of purchase?
+  gold_docs_section_id: price_matching.md#price-match-eligibility
+  key_tokens_docs:
+  - guarantee
+  - deal
+  - color
+  - competing
+  - competitors
+  - advertised
+  - stores
+  - advertisement
+  - flash
+  - bundle
+  key_tokens_wiki:
+  - guarantee
+  - deal
+  - color
+  - competing
+  - competitors
+  - advertised
+  - stores
+  - advertisement
+  - flash
+  - bundle
+- paraphrase_id: implicit-002
+  paraphrase_type: implicit_reference
+  text: How do I request a price match at Acme Shop, and what are the conditions?
+  gold_docs_section_id: price_matching.md#requesting-a-price-match
+  key_tokens_docs:
+  - qualifying
+  - screenshot
+  - specifications
+  - clubs
+  - bundled
+  - received
+  - affordable
+  - satisfying
+  - prices
+  - valued
+  key_tokens_wiki:
+  - qualifying
+  - screenshot
+  - specifications
+  - clubs
+  - bundled
+  - received
+  - affordable
+  - satisfying
+  - prices
+  - valued
+- paraphrase_id: implicit-003
+  paraphrase_type: implicit_reference
+  text: What's the fastest way to get in touch with Acme Shop for urgent help?
+  gold_docs_section_id: customer_support.md#contact-channels
+  key_tokens_docs:
+  - suit
+  - bottom
+  - connected
+  - emails
+  - channel
+  - useful
+  - explanations
+  - prefer
+  - speaking
+  - hotline
+  key_tokens_wiki:
+  - suit
+  - bottom
+  - connected
+  - emails
+  - channel
+  - useful
+  - explanations
+  - prefer
+  - speaking
+  - hotline
+- paraphrase_id: implicit-004
+  paraphrase_type: implicit_reference
+  text: What's the process for using a gift card at Acme Shop compared to other payment
+    options?
+  gold_docs_section_id: gift_cards.md#redeeming-a-gift-card
+  key_tokens_docs:
+  - finished
+  - deduct
+  - exceeds
+  - saved
+  - conversely
+  - surpasses
+  - attempting
+  - themselves
+  - typing
+  - errors
+  key_tokens_wiki:
+  - finished
+  - deduct
+  - exceeds
+  - saved
+  - conversely
+  - surpasses
+  - attempting
+  - themselves
+  - typing
+  - errors
+- paraphrase_id: implicit-005
+  paraphrase_type: implicit_reference
+  text: Can I use multiple promo codes at once to save more on my Acme Shop order?
+  gold_docs_section_id: promo_codes.md#stacking-rules
+  key_tokens_docs:
+  - deals
+  - consistent
+  - stacking
+  - manner
+  - beneficial
+  - parties
+  - tied
+  - stacked
+  - uncertainties
+  - rules
+  key_tokens_wiki:
+  - deals
+  - consistent
+  - stacking
+  - manner
+  - beneficial
+  - parties
+  - tied
+  - stacked
+  - uncertainties
+  - rules
+- paraphrase_id: implicit-006
+  paraphrase_type: implicit_reference
+  text: How do I permanently close my Acme Shop account and handle any ongoing transactions
+    or subscriptions?
+  gold_docs_section_id: account_management.md#close-account
+  key_tokens_docs:
+  - decided
+  - permanently
+  - closure
+  - menu
+  - prompts
+  - closed
+  - deleted
+  - undone
+  - proceeding
+  - outstanding
+  key_tokens_wiki:
+  - decided
+  - permanently
+  - closure
+  - menu
+  - prompts
+  - closed
+  - deleted
+  - undone
+  - proceeding
+  - outstanding
+- paraphrase_id: implicit-007
+  paraphrase_type: implicit_reference
+  text: Will my refund take longer to process if I return an item during the holiday
+    season?
+  gold_docs_section_id: returns_policy.md#refund-processing-time
+  key_tokens_docs:
+  - volumes
+  - post
+  - wallets
+  - retained
+  - finalized
+  - allowed
+  - warehouse
+  - thoroughly
+  - slightly
+  - increased
+  key_tokens_wiki:
+  - volumes
+  - post
+  - wallets
+  - retained
+  - finalized
+  - allowed
+  - warehouse
+  - thoroughly
+  - slightly
+  - increased
+- paraphrase_id: implicit-008
+  paraphrase_type: implicit_reference
+  text: Can you tell me if Acme Shop ships to my country and if there are any extra
+    fees?
+  gold_docs_section_id: international_shipping.md#supported-countries
+  key_tokens_docs:
+  - continually
+  - expand
+  - periodically
+  - incurred
+  - packages
+  - regions
+  - logistical
+  - political
+  - instability
+  - disasters
+  key_tokens_wiki:
+  - continually
+  - expand
+  - periodically
+  - incurred
+  - packages
+  - regions
+  - logistical
+  - political
+  - instability
+  - disasters
+- paraphrase_id: implicit-009
+  paraphrase_type: implicit_reference
+  text: What's the difference between returning regular items and perishable goods
+    at Acme Shop?
+  gold_docs_section_id: returns_policy.md#return-window
+  key_tokens_docs:
+  - sometimes
+  - expectations
+  - exchange
+  - unused
+  - tags
+  - intact
+  - standards
+  - customized
+  - intimate
+  - pleasant
+  key_tokens_wiki:
+  - sometimes
+  - expectations
+  - exchange
+  - unused
+  - tags
+  - intact
+  - standards
+  - customized
+  - intimate
+  - pleasant
+- paraphrase_id: implicit-010
+  paraphrase_type: implicit_reference
+  text: What are Acme Shop's policies on backorders, and how do they handle supply
+    chain issues?
+  gold_docs_section_id: order_management.md#backordered-items
+  key_tokens_docs:
+  - backordered
+  - assure
+  - diligently
+  - suppliers
+  - replenish
+  - won
+  - multiple
+  - adjustments
+  - compensation
+  - gesture
+  key_tokens_wiki:
+  - backordered
+  - assure
+  - diligently
+  - suppliers
+  - replenish
+  - won
+  - multiple
+  - adjustments
+  - compensation
+  - gesture
+- paraphrase_id: implicit-011
+  paraphrase_type: implicit_reference
+  text: When does Acme Shop waive the restocking fee for returns?
+  gold_docs_section_id: returns_policy.md#restocking-fee
+  key_tokens_docs:
+  - large
+  - appliances
+  - manuals
+  - exceptions
+  - waived
+  - applies
+  - furniture
+  - managing
+  - inventory
+  - complications
+  key_tokens_wiki:
+  - large
+  - appliances
+  - manuals
+  - exceptions
+  - waived
+  - applies
+  - furniture
+  - managing
+  - inventory
+  - complications
+- paraphrase_id: implicit-012
+  paraphrase_type: implicit_reference
+  text: How do I make sure my Acme Shop product warranty stays valid?
+  gold_docs_section_id: product_care.md#warranty-implications
+  key_tokens_docs:
+  - stand
+  - warranties
+  - failures
+  - void
+  - specifies
+  - result
+  - similarly
+  - exposed
+  - limits
+  - temperatures
+  key_tokens_wiki:
+  - stand
+  - warranties
+  - failures
+  - void
+  - specifies
+  - result
+  - similarly
+  - exposed
+  - limits
+  - temperatures
+- paraphrase_id: implicit-013
+  paraphrase_type: implicit_reference
+  text: How long does it usually take to receive a digital gift card after purchase?
+  gold_docs_section_id: gift_cards.md#purchase-and-delivery
+  key_tokens_docs:
+  - convenience
+  - folders
+  - continental
+  - reroute
+  - sending
+  - redeemable
+  - ultimate
+  - physical
+  - buy
+  - recipient
+  key_tokens_wiki:
+  - convenience
+  - folders
+  - continental
+  - reroute
+  - sending
+  - redeemable
+  - ultimate
+  - physical
+  - buy
+  - recipient
+- paraphrase_id: implicit-014
+  paraphrase_type: implicit_reference
+  text: How should I store my electronics to keep them in good condition for a long
+    time?
+  gold_docs_section_id: product_care.md#storage-guidelines
+  key_tokens_docs:
+  - storage
+  - cosmetics
+  - textiles
+  - stable
+  - environment
+  - stored
+  - cool
+  - away
+  - sunlight
+  - internal
+  key_tokens_wiki:
+  - storage
+  - cosmetics
+  - textiles
+  - stable
+  - environment
+  - stored
+  - cool
+  - away
+  - sunlight
+  - internal
+- paraphrase_id: implicit-015
+  paraphrase_type: implicit_reference
+  text: Can I combine two orders I placed within 12 hours at Acme Shop?
+  gold_docs_section_id: order_management.md#combine-orders
+  key_tokens_docs:
+  - combine
+  - yet
+  - grouped
+  - together
+  - delaying
+  - combinations
+  - contains
+  - combining
+  - hesitate
+  - valued
+  key_tokens_wiki:
+  - combine
+  - yet
+  - grouped
+  - together
+  - delaying
+  - combinations
+  - contains
+  - combining
+  - hesitate
+  - valued
+- paraphrase_id: implicit-016
+  paraphrase_type: implicit_reference
+  text: How long does it take for payment holds to be released on canceled orders
+    compared to shipped ones?
+  gold_docs_section_id: payment_methods.md#payment-authorization
+  key_tokens_docs:
+  - authorization
+  - goes
+  - initially
+  - sends
+  - actually
+  - transferred
+  - lasts
+  - captures
+  - capturing
+  - transferring
+  key_tokens_wiki:
+  - authorization
+  - goes
+  - initially
+  - sends
+  - actually
+  - transferred
+  - lasts
+  - captures
+  - capturing
+  - transferring
+- paraphrase_id: implicit-017
+  paraphrase_type: implicit_reference
+  text: What affects how long it takes for my bulk order to be delivered from Acme
+    Shop?
+  gold_docs_section_id: bulk_orders.md#fulfilment-and-lead-times
+  key_tokens_docs:
+  - fulfilment
+  - reliability
+  - verifies
+  - prepares
+  - lead
+  - varying
+  - expect
+  - way
+  - adverse
+  - placement
+  key_tokens_wiki:
+  - fulfilment
+  - reliability
+  - verifies
+  - prepares
+  - lead
+  - varying
+  - expect
+  - way
+  - adverse
+  - placement
+- paraphrase_id: implicit-018
+  paraphrase_type: implicit_reference
+  text: How do I remove a device from my trusted list on Acme Shop?
+  gold_docs_section_id: account_security.md#managing-trusted-devices
+  key_tokens_docs:
+  - trust
+  - last
+  - regularly
+  - recognize
+  - removed
+  - incurs
+  - removing
+  - interrupt
+  - suspect
+  - prioritize
+  key_tokens_wiki:
+  - trust
+  - last
+  - regularly
+  - recognize
+  - removed
+  - incurs
+  - removing
+  - interrupt
+  - suspect
+  - prioritize
+- paraphrase_id: implicit-019
+  paraphrase_type: implicit_reference
+  text: How do I update my email on my Acme Shop account securely?
+  gold_docs_section_id: account_management.md#update-email-address
+  key_tokens_docs:
+  - profile
+  - locate
+  - revert
+  - done
+  - old
+  - go
+  - update
+  - credentials
+  - found
+  - top
+  key_tokens_wiki:
+  - profile
+  - locate
+  - revert
+  - done
+  - old
+  - go
+  - update
+  - credentials
+  - found
+  - top
+- paraphrase_id: implicit-020
+  paraphrase_type: implicit_reference
+  text: What should I do if my password reset email hasn't arrived yet?
+  gold_docs_section_id: account_management.md#password-reset
+  key_tokens_docs:
+  - forgotten
+  - don
+  - worry
+  - resetting
+  - homepage
+  - sign
+  - eight
+  - mix
+  - letters
+  - numbers
+  key_tokens_wiki:
+  - forgotten
+  - don
+  - worry
+  - resetting
+  - homepage
+  - sign
+  - eight
+  - mix
+  - letters
+  - numbers
+- paraphrase_id: implicit-021
+  paraphrase_type: implicit_reference
+  text: How do I use a promo code on your site, and are there any conditions I should
+    know about?
+  gold_docs_section_id: promo_codes.md#applying-a-code
+  key_tokens_docs:
+  - applying
+  - precisely
+  - sensitivity
+  - validated
+  - summary
+  - exclusions
+  - glitch
+  - problem
+  - explicitly
+  - added
+  key_tokens_wiki:
+  - applying
+  - precisely
+  - sensitivity
+  - validated
+  - summary
+  - exclusions
+  - glitch
+  - problem
+  - explicitly
+  - added
+- paraphrase_id: implicit-022
+  paraphrase_type: implicit_reference
+  text: What's the best way to clean Acme Shop electronics compared to fabric items?
+  gold_docs_section_id: product_care.md#cleaning-instructions
+  key_tokens_docs:
+  - aesthetic
+  - appeal
+  - upholstery
+  - gentle
+  - detergent
+  - cold
+  - water
+  - delicate
+  - protective
+  - mesh
+  key_tokens_wiki:
+  - aesthetic
+  - appeal
+  - upholstery
+  - gentle
+  - detergent
+  - cold
+  - water
+  - delicate
+  - protective
+  - mesh
+- paraphrase_id: implicit-023
+  paraphrase_type: implicit_reference
+  text: What can I do if I can't cancel my Acme Shop order?
+  gold_docs_section_id: order_management.md#cancel-an-order
+  key_tokens_docs:
+  - cancelled
+  - shortly
+  - thereafter
+  - cancelling
+  - act
+  - able
+  - swiftly
+  - means
+  - cancellation
+  - arrives
+  key_tokens_wiki:
+  - cancelled
+  - shortly
+  - thereafter
+  - cancelling
+  - act
+  - able
+  - swiftly
+  - means
+  - cancellation
+  - arrives
+- paraphrase_id: implicit-024
+  paraphrase_type: implicit_reference
+  text: How can someone else pick up my order for me securely?
+  gold_docs_section_id: store_pickup.md#pickup-identification
+  key_tokens_docs:
+  - identification
+  - collecting
+  - issued
+  - acceptable
+  - forms
+  - driver
+  - passport
+  - state
+  - safely
+  - handed
+  key_tokens_wiki:
+  - identification
+  - collecting
+  - issued
+  - acceptable
+  - forms
+  - driver
+  - passport
+  - state
+  - safely
+  - handed
+- paraphrase_id: implicit-025
+  paraphrase_type: implicit_reference
+  text: How can I earn bonus points with Acme Rewards, like through referrals or special
+    promotions?
+  gold_docs_section_id: loyalty_program.md#earning-points
+  key_tokens_docs:
+  - rewards
+  - earning
+  - accumulate
+  - earn
+  - reward
+  - except
+  - completion
+  - boost
+  - bonus
+  - participating
+  key_tokens_wiki:
+  - rewards
+  - earning
+  - accumulate
+  - earn
+  - reward
+  - except
+  - completion
+  - boost
+  - bonus
+  - participating
+- paraphrase_id: implicit-026
+  paraphrase_type: implicit_reference
+  text: How can I redeem my points in increments of 50 at Acme Shop?
+  gold_docs_section_id: loyalty_program.md#redeeming-points
+  key_tokens_docs:
+  - redeeming
+  - credits
+  - dashboard
+  - convert
+  - increments
+  - increment
+  - hard
+  - earned
+  - reflecting
+  - encountering
+  key_tokens_wiki:
+  - redeeming
+  - credits
+  - dashboard
+  - convert
+  - increments
+  - increment
+  - hard
+  - earned
+  - reflecting
+  - encountering
+- paraphrase_id: implicit-027
+  paraphrase_type: implicit_reference
+  text: How do I pause my Acme Shop subscription, and how long does it take?
+  gold_docs_section_id: subscription_orders.md#managing-a-subscription
+  key_tokens_docs:
+  - skip
+  - upcoming
+  - instead
+  - skipping
+  - asked
+  - ending
+  - deliveries
+  - fulfilled
+  - prorated
+  - reactivating
+  key_tokens_wiki:
+  - skip
+  - upcoming
+  - instead
+  - skipping
+  - asked
+  - ending
+  - deliveries
+  - fulfilled
+  - prorated
+  - reactivating
+- paraphrase_id: implicit-028
+  paraphrase_type: implicit_reference
+  text: Can I use my American Express card to pay securely at Acme Shop?
+  gold_docs_section_id: payment_methods.md#accepted-cards
+  key_tokens_docs:
+  - accept
+  - visa
+  - mastercard
+  - american
+  - discover
+  - processor
+  - protected
+  - foreign
+  - statement
+  - limit
+  key_tokens_wiki:
+  - accept
+  - visa
+  - mastercard
+  - american
+  - discover
+  - processor
+  - protected
+  - foreign
+  - statement
+  - limit
+- paraphrase_id: implicit-029
+  paraphrase_type: implicit_reference
+  text: How do I set up auto-replenishment for seasonal items at Acme Shop?
+  gold_docs_section_id: subscription_orders.md#setting-up-a-subscription
+  key_tokens_docs:
+  - enroll
+  - replenishment
+  - subscribe
+  - frequency
+  - weekly
+  - monthly
+  - intervals
+  - shorter
+  - shelf
+  - lives
+  key_tokens_wiki:
+  - enroll
+  - replenishment
+  - subscribe
+  - frequency
+  - weekly
+  - monthly
+  - intervals
+  - shorter
+  - shelf
+  - lives
+- paraphrase_id: implicit-030
+  paraphrase_type: implicit_reference
+  text: What's the difference between reporting damage and dealing with misuse-related
+    issues at Acme Shop?
+  gold_docs_section_id: damaged_items.md#reporting-damage
+  key_tokens_docs:
+  - frustrating
+  - question
+  - showing
+  - returning
+  - preference
+  - extenuating
+  - exception
+  - reporting
+  - report
+  - navigating
+  key_tokens_wiki:
+  - frustrating
+  - question
+  - showing
+  - returning
+  - preference
+  - extenuating
+  - exception
+  - reporting
+  - report
+  - navigating
+- paraphrase_id: implicit-031
+  paraphrase_type: implicit_reference
+  text: How long does it take for my review to appear after I submit it?
+  gold_docs_section_id: product_information.md#product-reviews
+  key_tokens_docs:
+  - opinions
+  - trustworthy
+  - invitation
+  - leave
+  - firsthand
+  - sharing
+  - thoughts
+  - authenticity
+  - buyers
+  - moderation
+  key_tokens_wiki:
+  - opinions
+  - trustworthy
+  - invitation
+  - leave
+  - firsthand
+  - sharing
+  - thoughts
+  - authenticity
+  - buyers
+  - moderation
+- paraphrase_id: implicit-032
+  paraphrase_type: implicit_reference
+  text: What do I need to provide to qualify for bulk orders at Acme Shop?
+  gold_docs_section_id: bulk_orders.md#eligibility-and-minimum-order
+  key_tokens_docs:
+  - businesses
+  - organizations
+  - profit
+  - educational
+  - institutions
+  - agencies
+  - individuals
+  - unregistered
+  - entities
+  - tax
+  key_tokens_wiki:
+  - businesses
+  - organizations
+  - profit
+  - educational
+  - institutions
+  - agencies
+  - individuals
+  - unregistered
+  - entities
+  - tax
+- paraphrase_id: implicit-033
+  paraphrase_type: implicit_reference
+  text: What affects the customs fees and delivery times for my international order
+    from Acme Shop?
+  gold_docs_section_id: international_shipping.md#customs-and-duties
+  key_tokens_docs:
+  - handled
+  - referred
+  - control
+  - levied
+  - authority
+  - therefore
+  - regulations
+  - declared
+  - office
+  - frame
+  key_tokens_wiki:
+  - handled
+  - referred
+  - control
+  - levied
+  - authority
+  - therefore
+  - regulations
+  - declared
+  - office
+  - frame
+- paraphrase_id: implicit-034
+  paraphrase_type: implicit_reference
+  text: How do I use Acme Shop's sizing charts to make sure I get the right fit?
+  gold_docs_section_id: product_information.md#size-guide
+  key_tokens_docs:
+  - fit
+  - developed
+  - sizing
+  - charts
+  - effectively
+  - locating
+  - footwear
+  - chart
+  - measurements
+  - chest
+  key_tokens_wiki:
+  - fit
+  - developed
+  - sizing
+  - charts
+  - effectively
+  - locating
+  - footwear
+  - chart
+  - measurements
+  - chest
+- paraphrase_id: implicit-035
+  paraphrase_type: implicit_reference
+  text: What are the differences in delivery times and costs for domestic versus international
+    orders at Acme Shop?
+  gold_docs_section_id: shipping_options.md#standard-delivery
+  key_tokens_docs:
+  - doorstep
+  - otherwise
+  - great
+  - incentive
+  - specified
+  - heavy
+  - reliable
+  - stated
+  - periods
+  - domestic
+  key_tokens_wiki:
+  - doorstep
+  - otherwise
+  - great
+  - incentive
+  - specified
+  - heavy
+  - reliable
+  - stated
+  - periods
+  - domestic
+- paraphrase_id: implicit-036
+  paraphrase_type: implicit_reference
+  text: Why are my payments being flagged as suspicious when I try to order from Acme
+    Shop?
+  gold_docs_section_id: payment_methods.md#failed-payments
+  key_tokens_docs:
+  - rejected
+  - payments
+  - triggered
+  - unusual
+  - patterns
+  - verifying
+  - above
+  - banks
+  - authorize
+  - accepted
+  key_tokens_wiki:
+  - rejected
+  - payments
+  - triggered
+  - unusual
+  - patterns
+  - verifying
+  - above
+  - banks
+  - authorize
+  - accepted
+- paraphrase_id: implicit-037
+  paraphrase_type: implicit_reference
+  text: What should I do to change my pickup location if the store suddenly closes?
+  gold_docs_section_id: store_pickup.md#buy-online-pick-up-in-store
+  key_tokens_docs:
+  - browsing
+  - catalog
+  - preferred
+  - zip
+  - accommodate
+  - bring
+  - collected
+  - associates
+  - pickup
+  - adding
+  key_tokens_wiki:
+  - browsing
+  - catalog
+  - preferred
+  - zip
+  - accommodate
+  - bring
+  - collected
+  - associates
+  - pickup
+  - adding
+- paraphrase_id: implicit-038
+  paraphrase_type: implicit_reference
+  text: How can I recover my lost Acme Shop gift card?
+  gold_docs_section_id: gift_cards.md#lost-gift-cards
+  key_tokens_docs:
+  - misplaced
+  - lost
+  - ability
+  - replace
+  - met
+  - streamlined
+  - nominal
+  - reissuance
+  - partially
+  - registering
+  key_tokens_wiki:
+  - misplaced
+  - lost
+  - ability
+  - replace
+  - met
+  - streamlined
+  - nominal
+  - reissuance
+  - partially
+  - registering
+- paraphrase_id: implicit-039
+  paraphrase_type: implicit_reference
+  text: What's the easiest way to check my order status, through the Help Centre or
+    the Virtual Assistant?
+  gold_docs_section_id: customer_support.md#self-service-resources
+  key_tokens_docs:
+  - self
+  - resources
+  - empower
+  - centre
+  - faqs
+  - intelligent
+  - virtual
+  - extensive
+  - library
+  - articles
+  key_tokens_wiki:
+  - self
+  - resources
+  - empower
+  - centre
+  - faqs
+  - intelligent
+  - virtual
+  - extensive
+  - library
+  - articles
+- paraphrase_id: implicit-040
+  paraphrase_type: implicit_reference
+  text: What should I do if I get a suspicious login alert for my Acme Shop account?
+  gold_docs_section_id: account_security.md#suspicious-activity
+  key_tokens_docs:
+  - detects
+  - suspicious
+  - activity
+  - concern
+  - irregularities
+  - logins
+  - unfamiliar
+  - ip
+  - identified
+  - unrecognized
+  key_tokens_wiki:
+  - detects
+  - suspicious
+  - activity
+  - concern
+  - irregularities
+  - logins
+  - unfamiliar
+  - ip
+  - identified
+  - unrecognized
+- paraphrase_id: implicit-041
+  paraphrase_type: implicit_reference
+  text: How can I get expedited shipping for a replacement item from Acme Shop?
+  gold_docs_section_id: damaged_items.md#replacement-process
+  key_tokens_docs:
+  - initiated
+  - covers
+  - report
+  - initial
+  - progress
+  - contingent
+  - reporting
+  - discontinued
+  - equivalent
+  - dispatch
+  key_tokens_wiki:
+  - initiated
+  - covers
+  - report
+  - initial
+  - progress
+  - contingent
+  - reporting
+  - discontinued
+  - equivalent
+  - dispatch
+- paraphrase_id: implicit-042
+  paraphrase_type: implicit_reference
+  text: How can I get notified when an out-of-stock item is available again?
+  gold_docs_section_id: product_information.md#stock-availability
+  key_tokens_docs:
+  - title
+  - format
+  - low
+  - acting
+  - sell
+  - easy
+  - me
+  - reserve
+  - served
+  - popular
+  key_tokens_wiki:
+  - title
+  - format
+  - low
+  - acting
+  - sell
+  - easy
+  - me
+  - reserve
+  - served
+  - popular
+- paraphrase_id: implicit-043
+  paraphrase_type: implicit_reference
+  text: How can I get help from a specialist if my order issue isn't resolved?
+  gold_docs_section_id: customer_support.md#escalation-process
+  key_tokens_docs:
+  - escalation
+  - deserve
+  - contacted
+  - unresolved
+  - escalated
+  - specialist
+  - specialists
+  - glitches
+  - escalate
+  - document
+  key_tokens_wiki:
+  - escalation
+  - deserve
+  - contacted
+  - unresolved
+  - escalated
+  - specialist
+  - specialists
+  - glitches
+  - escalate
+  - document
+- paraphrase_id: implicit-044
+  paraphrase_type: implicit_reference
+  text: Can you explain the benefits and spending requirements for each membership
+    tier at Acme Shop?
+  gold_docs_section_id: loyalty_program.md#membership-tiers
+  key_tokens_docs:
+  - distinct
+  - silver
+  - gold
+  - platinum
+  - tier
+  - crafted
+  - increasing
+  - levels
+  - annual
+  - joining
+  key_tokens_wiki:
+  - distinct
+  - silver
+  - gold
+  - platinum
+  - tier
+  - crafted
+  - increasing
+  - levels
+  - annual
+  - joining
+- paraphrase_id: implicit-045
+  paraphrase_type: implicit_reference
+  text: How can I change my shipping address for an order that's already processing
+    without any extra fees?
+  gold_docs_section_id: order_management.md#change-shipping-address
+  key_tokens_docs:
+  - transitions
+  - modifications
+  - unfortunately
+  - explore
+  - redirection
+  - possibilities
+  - success
+  - changing
+  - prior
+  - update
+  key_tokens_wiki:
+  - transitions
+  - modifications
+  - unfortunately
+  - explore
+  - redirection
+  - possibilities
+  - success
+  - changing
+  - prior
+  - update
+- paraphrase_id: implicit-046
+  paraphrase_type: implicit_reference
+  text: What's the best way to set up 2FA on Acme Shop, using SMS or an authenticator
+    app?
+  gold_docs_section_id: account_security.md#two-factor-authentication
+  key_tokens_docs:
+  - adds
+  - second
+  - just
+  - enable
+  - compatible
+  - linked
+  - authenticator
+  - google
+  - authy
+  - setup
+  key_tokens_wiki:
+  - adds
+  - second
+  - just
+  - enable
+  - compatible
+  - linked
+  - authenticator
+  - google
+  - authy
+  - setup
+- paraphrase_id: implicit-047
+  paraphrase_type: implicit_reference
+  text: How can I qualify for Acme Shop's premium same-day delivery service?
+  gold_docs_section_id: shipping_options.md#expedited-delivery
+  key_tokens_docs:
+  - getting
+  - hurry
+  - instantly
+  - very
+  - rural
+  - surcharge
+  - proactively
+  - work
+  - urgent
+  - guarantees
+  key_tokens_wiki:
+  - getting
+  - hurry
+  - instantly
+  - very
+  - rural
+  - surcharge
+  - proactively
+  - work
+  - urgent
+  - guarantees
+- paraphrase_id: implicit-048
+  paraphrase_type: implicit_reference
+  text: How does tracking my order differ for domestic versus international shipments
+    at Acme Shop?
+  gold_docs_section_id: shipping_options.md#order-tracking
+  key_tokens_docs:
+  - knowing
+  - delayed
+  - end
+  - notice
+  - arrived
+  - delay
+  - frequent
+  - view
+  - track
+  - updates
+  key_tokens_wiki:
+  - knowing
+  - delayed
+  - end
+  - notice
+  - arrived
+  - delay
+  - frequent
+  - view
+  - track
+  - updates
+- paraphrase_id: implicit-049
+  paraphrase_type: implicit_reference
+  text: How long does expedited shipping take for international orders during busy
+    shopping times?
+  gold_docs_section_id: international_shipping.md#international-delivery-times
+  key_tokens_docs:
+  - estimates
+  - exclude
+  - weekends
+  - advise
+  - black
+  - holiday
+  - shipments
+  - faster
+  - reduce
+  - transit
+  key_tokens_wiki:
+  - estimates
+  - exclude
+  - weekends
+  - advise
+  - black
+  - holiday
+  - shipments
+  - faster
+  - reduce
+  - transit
+- paraphrase_id: implicit-050
+  paraphrase_type: implicit_reference
+  text: If supplier costs go up, will my Acme Shop subscription price change?
+  gold_docs_section_id: subscription_orders.md#subscription-pricing-changes
+  key_tokens_docs:
+  - ways
+  - increase
+  - subscribed
+  - ample
+  - decide
+  - effect
+  - existing
+  - concluded
+  - decrease
+  - reduced
+  key_tokens_wiki:
+  - ways
+  - increase
+  - subscribed
+  - ample
+  - decide
+  - effect
+  - existing
+  - concluded
+  - decrease
+  - reduced
 - paraphrase_id: typo_fatfinger-001
   paraphrase_type: typo_fatfinger
   text: How lnog do I have to retrun an item for a refnud?
   gold_docs_section_id: returns_policy.md#return-window
   key_tokens_docs:
-  - accompanied
-  - handled
-  - case
-  - basis
-  - cash
-  - most
-  - full
-  - its
+  - return
+  - days
+  - refund
   - packaging
   - receipt
   key_tokens_wiki:
-  - accompanied
-  - handled
-  - case
-  - basis
-  - cash
-  - most
-  - full
-  - its
+  - thirty
+  - refund
   - packaging
   - receipt
+  - unused
   generation_notes: 'hand-written probe; typos: long->lnog return->retrun refund->refnud'
 - paraphrase_id: typo_fatfinger-002
   paraphrase_type: typo_fatfinger
   text: What does expedietd shippng cost and how fsat is it?
   gold_docs_section_id: shipping_options.md#expedited-delivery
   key_tokens_docs:
-  - guarantees
+  - expedited
+  - delivery
   - surcharge
-  - clock
-  - morning
-  - unavailable
-  - contiguous
-  - arrival
-  - afternoon
-  - local
-  - later
+  - business
+  - days
   key_tokens_wiki:
-  - guarantees
+  - expedited
+  - delivery
   - surcharge
-  - clock
-  - morning
-  - unavailable
-  - contiguous
-  - arrival
-  - afternoon
-  - local
-  - later
+  - business
+  - dollar
   generation_notes: 'hand-written probe; typos: expedited->expedietd shipping->shippng
     fast->fsat'
 - paraphrase_id: typo_fatfinger-003
@@ -1212,54 +6641,34 @@ paraphrases:
   text: How do I rest my passwrod if I forgto it?
   gold_docs_section_id: account_management.md#password-reset
   key_tokens_docs:
+  - password
   - reset
-  - forgotten
-  - forgot
-  - screen
-  - enter
-  - valid
-  - lets
-  - contain
+  - link
+  - email
   - characters
-  - symbol
   key_tokens_wiki:
+  - password
   - reset
-  - forgotten
-  - forgot
-  - screen
-  - enter
-  - valid
-  - lets
-  - contain
+  - link
+  - email
   - characters
-  - symbol
   generation_notes: 'hand-written probe; typos: reset->rest password->passwrod forgot->forgto'
 - paraphrase_id: typo_fatfinger-004
   paraphrase_type: typo_fatfinger
   text: Where is my trakcing nubmer for the parcle?
   gold_docs_section_id: shipping_options.md#order-tracking
   key_tokens_docs:
-  - generates
   - tracking
-  - scans
-  - view
-  - populate
-  - also
-  - live
-  - information
-  - emailed
+  - number
   - carrier
+  - parcel
+  - account
   key_tokens_wiki:
-  - generates
   - tracking
-  - scans
-  - view
-  - populate
-  - also
-  - live
-  - information
-  - emailed
+  - number
   - carrier
+  - parcel
+  - history
   generation_notes: 'hand-written probe; typos: tracking->trakcing number->nubmer
     parcel->parcle'
 - paraphrase_id: typo_fatfinger-005
@@ -1267,27 +6676,17 @@ paraphrases:
   text: Why was my paymnet declind at chekout?
   gold_docs_section_id: payment_methods.md#failed-payments
   key_tokens_docs:
-  - held
+  - payment
+  - declined
   - pending
-  - state
-  - update
-  - common
-  - decline
-  - reasons
-  - incorrect
+  - card
   - expired
-  - records
   key_tokens_wiki:
-  - held
+  - payment
+  - declined
   - pending
-  - state
-  - update
-  - common
-  - decline
-  - reasons
-  - incorrect
+  - card
   - expired
-  - records
   generation_notes: 'hand-written probe; typos: payment->paymnet declined->declind
     checkout->chekout'
 - paraphrase_id: industry_jargon-001
@@ -1295,108 +6694,68 @@ paraphrases:
   text: What's the RMA window for a full refund?
   gold_docs_section_id: returns_policy.md#return-window
   key_tokens_docs:
-  - accompanied
-  - handled
-  - case
-  - basis
-  - cash
-  - most
-  - full
-  - its
+  - return
+  - days
+  - refund
   - packaging
   - receipt
   key_tokens_wiki:
-  - accompanied
-  - handled
-  - case
-  - basis
-  - cash
-  - most
-  - full
-  - its
+  - thirty
+  - refund
   - packaging
   - receipt
+  - unused
   generation_notes: 'hand-written probe; jargon: RMA = return merchandise authorization'
 - paraphrase_id: industry_jargon-002
   paraphrase_type: industry_jargon
   text: Is duty handled DDP for cross-border orders?
   gold_docs_section_id: international_shipping.md#customs-and-duties
   key_tokens_docs:
-  - import
-  - delivered
-  - duty
-  - paid
-  - arrangement
-  - bills
-  - assessed
-  - office
-  - hard
-  - estimate
+  - duties
+  - taxes
+  - checkout
+  - carrier
+  - freight
   key_tokens_wiki:
-  - import
-  - delivered
-  - duty
-  - paid
-  - arrangement
-  - bills
-  - assessed
-  - office
-  - hard
-  - estimate
+  - duties
+  - taxes
+  - checkout
+  - carrier
+  - freight
   generation_notes: 'hand-written probe; jargon: DDP = delivered duty paid'
 - paraphrase_id: industry_jargon-003
   paraphrase_type: industry_jargon
   text: Is BOPIS available and how soon is the order ready?
   gold_docs_section_id: store_pickup.md#buy-online-pick-up-in-store
   key_tokens_docs:
-  - marked
-  - reserved
-  - online
-  - chosen
-  - ready
-  - opening
-  - sends
-  - waiting
-  - counter
   - pickup
+  - reserved
+  - store
+  - hours
+  - counter
   key_tokens_wiki:
-  - marked
-  - reserved
-  - online
-  - chosen
-  - ready
-  - opening
-  - sends
-  - waiting
-  - counter
   - pickup
+  - reserved
+  - store
+  - hours
+  - counter
   generation_notes: 'hand-written probe; jargon: BOPIS = buy online pick up in store'
 - paraphrase_id: industry_jargon-004
   paraphrase_type: industry_jargon
   text: Do you support 2FA via TOTP or SMS OTP?
   gold_docs_section_id: account_security.md#two-factor-authentication
   key_tokens_docs:
-  - enable
   - authentication
-  - choosing
   - authenticator
-  - app
-  - text
-  - enabled
-  - required
-  - routine
-  - ins
+  - code
+  - device
+  - factor
   key_tokens_wiki:
-  - enable
   - authentication
-  - choosing
   - authenticator
-  - app
-  - text
-  - enabled
-  - required
-  - routine
-  - ins
+  - code
+  - device
+  - factor
   generation_notes: 'hand-written probe; jargon: 2FA/TOTP/OTP = two-factor authentication
     codes'
 - paraphrase_id: industry_jargon-005
@@ -1404,26 +6763,16 @@ paraphrases:
   text: When does the auth hold drop if I void before fulfilment?
   gold_docs_section_id: payment_methods.md#payment-authorization
   key_tokens_docs:
-  - authorise
-  - funds
-  - issuing
-  - split
-  - shipments
-  - see
-  - several
-  - smaller
-  - we
+  - authorisation
+  - hold
   - capture
+  - cancelled
+  - shipment
   key_tokens_wiki:
-  - authorise
-  - funds
-  - issuing
-  - split
-  - shipments
-  - see
-  - several
-  - smaller
-  - we
+  - authorisation
+  - hold
   - capture
+  - cancelled
+  - shipment
   generation_notes: 'hand-written probe; jargon: auth hold / void = authorization
     release pre-capture'
