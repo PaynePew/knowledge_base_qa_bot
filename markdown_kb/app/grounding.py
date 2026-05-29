@@ -246,6 +246,35 @@ def verify(draft: str, sections: list[CitableContent]) -> GroundingOutcome:
     if not isinstance(sections, list):
         raise TypeError(f"sections must be list, got {type(sections)}")
 
+    # Empty-sections short-circuit: zero cited sections cannot support any
+    # claim (ADR-0001 strict grounding; ADR-0004 verifier must fail-closed).
+    # Return deterministic passed=False without constructing the LLM client.
+    # reason="claim_unsupported" — the claim is ungrounded by the cited set
+    # (consistent with the non-empty unsupported path; "retrieval_empty" is
+    # reserved for the pre-LLM gate in retrieval.query, not verify()).
+    if not sections:
+        log_event(
+            "grounding_verify", "reason=claim_unsupported retries=0 latency=0s empty_sections=True"
+        )
+        return GroundingOutcome(
+            passed=False,
+            reason="claim_unsupported",
+            result=GroundingResult(
+                reasoning="No sections were cited; any claim is ungrounded by definition.",
+                claims=[
+                    GroundingClaim(
+                        text=draft,
+                        supported=False,
+                        citing_section_ids=[],
+                    )
+                ],
+                unsupported_claims=[draft],
+                passed=False,
+            ),
+            error_type=None,
+            retries_attempted=0,
+        )
+
     model_name = os.getenv("OPENAI_VERIFIER_MODEL", os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
     llm = ChatOpenAI(model=model_name)
     chain = llm.with_structured_output(GroundingResult)

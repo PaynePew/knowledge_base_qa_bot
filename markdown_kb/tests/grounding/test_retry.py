@@ -31,9 +31,25 @@ from app.grounding import (
     VerifierErrorType,
 )
 
+from .fixtures import SampleSection
+
 # ---------------------------------------------------------------------------
 # Test helpers
 # ---------------------------------------------------------------------------
+
+# Non-empty placeholder sections for tests that exercise the verifier's LLM
+# machinery (model selection / retry / logging / error mapping) — NOT grounding
+# semantics.  verify() short-circuits on EMPTY sections (issue #191, fail-closed
+# before any LLM call), so these tests must pass a non-empty cited set to reach
+# the LLM path they are asserting on.  The content is irrelevant: ChatOpenAI is
+# mocked in every one of these tests.
+_STUB_SECTIONS = [
+    SampleSection(
+        id="stub-section",
+        heading_path=["Stub"],
+        content="Placeholder content for verifier-machinery tests.",
+    )
+]
 
 
 def _make_success_result() -> GroundingResult:
@@ -122,7 +138,7 @@ def test_transient_timeout_first_call_then_success(tmp_path, monkeypatch) -> Non
     ):
         outcome = grounding.verify(
             draft="The draft claim is supported.",
-            sections=[],
+            sections=_STUB_SECTIONS,
         )
 
     assert outcome.passed is True
@@ -142,7 +158,7 @@ def test_transient_5xx_first_call_then_success(tmp_path, monkeypatch) -> None:
         patch("app.grounding.ChatOpenAI", return_value=fake_llm),
         patch("app.grounding.time.sleep"),
     ):
-        outcome = grounding.verify(draft="The draft claim is supported.", sections=[])
+        outcome = grounding.verify(draft="The draft claim is supported.", sections=_STUB_SECTIONS)
 
     assert outcome.passed is True
     assert outcome.retries_attempted == 1
@@ -158,7 +174,7 @@ def test_transient_rate_limit_first_call_then_success(tmp_path, monkeypatch) -> 
         patch("app.grounding.ChatOpenAI", return_value=fake_llm),
         patch("app.grounding.time.sleep"),
     ):
-        outcome = grounding.verify(draft="The draft claim is supported.", sections=[])
+        outcome = grounding.verify(draft="The draft claim is supported.", sections=_STUB_SECTIONS)
 
     assert outcome.passed is True
     assert outcome.retries_attempted == 1
@@ -181,7 +197,7 @@ def test_transient_exhausted_three_timeouts(tmp_path, monkeypatch) -> None:
         patch("app.grounding.ChatOpenAI", return_value=fake_llm),
         patch("app.grounding.time.sleep"),
     ):
-        outcome = grounding.verify(draft="The draft claim is supported.", sections=[])
+        outcome = grounding.verify(draft="The draft claim is supported.", sections=_STUB_SECTIONS)
 
     assert outcome.passed is False
     assert outcome.reason == "verifier_unavailable"
@@ -204,7 +220,7 @@ def test_transient_exhausted_applies_backoff(tmp_path, monkeypatch) -> None:
         patch("app.grounding.ChatOpenAI", return_value=fake_llm),
         patch("app.grounding.time.sleep", sleep_mock),
     ):
-        grounding.verify(draft="The draft.", sections=[])
+        grounding.verify(draft="The draft.", sections=_STUB_SECTIONS)
 
     # Should have slept twice: 0.2s after first failure, 0.8s after second
     assert sleep_mock.call_count == 2
@@ -243,7 +259,7 @@ def test_malformed_then_valid_result(tmp_path, monkeypatch) -> None:
         patch("app.grounding.ChatOpenAI", return_value=fake_llm),
         patch("app.grounding.time.sleep"),
     ):
-        outcome = grounding.verify(draft="The draft claim is supported.", sections=[])
+        outcome = grounding.verify(draft="The draft claim is supported.", sections=_STUB_SECTIONS)
 
     assert outcome.passed is True
     assert outcome.reason == "claim_supported"
@@ -275,7 +291,7 @@ def test_malformed_exhausted_after_one_retry(tmp_path, monkeypatch) -> None:
         patch("app.grounding.ChatOpenAI", return_value=fake_llm),
         patch("app.grounding.time.sleep"),
     ):
-        outcome = grounding.verify(draft="The draft claim is supported.", sections=[])
+        outcome = grounding.verify(draft="The draft claim is supported.", sections=_STUB_SECTIONS)
 
     assert outcome.passed is False
     assert outcome.reason == "verifier_unavailable"
@@ -306,7 +322,7 @@ def test_refusal_empty_completion_no_retry(tmp_path, monkeypatch) -> None:
         patch("app.grounding.ChatOpenAI", return_value=fake_llm),
         patch("app.grounding.time.sleep"),
     ):
-        outcome = grounding.verify(draft="The draft claim.", sections=[])
+        outcome = grounding.verify(draft="The draft claim.", sections=_STUB_SECTIONS)
 
     assert outcome.passed is False
     assert outcome.reason == "verifier_unavailable"
@@ -332,7 +348,7 @@ def test_hard_auth_error_no_retry(tmp_path, monkeypatch) -> None:
         patch("app.grounding.ChatOpenAI", return_value=fake_llm),
         patch("app.grounding.time.sleep", sleep_mock),
     ):
-        outcome = grounding.verify(draft="The draft claim.", sections=[])
+        outcome = grounding.verify(draft="The draft claim.", sections=_STUB_SECTIONS)
 
     assert outcome.passed is False
     assert outcome.reason == "verifier_unavailable"
@@ -355,7 +371,7 @@ def test_hard_auth_error_logs_hard_error(tmp_path, monkeypatch) -> None:
         patch("app.grounding.ChatOpenAI", return_value=fake_llm),
         patch("app.grounding.time.sleep"),
     ):
-        grounding.verify(draft="The draft claim.", sections=[])
+        grounding.verify(draft="The draft claim.", sections=_STUB_SECTIONS)
 
     log_text = log_path.read_text()
     assert "HARD_ERROR" in log_text
@@ -379,7 +395,7 @@ def test_latency_budget_never_exceeded(tmp_path, monkeypatch) -> None:
         patch("app.grounding.time.sleep"),
     ):
         t0 = time.monotonic()
-        outcome = grounding.verify(draft="The draft.", sections=[])
+        outcome = grounding.verify(draft="The draft.", sections=_STUB_SECTIONS)
         elapsed = time.monotonic() - t0
 
     assert elapsed < 5.0, f"Expected elapsed < 5s, got {elapsed:.3f}s"
@@ -402,7 +418,7 @@ def test_verify_never_raises_on_auth_error(tmp_path, monkeypatch) -> None:
         patch("app.grounding.time.sleep"),
     ):
         # Must not raise
-        outcome = grounding.verify(draft="The draft.", sections=[])
+        outcome = grounding.verify(draft="The draft.", sections=_STUB_SECTIONS)
 
     assert isinstance(outcome, GroundingOutcome)
 
@@ -410,7 +426,7 @@ def test_verify_never_raises_on_auth_error(tmp_path, monkeypatch) -> None:
 def test_verify_raises_on_programmer_error() -> None:
     """verify() raises TypeError when called with wrong input types (programmer error)."""
     with pytest.raises(TypeError, match="draft must be str"):
-        grounding.verify(draft=123, sections=[])  # type: ignore[arg-type]
+        grounding.verify(draft=123, sections=_STUB_SECTIONS)  # type: ignore[arg-type]
 
     with pytest.raises(TypeError, match="sections must be list"):
         grounding.verify(draft="The draft.", sections="not a list")  # type: ignore[arg-type]
@@ -437,7 +453,7 @@ def test_verifier_model_env_override(tmp_path, monkeypatch) -> None:
         return fake_llm
 
     with patch("app.grounding.ChatOpenAI", side_effect=fake_chat_openai):
-        grounding.verify(draft="The draft.", sections=[])
+        grounding.verify(draft="The draft.", sections=_STUB_SECTIONS)
 
     assert captured_model == ["gpt-4o"]
 
@@ -459,7 +475,7 @@ def test_verifier_model_fallback_to_openai_model(tmp_path, monkeypatch) -> None:
         return fake_llm
 
     with patch("app.grounding.ChatOpenAI", side_effect=fake_chat_openai):
-        grounding.verify(draft="The draft.", sections=[])
+        grounding.verify(draft="The draft.", sections=_STUB_SECTIONS)
 
     assert captured_model == ["gpt-4o-mini-custom"]
 
@@ -481,7 +497,7 @@ def test_verifier_model_default_is_gpt4o_mini(tmp_path, monkeypatch) -> None:
         return fake_llm
 
     with patch("app.grounding.ChatOpenAI", side_effect=fake_chat_openai):
-        grounding.verify(draft="The draft.", sections=[])
+        grounding.verify(draft="The draft.", sections=_STUB_SECTIONS)
 
     assert captured_model == ["gpt-4o-mini"]
 
@@ -502,7 +518,7 @@ def test_successful_verify_logs_outcome_and_latency(tmp_path, monkeypatch) -> No
         patch("app.grounding.ChatOpenAI", return_value=fake_llm),
         patch("app.grounding.time.sleep"),
     ):
-        grounding.verify(draft="The draft.", sections=[])
+        grounding.verify(draft="The draft.", sections=_STUB_SECTIONS)
 
     log_text = log_path.read_text()
     assert "grounding_verify" in log_text
@@ -522,7 +538,7 @@ def test_verifier_unavailable_logs_granular_error_type(tmp_path, monkeypatch) ->
         patch("app.grounding.ChatOpenAI", return_value=fake_llm),
         patch("app.grounding.time.sleep"),
     ):
-        grounding.verify(draft="The draft.", sections=[])
+        grounding.verify(draft="The draft.", sections=_STUB_SECTIONS)
 
     log_text = log_path.read_text()
     assert "grounding_verifier_error" in log_text

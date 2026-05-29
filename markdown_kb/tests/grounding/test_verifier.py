@@ -22,10 +22,11 @@ import pytest
 import app.grounding as grounding
 from app.grounding import (
     GroundingClaim,
+    GroundingOutcome,
     GroundingResult,
 )
 
-from .fixtures import ALL_CASES, VerifierCase
+from .fixtures import ALL_CASES, EMPTY_SECTIONS, VerifierCase
 
 # ---------------------------------------------------------------------------
 # Mock-mode helpers
@@ -150,6 +151,10 @@ def test_verifier_judgment_live(case: VerifierCase) -> None:
     Requires OPENAI_API_KEY in the environment.
     Run with: pytest -m live
     AC #5 — human verification step.
+
+    empty_sections is now deterministic (short-circuit before LLM): no model
+    dependence for that fixture.  All other 6 fixtures still exercise the real
+    gpt-4o-mini path.
     """
     outcome = grounding.verify(draft=case.draft, sections=case.sections)
 
@@ -167,3 +172,35 @@ def test_verifier_judgment_live(case: VerifierCase) -> None:
                 f"[{case.name}] expected unsupported claim {expected_claim!r} "
                 f"not found in {result_unsupported}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Empty-sections short-circuit: no LLM call (issue #191)
+# ---------------------------------------------------------------------------
+
+
+def test_verify_empty_sections_no_llm_call(tmp_path, monkeypatch) -> None:
+    """verify(draft, sections=[]) returns passed=False without invoking ChatOpenAI.
+
+    Per CODING_STANDARD §6.3: mock the LLM getter (ChatOpenAI) to RAISE if
+    called — this proves the short-circuit fires before the client is built.
+    The test is hermetic: no OPENAI_API_KEY required.
+    """
+    monkeypatch.setattr("app.logger.LOG_PATH", tmp_path / "wiki" / "log.md")
+
+    def llm_must_not_be_called(*args, **kwargs):  # noqa: ARG001
+        raise AssertionError("ChatOpenAI was instantiated — empty-sections guard did not fire")
+
+    with patch("app.grounding.ChatOpenAI", side_effect=llm_must_not_be_called):
+        outcome = grounding.verify(draft=EMPTY_SECTIONS.draft, sections=[])
+
+    assert isinstance(outcome, GroundingOutcome)
+    assert outcome.passed is False
+    assert outcome.reason == "claim_unsupported"
+    assert outcome.result is not None
+    assert outcome.result.passed is False
+    # The draft itself should appear in unsupported_claims
+    assert any(
+        EMPTY_SECTIONS.draft.lower() in uc.lower()
+        for uc in outcome.result.unsupported_claims
+    ), f"Draft not found in unsupported_claims: {outcome.result.unsupported_claims}"
