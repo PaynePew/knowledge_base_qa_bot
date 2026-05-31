@@ -1,5 +1,6 @@
 metadata:
-  generator_model: gpt-4o-mini
+  generator_model: gpt-4o
+  critic_model: gpt-4o-mini
   generated_at: '2026-05-29T10:52:40Z'
   seed: 42
   temperature: 0.7
