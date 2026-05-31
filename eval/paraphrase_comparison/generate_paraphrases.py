@@ -252,10 +252,20 @@ def render_queries_yaml(
     paraphrases: list[Paraphrase],
     *,
     cost_usd: str,
+    generator_model: str = GENERATOR_MODEL,
+    critic_model: str | None = None,
 ) -> str:
-    """Render the full queries.yaml: a metadata block + all Paraphrase entries."""
+    """Render the full queries.yaml: a metadata block + all Paraphrase entries.
+
+    ``generator_model`` / ``critic_model`` record the models that actually
+    produced this set. The v2 DeepEval Synthesizer path (generate_paraphrases_v2)
+    passes its own config (generator ``gpt-4o`` + same-family ``gpt-4o-mini``
+    critic, PRD #137); the legacy QC-only path keeps the historical default and
+    has no critic, so ``critic_model`` is omitted from the block when ``None``.
+    """
     metadata = {
-        "generator_model": GENERATOR_MODEL,
+        "generator_model": generator_model,
+        **({"critic_model": critic_model} if critic_model else {}),
         "generated_at": datetime.datetime.now(datetime.UTC).strftime(
             "%Y-%m-%dT%H:%M:%SZ"
         ),

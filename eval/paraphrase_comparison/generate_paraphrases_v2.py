@@ -288,7 +288,13 @@ def main(argv: list[str] | None = None) -> int:
     full_set = core + probes
 
     write_text_atomic(
-        QUERIES_PATH, render_queries_yaml(full_set, cost_usd="see run log")
+        QUERIES_PATH,
+        render_queries_yaml(
+            full_set,
+            cost_usd="see run log",
+            generator_model=config.generator_model,
+            critic_model=config.critic_model,
+        ),
     )
     print(
         f"\nWrote {len(full_set)} Paraphrases to {QUERIES_PATH.name} "
