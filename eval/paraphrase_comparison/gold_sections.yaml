@@ -1,7 +1,14 @@
 # Gold Section inventory for Phase 8 Paraphrase generation (PRD #100, issue #102).
 #
-# The committed source of truth the generator's deterministic sampler reads
-# (generation/sampling.py). One entry per docs Gold Section eligible to source a
+# ⚠️ DEPRECATED / LEGACY FALLBACK (issue #142). This file is NO LONGER the source
+# of truth. The live inventory is derived from the frozen corpus at run time via
+# `sampling.derive_gold_sections(corpus/)`; every production caller passes
+# `corpus_dir=` and never parses this YAML (`load_gold_sections` only reads it when
+# `corpus_dir=None`, which nothing does). It is preserved solely as a backward-compat
+# fallback. The `Stats: 42 sections` line below is STALE — the Phase 8.5 corpus growth
+# (PRD #143) took the live count to ~51 Gold Sections; trust `derive_gold_sections`.
+#
+# One entry per docs Gold Section eligible to source a
 # Paraphrase — i.e. every concept-type section. The single entity Source
 # (warranty.md -> wiki/entities/acme-shop.md) is deliberately ABSENT: entity
 # pages are excluded as Paraphrase sources (CONTEXT.md § Phase 8 > Gold Section).

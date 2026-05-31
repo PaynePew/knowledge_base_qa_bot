@@ -160,6 +160,9 @@ cheaper, more auditable machinery.
 
 Full methodology, statistical tests, cost log, and honest limitations are in
 [`eval/paraphrase_comparison/report.md`](eval/paraphrase_comparison/report.md).
+To regenerate or extend the corpus and re-run the comparison, see the
+maintainer runbook at
+[`eval/paraphrase_comparison/README.md`](eval/paraphrase_comparison/README.md).
 
 ## Deep dive
 
@@ -317,6 +320,8 @@ knowledge_base_qa_bot/
 
 完整的方法、統計檢定、成本紀錄與誠實的限制說明,都在
 [`eval/paraphrase_comparison/report.md`](eval/paraphrase_comparison/report.md)。
+若要重新產生或擴充語料並重跑比較,請見維護者操作手冊
+[`eval/paraphrase_comparison/README.md`](eval/paraphrase_comparison/README.md)。
 
 ## 深入閱讀
 
