@@ -1,0 +1,59 @@
+# Hot Cache — Working Memory
+
+> This file is the working-memory cache written by `kb_save_hot_v1` and read by
+> `kb_read_hot_v1` at the start of each session.  It is git-ignored (`wiki/hot.md`)
+> and excluded from the Section Index corpus.  See `wiki/README.md` for the full
+> convention.
+
+## How to use this file
+
+1. **At session start** — call `kb_read_hot_v1`.  The server returns the contents
+   of `wiki/hot.md` (or `""` if this is the first session).  Use it to recover
+   context from the previous session before calling any other tool.
+
+2. **During the session** — work normally.  Use `kb_search_v1` to retrieve KB
+   evidence; use `kb_ask_v1` to ask grounded questions.
+
+3. **At session end (or a natural checkpoint)** — compose a ~500-word summary of
+   what was discussed, what was resolved, and what should be picked up next.
+   Call `kb_save_hot_v1` with that summary.  The server atomically replaces the
+   previous `wiki/hot.md` with your summary.
+
+## Example summary format
+
+A useful summary includes:
+- **Topic context** — what the user was asking about and why
+- **Resolved items** — questions answered, policies confirmed
+- **Open items** — questions still outstanding, next steps
+- **Key KB sections referenced** — section IDs so you can re-retrieve them quickly
+
+```markdown
+## Session summary — 2025-06-06
+
+### Topic context
+The user is a customer support agent evaluating the refund and shipping policies
+for a new product line.  They needed the exact return window and the list of
+non-returnable items.
+
+### Resolved
+- Return window: 30 days from delivery (account_help.md#return-policy)
+- Non-returnable items: perishables, digital downloads, custom orders
+  (account_help.md#non-returnable-items)
+- Expedited shipping cutoff: orders placed before 2 PM local time
+  (shipping_info.md#expedited-shipping)
+
+### Open items
+- User asked whether gift cards are covered by the return policy — not found in KB
+- Need to check if the 30-day window applies to international orders
+
+### Next steps
+Re-run kb_search_v1 with "international return policy" to find the answer to
+the open item above.  If the KB cannot confirm, surface the grounding reason to
+the user.
+```
+
+---
+
+*Copy or rename this file to `wiki/hot.md` to pre-seed the cache manually.
+The real `wiki/hot.md` is written atomically by `kb_save_hot_v1` — manual edits
+are overwritten on the next save.*

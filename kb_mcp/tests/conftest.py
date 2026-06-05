@@ -46,6 +46,10 @@ if a future kb_mcp test exercises the real reload / build path.
      (``server.py``) imports ``vector_rag.app.indexer.search``; today's tests
      patch that leaf, but a real rag-path test would mutate these globals.
      Mirrors the ``vector_rag/tests/conftest.py`` teardown.
+  6. Redirects ``kb_mcp.hot_cache.HOT_PATH`` to ``tmp_path / "wiki" / "hot.md"``
+     so hot-cache tools never read/write the real ``wiki/hot.md`` (issue #202).
+     The ``kb_read_hot_v1`` and ``kb_save_hot_v1`` tools look up HOT_PATH at
+     call time; per-test monkeypatching is sufficient.
 """
 
 from __future__ import annotations
@@ -58,12 +62,13 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _isolate_module_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Autouse safety net for every kb_mcp test — see module docstring (issue #200)."""
+    """Autouse safety net for every kb_mcp test — see module docstring (issues #200, #202)."""
     import markdown_kb.app.indexer as current_indexer
     import markdown_kb.app.logger as current_logger
     import vector_rag.app.indexer as rag_indexer
 
     import kb_mcp.freshness as freshness_mod
+    import kb_mcp.hot_cache as hot_cache_mod
 
     # --- 1 & 2: redirect every real on-disk path to tmp ---
     # Both INDEX_PATH names resolve to the same repo-root .kb/index.json; redirect
@@ -77,6 +82,11 @@ def _isolate_module_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     # markdown_kb / vector_rag conftests.
     monkeypatch.setattr(current_indexer, "WIKI_DIR", tmp_path / "wiki")
     monkeypatch.setattr(current_logger, "LOG_PATH", tmp_path / "wiki" / "log.md")
+
+    # --- 6: redirect hot-cache path so no test touches the real wiki/hot.md ---
+    # kb_read_hot_v1 / kb_save_hot_v1 look up HOT_PATH at call time (not at
+    # import time), so monkeypatching the module-level name is sufficient.
+    monkeypatch.setattr(hot_cache_mod, "HOT_PATH", tmp_path / "wiki" / "hot.md")
 
     # --- 3: snapshot indexer globals ---
     # sections / doc_freq are mutable containers callers may hold by identity, so
