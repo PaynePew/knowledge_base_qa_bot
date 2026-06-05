@@ -50,6 +50,7 @@ from collections.abc import Callable, Iterator
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
+from markdown_kb.app.errors import LLMError
 from markdown_kb.app.read import FileNotFound as _ReadFileNotFound
 from markdown_kb.app.read import NotAFile as _ReadNotAFile
 from markdown_kb.app.read import PathRejected as _ReadPathRejected
@@ -274,24 +275,24 @@ def chat_stream(
             yield encode_event("status", {"phase": "verifying"})
 
         # Second yield: full result — emit token(s) + done.
-        # On LLM/infra error (HTTPException raised by _draft_and_verify), HTTP
-        # 200 is already committed, so we emit a terminal error event instead of
+        # On LLM/infra error (LLMError raised by _draft_and_verify), HTTP 200 is
+        # already committed, so we emit a terminal error event instead of
         # propagating the exception (which would silently truncate the stream).
+        # ADR-0015: the wrapper raises LLMError (transport-agnostic); the SSE
+        # adapter reads .retryable directly instead of deriving it from a 503
+        # status code (cleaner — no round-trip through HTTP semantics).
         try:
             full_result = next(gen)
-        except HTTPException as exc:
-            retryable = exc.status_code == 503
-            yield encode_event("error", {"detail": exc.detail, "retryable": retryable})
+        except LLMError as exc:
+            yield encode_event("error", {"detail": exc.message, "retryable": exc.retryable})
             return  # error-before-done: do NOT write to the store (AC)
         except Exception:  # noqa: BLE001 — intentional last-resort catch
             # Defense in depth (ADR-0009): HTTP 200 is already committed once the
             # sources event is sent, so ANY error during draft/verify — including
             # unmapped or unexpected ones (e.g. an LLM client misconfiguration that
-            # raises a base openai.OpenAIError rather than a mapped HTTPException) —
-            # must surface as a terminal SSE error event, never a silently
-            # truncated stream that hangs the client. Detail is generic to avoid
-            # leaking internals; mapped transient/auth errors keep their curated
-            # detail in the HTTPException branch above.
+            # raises a non-LLMError exception) — must surface as a terminal SSE
+            # error event, never a silently truncated stream that hangs the client.
+            # Detail is generic to avoid leaking internals.
             yield encode_event(
                 "error",
                 {"detail": "Internal error while generating the answer.", "retryable": False},

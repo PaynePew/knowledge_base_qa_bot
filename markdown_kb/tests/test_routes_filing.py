@@ -452,9 +452,7 @@ def test_dispatch_filing_still_files_real_grounded_answer(monkeypatch):
     from app import qa
 
     calls: list = []
-    monkeypatch.setattr(
-        qa, "maybe_file_answer", lambda *a, **k: (calls.append(a), "FILED")[1]
-    )
+    monkeypatch.setattr(qa, "maybe_file_answer", lambda *a, **k: (calls.append(a), "FILED")[1])
 
     result = {
         "answer": (

@@ -372,22 +372,22 @@ def test_chat_stream_status_event_has_phase_field(gateway_client):
 
 @pytest.fixture()
 def gateway_client_llm_error(indexed_wiki_corpus, monkeypatch):
-    """TestClient where the LLM raises a 503 HTTPException (post-sources error).
+    """TestClient where the LLM-call wrapper raises a retryable LLMError (post-sources error).
 
-    Simulates an LLM/infra failure that occurs after the sources event has
-    already been emitted (HTTP 200 committed). The stream must terminate with
-    a terminal ``error`` event instead of a ``done`` event.
+    ADR-0015: the wrapper now raises LLMError (not HTTPException). Simulates a
+    transient LLM/infra failure that occurs after the sources event has already
+    been emitted (HTTP 200 committed). The stream must terminate with a terminal
+    ``error{retryable: true}`` event instead of a ``done`` event.
     """
+    from markdown_kb.app.errors import LLMError as _LLMError
 
-    def _raise_503(*_args, **_kwargs):
-        raise HTTPException(
-            status_code=503,
-            detail="LLM service temporarily unavailable, please retry.",
+    def _raise_llm_error(question, prompt_text):  # noqa: ANN001
+        raise _LLMError(
+            retryable=True,
+            message="LLM service temporarily unavailable, please retry.",
         )
 
-    fake_llm_error = type("_ErrLLM", (), {"invoke": staticmethod(_raise_503)})()
-    monkeypatch.setattr(_retrieval, "_llm", fake_llm_error)
-    monkeypatch.setattr(_retrieval, "get_llm", lambda: fake_llm_error)
+    monkeypatch.setattr(_retrieval, "_call_llm_with_error_handling", _raise_llm_error)
 
     from gateway.app.main import app as _gateway_app
 
