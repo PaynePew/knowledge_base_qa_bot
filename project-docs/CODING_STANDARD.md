@@ -249,17 +249,29 @@ Any literal string with semantic meaning that appears more than once gets a modu
 
 A corrupt `.kb/index.json` at startup **raises** and prevents the server from starting. Silently serving stale or wrong data is worse than not serving. Apply the same rule to every persistent-state load you add.
 
-### 4.2 OpenAI exception mapping (HTTP status)
+### 4.2 OpenAI exception mapping (amended by ADR-0015)
 
-Mandatory mapping in the LLM error-handling wrapper (owned by the LLM-call wrapper module per ADR-0005):
+The LLM-call wrapper raises a **transport-agnostic `LLMError`** (defined in
+`markdown_kb/app/errors` — see ADR-0015) instead of `fastapi.HTTPException`.
+The HTTP status table moves from the wrapper to the HTTP route adapter:
 
-| Exception | HTTP | Log kind |
-|---|---|---|
-| `APITimeoutError`, `RateLimitError` | 503 | `openai_transient` |
-| `AuthenticationError` | 500 | `openai_auth` |
-| Any other `APIError` subclass | 500 | `openai_api` |
+| Exception | `LLMError.retryable` | Log kind | HTTP route renders as |
+|---|---|---|---|
+| `APITimeoutError`, `RateLimitError` | `True` | `openai_transient` | 503 |
+| `AuthenticationError` | `False` | `openai_auth` | 500 |
+| Any other `APIError` subclass | `False` | `openai_api` | 500 |
 
-Every branch emits a `chat_error` log entry with the right `kind=` tag. Use `raise HTTPException(...) from exc` to preserve the exception chain. Never bare-raise.
+Every branch emits a `chat_error` log entry with the right `kind=` tag
+**before** raising.  Use `raise LLMError(...) from exc` to preserve the
+exception chain.  Never bare-raise.
+
+Each interface adapter renders `LLMError` per its transport:
+- **HTTP routes** (both stacks): `raise HTTPException(503 if e.retryable else 500, e.message) from e`
+- **Gateway SSE generator**: terminal `error{detail: e.message, retryable: e.retryable}` event
+- **MCP / CLI** (Phase 12+): per-transport rendering, no HTTP leak
+
+The retrieval module no longer imports `fastapi`; the wrapper is
+decoupled from HTTP transport (ADR-0015 § Consequences).
 
 ### 4.3 `Cannot Confirm` is a success, not an error
 
@@ -496,7 +508,8 @@ Each signal has a **severity** that determines the reviewer's action:
 
 - [ ] **FAIL** — HTTP error mapping for OpenAI exceptions drifts away from §4.2 (e.g. `RateLimitError` returns 500 instead of 503).
 - [ ] **FAIL** — A persistent-state load (e.g. `.kb/index.json`) silently fallbacks to empty on corruption instead of raising (violates §4.1 fail-fast).
-- [ ] **FIX** — A handler uses bare `raise` instead of `raise HTTPException(...) from exc` (loses the exception chain per §4.2).
+- [ ] **FIX** — A handler uses bare `raise` instead of `raise LLMError(...) from exc` or `raise HTTPException(...) from exc` (loses the exception chain per §4.2).
+- [ ] **FAIL** — The retrieval module (either stack) imports `fastapi`; the LLM-call wrapper must be transport-agnostic (ADR-0015).
 - [ ] **FAIL** — Pydantic boundary validation is re-implemented inside a route handler (violates §4.4).
 
 ### Logging drift (§5)
