@@ -1,0 +1,52 @@
+[project]
+name = "kb-mcp"
+version = "0.1.0"
+description = "MCP server exposing the knowledge base over stdio (FastMCP). Phase 12 Slice 1 (ADR-0016)."
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.0",
+    "markdown-kb",
+]
+
+[tool.uv]
+package = true
+
+[tool.uv.sources]
+markdown-kb = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# ".." puts the repo root on sys.path so ``markdown_kb`` and ``vector_rag``
+# namespace packages resolve when running pytest from inside kb_mcp/.
+pythonpath = [".."]
+addopts = "--strict-markers"
+markers = [
+    "live: Opt-in live integration tests that make real OpenAI API calls; skipped by default.",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0",
+    "ruff>=0.15",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = [
+    "E501",
+    "B008",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    "F401",
+    "B011",
+]
