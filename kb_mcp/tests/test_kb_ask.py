@@ -154,8 +154,17 @@ def _patch_retrieval_stack(monkeypatch):
     """Patch the wiki indexer search + freshness so no real I/O occurs.
 
     The conftest _isolate_module_state autouse fixture redirects paths and
-    resets module globals; this fixture patches the *leaf* search function
-    so tests can call kb_ask_v1 without a populated index.
+    resets module globals (including snapshoting + restoring ``sections``
+    in-place); this fixture patches the *leaf* search / expand_to_pages
+    functions so tests can call kb_ask_v1 without a populated index.
+
+    ``sections`` is populated by appending to the existing list object (NOT
+    rebinding it via ``monkeypatch.setattr``).  This is essential for
+    compatibility with conftest's in-place restore:
+      current_indexer.sections.clear(); .extend(saved_sections)
+    Rebinding would create a new list that conftest's teardown never sees,
+    leaving the new list populated and leaking real sections into later tests
+    (collection-order sensitivity documented in conftest.py docstring).
     """
     import markdown_kb.app.indexer as wiki_indexer
 
@@ -175,9 +184,16 @@ def _patch_retrieval_stack(monkeypatch):
     )
     monkeypatch.setattr(freshness_mod, "reload_if_stale", lambda *_a, **_kw: False)
 
-    # Populate the in-process sections list so the pre-LLM gate (not indexed yet)
-    # does not fire — the indexer checks `if not indexer.sections` before searching.
-    monkeypatch.setattr(wiki_indexer, "sections", [stub_section])
+    # Populate the in-process sections list (in-place append) so the pre-LLM
+    # gate ("not indexed yet") does not fire — indexer checks `if not sections`.
+    # MUST NOT use monkeypatch.setattr here: rebinding creates a new list that
+    # conftest teardown cannot reach, causing the described collection-order leak.
+    wiki_indexer.sections.append(stub_section)
+    yield
+    # Remove the stub appended above — conftest teardown will also clear/extend,
+    # but explicit cleanup here keeps the fixture self-contained.
+    if stub_section in wiki_indexer.sections:
+        wiki_indexer.sections.remove(stub_section)
 
 
 # ---------------------------------------------------------------------------
@@ -362,24 +378,31 @@ def test_kb_ask_v1_cannot_confirm_reason_surfaced():
     assert grounding["reason"] == "verifier_unavailable"
 
 
-def test_kb_ask_v1_pre_llm_cannot_confirm_is_success():
-    """Pre-LLM Cannot Confirm (below_threshold gate) is also a SUCCESS, not isError."""
+def test_kb_ask_v1_pre_llm_cannot_confirm_is_success(monkeypatch):
+    """Pre-LLM Cannot Confirm (below_threshold gate) is also a SUCCESS, not isError.
+
+    The autouse ``_patch_retrieval_stack`` fixture already populates sections
+    (non-empty) and patches search/expand_to_pages.  Here we only override the
+    ``search`` patch to return a below-threshold score so the pre-LLM gate fires.
+    We use the fixture-scoped ``monkeypatch`` so the override is registered and
+    restored in the same teardown pass as the other autouse patches (no rebinding
+    of ``sections`` — that would break conftest's in-place restore contract).
+    """
     import asyncio
 
     import markdown_kb.app.indexer as wiki_indexer
 
     from kb_mcp.server import mcp
 
-    # Patch search to return low-score results so the below_threshold gate fires
+    # Override search to return a low-score result so the below_threshold gate fires.
+    # sections is already non-empty (set by _patch_retrieval_stack autouse fixture).
     stub_section = _StubSection(id="stub.md#heading", content="low score content")
-    with pytest.MonkeyPatch().context() as mp:
-        mp.setattr(
-            wiki_indexer,
-            "search",
-            lambda query, k=3: [(stub_section, 0.0)],  # score=0 < threshold
-        )
-        mp.setattr(wiki_indexer, "sections", [stub_section])
-        raw = asyncio.run(mcp.call_tool("kb_ask_v1", {"query": "very obscure query"}))
+    monkeypatch.setattr(
+        wiki_indexer,
+        "search",
+        lambda query, k=3: [(stub_section, 0.0)],  # score=0 < threshold
+    )
+    raw = asyncio.run(mcp.call_tool("kb_ask_v1", {"query": "very obscure query"}))
 
     assert not _is_error_result(raw), "Pre-LLM Cannot Confirm must be SUCCESS, not isError"
     result = _parse_result(raw)
