@@ -1,24 +1,31 @@
 """FastMCP server exposing the knowledge base over stdio.
 
 Phase 12 Slice 1 (ADR-0016).  Wraps ``markdown_kb`` and ``vector_rag`` deep
-modules directly (NOT the Gateway).  Exposes ``kb_search_v1`` as the
-tracer-bullet tool — raw-evidence search with no LLM call.
+modules directly (NOT the Gateway).  Exposes four tools:
+  - ``kb_ask_v1``    — grounded-answer tool (LLM draft + Grounding Check)
+  - ``kb_search_v1`` — raw-evidence search with no LLM call
+  - ``kb_read_hot_v1``  — read working-memory hot cache
+  - ``kb_save_hot_v1``  — persist working-memory hot cache
 
 Launch via ``python -m kb_mcp`` (stdio transport, Claude Desktop compatible).
 
-Server ``instructions`` (~150 tokens) guide the MCP host on:
-  - tool-choice (when to call each tool)
+Server ``instructions`` (~200 tokens) guide the MCP host on:
+  - tool-choice (kb_ask for grounded answers; kb_search for raw evidence)
   - ``stack`` default (always start with ``wiki``; only switch to ``rag`` on
     explicit user instruction)
   - Cannot-Confirm guidance (surface ``grounding.reason`` to the user; do NOT
     retry to force an answer)
+  - LLMError guidance (isError=True means the LLM service is unavailable;
+    code='LLM_UNAVAILABLE' is retryable, 'LLM_ERROR' is not)
 """
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+import json
+from typing import Annotated, Any, Literal
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import CallToolResult, TextContent
 from pydantic import Field
 
 from .freshness import reload_if_stale
@@ -26,14 +33,17 @@ from .hot_cache import read_hot, save_hot
 from .normalizer import normalize_rag_results, normalize_wiki_results
 
 # ---------------------------------------------------------------------------
-# Server-level instructions (~150 tokens)
+# Server-level instructions (~200 tokens)
 # ---------------------------------------------------------------------------
 _INSTRUCTIONS = (
     "You are connected to a grounded knowledge-base assistant.\n\n"
     "Available tools:\n"
-    "- kb_search_v1: Retrieve raw Sections or Chunks from the KB index.  "
-    "Use this when the user wants to see the raw evidence or when you want to "
-    "reason over sources yourself before composing an answer.\n"
+    "- kb_ask_v1: Ask a question and receive a grounded answer (LLM synthesis "
+    "with citation and grounding check).  Use this as the default for "
+    "user questions.  Returns {stack, answer, citations, grounding}.\n"
+    "- kb_search_v1: Retrieve raw Sections or Chunks from the KB index with no "
+    "LLM synthesis.  Use this when the user wants to see the raw evidence or "
+    "when you want to reason over sources yourself before composing an answer.\n"
     "- kb_read_hot_v1: Read working-memory hot cache (wiki/hot.md).  "
     "Call this at session start to recover where the previous session left off.  "
     "Returns empty string on the first session — that is normal, not an error.\n"
@@ -46,15 +56,118 @@ _INSTRUCTIONS = (
     "Only switch to stack='rag' when the user explicitly asks to use the "
     "Vector RAG arm for comparison.\n\n"
     "Cannot-Confirm guidance:\n"
-    "- When the KB cannot support an answer, surface the grounding.reason to "
-    "the user and do NOT retry to force an answer.  "
-    '"Cannot Confirm" is a valid, expected KB boundary — not a failure.'
+    "- When kb_ask returns grounding.passed=false, the KB cannot support the "
+    "answer.  Surface grounding.reason to the user and do NOT retry.  "
+    '"Cannot Confirm" is a valid, expected KB boundary — not a failure.\n\n'
+    "LLM error guidance:\n"
+    "- If kb_ask returns isError=true, the LLM service failed.  "
+    "code='LLM_UNAVAILABLE' is transient — retry after a short wait.  "
+    "code='LLM_ERROR' is non-recoverable — report the message to the user."
 )
 
 # ---------------------------------------------------------------------------
 # Server instance
 # ---------------------------------------------------------------------------
 mcp = FastMCP(name="kb_mcp", instructions=_INSTRUCTIONS)
+
+
+# ---------------------------------------------------------------------------
+# Tool: kb_ask_v1
+# ---------------------------------------------------------------------------
+@mcp.tool(
+    name="kb_ask_v1",
+    description=(
+        "Ask a question and receive a grounded answer synthesised by the LLM "
+        "with a post-LLM Grounding Check (ADR-0004).  Use this as the default "
+        "tool for user questions.\n\n"
+        "Parameters:\n"
+        "  query  — the user's question (required)\n"
+        "  stack  — 'wiki' (curated BM25, default) or 'rag' (Vector RAG)\n\n"
+        "Returns on success: {stack, answer, citations, grounding}\n"
+        "  answer      — grounded text, or the Cannot-Confirm phrase when the\n"
+        "                KB cannot support the answer\n"
+        "  citations   — list of {source, heading, score, content} dicts from\n"
+        "                BM25 retrieval (the sections the LLM reasoned over)\n"
+        "  grounding   — {passed: bool, reason: str}\n"
+        "                passed=false means Cannot Confirm (a success result,\n"
+        "                NOT isError — it is a valid KB boundary per ADR-0016)\n\n"
+        "Returns isError=true on LLM failure:\n"
+        "  {code, message} where code is 'LLM_UNAVAILABLE' (retryable) or\n"
+        "  'LLM_ERROR' (non-retryable, report message to user)."
+    ),
+)
+def kb_ask_v1(
+    query: Annotated[str, Field(description="The question to answer.")],
+    stack: Annotated[
+        Literal["wiki", "rag"],
+        Field(description="Retrieval stack: 'wiki' (BM25, default) or 'rag' (Vector RAG)."),
+    ] = "wiki",
+) -> Any:
+    """Answer a question with LLM synthesis and a post-LLM Grounding Check.
+
+    Routes to ``markdown_kb.app.retrieval.query()`` (wiki stack) or the
+    vector_rag equivalent.  Returns a normalised dict on success.  On
+    ``LLMError`` (ADR-0015), returns a ``CallToolResult`` with ``isError=True``
+    so the MCP host receives a structured error payload instead of a raw
+    exception.
+
+    Cannot Confirm (``grounding.passed=False``) is ALWAYS a success result
+    (not ``isError``).  The host must treat it as a KB boundary, not a failure.
+
+    Defaults are enforced server-side — the MCP host MUST NOT rely on the model
+    supplying default values (ADR-0016 strict schema).
+    """
+    from markdown_kb.app.errors import LLMError
+
+    # Enforce defaults server-side regardless of what the host sends.
+    if stack is None:
+        stack = "wiki"
+
+    try:
+        if stack == "wiki":
+            reload_if_stale()
+            from markdown_kb.app.retrieval import query as wiki_query
+
+            result = wiki_query(query)
+        else:
+            from vector_rag.app.retrieval import query as rag_query  # type: ignore[import-untyped]
+
+            result = rag_query(query)
+
+    except LLMError as exc:
+        # ADR-0015 / ADR-0016: LLMError → structured MCP isError payload.
+        # retryable=True  → code='LLM_UNAVAILABLE'
+        # retryable=False → code='LLM_ERROR'
+        code = "LLM_UNAVAILABLE" if exc.retryable else "LLM_ERROR"
+        payload = json.dumps({"code": code, "message": exc.message})
+        return CallToolResult(
+            content=[TextContent(type="text", text=payload)],
+            isError=True,
+        )
+
+    # Map retrieval result to the MCP neutral shape.
+    # result keys: answer, sources, grounding_outcome
+    # sources: list of {source, heading, score, content, derived_from}
+    # grounding_outcome: GroundingOutcome(passed, reason, ...)
+    grounding_outcome = result["grounding_outcome"]
+    citations = [
+        {
+            "source": src["source"],
+            "heading": src["heading"],
+            "score": src["score"],
+            "content": src["content"],
+        }
+        for src in result.get("sources", [])
+    ]
+    return {
+        "stack": stack,
+        "answer": result["answer"],
+        "citations": citations,
+        "grounding": {
+            "passed": grounding_outcome.passed,
+            "reason": grounding_outcome.reason,
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +289,7 @@ def kb_save_hot_v1(
 # extra fields.  This does not affect FastMCP's internal argument validation.
 def _add_strict_schema() -> None:
     """Patch tool parameter schemas to include additionalProperties:false."""
-    for tool_name in ("kb_search_v1", "kb_read_hot_v1", "kb_save_hot_v1"):
+    for tool_name in ("kb_ask_v1", "kb_search_v1", "kb_read_hot_v1", "kb_save_hot_v1"):
         tool = mcp._tool_manager.get_tool(tool_name)
         if tool is not None:
             tool.parameters["additionalProperties"] = False
