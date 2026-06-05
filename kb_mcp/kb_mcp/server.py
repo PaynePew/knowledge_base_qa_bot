@@ -22,6 +22,7 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
 from .freshness import reload_if_stale
+from .hot_cache import read_hot, save_hot
 from .normalizer import normalize_rag_results, normalize_wiki_results
 
 # ---------------------------------------------------------------------------
@@ -32,7 +33,14 @@ _INSTRUCTIONS = (
     "Available tools:\n"
     "- kb_search_v1: Retrieve raw Sections or Chunks from the KB index.  "
     "Use this when the user wants to see the raw evidence or when you want to "
-    "reason over sources yourself before composing an answer.\n\n"
+    "reason over sources yourself before composing an answer.\n"
+    "- kb_read_hot_v1: Read working-memory hot cache (wiki/hot.md).  "
+    "Call this at session start to recover where the previous session left off.  "
+    "Returns empty string on the first session — that is normal, not an error.\n"
+    "- kb_save_hot_v1: Persist a working-memory summary to the hot cache.  "
+    "Call this at session end (or at a natural checkpoint) with a ~500-word "
+    "summary composed by you.  The server only persists the bytes; you compose "
+    "the summary.\n\n"
     "Stack guidance:\n"
     "- Always start with stack='wiki' (curated BM25 index).  "
     "Only switch to stack='rag' when the user explicitly asks to use the "
@@ -110,6 +118,56 @@ def kb_search_v1(
 
 
 # ---------------------------------------------------------------------------
+# Tool: kb_read_hot_v1
+# ---------------------------------------------------------------------------
+@mcp.tool(
+    name="kb_read_hot_v1",
+    description=(
+        "Read the working-memory hot cache (wiki/hot.md).  "
+        "Call this at session start to recover where the previous session left off.\n\n"
+        "Returns: {content: str}\n"
+        "  content is the full text of wiki/hot.md, or '' on the first session "
+        "(file absent is a normal state, not an error).\n\n"
+        "This is a TOOL (agent-initiated), not a resource — the agent decides "
+        "when to call it (L0 of the read-depth budget per ADR-0016)."
+    ),
+)
+def kb_read_hot_v1() -> dict:
+    """Return the hot-cache contents, or empty string when absent.
+
+    Uses the module-level ``HOT_PATH`` which tests monkeypatch to a tmp dir.
+    """
+    content = read_hot()
+    return {"content": content}
+
+
+# ---------------------------------------------------------------------------
+# Tool: kb_save_hot_v1
+# ---------------------------------------------------------------------------
+@mcp.tool(
+    name="kb_save_hot_v1",
+    description=(
+        "Persist a working-memory summary to the hot cache (wiki/hot.md).\n\n"
+        "Parameters:\n"
+        "  summary — the ~500-word working-memory summary (required).  "
+        "The host composes the summary; the server only persists the bytes.\n\n"
+        "Returns: {ok: true} on success.\n\n"
+        "Writes atomically (tmp-file + os.replace) so a crash mid-write never "
+        "leaves a partial file.  Overwrites any previous hot.md."
+    ),
+)
+def kb_save_hot_v1(
+    summary: Annotated[str, Field(description="The working-memory summary to persist.")],
+) -> dict:
+    """Atomically persist ``summary`` to the hot-cache file.
+
+    Uses the module-level ``HOT_PATH`` (from hot_cache) which tests monkeypatch.
+    """
+    save_hot(summary)
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
 # Patch schema to add additionalProperties:false (ADR-0016 strict schema)
 # ---------------------------------------------------------------------------
 # FastMCP generates the tool parameters schema from the function signature but
@@ -117,10 +175,11 @@ def kb_search_v1(
 # hosts (e.g. Claude Desktop) receive the strict schema and know not to send
 # extra fields.  This does not affect FastMCP's internal argument validation.
 def _add_strict_schema() -> None:
-    """Patch kb_search_v1's parameter schema to include additionalProperties:false."""
-    tool = mcp._tool_manager.get_tool("kb_search_v1")
-    if tool is not None:
-        tool.parameters["additionalProperties"] = False
+    """Patch tool parameter schemas to include additionalProperties:false."""
+    for tool_name in ("kb_search_v1", "kb_read_hot_v1", "kb_save_hot_v1"):
+        tool = mcp._tool_manager.get_tool(tool_name)
+        if tool is not None:
+            tool.parameters["additionalProperties"] = False
 
 
 _add_strict_schema()
