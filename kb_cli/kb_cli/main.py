@@ -17,9 +17,11 @@ message to stderr — no traceback.
 ``--stack rag`` routes to the vector_rag retrieval arm (ADR-0002: stacks stay
 independent, called directly).
 
-The result normalizer from ``kb_mcp.normalizer`` is reused for human-readable
-output of the search shape.  The ``ask`` path formats the full retrieval result
-(answer + citations) inline.
+Human-readable output: the ``ask`` path and the REPL render the full
+``markdown_kb.app.retrieval.query`` result shape (``answer`` + ``sources`` +
+``grounding_outcome``) via ``_print_result``.  This is the grounded-answer
+shape, not the search-result shape that ``kb_mcp.normalizer`` maps for the MCP
+``kb_search_v1`` tool — the normalizer is therefore not on the CLI path.
 """
 
 from __future__ import annotations
