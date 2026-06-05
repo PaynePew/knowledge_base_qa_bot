@@ -9,7 +9,8 @@ this layer only maps the outcome to the response schema.
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from markdown_kb.app.errors import LLMError
 
 from .indexer import build_index
 from .retrieval import query
@@ -44,7 +45,13 @@ def chat(req: ChatRequest) -> ChatResponse:
     expose): passes through passed/reason/claims/unsupported_claims; suppresses
     reasoning, error_type, retries_attempted (server logs only).
     """
-    result = query(req.query)
+    try:
+        result = query(req.query)
+    except LLMError as e:
+        raise HTTPException(
+            status_code=503 if e.retryable else 500,
+            detail=e.message,
+        ) from e
     outcome = result["grounding_outcome"]
 
     claims = None

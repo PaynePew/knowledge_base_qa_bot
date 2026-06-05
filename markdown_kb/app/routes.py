@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 
 from . import indexer as _indexer
 from . import qa as qa_module
+from .errors import LLMError
 from .importer import ImportBatchResult
 from .importer import import_sources as run_import
 from .indexer import build_index
@@ -68,7 +69,13 @@ def chat(req: ChatRequest) -> ChatResponse:
     ``ChatResponse.filed`` for caller audit; ``None`` covers Cannot-Confirm,
     IOError fail-soft, and orphan-status touch refusal.
     """
-    result = query(req.query)
+    try:
+        result = query(req.query)
+    except LLMError as e:
+        raise HTTPException(
+            status_code=503 if e.retryable else 500,
+            detail=e.message,
+        ) from e
     outcome = result["grounding_outcome"]
 
     # Build claims list if the verifier ran and produced structured claims.
