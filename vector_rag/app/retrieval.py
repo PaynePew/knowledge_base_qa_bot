@@ -41,7 +41,6 @@ import os
 from collections.abc import Iterator
 
 import openai
-from fastapi import HTTPException
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
@@ -49,6 +48,7 @@ from langchain_openai import ChatOpenAI
 # vector_rag is the first real second consumer of the CitableContent Protocol.
 # Chunk satisfies the protocol, so verify() needs no changes to grounding.py.
 from markdown_kb.app import grounding as grounding_module
+from markdown_kb.app.errors import LLMError
 from markdown_kb.app.grounding import GroundingOutcome
 
 from . import indexer
@@ -355,15 +355,15 @@ def _draft_and_verify(
 # Internal helpers
 # ---------------------------------------------------------------------------
 def _call_llm_with_error_handling(question: str, prompt_text: str) -> str:
-    """Invoke the LLM and map OpenAI exceptions to HTTPExceptions.
+    """Invoke the LLM and map OpenAI exceptions to a transport-agnostic LLMError.
 
-    Error mapping (CODING_STANDARD §4.2):
-      - APITimeoutError, RateLimitError → HTTP 503 (transient; caller retries)
-      - AuthenticationError            → HTTP 500 (bad API key)
-      - Any other APIError             → HTTP 500 (unexpected service error)
+    Error mapping (ADR-0015 — status table moves to the HTTP route):
+      - APITimeoutError, RateLimitError → LLMError(retryable=True)
+      - AuthenticationError            → LLMError(retryable=False)
+      - Any other APIError             → LLMError(retryable=False)
 
     Each branch emits a ``chat_error`` log entry tagged with the appropriate
-    kind (openai_transient | openai_auth | openai_api).
+    kind (openai_transient | openai_auth | openai_api) BEFORE raising.
     """
     truncated = question[:60].replace('"', "'")
     try:
@@ -379,25 +379,25 @@ def _call_llm_with_error_handling(question: str, prompt_text: str) -> str:
             "chat_error",
             f'"{truncated}" kind=openai_transient exc={type(exc).__name__}',
         )
-        raise HTTPException(
-            status_code=503,
-            detail="LLM service temporarily unavailable, please retry.",
+        raise LLMError(
+            retryable=True,
+            message="LLM service temporarily unavailable, please retry.",
         ) from exc
     except openai.AuthenticationError as exc:
         log_event(
             "chat_error", f'"{truncated}" kind=openai_auth exc={type(exc).__name__}'
         )
-        raise HTTPException(
-            status_code=500,
-            detail="LLM service auth failed (check OPENAI_API_KEY).",
+        raise LLMError(
+            retryable=False,
+            message="LLM service auth failed (check OPENAI_API_KEY).",
         ) from exc
     except openai.APIError as exc:
         log_event(
             "chat_error", f'"{truncated}" kind=openai_api exc={type(exc).__name__}'
         )
-        raise HTTPException(
-            status_code=500,
-            detail=f"LLM service error: {exc!s}",
+        raise LLMError(
+            retryable=False,
+            message=f"LLM service error: {exc!s}",
         ) from exc
 
 
