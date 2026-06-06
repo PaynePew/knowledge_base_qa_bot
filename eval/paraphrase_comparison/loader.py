@@ -3,45 +3,30 @@
 Read/write helpers for the Phase 8 Paraphrase set and report (PRD #100).
 
 ``load_paraphrases`` parses ``queries.yaml`` into ``Paraphrase`` objects.
-``write_text_atomic`` is the tmp-file + ``os.replace`` writer used for both
-``queries.yaml`` and ``report.md`` so a crash mid-write never leaves a
-half-written file (CODING_STANDARD §2.6 atomic write).
+``write_text_atomic`` and ``replace_atomic`` are re-exported from
+``markdown_kb.app.atomic``, which is the canonical home per CODING_STANDARD §2.6
+(issue #211).  Callers that import these names from this module are unchanged.
+
+``os`` and ``time`` are kept as module-level imports so that existing tests that
+patch ``loader.os.replace`` / ``loader.time.sleep`` continue to work — those
+attributes are the same Python singletons used by the implementation in
+``markdown_kb.app.atomic``, so the monkeypatch seam remains valid.
 """
 
 from __future__ import annotations
 
-import os
-import tempfile
-import time
+import os  # noqa: F401 — kept for test seam: monkeypatch.setattr(loader.os, "replace", …)
+import time  # noqa: F401 — kept for test seam: monkeypatch.setattr(loader.time, "sleep", …)
 from pathlib import Path
 
 import yaml
+
+from markdown_kb.app.atomic import replace_atomic, write_text_atomic  # noqa: F401
 
 from .models import Paraphrase
 
 _PKG_ROOT = Path(__file__).resolve().parent
 QUERIES_PATH = _PKG_ROOT / "queries.yaml"
-
-
-def replace_atomic(
-    src: str | Path, dst: Path, *, attempts: int = 5, backoff: float = 0.1
-) -> None:
-    """``os.replace`` with a bounded retry for transient Windows file locks.
-
-    On Windows an antivirus or the Search indexer can briefly open a just-written
-    file to scan it, making ``os.replace`` raise a transient ``PermissionError``
-    (WinError 5 / 32). A short retry clears the race; a persistent failure still
-    raises (CODING_STANDARD §2.6). Zero overhead on the normal first-try success;
-    on POSIX the race does not occur so the loop runs exactly once.
-    """
-    for attempt in range(attempts):
-        try:
-            os.replace(src, dst)
-            return
-        except PermissionError:
-            if attempt == attempts - 1:
-                raise
-            time.sleep(backoff)
 
 
 def load_paraphrases(path: Path = QUERIES_PATH) -> list[Paraphrase]:
@@ -77,24 +62,3 @@ def load_metadata(path: Path = QUERIES_PATH) -> dict:
     """
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return dict(data.get("metadata", {}))
-
-
-def write_text_atomic(path: Path, content: str) -> None:
-    """Write ``content`` to ``path`` atomically (tmp + os.replace; §2.6)."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(
-        dir=path.parent, suffix=".tmp", prefix=f"{path.stem}_"
-    )
-    try:
-        # newline="\n": force LF on every OS so committed artifacts honour the
-        # repo's `* eol=lf` .gitattributes (CODING_STANDARD §1.1) — Windows text
-        # mode would otherwise translate "\n" to CRLF and dirty the working tree.
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
-            fh.write(content)
-        replace_atomic(tmp_name, path)
-    except Exception:
-        try:
-            os.unlink(tmp_name)
-        except OSError:
-            pass
-        raise
