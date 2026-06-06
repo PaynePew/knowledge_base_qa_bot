@@ -205,13 +205,16 @@ def test_chat_cannot_confirm_does_not_file(built_corpus, monkeypatch, tmp_path):
 
 def test_chat_filing_io_error_failsoft(grounded_client, tmp_path, monkeypatch):
     """Monkeypatched ``os.replace`` → IOError; response is 200 with answer + filed=None."""
-    import app.qa as qa_module
+    import app.atomic as atomic_module
 
+    # _atomic_write in qa.py delegates to write_text_atomic in app.atomic, so the
+    # seam is app.atomic.os.replace (not qa_module.os.replace any more).
     monkeypatch.setattr(
-        qa_module.os,
+        atomic_module.os,
         "replace",
         lambda src, dst: (_ for _ in ()).throw(OSError("simulated disk full")),
     )
+    monkeypatch.setattr(atomic_module.time, "sleep", lambda _s: None)
 
     client, _ = grounded_client
     resp = client.post("/chat", json={"query": "How long do refunds take?"})

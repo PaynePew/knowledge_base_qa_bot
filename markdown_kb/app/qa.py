@@ -39,18 +39,16 @@ convention as ``wiki_writer.py``.
 
 from __future__ import annotations
 
-import contextlib
 import datetime
 import hashlib
-import os
 import re
-import tempfile
 import threading
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from .atomic import write_text_atomic
 from .grounding import CitableContent
 from .indexer import slugify
 from .logger import log_event
@@ -237,29 +235,13 @@ def _render_qa_page(fm: WikiPageFrontmatter, body: str) -> str:
 
 
 def _atomic_write(path: Path, content: str) -> None:
-    """Tmp file + ``os.replace`` write per CODING_STANDARD §2.6.
+    """Delegate to the shared ``write_text_atomic`` helper (CODING_STANDARD §2.6).
 
-    Mirrors ``wiki_writer._write_pages_for_source``'s pattern: write to a
-    sibling tmp file in the same directory, then ``os.replace`` to swap.
-    Same-directory tmp file is required for atomicity on POSIX (cross-device
-    rename is non-atomic) — works on Windows too because Python's
-    ``os.replace`` is a renameat-style call.
+    Thin wrapper preserved as a monkeypatch seam: tests that inject failures
+    via ``monkeypatch.setattr(app.atomic.os, "replace", ...)`` still exercise
+    the fail-soft ``OSError`` handling in ``maybe_file_answer``.
     """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_fd, tmp_path_str = tempfile.mkstemp(
-        dir=path.parent,
-        suffix=".tmp",
-        prefix=f"{path.stem}_",
-    )
-    try:
-        with os.fdopen(tmp_fd, "w", encoding="utf-8") as fh:
-            fh.write(content)
-        os.replace(tmp_path_str, path)
-    except Exception:
-        # Best-effort tmp cleanup if write or replace failed.
-        with contextlib.suppress(OSError):
-            os.unlink(tmp_path_str)
-        raise
+    write_text_atomic(path, content)
 
 
 def _read_existing_frontmatter(path: Path) -> dict | None:
