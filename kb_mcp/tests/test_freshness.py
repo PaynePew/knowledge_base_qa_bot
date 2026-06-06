@@ -5,6 +5,8 @@ Verifies the mtime-gating contract:
   - Second call with the same mtime does NOT reload.
   - Call after mtime advances does reload.
   - Missing file returns False without loading.
+  - Module-default INDEX_PATH resolves to the same file as
+    markdown_kb.app._paths.INDEX_PATH (regression for parents[3] bug, issue #212).
 
 These tests use monkeypatch / tmp_path only — no real index I/O.
 """
@@ -144,3 +146,53 @@ def test_reload_if_stale_reloads_after_mtime_change(tmp_path, monkeypatch):
     result = freshness_mod.reload_if_stale(index_path)
     assert result is True
     assert len(load_calls) == 2
+
+
+# ---------------------------------------------------------------------------
+# Regression test: INDEX_PATH must resolve to repo-root/.kb/index.json
+# (issue #212 — parents[3] pointed one level ABOVE repo root)
+# ---------------------------------------------------------------------------
+
+
+def test_default_index_path_matches_markdown_kb_paths():
+    """Module-default INDEX_PATH must equal markdown_kb.app._paths.INDEX_PATH.
+
+    This test uses a subprocess to read the *un-patched* module-level default
+    — the conftest autouse fixture redirects the in-process INDEX_PATH to
+    tmp_path, so we must check in a fresh Python process to get the real
+    compile-time value.
+
+    Regression for issue #212: freshness.py had ``parents[3]`` which resolves
+    to one directory ABOVE the repo root instead of ``parents[2]`` (repo root).
+
+    The test does NOT read or write ``.kb/index.json`` on disk — it only
+    compares Path objects via the subprocess output.
+    """
+    import subprocess
+    import sys
+
+    # Run a tiny script in a fresh process that prints both path values.
+    # No conftest, no autouse fixtures — just the raw module constants.
+    script = (
+        "import kb_mcp.freshness as f; "
+        "from markdown_kb.app._paths import INDEX_PATH as m; "
+        "print(f.INDEX_PATH); "
+        "print(m)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, f"Subprocess failed: {result.stderr}"
+    lines = result.stdout.strip().splitlines()
+    assert len(lines) == 2, f"Unexpected subprocess output: {result.stdout!r}"
+    freshness_path = Path(lines[0].strip())
+    mk_path = Path(lines[1].strip())
+
+    assert freshness_path == mk_path, (
+        f"kb_mcp.freshness.INDEX_PATH ({freshness_path}) != "
+        f"markdown_kb.app._paths.INDEX_PATH ({mk_path}). "
+        "Both must resolve to <repo-root>/.kb/index.json. "
+        "Check that freshness.py uses parents[2] not parents[3] (issue #212)."
+    )

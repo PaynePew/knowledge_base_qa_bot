@@ -20,7 +20,7 @@ _last_mtime: float | None = None
 
 # Default index path — resolved at import time so callers see the same singleton.
 # Tests monkeypatch this name after importing the module.
-INDEX_PATH: Path = Path(__file__).resolve().parents[3] / ".kb" / "index.json"
+INDEX_PATH: Path = Path(__file__).resolve().parents[2] / ".kb" / "index.json"
 
 
 def reload_if_stale(index_path: Path | None = None) -> bool:
