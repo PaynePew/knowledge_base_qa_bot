@@ -29,13 +29,12 @@ processing multiple Sources in one batch.
 from __future__ import annotations
 
 import contextlib
-import os
-import tempfile
 from pathlib import Path
 
 import yaml
 from pydantic import BaseModel
 
+from .atomic import write_text_atomic
 from .schemas import WikiPageDraft
 
 # ---------------------------------------------------------------------------
@@ -357,20 +356,7 @@ def write_pages_for_source(
 
             text = _render_page(source, draft)
 
-            # Atomic write: tmp file in same dir, then os.replace
-            tmp_fd, tmp_path_str = tempfile.mkstemp(
-                dir=target_dir,
-                suffix=".tmp",
-                prefix=f"{slug}_",
-            )
-            try:
-                with os.fdopen(tmp_fd, "w", encoding="utf-8") as fh:
-                    fh.write(text)
-                os.replace(tmp_path_str, page_path)
-            except Exception:
-                with contextlib.suppress(OSError):
-                    os.unlink(tmp_path_str)
-                raise
+            write_text_atomic(page_path, text)
 
             pages_written.append(relative_path)
             if is_new:
