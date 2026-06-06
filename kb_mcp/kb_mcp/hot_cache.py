@@ -8,23 +8,23 @@ tools ``kb_read_hot_v1`` and ``kb_save_hot_v1`` in ``server.py`` delegate here.
 ``wiki/hot.md`` is git-ignored (per-user runtime cache).  A missing file is a
 valid state (first session) and returns an empty string, not an error.
 
-``save_hot`` writes atomically by reusing the Windows-safe ``write_text_atomic``
-helper from ``eval.paraphrase_comparison.loader`` (tmp-file + ``os.replace``
-with a bounded retry for transient Windows AV/Search file locks).  This helper
-is already tested and production-proven; we delegate to it rather than
-hand-rolling a second implementation (CODING_STANDARD §2.6 DRY).
+``save_hot`` writes atomically via ``write_text_atomic`` from
+``markdown_kb.app.atomic`` (tmp-file + ``os.replace`` with a bounded retry for
+transient Windows AV/Search file locks).  ``kb_mcp → markdown-kb`` is a declared
+dependency; the prior ``kb_mcp → eval`` direction was undeclared (issue #211).
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-# Import the loader module under ``_loader`` so tests can monkeypatch
-# ``hc._loader.os.replace`` — the same seam used by test_atomic_replace.py.
-# ``# noqa: F401`` suppresses the "imported but unused" warning: this name is a
-# deliberate public test seam, not dead code.
-from eval.paraphrase_comparison import loader as _loader  # noqa: F401
-from eval.paraphrase_comparison.loader import write_text_atomic
+# Import the atomic module under ``_loader`` so tests can monkeypatch
+# ``hc._loader.os.replace`` — the established seam for the replace spy in
+# test_hot_cache.py.  ``markdown_kb.app.atomic`` exposes ``os`` and ``time`` as
+# module-level attributes, identical to the old ``eval.paraphrase_comparison.loader``
+# seam.  The noqa comment on the import line suppresses F401; this is intentional.
+import markdown_kb.app.atomic as _loader  # noqa: F401
+from markdown_kb.app.atomic import write_text_atomic
 
 # Default hot-cache path — resolved at import time so callers see the same
 # singleton.  Tests monkeypatch this name after importing the module.

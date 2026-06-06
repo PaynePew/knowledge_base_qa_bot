@@ -11,12 +11,9 @@ in its docstring below.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import math
-import os
 import re
-import tempfile
 import threading
 from collections import Counter
 from dataclasses import asdict, dataclass, field
@@ -26,6 +23,7 @@ from pathlib import Path
 # Paths and constants
 # ---------------------------------------------------------------------------
 from ._paths import DOCS_DIR, INDEX_PATH, WIKI_DIR
+from .atomic import write_text_atomic
 
 # ADR-0006 (W1): build_index scans only the curated wiki subdirs.
 # Whitelist semantics — meta-files (wiki/index.md, wiki/log.md, wiki/hot.md,
@@ -583,18 +581,10 @@ def write_index_json(index_path: Path | None = None) -> None:
         },
     }
 
-    # Atomic write: write to a sibling tmp file then os.replace
-    tmp_fd, tmp_path_str = tempfile.mkstemp(dir=index_path.parent, suffix=".tmp", prefix="index_")
-    try:
-        with os.fdopen(tmp_fd, "w", encoding="utf-8") as fh:
-            json.dump(payload, fh, indent=2, ensure_ascii=False)
-            fh.write("\n")
-        os.replace(tmp_path_str, index_path)
-    except Exception:
-        # Clean up tmp file on failure (best effort — tmp may already be gone)
-        with contextlib.suppress(OSError):
-            os.unlink(tmp_path_str)
-        raise
+    # Atomic write via shared helper (CODING_STANDARD §2.6, issue #211).
+    # Serialise to a string first so write_text_atomic can force LF newlines.
+    index_json = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+    write_text_atomic(index_path, index_json)
 
 
 def load_index_json(index_path: Path | None = None) -> tuple[int, int]:
