@@ -103,7 +103,6 @@ import datetime
 import os
 import re
 import string
-import tempfile
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -112,6 +111,7 @@ from typing import Any
 import yaml
 
 from ._paths import DOCS_DIR, WIKI_DIR
+from .atomic import write_text_atomic
 from .indexer import _index_lock
 from .logger import LOG_PATH, log_event
 from .schemas import (
@@ -1958,18 +1958,8 @@ def _render_report_markdown(
 
 
 def _write_report(report_path: Path, content: str) -> None:
-    """Write lint-report.md atomically (tmp-file + os.replace)."""
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        encoding="utf-8",
-        dir=report_path.parent,
-        delete=False,
-        suffix=".tmp",
-    ) as fh:
-        fh.write(content)
-        tmp_name = fh.name
-    os.replace(tmp_name, report_path)
+    """Write lint-report.md atomically via the shared write_text_atomic helper (§2.6)."""
+    write_text_atomic(report_path, content)
 
 
 # ---------------------------------------------------------------------------
