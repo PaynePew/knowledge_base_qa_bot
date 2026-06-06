@@ -58,12 +58,9 @@ handling), and #92 (7-3 hash chain) for the full design.
 
 from __future__ import annotations
 
-import contextlib
 import datetime
 import hashlib
-import os
 import re
-import tempfile
 import time
 import unicodedata
 from dataclasses import dataclass, field
@@ -75,6 +72,7 @@ from bs4 import BeautifulSoup, Comment
 from markdownify import markdownify
 
 from ._paths import _REPO_ROOT, DOCS_DIR
+from .atomic import write_text_atomic
 from .logger import log_event
 
 # ---------------------------------------------------------------------------
@@ -739,25 +737,21 @@ def _render_output(
 def _atomic_write(content: str, target: Path) -> None:
     """Write content to target atomically via tempfile + os.replace.
 
-    Reuses the wiki_writer.py pattern (CODING_STANDARD §2.6):
-    - Create tempfile in same directory (ensures same filesystem for os.replace).
-    - Write content.
-    - os.replace to atomically overwrite target.
-    - On any exception: clean up tempfile and re-raise as IOError.
+    Delegates to ``write_text_atomic`` from ``markdown_kb.app.atomic``
+    (CODING_STANDARD §2.6, issue #211).  Preserves the original IOError
+    error contract (§4): any underlying exception is re-raised as OSError
+    so callers that catch OSError are unaffected.
+
+    Signature kept as ``(content, target)`` — note argument order differs
+    from ``write_text_atomic(path, content)`` — to preserve all call-sites
+    and the ``monkeypatch.setattr(importer_module, '_atomic_write', ...)``
+    test seam in test_import_failure_modes.py.
     """
-    target.parent.mkdir(parents=True, exist_ok=True)
-    tmp_fd, tmp_path_str = tempfile.mkstemp(
-        dir=target.parent,
-        suffix=".tmp",
-        prefix=f"{target.stem}_",
-    )
     try:
-        with os.fdopen(tmp_fd, "w", encoding="utf-8") as fh:
-            fh.write(content)
-        os.replace(tmp_path_str, target)
+        write_text_atomic(target, content)
+    except OSError:
+        raise
     except Exception as exc:
-        with contextlib.suppress(OSError):
-            os.unlink(tmp_path_str)
         raise OSError(f"Atomic write failed for {target}: {exc}") from exc
 
 
