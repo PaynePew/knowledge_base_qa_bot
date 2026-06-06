@@ -31,16 +31,14 @@ See ADR-0011 and GitHub issue #168 (Phase 15 PRD) for design rationale.
 
 from __future__ import annotations
 
-import contextlib
-import os
 import re
-import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
 from ._paths import _REPO_ROOT, DOCS_DIR
+from .atomic import write_bytes_atomic
 from .logger import log_event
 
 # ---------------------------------------------------------------------------
@@ -152,24 +150,16 @@ def _is_safe_basename(filename: str) -> tuple[bool, str]:
 
 
 def _atomic_write_bytes(content: bytes, target: Path) -> None:
-    """Write bytes to target atomically via tempfile + os.replace.
+    """Write bytes to target atomically via the shared write_bytes_atomic helper (§2.6).
 
-    Follows the same pattern as importer._atomic_write and wiki_writer.py
-    (CODING_STANDARD §2.6): tmp in same dir, os.replace for atomicity.
+    Thin wrapper that delegates to ``write_bytes_atomic`` and re-wraps any
+    exception as ``OSError`` so callers continue to receive the same error contract
+    (``OSError("Atomic write failed for ...")``) regardless of the underlying
+    failure (e.g. ``PermissionError`` from the Windows-retry path).
     """
-    target.parent.mkdir(parents=True, exist_ok=True)
-    tmp_fd, tmp_path_str = tempfile.mkstemp(
-        dir=target.parent,
-        suffix=".tmp",
-        prefix=f"{target.stem}_",
-    )
     try:
-        with os.fdopen(tmp_fd, "wb") as fh:
-            fh.write(content)
-        os.replace(tmp_path_str, target)
+        write_bytes_atomic(target, content)
     except Exception as exc:
-        with contextlib.suppress(OSError):
-            os.unlink(tmp_path_str)
         raise OSError(f"Atomic write failed for {target}: {exc}") from exc
 
 

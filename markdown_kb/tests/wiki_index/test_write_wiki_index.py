@@ -68,8 +68,12 @@ def test_permission_denied(tmp_path, indexed_corpus):
     wiki_dir = tmp_path / "perm_wiki"
     wiki_dir.mkdir()
 
-    # Patch os.replace in app.wiki_index to simulate a rename failure (permission/disk-full)
-    with patch("app.wiki_index.os.replace", side_effect=PermissionError("Permission denied")):
+    # write_wiki_index now delegates to write_text_atomic in app.atomic, so the
+    # os.replace seam has moved there (not app.wiki_index.os.replace any more).
+    with (
+        patch("app.atomic.os.replace", side_effect=PermissionError("Permission denied")),
+        patch("app.atomic.time.sleep"),
+    ):
         written, path, error = write_wiki_index(_indexer.sections, wiki_dir=wiki_dir)
 
     assert written is False

@@ -1,6 +1,6 @@
 """Shared atomic-write helpers (CODING_STANDARD §2.6).
 
-Public surface: ``write_text_atomic``, ``replace_atomic``.
+Public surface: ``write_text_atomic``, ``write_bytes_atomic``, ``replace_atomic``.
 
 This is the canonical home for the atomic-write pattern used across
 ``markdown_kb`` and consumed via re-export by ``eval.paraphrase_comparison.loader``.
@@ -9,6 +9,7 @@ declared dependency; the old ``kb_mcp → eval`` direction was undeclared).
 
 Implementations moved verbatim from ``eval/paraphrase_comparison/loader.py``
 (issue #211 — consolidate four copies into one).
+``write_bytes_atomic`` added in issue #216 to cover ``upload.py`` binary writes.
 """
 
 from __future__ import annotations
@@ -48,6 +49,25 @@ def write_text_atomic(path: Path, content: str) -> None:
         # repo's `* eol=lf` .gitattributes (CODING_STANDARD §1.1) — Windows text
         # mode would otherwise translate "\n" to CRLF and dirty the working tree.
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(content)
+        replace_atomic(tmp_name, path)
+    except Exception:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp_name)
+        raise
+
+
+def write_bytes_atomic(path: Path, content: bytes) -> None:
+    """Write ``content`` to ``path`` atomically in binary mode (tmp + os.replace; §2.6).
+
+    Identical pattern to ``write_text_atomic`` but uses ``os.fdopen(fd, "wb")``
+    so no newline translation occurs — uploaded binary and text files round-trip
+    byte-identically (CODING_STANDARD §2.6).
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, suffix=".tmp", prefix=f"{path.stem}_")
+    try:
+        with os.fdopen(fd, "wb") as fh:
             fh.write(content)
         replace_atomic(tmp_name, path)
     except Exception:

@@ -20,11 +20,9 @@ wiring it into ``build_index`` is deferred to Slice #2.
 
 from __future__ import annotations
 
-import contextlib
-import os
-import tempfile
 from pathlib import Path
 
+from .atomic import write_text_atomic
 from .indexer import Section
 
 # ---------------------------------------------------------------------------
@@ -140,17 +138,7 @@ def write_wiki_index(
         text = project_wiki_index(sections)
         index_path = wiki_dir / "index.md"
 
-        # Atomic write: write to a sibling tmp file, then os.replace
-        tmp_fd, tmp_path_str = tempfile.mkstemp(dir=wiki_dir, suffix=".tmp", prefix="index_")
-        try:
-            with os.fdopen(tmp_fd, "w", encoding="utf-8") as fh:
-                fh.write(text)
-            os.replace(tmp_path_str, index_path)
-        except Exception:
-            # Best-effort cleanup of the tmp file
-            with contextlib.suppress(OSError):
-                os.unlink(tmp_path_str)
-            raise
+        write_text_atomic(index_path, text)
 
         return True, index_path.resolve(), None
 

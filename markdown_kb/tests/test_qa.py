@@ -306,13 +306,16 @@ def test_touch_against_invalid_status_returns_none(tmp_path):
 
 def test_filing_failsoft_on_oserror_returns_none(tmp_path, monkeypatch):
     """Monkeypatch os.replace → IOError; filing must not raise, must log, must return None."""
-    import app.qa as qa_module
+    import app.atomic as atomic_module
     from app.qa import maybe_file_answer
 
     def boom(src, dst):
         raise OSError("simulated disk full")
 
-    monkeypatch.setattr(qa_module.os, "replace", boom)
+    # _atomic_write delegates to write_text_atomic in app.atomic, so the seam
+    # is app.atomic.os.replace (not qa_module.os.replace any more).
+    monkeypatch.setattr(atomic_module.os, "replace", boom)
+    monkeypatch.setattr(atomic_module.time, "sleep", lambda _s: None)
 
     result = maybe_file_answer(
         "How do I cancel my order?",
@@ -396,12 +399,14 @@ def test_reflect_emission_one_to_one_with_mutations(tmp_path):
 
 def test_failsoft_path_emits_no_reflect(tmp_path, monkeypatch):
     """An IOError must NOT also emit a qa_reflect entry — only qa_filing_error."""
-    import app.qa as qa_module
+    import app.atomic as atomic_module
     from app.qa import maybe_file_answer
 
+    # _atomic_write delegates to write_text_atomic in app.atomic; seam moves there.
     monkeypatch.setattr(
-        qa_module.os, "replace", lambda src, dst: (_ for _ in ()).throw(OSError("nope"))
+        atomic_module.os, "replace", lambda src, dst: (_ for _ in ()).throw(OSError("nope"))
     )
+    monkeypatch.setattr(atomic_module.time, "sleep", lambda _s: None)
 
     result = maybe_file_answer(
         "How do I cancel my order?",
