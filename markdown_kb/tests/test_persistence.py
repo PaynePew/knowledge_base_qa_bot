@@ -28,6 +28,35 @@ from app.retrieval import NOT_INDEXED_MESSAGE
 
 from .conftest import REAL_DOCS, FakeLLMResponse
 
+
+@pytest.fixture(autouse=True)
+def _restore_app_modules():
+    """Snapshot and restore ``app.*`` / ``markdown_kb.app.*`` entries in sys.modules.
+
+    ``_reload_app_modules`` deletes all ``app.*`` keys from sys.modules and
+    re-imports fresh copies to simulate a server restart.  Without this fixture
+    the fresh copies stay in sys.modules permanently, so the next test's
+    ``import app.indexer`` returns the freshly-reloaded object B, but any
+    module-level name binding (e.g. ``from app.indexer import build_index`` in
+    test_indexing.py) still points at the pre-reload object A — the two
+    objects diverge, build_index() uses object A's INDEX_PATH (the real
+    ``.kb/index.json`` because the autouse redirect only patches B), and the
+    real index gets clobbered.
+
+    Restoring sys.modules to the pre-test snapshot after each persistence test
+    ensures subsequent tests always operate on a single consistent module
+    object (whichever was first imported in this session).
+    """
+    snapshot = {k: v for k, v in sys.modules.items() if k == "app" or k.startswith("app.")}
+    yield
+    # Remove any app.* modules the test added or replaced.
+    for key in list(sys.modules.keys()):
+        if key == "app" or key.startswith("app."):
+            del sys.modules[key]
+    # Restore the pre-test entries.
+    sys.modules.update(snapshot)
+
+
 # The section that the happy-path refund query should return.
 # Slice 4-3a: docs/ sections keep <filename>#<slug> form; wiki sections use bare slug.
 # test_restart_preserves_index_and_chat_answers uses wiki fixtures → bare-slug form.
