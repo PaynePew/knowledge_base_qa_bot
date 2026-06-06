@@ -22,8 +22,15 @@ import markdown_kb.app.retrieval as _retrieval
 import pytest
 from fastapi.testclient import TestClient
 from markdown_kb.app.grounding import GroundingClaim, GroundingOutcome, GroundingResult
+from markdown_kb.app.retrieval import CANNOT_CONFIRM_PHRASE
 
 REAL_DOCS = Path(__file__).resolve().parents[2] / "docs"
+# Hermetic 3-doc corpus (account_help / refund_policy / shipping_faq) — same
+# corpus used by test_chat_stream.py.  Gibberish queries reliably fall below
+# the BM25 threshold against this small corpus, avoiding the fake-docs
+# pollution that made test_wiki_stream_cannot_confirm_does_not_file flaky
+# (issue #204 / same class as #145).
+_FIXTURE_DOCS = Path(__file__).resolve().parents[2] / "markdown_kb" / "tests" / "fixtures" / "docs"
 REFUND_SECTION_ID = "refund_policy.md#refund-timeline"
 
 
@@ -81,8 +88,16 @@ def _redirect_paths_to_tmp(tmp_path, monkeypatch):
 
 @pytest.fixture()
 def indexed_wiki_corpus(tmp_path, monkeypatch):
-    """Build the Section Index from REAL_DOCS into the tmp paths."""
-    _indexer.build_index(REAL_DOCS)
+    """Build the Section Index from the hermetic 3-doc fixture corpus.
+
+    Switched from REAL_DOCS (full docs/ incl. fake-docs) to _FIXTURE_DOCS to
+    prevent BM25 corpus pollution from the 20-doc fake-docs tree that caused
+    ``test_wiki_stream_cannot_confirm_does_not_file`` to flake (~12% rate):
+    a gibberish query would score above the threshold against the expanded
+    corpus, reach the LLM, and have grounding.passed flip True (issue #204,
+    same class as #145).
+    """
+    _indexer.build_index(_FIXTURE_DOCS)
     yield
     _indexer.sections.clear()
 
@@ -215,8 +230,34 @@ def test_wiki_stream_grounded_second_ask_touches_filed(grounded_stream_client, t
 
 
 def test_wiki_stream_cannot_confirm_does_not_file(indexed_wiki_corpus, monkeypatch, tmp_path):
-    """Cannot Confirm Wiki stream: done.filed is null and wiki/qa/ stays empty."""
-    # Unrelated gibberish → BM25 scores fall below threshold → CC
+    """Cannot Confirm Wiki stream: done.filed is null and wiki/qa/ stays empty.
+
+    Hermetic setup (issue #204): uses the 3-doc fixture corpus (not the full
+    docs/ with fake-docs) so gibberish reliably scores below the BM25 threshold.
+    Additionally mocks the LLM + grounding.verify at the get_llm/_llm seam to
+    force a deterministic Cannot-Confirm even if BM25 were to pass: the test's
+    AC is that CC streams do NOT file — it does not assert on the BM25 gate
+    mechanism, so a mocked CC is a valid validator (no OPENAI_API_KEY needed).
+    """
+
+    # Belt-and-suspenders: mock LLM to return CANNOT_CONFIRM_PHRASE and mock
+    # grounding.verify to return passed=False.  Together with the hermetic corpus
+    # this guarantees a CC outcome regardless of BM25 scoring behaviour.
+    class _FakeCCLLM:
+        def invoke(self, messages):
+            return _FakeLLMResponse(content=CANNOT_CONFIRM_PHRASE)
+
+    fake_cc_llm = _FakeCCLLM()
+    monkeypatch.setattr(_retrieval, "_llm", fake_cc_llm)
+    monkeypatch.setattr(_retrieval, "get_llm", lambda: fake_cc_llm)
+    monkeypatch.setattr(
+        _retrieval.grounding_module,
+        "verify",
+        lambda draft, sections: GroundingOutcome(passed=False, reason="claim_unsupported"),
+    )
+
+    # Unrelated gibberish → BM25 scores fall below threshold → CC (pre-LLM gate).
+    # The LLM mock above handles the rare case where BM25 scores above threshold.
     from gateway.app.main import app as _gateway_app
 
     client = TestClient(_gateway_app)
