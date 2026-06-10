@@ -27,6 +27,15 @@ shape, not the search-result shape that ``kb_mcp.normalizer`` maps for the MCP
 from __future__ import annotations
 
 import typer
+from dotenv import find_dotenv, load_dotenv
+
+# The `kb` console script does not go through uv's env-file, so without this the
+# grounded-answer path (`kb ask` / REPL) fails with an LLM auth error unless
+# OPENAI_API_KEY is already exported.  Load `.env` from the cwd here — parity with
+# markdown_kb.app.main / gateway.app.main / kb_mcp.__main__.  The env-reading
+# modules (retrieval / KB_SCORE_THRESHOLD) are lazy-imported inside the command
+# functions, so loading at import time suffices.
+load_dotenv(find_dotenv(usecwd=True))
 
 app = typer.Typer(
     name="kb",
