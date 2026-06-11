@@ -1,16 +1,15 @@
 """FastMCP server exposing the knowledge base over stdio.
 
-Phase 12 Slice 1 (ADR-0016) + Slice 4 (capture, issue #230).
-Wraps ``markdown_kb`` and ``vector_rag`` deep modules directly (NOT the Gateway).
-Exposes five tools:
-  - ``kb_ask_v1``     — grounded-answer tool (LLM draft + Grounding Check)
-  - ``kb_search_v1``  — raw-evidence search with no LLM call
-  - ``kb_read_hot_v1``   — read working-memory hot cache
-  - ``kb_save_hot_v1``   — persist working-memory hot cache
-  - ``kb_capture_v1``    — author a Markdown Source from conversation to docs/
-
-Phase 12 Slice 7 (ADR-0017 / issue #232).  Adds one write tool:
-  - ``kb_ingest_v1`` — single-Source sync ingest with progress notifications
+Phase 12 (ADR-0016 / ADR-0017).  Wraps ``markdown_kb`` and ``vector_rag`` deep
+modules directly (NOT the Gateway).  Exposes:
+  - ``kb_ask_v1``       — grounded-answer tool (LLM draft + Grounding Check)
+  - ``kb_search_v1``    — raw-evidence search with no LLM call
+  - ``kb_read_hot_v1``  — read working-memory hot cache
+  - ``kb_save_hot_v1``  — persist working-memory hot cache
+  - ``kb_capture_v1``   — author a Markdown Source from conversation to docs/ (Slice 4, #230)
+  - ``kb_ingest_v1``    — single-Source sync ingest with progress notifications (Slice 7, #232)
+  - ``kb_index_v1``     — rebuild the Section Index via build_index (Slice 5, #231)
+  - ``kb_lint_v1``      — run the Lint Pass via run_lint (Slice 5, #231)
 
 Launch via ``python -m kb_mcp`` (stdio transport, Claude Desktop compatible).
 
@@ -73,7 +72,7 @@ _INSTRUCTIONS = (
     "answer.  Surface grounding.reason to the user and do NOT retry.  "
     '"Cannot Confirm" is a valid, expected KB boundary — not a failure.\n\n'
     "LLM error guidance:\n"
-    "- If kb_ask returns isError=true, the LLM service failed.  "
+    "- If kb_ask or kb_lint_v1 returns isError=true, the LLM service failed.  "
     "code='LLM_UNAVAILABLE' is transient — retry after a short wait.  "
     "code='LLM_ERROR' is non-recoverable — report the message to the user."
 )
@@ -294,6 +293,112 @@ def kb_save_hot_v1(
 
 
 # ---------------------------------------------------------------------------
+# Tool: kb_index_v1
+# ---------------------------------------------------------------------------
+@mcp.tool(
+    name="kb_index_v1",
+    description=(
+        "Rebuild the Section Index from the curated wiki (ADR-0003).  "
+        "Call this after curating wiki pages (adding, editing, or removing pages) "
+        "so the BM25 index reflects the latest content.\n\n"
+        "Takes no parameters.\n\n"
+        "Returns: {files_indexed, sections_indexed}\n"
+        "  files_indexed   — number of source files indexed\n"
+        "  sections_indexed — total Sections in the rebuilt index"
+    ),
+)
+def kb_index_v1() -> dict:
+    """Rebuild the Section Index by calling build_index() from the deep module.
+
+    Thin wrapper: no defaults to enforce (zero-arg tool).  The deep module
+    ``markdown_kb.app.indexer.build_index`` scans SOURCE_DIRS, persists
+    ``.kb/index.json`` atomically, and returns ``(files_indexed, sections_indexed)``.
+
+    No LLMError can arise here — build_index is a pure local operation.
+    """
+    from markdown_kb.app.indexer import build_index
+
+    files_indexed, sections_indexed = build_index()
+    return {"files_indexed": files_indexed, "sections_indexed": sections_indexed}
+
+
+# ---------------------------------------------------------------------------
+# Tool: kb_lint_v1
+# ---------------------------------------------------------------------------
+@mcp.tool(
+    name="kb_lint_v1",
+    description=(
+        "Run the Lint Pass over the wiki and return structured findings "
+        "(ADR-0003, Phase 5).  Use this to retrieve lint findings so you "
+        "can reason over contradictions, stale pages, coverage gaps, and "
+        "propose curator actions.\n\n"
+        "Parameters:\n"
+        "  include_c5 — whether to run the LLM-backed C5 page-pair "
+        "contradiction check (default true).  Pass false to skip C5 and "
+        "receive only the fast local checks.\n\n"
+        "Returns on success: {report_path, findings, summary, check_errors}\n"
+        "  findings   — structured per-check finding lists\n"
+        "  summary    — {total_findings, findings_by_check, llm_calls, "
+        "cost_usd, c5_pairs_capped, generated_at}\n"
+        "  check_errors — dict of check_id → error string for any check that "
+        "raised (other checks still ran — continue-on-error semantics)\n\n"
+        "Returns isError=true when the C5 LLM call fails catastrophically:\n"
+        "  {code, message} where code is 'LLM_UNAVAILABLE' (retryable) or\n"
+        "  'LLM_ERROR' (non-retryable, report message to user).\n"
+        "  Individual per-pair LLM errors within C5 are NOT isError — they "
+        "are recorded in check_errors['c5'] and the check returns partial "
+        "results (continue-on-error per the deep module contract)."
+    ),
+)
+def kb_lint_v1(
+    include_c5: Annotated[
+        bool,
+        Field(
+            default=True,
+            description=(
+                "Whether to run C5 (LLM-backed page-pair contradiction check). "
+                "Pass false to skip C5 and receive only fast local checks."
+            ),
+        ),
+    ] = True,
+) -> Any:
+    """Run the Lint Pass via run_lint() from the deep module.
+
+    Thin wrapper.  Defaults are enforced server-side (ADR-0016): ``include_c5``
+    defaults to True so the full lint suite runs by default.
+
+    On ``LLMError`` (ADR-0015), returns a ``CallToolResult`` with ``isError=True``
+    so the MCP host receives a structured error payload.  This covers the case
+    where the *entire* C5 check fails (e.g. LLM unreachable before any pair is
+    judged).  Per-pair C5 failures are handled inside the deep module via
+    continue-on-error semantics and appear in ``check_errors['c5']`` of the
+    success payload — they do NOT trigger isError.
+    """
+    from markdown_kb.app.errors import LLMError
+    from markdown_kb.app.lint import run_lint
+
+    # Enforce default server-side
+    if include_c5 is None:
+        include_c5 = True
+
+    try:
+        response = run_lint(include_c5=include_c5)
+    except LLMError as exc:
+        # ADR-0015 / ADR-0016: LLMError → structured MCP isError payload.
+        code = "LLM_UNAVAILABLE" if exc.retryable else "LLM_ERROR"
+        payload = json.dumps({"code": code, "message": exc.message})
+        return CallToolResult(
+            content=[TextContent(type="text", text=payload)],
+            isError=True,
+        )
+
+    # Serialise the Pydantic LintResponse to a plain dict for MCP transport.
+    # model_dump() converts nested Pydantic models to plain dicts/lists;
+    # mode="json" ensures non-JSON-native types (e.g. datetime) are strings.
+    return response.model_dump(mode="json")
+
+
+# ---------------------------------------------------------------------------
 # Tool: kb_ingest_v1
 # ---------------------------------------------------------------------------
 @mcp.tool(
@@ -483,6 +588,8 @@ def _add_strict_schema() -> None:
         "kb_search_v1",
         "kb_read_hot_v1",
         "kb_save_hot_v1",
+        "kb_index_v1",
+        "kb_lint_v1",
         "kb_ingest_v1",
         "kb_capture_v1",
     ):
