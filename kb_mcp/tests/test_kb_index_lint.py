@@ -93,9 +93,7 @@ def _write_wiki_page(
         "open_questions": [],
     }
     body_content = body or f"# {slug}\n\nContent about {slug.replace('-', ' ')}."
-    content = (
-        f"---\n{yaml.dump(frontmatter, default_flow_style=False)}---\n\n{body_content}\n"
-    )
+    content = f"---\n{yaml.dump(frontmatter, default_flow_style=False)}---\n\n{body_content}\n"
     page_path.write_text(content, encoding="utf-8")
     return page_path
 
@@ -449,9 +447,7 @@ class TestKbLintV1C5LLMError:
         fake_llm.with_structured_output.return_value = fake_chain
         monkeypatch.setattr(lint_mod, "get_lint_llm", lambda: fake_llm)
 
-    def test_c5_llm_error_captured_in_check_errors(
-        self, _two_page_wiki, _failing_lint_llm
-    ):
+    def test_c5_llm_error_captured_in_check_errors(self, _two_page_wiki, _failing_lint_llm):
         """Real run_lint with failing get_lint_llm: C5 error stored in check_errors['c5'].
 
         Proves the continue-on-error path: LLMError from the C5 judge is caught
@@ -475,9 +471,7 @@ class TestKbLintV1C5LLMError:
             f"got check_errors={result['check_errors']}"
         )
 
-    def test_c5_llm_error_message_in_check_errors(
-        self, _two_page_wiki, _failing_lint_llm
-    ):
+    def test_c5_llm_error_message_in_check_errors(self, _two_page_wiki, _failing_lint_llm):
         """check_errors['c5'] contains the LLMError class name from the real C5 path."""
         import asyncio
 
@@ -513,17 +507,13 @@ class TestKbLintV1C5LLMError:
         from kb_mcp.server import mcp
 
         fake_chain = MagicMock()
-        fake_chain.invoke.side_effect = LLMError(
-            retryable=False, message="Auth error (test stub)"
-        )
+        fake_chain.invoke.side_effect = LLMError(retryable=False, message="Auth error (test stub)")
         fake_llm = MagicMock()
         fake_llm.with_structured_output.return_value = fake_chain
         monkeypatch.setattr(lint_mod, "get_lint_llm", lambda: fake_llm)
 
         raw = asyncio.run(mcp.call_tool("kb_lint_v1", {"include_c5": True}))
-        assert not _is_error_result(raw), (
-            "Expected SUCCESS payload for non-retryable LLMError too"
-        )
+        assert not _is_error_result(raw), "Expected SUCCESS payload for non-retryable LLMError too"
         result = _parse_result(raw)
         assert "c5" in result["check_errors"], (
             f"Expected 'c5' in check_errors for non-retryable error: {result['check_errors']}"
