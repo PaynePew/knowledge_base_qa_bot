@@ -358,7 +358,7 @@ If you want a debug-only signal inside a package, either:
 
 - Per-test isolation via `tmp_path`-derived fixtures (see the test-suite conftest for the established pattern).
 - Tests that mutate the module-level sections list MUST restore it via `monkeypatch` (auto-restores) or an explicit teardown.
-- **Tests MUST NOT mutate committed on-disk invariants** — chiefly `.kb/index.json`. Any test that exercises a real write path (`build_index`, `ingest_sources`, `import_sources`) MUST redirect `INDEX_PATH` / `WIKI_DIR` / `LOG_PATH` (and `SOURCE_DIRS` when calling `build_index()` with no `docs_dir`) to `tmp_path`. The repo-root `conftest.py` session guard snapshots and restores `.kb/index.json` as a backstop and **warns** if a test mutated it — that warning means a test's isolation leaked (typically a live test), not that the guard is the fix. The guard is a safety net, not a license to skip per-test redirection.
+- **Tests MUST NOT mutate committed on-disk invariants** — chiefly `.kb/index.json`. Any test that exercises a real write path (`build_index`, `ingest_sources`, `import_sources`) MUST redirect `INDEX_PATH` / `WIKI_DIR` / `LOG_PATH` (and `SOURCE_DIRS` when calling `build_index()` with no `docs_dir`) to `tmp_path`. The repo-root `conftest` session guard snapshots and restores `.kb/index.json` as a backstop and **warns** if a test mutated it — that warning means a test's isolation leaked (typically a live test), not that the guard is the fix. The guard is a safety net, not a license to skip per-test redirection.
 - Test fixtures are hand-written, deterministic, and mirror the shape of real Sources / Wiki Pages; never LLM-generated at test time.
 
 ---
