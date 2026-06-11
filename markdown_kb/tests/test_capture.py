@@ -28,7 +28,6 @@ from pathlib import Path
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # AC-1: valid filename + content → docs/ Source with mandatory provenance
 # ---------------------------------------------------------------------------
@@ -85,9 +84,7 @@ def test_capture_source_stamps_authored_by_frontmatter(tmp_path, monkeypatch):
     capture_mod.capture_source("note.md", "# Note\n\nBody.\n", docs_dir=docs_dir)
 
     text = (docs_dir / "note.md").read_text(encoding="utf-8")
-    assert "authored_by: agent" in text, (
-        f"Mandatory 'authored_by: agent' not found in:\n{text}"
-    )
+    assert "authored_by: agent" in text, f"Mandatory 'authored_by: agent' not found in:\n{text}"
 
 
 def test_capture_source_stamps_created_at_frontmatter(tmp_path, monkeypatch):
@@ -118,7 +115,9 @@ def test_capture_source_frontmatter_is_valid_yaml_block(tmp_path, monkeypatch):
     capture_mod.capture_source("note.md", "# Note\n\nBody.\n", docs_dir=docs_dir)
 
     text = (docs_dir / "note.md").read_text(encoding="utf-8")
-    assert text.startswith("---\n"), f"File does not start with YAML front-matter '---': {text[:80]!r}"
+    assert text.startswith("---\n"), (
+        f"File does not start with YAML front-matter '---': {text[:80]!r}"
+    )
     # The closing delimiter must also appear
     assert "\n---\n" in text, f"No closing '---' delimiter found in:\n{text}"
 
@@ -176,7 +175,9 @@ def test_capture_source_rejects_unsafe_filename(tmp_path, monkeypatch, bad_filen
     docs_dir = tmp_path / "docs"
     monkeypatch.setattr(capture_mod, "DOCS_DIR", docs_dir)
 
-    with pytest.raises(ValueError, match=r"(?i)(filename|path|unsafe|traversal|separator|empty|absolute|control)"):
+    with pytest.raises(
+        ValueError, match=r"(?i)(filename|path|unsafe|traversal|separator|empty|absolute|control)"
+    ):
         capture_mod.capture_source(bad_filename, "# Content\n", docs_dir=docs_dir)
 
     # Nothing should have been written anywhere under tmp_path

@@ -27,7 +27,6 @@ from typing import Any
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -178,9 +177,7 @@ def test_kb_capture_v1_success_returns_path(tmp_docs):
 
     result = _parse_result(raw)
     assert "path" in result, f"Expected 'path' in result: {result}"
-    assert "my_capture.md" in result["path"], (
-        f"Expected filename in path: {result['path']!r}"
-    )
+    assert "my_capture.md" in result["path"], f"Expected filename in path: {result['path']!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -223,9 +220,7 @@ def test_kb_capture_v1_stamps_provenance_frontmatter(tmp_docs):
     text = (tmp_docs / "prov_note.md").read_text(encoding="utf-8")
     assert "origin: mcp-conversation" in text, f"origin missing: {text[:200]}"
     assert "authored_by: agent" in text, f"authored_by missing: {text[:200]}"
-    assert re.search(r"created_at: \d{4}-\d{2}-\d{2}T", text), (
-        f"created_at missing: {text[:200]}"
-    )
+    assert re.search(r"created_at: \d{4}-\d{2}-\d{2}T", text), f"created_at missing: {text[:200]}"
 
 
 # ---------------------------------------------------------------------------
@@ -246,9 +241,7 @@ def test_kb_capture_v1_rejects_traversal_filename(tmp_docs):
         )
     )
 
-    assert _is_error_result(raw), (
-        f"Expected isError=True for traversal filename, got: {raw}"
-    )
+    assert _is_error_result(raw), f"Expected isError=True for traversal filename, got: {raw}"
     # Nothing should have been written
     written = list(tmp_docs.rglob("*.md"))
     assert written == [], f"Files written despite traversal attempt: {written}"
@@ -267,9 +260,7 @@ def test_kb_capture_v1_rejects_slash_filename(tmp_docs):
         )
     )
 
-    assert _is_error_result(raw), (
-        f"Expected isError=True for slash filename, got: {raw}"
-    )
+    assert _is_error_result(raw), f"Expected isError=True for slash filename, got: {raw}"
 
 
 def test_kb_capture_v1_reject_error_payload_shape(tmp_docs):

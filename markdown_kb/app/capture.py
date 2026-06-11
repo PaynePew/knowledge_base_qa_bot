@@ -31,7 +31,6 @@ See ADR-0017 and GitHub issue #230 for design rationale.
 from __future__ import annotations
 
 import datetime
-
 from pathlib import Path
 
 from ._paths import DOCS_DIR
@@ -89,11 +88,7 @@ def capture_source(
     # its own front-matter block.
     created_at = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     frontmatter = (
-        "---\n"
-        "origin: mcp-conversation\n"
-        f"created_at: {created_at}\n"
-        "authored_by: agent\n"
-        "---\n"
+        f"---\norigin: mcp-conversation\ncreated_at: {created_at}\nauthored_by: agent\n---\n"
     )
     full_content = frontmatter + content
 
