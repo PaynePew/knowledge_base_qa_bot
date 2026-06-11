@@ -26,7 +26,6 @@ from typing import Any
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -382,9 +381,7 @@ class TestKbLintV1LLMError:
             f"Expected isError=True for non-retryable LLMError, got success: {raw}"
         )
         payload = _parse_result(raw)
-        assert payload.get("code") == "LLM_ERROR", (
-            f"Expected code='LLM_ERROR', got: {payload}"
-        )
+        assert payload.get("code") == "LLM_ERROR", f"Expected code='LLM_ERROR', got: {payload}"
 
     def test_llm_error_message_carried(self):
         """LLMError.message is carried through to the isError payload."""
