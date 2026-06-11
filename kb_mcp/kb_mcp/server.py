@@ -1,13 +1,14 @@
 """FastMCP server exposing the knowledge base over stdio.
 
-Phase 12 Slice 1 (ADR-0016) + Slice 4 (capture, issue #230).
+Phase 12 Slice 1 (ADR-0016) + Slice 4 (capture, issue #230) + Slice 6 (import, issue #233).
 Wraps ``markdown_kb`` and ``vector_rag`` deep modules directly (NOT the Gateway).
-Exposes five tools:
+Exposes six tools:
   - ``kb_ask_v1``     — grounded-answer tool (LLM draft + Grounding Check)
   - ``kb_search_v1``  — raw-evidence search with no LLM call
   - ``kb_read_hot_v1``   — read working-memory hot cache
   - ``kb_save_hot_v1``   — persist working-memory hot cache
   - ``kb_capture_v1``    — author a Markdown Source from conversation to docs/
+  - ``kb_import_v1``     — import a local file into docs/ via Import deep module
 
 Launch via ``python -m kb_mcp`` (stdio transport, Claude Desktop compatible).
 
@@ -59,7 +60,11 @@ _INSTRUCTIONS = (
     "Provenance frontmatter is stamped automatically.  After capturing, run "
     "kb_ingest_v1 / kb_index_v1 to make it retrievable.  "
     "Returns {ok: true, path: str}.  Unsafe filenames return isError with "
-    "code='CAPTURE_REJECTED'.\n\n"
+    "code='CAPTURE_REJECTED'.\n"
+    "- kb_import_v1: Import a local file from the filesystem into docs/ by "
+    "reading it and converting it via the Import deep module.  Supported: "
+    ".html, .txt, .md.  Returns {ok: true, source: str, status: str}.  "
+    "Bad paths / unsafe basenames return isError with code='IMPORT_REJECTED'.\n\n"
     "Stack guidance:\n"
     "- Always start with stack='wiki' (curated BM25 index).  "
     "Only switch to stack='rag' when the user explicitly asks to use the "
@@ -342,6 +347,74 @@ def kb_capture_v1(
 
 
 # ---------------------------------------------------------------------------
+# Tool: kb_import_v1
+# ---------------------------------------------------------------------------
+@mcp.tool(
+    name="kb_import_v1",
+    description=(
+        "Import a local file into the knowledge base by reading it from the "
+        "filesystem and converting it to a docs/ Source.  Reuses the Import "
+        "deep module (``import_path``) so format conversion is always "
+        "programmatic — the same path the CLI ``kb import`` uses.\n\n"
+        "Parameters:\n"
+        "  path — absolute path to the local file to import (required).\n"
+        "         Supported formats: .html, .txt, .md.\n"
+        "         The basename must be traversal-safe (no '#', ':', separators,\n"
+        "         control characters, or bidi override codepoints).\n\n"
+        "Returns on success: {ok: true, source: str, status: str}\n"
+        "  source — basename of the written docs/ Source (e.g. 'note.md').\n"
+        "  status — 'created' (fresh write), 'updated' (hash-drift overwrite),\n"
+        "           or 'skipped' (hash-match no-op).\n\n"
+        "Returns isError=true on rejection:\n"
+        "  {code: 'IMPORT_REJECTED', message: str}\n"
+        "  Covers: file not found, traversal-unsafe basename, unsupported\n"
+        "  extension, empty/oversized file, and other ImportPathError cases.\n\n"
+        "Reading an arbitrary local path is safe under the single-operator\n"
+        "posture (ADR-0017).  After importing, run kb_ingest_v1 / kb_index_v1\n"
+        "to make the new Source retrievable."
+    ),
+)
+def kb_import_v1(
+    path: Annotated[
+        str,
+        Field(
+            description=(
+                "Absolute path to the local file to import "
+                "(e.g. 'C:\\\\docs\\\\note.txt' or '/home/user/note.html')."
+            )
+        ),
+    ],
+) -> Any:
+    """Read a local file and convert it to a docs/ Source via the Import deep module.
+
+    Delegates to ``markdown_kb.app.importer.import_path``.  On
+    ``ImportPathError``, returns a ``CallToolResult`` with ``isError=True``
+    so the MCP host receives a structured error payload instead of a raw exception.
+
+    Reading an arbitrary local path is safe under the single-operator posture
+    (ADR-0017).  Defaults are enforced server-side (ADR-0016 strict schema).
+    """
+    from pathlib import Path as _Path
+
+    from markdown_kb.app.importer import ImportPathError, import_path
+
+    try:
+        result = import_path(_Path(path))
+    except ImportPathError as exc:
+        payload = json.dumps({"code": "IMPORT_REJECTED", "message": exc.message})
+        return CallToolResult(
+            content=[TextContent(type="text", text=payload)],
+            isError=True,
+        )
+
+    # Neutral dict shape — no raw importer types cross the MCP boundary.
+    from pathlib import Path as _Path2
+
+    source_basename = _Path2(result.docs_path).name
+    return {"ok": True, "source": source_basename, "status": result.status}
+
+
+# ---------------------------------------------------------------------------
 # Patch schema to add additionalProperties:false (ADR-0016 strict schema)
 # ---------------------------------------------------------------------------
 # FastMCP generates the tool parameters schema from the function signature but
@@ -356,6 +429,7 @@ def _add_strict_schema() -> None:
         "kb_read_hot_v1",
         "kb_save_hot_v1",
         "kb_capture_v1",
+        "kb_import_v1",
     ):
         tool = mcp._tool_manager.get_tool(tool_name)
         if tool is not None:

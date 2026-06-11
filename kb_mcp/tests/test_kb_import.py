@@ -37,7 +37,6 @@ from typing import Any
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -382,9 +381,7 @@ def test_kb_import_v1_rejects_traversal_basename(tmp_import_dirs, tmp_path):
         )
     )
 
-    assert _is_error_result(raw), (
-        f"Expected isError=True for basename with ':', got: {raw}"
-    )
+    assert _is_error_result(raw), f"Expected isError=True for basename with ':', got: {raw}"
     # Nothing written to docs/
     written = list(docs_dir.rglob("*.md"))
     assert written == [], f"Files written despite rejection: {written}"
