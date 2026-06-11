@@ -143,10 +143,15 @@ _lint_llm = None
 # holds the current value; run_lint reads and resets both after C5 runs.
 #   _c5_llm_call_counter — pairs actually sent to the LLM judge (== judged count, ≤ cap)
 #   _c5_capped_counter   — candidate pairs NOT judged because they fell below the cap
+#   _c5_pair_errors      — per-pair error strings accumulated during this run; run_lint
+#                          reads and resets, then writes to check_errors["c5"] so the
+#                          continue-on-error per-pair failures surface in the SUCCESS
+#                          payload (server.py docstring / ADR-0016 contract).
 # Counting happens once in _check_c5_page_pair (not per-call inside
 # _judge_page_pair) so the bounded-concurrency judge has no shared-counter race.
 _c5_llm_call_counter: list[int] = [0]
 _c5_capped_counter: list[int] = [0]
+_c5_pair_errors: list[str] = []
 
 
 def get_lint_llm():
@@ -1308,6 +1313,9 @@ def _check_c5_page_pair(
     findings: list[PagePairFinding] = []
     errors: list[str] = []
 
+    # Reset the module-level per-pair error accumulator for this run.
+    _c5_pair_errors.clear()
+
     def _judge(pair: tuple[str, str]) -> PagePairFinding:
         slug_a, slug_b = pair
         return _judge_page_pair(slug_a, pages[slug_a]["body"], slug_b, pages[slug_b]["body"])
@@ -1325,10 +1333,14 @@ def _check_c5_page_pair(
                     if finding.severity != "none":
                         findings.append(finding)
                 except Exception as exc:  # noqa: BLE001
-                    errors.append(f"({slug_a},{slug_b}): {type(exc).__name__}: {exc}")
+                    err = f"({slug_a},{slug_b}): {type(exc).__name__}: {exc}"
+                    errors.append(err)
+                    _c5_pair_errors.append(err)
 
     if errors:
-        # Log errors without breaking; the check returns partial results
+        # Log errors without breaking; the check returns partial results.
+        # Per-pair error strings are also written to _c5_pair_errors so run_lint
+        # can surface them in check_errors["c5"] (SUCCESS payload, not isError).
         log_event(
             "lint_check_error",
             f"check=c5 pairs_failed={len(errors)} first_error={errors[0][:200]}",
@@ -2112,6 +2124,14 @@ def run_lint(
                 cost_usd = round(llm_calls * 0.000165, 6)
                 _c5_llm_call_counter[0] = 0
                 _c5_capped_counter[0] = 0
+                # Per-pair LLM errors are caught inside _check_c5_page_pair
+                # (continue-on-error) but surfaced here in check_errors["c5"]
+                # so the SUCCESS payload reflects the partial failure.
+                # server.py docstring: "Individual per-pair LLM errors within C5
+                # are NOT isError — they are recorded in check_errors['c5']."
+                if _c5_pair_errors:
+                    check_errors["c5"] = "; ".join(e[:200] for e in _c5_pair_errors)
+                    _c5_pair_errors.clear()
             except Exception as exc:  # noqa: BLE001
                 err_msg = f"{type(exc).__name__}: {exc}"
                 check_errors["c5"] = err_msg

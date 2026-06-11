@@ -50,6 +50,14 @@ if a future kb_mcp test exercises the real reload / build path.
      so hot-cache tools never read/write the real ``wiki/hot.md`` (issue #202).
      The ``kb_read_hot_v1`` and ``kb_save_hot_v1`` tools look up HOT_PATH at
      call time; per-test monkeypatching is sufficient.
+  7. Redirects ``markdown_kb.app.lint.WIKI_DIR``, ``DOCS_DIR``, and ``LOG_PATH``
+     to tmp so that tests exercising the real ``run_lint`` (via ``kb_lint_v1``)
+     never read from or write to the real wiki/, docs/, or wiki/log.md (issue
+     #231 fix-up).  ``run_lint`` resolves paths from these module-level names
+     when called without explicit kwargs — matching the server.py call signature
+     ``run_lint(include_c5=include_c5)``.  ``_lint_llm`` singleton is reset to
+     ``None`` after each test so a monkeypatched ``get_lint_llm`` from one test
+     cannot leak into another.
 """
 
 from __future__ import annotations
@@ -62,8 +70,9 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _isolate_module_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Autouse safety net for every kb_mcp test — see module docstring (issues #200, #202)."""
+    """Autouse safety net for every kb_mcp test — see module docstring (issues #200, #202, #231)."""
     import markdown_kb.app.indexer as current_indexer
+    import markdown_kb.app.lint as lint_mod
     import markdown_kb.app.logger as current_logger
     import vector_rag.app.indexer as rag_indexer
 
@@ -80,13 +89,40 @@ def _isolate_module_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     # load_index_json -> log_event appends to the real wiki/log.md on any real
     # reload; build_index touches WIKI_DIR. Redirect both for parity with the
     # markdown_kb / vector_rag conftests.
-    monkeypatch.setattr(current_indexer, "WIKI_DIR", tmp_path / "wiki")
-    monkeypatch.setattr(current_logger, "LOG_PATH", tmp_path / "wiki" / "log.md")
+    tmp_wiki = tmp_path / "wiki"
+    tmp_log = tmp_wiki / "log.md"
+    monkeypatch.setattr(current_indexer, "WIKI_DIR", tmp_wiki)
+    monkeypatch.setattr(current_logger, "LOG_PATH", tmp_log)
 
     # --- 6: redirect hot-cache path so no test touches the real wiki/hot.md ---
     # kb_read_hot_v1 / kb_save_hot_v1 look up HOT_PATH at call time (not at
     # import time), so monkeypatching the module-level name is sufficient.
-    monkeypatch.setattr(hot_cache_mod, "HOT_PATH", tmp_path / "wiki" / "hot.md")
+    monkeypatch.setattr(hot_cache_mod, "HOT_PATH", tmp_wiki / "hot.md")
+
+    # --- 7: redirect lint module-level path constants to tmp (issue #231) ---
+    # run_lint resolves wiki_dir / docs_dir / log_path from these module names
+    # when called without explicit kwargs (matching server.py's call pattern:
+    # run_lint(include_c5=include_c5)).  Without this redirect, tests that drive
+    # the real run_lint via kb_lint_v1 would read/write the real wiki/ and docs/.
+    tmp_docs = tmp_path / "docs"
+    monkeypatch.setattr(lint_mod, "WIKI_DIR", tmp_wiki)
+    monkeypatch.setattr(lint_mod, "DOCS_DIR", tmp_docs)
+    monkeypatch.setattr(lint_mod, "LOG_PATH", tmp_log)
+
+    # --- 8: redirect indexer SOURCE_DIRS to tmp (issue #231) ---
+    # SOURCE_DIRS is a module-level list bound at import time to
+    # [WIKI_DIR/"entities", WIKI_DIR/"concepts", WIKI_DIR/"qa"] using the real
+    # WIKI_DIR constant.  Redirecting WIKI_DIR (step 2) does NOT affect
+    # SOURCE_DIRS because the list was already constructed.  build_index() uses
+    # SOURCE_DIRS when called with no explicit docs_dir (the production path),
+    # so kb_index_v1's call to build_index() would scan the real wiki/ subdirs
+    # without this redirect.  We monkeypatch SOURCE_DIRS to point to the same
+    # tmp_wiki subdirs.  The list is restored via monkeypatch's undo stack.
+    monkeypatch.setattr(
+        current_indexer,
+        "SOURCE_DIRS",
+        [tmp_wiki / "entities", tmp_wiki / "concepts", tmp_wiki / "qa"],
+    )
 
     # --- 3: snapshot indexer globals ---
     # sections / doc_freq are mutable containers callers may hold by identity, so
@@ -115,3 +151,8 @@ def _isolate_module_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     rag_indexer.vectorstore = None
     rag_indexer.files_indexed = 0
     rag_indexer.chunks_indexed = 0
+
+    # --- 7 (teardown): reset lint LLM singleton so monkeypatched get_lint_llm
+    # from one test cannot leak a stale mock into the next test via the cached
+    # _lint_llm sentinel.
+    lint_mod._lint_llm = None

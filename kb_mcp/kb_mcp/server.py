@@ -1,14 +1,16 @@
 """FastMCP server exposing the knowledge base over stdio.
 
-Phase 12 Slice 1 (ADR-0016) + Slice 4 (capture, issue #230) + Slice 6 (import, issue #233).
-Wraps ``markdown_kb`` and ``vector_rag`` deep modules directly (NOT the Gateway).
-Exposes six tools:
-  - ``kb_ask_v1``     — grounded-answer tool (LLM draft + Grounding Check)
-  - ``kb_search_v1``  — raw-evidence search with no LLM call
-  - ``kb_read_hot_v1``   — read working-memory hot cache
-  - ``kb_save_hot_v1``   — persist working-memory hot cache
-  - ``kb_capture_v1``    — author a Markdown Source from conversation to docs/
-  - ``kb_import_v1``     — import a local file into docs/ via Import deep module
+Phase 12 (ADR-0016 / ADR-0017).  Wraps ``markdown_kb`` and ``vector_rag`` deep
+modules directly (NOT the Gateway).  Exposes:
+  - ``kb_ask_v1``       — grounded-answer tool (LLM draft + Grounding Check)
+  - ``kb_search_v1``    — raw-evidence search with no LLM call
+  - ``kb_read_hot_v1``  — read working-memory hot cache
+  - ``kb_save_hot_v1``  — persist working-memory hot cache
+  - ``kb_capture_v1``   — author a Markdown Source from conversation to docs/ (Slice 4, #230)
+  - ``kb_ingest_v1``    — single-Source sync ingest with progress notifications (Slice 7, #232)
+  - ``kb_index_v1``     — rebuild the Section Index via build_index (Slice 5, #231)
+  - ``kb_lint_v1``      — run the Lint Pass via run_lint (Slice 5, #231)
+  - ``kb_import_v1``    — import a local file into docs/ via the Import deep module (Slice 6, #233)
 
 Launch via ``python -m kb_mcp`` (stdio transport, Claude Desktop compatible).
 
@@ -24,10 +26,11 @@ Server ``instructions`` (~200 tokens) guide the MCP host on:
 
 from __future__ import annotations
 
+import contextlib
 import json
 from typing import Annotated, Any, Literal
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import CallToolResult, TextContent
 from pydantic import Field
 
@@ -74,7 +77,7 @@ _INSTRUCTIONS = (
     "answer.  Surface grounding.reason to the user and do NOT retry.  "
     '"Cannot Confirm" is a valid, expected KB boundary — not a failure.\n\n'
     "LLM error guidance:\n"
-    "- If kb_ask returns isError=true, the LLM service failed.  "
+    "- If kb_ask or kb_lint_v1 returns isError=true, the LLM service failed.  "
     "code='LLM_UNAVAILABLE' is transient — retry after a short wait.  "
     "code='LLM_ERROR' is non-recoverable — report the message to the user."
 )
@@ -295,6 +298,236 @@ def kb_save_hot_v1(
 
 
 # ---------------------------------------------------------------------------
+# Tool: kb_index_v1
+# ---------------------------------------------------------------------------
+@mcp.tool(
+    name="kb_index_v1",
+    description=(
+        "Rebuild the Section Index from the curated wiki (ADR-0003).  "
+        "Call this after curating wiki pages (adding, editing, or removing pages) "
+        "so the BM25 index reflects the latest content.\n\n"
+        "Takes no parameters.\n\n"
+        "Returns: {files_indexed, sections_indexed}\n"
+        "  files_indexed   — number of source files indexed\n"
+        "  sections_indexed — total Sections in the rebuilt index"
+    ),
+)
+def kb_index_v1() -> dict:
+    """Rebuild the Section Index by calling build_index() from the deep module.
+
+    Thin wrapper: no defaults to enforce (zero-arg tool).  The deep module
+    ``markdown_kb.app.indexer.build_index`` scans SOURCE_DIRS, persists
+    ``.kb/index.json`` atomically, and returns ``(files_indexed, sections_indexed)``.
+
+    No LLMError can arise here — build_index is a pure local operation.
+    """
+    from markdown_kb.app.indexer import build_index
+
+    files_indexed, sections_indexed = build_index()
+    return {"files_indexed": files_indexed, "sections_indexed": sections_indexed}
+
+
+# ---------------------------------------------------------------------------
+# Tool: kb_lint_v1
+# ---------------------------------------------------------------------------
+@mcp.tool(
+    name="kb_lint_v1",
+    description=(
+        "Run the Lint Pass over the wiki and return structured findings "
+        "(ADR-0003, Phase 5).  Use this to retrieve lint findings so you "
+        "can reason over contradictions, stale pages, coverage gaps, and "
+        "propose curator actions.\n\n"
+        "Parameters:\n"
+        "  include_c5 — whether to run the LLM-backed C5 page-pair "
+        "contradiction check (default true).  Pass false to skip C5 and "
+        "receive only the fast local checks.\n\n"
+        "Returns on success: {report_path, findings, summary, check_errors}\n"
+        "  findings   — structured per-check finding lists\n"
+        "  summary    — {total_findings, findings_by_check, llm_calls, "
+        "cost_usd, c5_pairs_capped, generated_at}\n"
+        "  check_errors — dict of check_id → error string for any check that "
+        "raised (other checks still ran — continue-on-error semantics)\n\n"
+        "Returns isError=true when the C5 LLM call fails catastrophically:\n"
+        "  {code, message} where code is 'LLM_UNAVAILABLE' (retryable) or\n"
+        "  'LLM_ERROR' (non-retryable, report message to user).\n"
+        "  Individual per-pair LLM errors within C5 are NOT isError — they "
+        "are recorded in check_errors['c5'] and the check returns partial "
+        "results (continue-on-error per the deep module contract)."
+    ),
+)
+def kb_lint_v1(
+    include_c5: Annotated[
+        bool,
+        Field(
+            default=True,
+            description=(
+                "Whether to run C5 (LLM-backed page-pair contradiction check). "
+                "Pass false to skip C5 and receive only fast local checks."
+            ),
+        ),
+    ] = True,
+) -> Any:
+    """Run the Lint Pass via run_lint() from the deep module.
+
+    Thin wrapper.  Defaults are enforced server-side (ADR-0016): ``include_c5``
+    defaults to True so the full lint suite runs by default.
+
+    On ``LLMError`` (ADR-0015), returns a ``CallToolResult`` with ``isError=True``
+    so the MCP host receives a structured error payload.  This covers the case
+    where the *entire* C5 check fails (e.g. LLM unreachable before any pair is
+    judged).  Per-pair C5 failures are handled inside the deep module via
+    continue-on-error semantics and appear in ``check_errors['c5']`` of the
+    success payload — they do NOT trigger isError.
+    """
+    from markdown_kb.app.errors import LLMError
+    from markdown_kb.app.lint import run_lint
+
+    # Enforce default server-side
+    if include_c5 is None:
+        include_c5 = True
+
+    try:
+        response = run_lint(include_c5=include_c5)
+    except LLMError as exc:
+        # ADR-0015 / ADR-0016: LLMError → structured MCP isError payload.
+        code = "LLM_UNAVAILABLE" if exc.retryable else "LLM_ERROR"
+        payload = json.dumps({"code": code, "message": exc.message})
+        return CallToolResult(
+            content=[TextContent(type="text", text=payload)],
+            isError=True,
+        )
+
+    # Serialise the Pydantic LintResponse to a plain dict for MCP transport.
+    # model_dump() converts nested Pydantic models to plain dicts/lists;
+    # mode="json" ensures non-JSON-native types (e.g. datetime) are strings.
+    return response.model_dump(mode="json")
+
+
+# ---------------------------------------------------------------------------
+# Tool: kb_ingest_v1
+# ---------------------------------------------------------------------------
+@mcp.tool(
+    name="kb_ingest_v1",
+    description=(
+        "Ingest a single named Source from docs/ synchronously, synthesising "
+        "wiki pages and running the Grounding Check.  Use this to curate one "
+        "Source at a time and see the result before moving on.\n\n"
+        "Parameters:\n"
+        "  source — bare filename of the Source to ingest (required);\n"
+        "           e.g. 'refund_policy.md'\n\n"
+        "Returns on success: "
+        "{source, pages_created, pages_overwritten, grounding_failed_pages, "
+        "failed, status}\n"
+        "  pages_created         — list of wiki page paths written for the first time\n"
+        "  pages_overwritten     — list of paths that already existed and were "
+        "overwritten (cross-call slug collision is visible here, not silent — "
+        "#54 / CODING_STANDARD §12.8)\n"
+        "  grounding_failed_pages — list of page slugs that were written but failed "
+        "the Grounding Check (status=failed_grounding); a non-empty list is a "
+        "SUCCESS result (not isError) — it means the KB accepted the page with "
+        "a failed-grounding marker, which is the ADR-0004 fail-soft outcome\n"
+        "  failed                — True when the source was not found or could not be "
+        "parsed (non-LLM failure)\n"
+        "  status                — 'created', 'updated', 'skipped', or 'failed'\n\n"
+        "Returns isError=true on LLM failure:\n"
+        "  {code, message} where code is 'LLM_UNAVAILABLE' (retryable) or\n"
+        "  'LLM_ERROR' (non-retryable, report message to user).\n\n"
+        "Progress notifications are emitted during the run so the host does not "
+        "time out on a slow Source.  No batch parameter is exposed — loop over "
+        "Sources one at a time."
+    ),
+)
+async def kb_ingest_v1(
+    source: Annotated[
+        str, Field(description="Bare filename of the Source to ingest (e.g. 'refund_policy.md').")
+    ],
+    ctx: Context,
+) -> Any:
+    """Ingest a single Source synchronously and return a neutral result dict.
+
+    Emits MCP progress notifications before and after the pipeline step so the
+    Claude Desktop host does not time out on slow Sources.
+
+    Cannot-Confirm / grounding-failed outcome: reported as a SUCCESS result
+    (not isError) — ``grounding_failed_pages`` will be non-empty.
+
+    LLMError: caught here and returned as isError with code ∈
+    {LLM_UNAVAILABLE, LLM_ERROR} per ADR-0015.
+
+    Cross-call slug collision visibility (#54 / CODING_STANDARD §12.8):
+    ``pages_overwritten`` is populated when a page already existed on disk and
+    was overwritten.  The caller can detect a cross-call slug collision by
+    checking whether pages_overwritten is non-empty.
+    """
+    from markdown_kb.app.errors import LLMError
+    from markdown_kb.app.ingest import ingest_sources
+
+    async def _progress(n: float, total: float, message: str) -> None:
+        """Emit a progress notification, silently no-op when no request context.
+
+        The in-process test harness and Claude Desktop calls without a progress
+        token both lack a request context; swallowing the ValueError keeps
+        the tool functional in both environments.
+        """
+        with contextlib.suppress(Exception):
+            await ctx.report_progress(n, total, message=message)
+
+    await _progress(0, 3, message=f"Starting ingest for {source!r}")
+
+    try:
+        await _progress(1, 3, message=f"Running synthesis pipeline for {source!r}")
+        batch = ingest_sources([source])
+    except LLMError as exc:
+        # ADR-0015 / ADR-0016: LLMError → structured MCP isError payload.
+        code = "LLM_UNAVAILABLE" if exc.retryable else "LLM_ERROR"
+        payload = json.dumps({"code": code, "message": exc.message})
+        return CallToolResult(
+            content=[TextContent(type="text", text=payload)],
+            isError=True,
+        )
+
+    await _progress(2, 3, message=f"Ingest pipeline complete for {source!r}")
+
+    # Map IngestBatchResult → neutral MCP result dict.
+    # batch.results[0] is the outcome for our single Source (when successful).
+    # batch.failed_sources contains the source name on non-LLM failure.
+    # batch.pages_with_failed_grounding lists slugs that failed the Grounding Check.
+    if batch.failed_sources and source in batch.failed_sources:
+        result_payload = {
+            "source": source,
+            "pages_created": [],
+            "pages_overwritten": [],
+            "grounding_failed_pages": [],
+            "failed": True,
+            "status": "failed",
+        }
+    elif batch.results:
+        src_result = batch.results[0]
+        result_payload = {
+            "source": source,
+            "pages_created": src_result.pages_created,
+            "pages_overwritten": src_result.pages_updated,  # updated = overwritten
+            "grounding_failed_pages": batch.pages_with_failed_grounding,
+            "failed": False,
+            "status": src_result.status,
+        }
+    else:
+        # Skipped (hash-match no-op)
+        skipped = batch.skipped_sources[0] if batch.skipped_sources else None
+        result_payload = {
+            "source": source,
+            "pages_created": [],
+            "pages_overwritten": [],
+            "grounding_failed_pages": [],
+            "failed": False,
+            "status": skipped.status if skipped else "skipped",
+        }
+
+    await _progress(3, 3, message=f"Done: {source!r}")
+    return result_payload
+
+
+# ---------------------------------------------------------------------------
 # Tool: kb_capture_v1
 # ---------------------------------------------------------------------------
 @mcp.tool(
@@ -426,6 +659,9 @@ def _add_strict_schema() -> None:
         "kb_search_v1",
         "kb_read_hot_v1",
         "kb_save_hot_v1",
+        "kb_index_v1",
+        "kb_lint_v1",
+        "kb_ingest_v1",
         "kb_capture_v1",
         "kb_import_v1",
     ):
