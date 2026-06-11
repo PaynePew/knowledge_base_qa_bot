@@ -1,11 +1,13 @@
 """FastMCP server exposing the knowledge base over stdio.
 
-Phase 12 Slice 1 (ADR-0016).  Wraps ``markdown_kb`` and ``vector_rag`` deep
-modules directly (NOT the Gateway).  Exposes four tools:
-  - ``kb_ask_v1``    — grounded-answer tool (LLM draft + Grounding Check)
-  - ``kb_search_v1`` — raw-evidence search with no LLM call
-  - ``kb_read_hot_v1``  — read working-memory hot cache
-  - ``kb_save_hot_v1``  — persist working-memory hot cache
+Phase 12 Slice 1 (ADR-0016) + Slice 4 (capture, issue #230).
+Wraps ``markdown_kb`` and ``vector_rag`` deep modules directly (NOT the Gateway).
+Exposes five tools:
+  - ``kb_ask_v1``     — grounded-answer tool (LLM draft + Grounding Check)
+  - ``kb_search_v1``  — raw-evidence search with no LLM call
+  - ``kb_read_hot_v1``   — read working-memory hot cache
+  - ``kb_save_hot_v1``   — persist working-memory hot cache
+  - ``kb_capture_v1``    — author a Markdown Source from conversation to docs/
 
 Launch via ``python -m kb_mcp`` (stdio transport, Claude Desktop compatible).
 
@@ -50,7 +52,14 @@ _INSTRUCTIONS = (
     "- kb_save_hot_v1: Persist a working-memory summary to the hot cache.  "
     "Call this at session end (or at a natural checkpoint) with a ~500-word "
     "summary composed by you.  The server only persists the bytes; you compose "
-    "the summary.\n\n"
+    "the summary.\n"
+    "- kb_capture_v1: Author a Markdown Source from this conversation and "
+    "persist it to docs/.  Use this to turn session reasoning into a permanent "
+    "KB Source.  Capture skips Import — content is already canonical Markdown.  "
+    "Provenance frontmatter is stamped automatically.  After capturing, run "
+    "kb_ingest_v1 / kb_index_v1 to make it retrievable.  "
+    "Returns {ok: true, path: str}.  Unsafe filenames return isError with "
+    "code='CAPTURE_REJECTED'.\n\n"
     "Stack guidance:\n"
     "- Always start with stack='wiki' (curated BM25 index).  "
     "Only switch to stack='rag' when the user explicitly asks to use the "
@@ -281,6 +290,58 @@ def kb_save_hot_v1(
 
 
 # ---------------------------------------------------------------------------
+# Tool: kb_capture_v1
+# ---------------------------------------------------------------------------
+@mcp.tool(
+    name="kb_capture_v1",
+    description=(
+        "Author a Markdown Source directly from this conversation and persist it "
+        "to docs/.  Use this when you want to turn session reasoning into a "
+        "permanent KB Source without leaving the conversation.\n\n"
+        "Parameters:\n"
+        "  filename — plain basename for the new Source (required, e.g. 'my_note.md').\n"
+        "             Must not contain path separators, '..', or control characters.\n"
+        "  content  — the Markdown body of the Source (required).\n\n"
+        "Returns on success: {ok: true, path: str}\n"
+        "  path — absolute path of the written file in docs/.\n\n"
+        "Returns isError=true on rejection:\n"
+        "  {code: 'CAPTURE_REJECTED', message: str}\n"
+        "  Filename validation failures (traversal, separators) produce this error.\n\n"
+        "Capture skips Import — content is assumed to be canonical Markdown already.\n"
+        "Mandatory provenance frontmatter (origin/created_at/authored_by) is stamped\n"
+        "automatically by the server; the caller must NOT include it in content.\n\n"
+        "The captured Source flows into the normal Ingest → Index lifecycle via "
+        "kb_ingest_v1 / kb_index_v1 — Capture only writes the Source to disk."
+    ),
+)
+def kb_capture_v1(
+    filename: Annotated[
+        str, Field(description="Plain basename for the new Source (e.g. 'note.md').")
+    ],
+    content: Annotated[str, Field(description="The Markdown body of the Source.")],
+) -> Any:
+    """Write a Markdown Source to docs/ with mandatory provenance frontmatter.
+
+    Delegates to ``markdown_kb.app.capture.capture_source``.  On
+    ``ValueError`` (unsafe filename), returns a ``CallToolResult`` with
+    ``isError=True`` so the MCP host receives a structured error payload
+    instead of a raw exception.
+    """
+    from markdown_kb.app.capture import capture_source
+
+    try:
+        target = capture_source(filename, content)
+    except ValueError as exc:
+        payload = json.dumps({"code": "CAPTURE_REJECTED", "message": str(exc)})
+        return CallToolResult(
+            content=[TextContent(type="text", text=payload)],
+            isError=True,
+        )
+
+    return {"ok": True, "path": str(target)}
+
+
+# ---------------------------------------------------------------------------
 # Patch schema to add additionalProperties:false (ADR-0016 strict schema)
 # ---------------------------------------------------------------------------
 # FastMCP generates the tool parameters schema from the function signature but
@@ -289,7 +350,13 @@ def kb_save_hot_v1(
 # extra fields.  This does not affect FastMCP's internal argument validation.
 def _add_strict_schema() -> None:
     """Patch tool parameter schemas to include additionalProperties:false."""
-    for tool_name in ("kb_ask_v1", "kb_search_v1", "kb_read_hot_v1", "kb_save_hot_v1"):
+    for tool_name in (
+        "kb_ask_v1",
+        "kb_search_v1",
+        "kb_read_hot_v1",
+        "kb_save_hot_v1",
+        "kb_capture_v1",
+    ):
         tool = mcp._tool_manager.get_tool(tool_name)
         if tool is not None:
             tool.parameters["additionalProperties"] = False
