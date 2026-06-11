@@ -198,7 +198,7 @@ def index_cmd() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _print_ingest_batch(batch: object) -> None:  # type: ignore[type-arg]
+def _print_ingest_batch(batch: object) -> None:
     """Render an ``IngestBatchResult`` to stdout with per-source progress lines.
 
     Format per successful source:
@@ -218,11 +218,11 @@ def _print_ingest_batch(batch: object) -> None:  # type: ignore[type-arg]
 
     assert isinstance(batch, IngestBatchResult)
 
-    # Per successfully processed source
+    # Per successfully processed source.  ``status`` is "created" or "updated"
+    # here — skipped sources are carried in ``skipped_sources``, not ``results``.
     for src_result in batch.results:
         page_count = len(src_result.pages_written)
-        status_verb = src_result.status if src_result.status != "skipped" else "skipped"
-        typer.echo(f"Ingested {src_result.source}: {page_count} page(s) {status_verb}.")
+        typer.echo(f"Ingested {src_result.source}: {page_count} page(s) {src_result.status}.")
 
     # Per skipped source (hash-match no-op)
     for skipped in batch.skipped_sources:
@@ -232,7 +232,8 @@ def _print_ingest_batch(batch: object) -> None:  # type: ignore[type-arg]
     for failed in batch.failed_sources:
         typer.echo(f"Failed: {failed} — could not be processed.", err=True)
 
-    # Per page with failed grounding (fail-soft — page written, status=failed_grounding)
+    # Per page with failed grounding (fail-soft — page still written, slug
+    # tracked in batch.pages_with_failed_grounding rather than a status field).
     for slug in batch.pages_with_failed_grounding:
         typer.echo(f"Warning: page '{slug}' failed grounding check.")
 
