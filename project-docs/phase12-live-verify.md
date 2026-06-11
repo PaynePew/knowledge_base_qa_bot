@@ -36,11 +36,15 @@ Select-String -Path .env -Pattern '^OPENAI_API_KEY=sk-' -Quiet   # -> True
 
 ---
 
-## A. CLI surface (`kb ask` / REPL / `kb index`)
+## A. CLI surface (`kb ask` / REPL / `kb index` / `kb import` / `kb ingest` / `kb lint`)
 
 The KB is e-commerce customer support (refunds, orders, warranty, returns, …).
 The wiki index (`.kb/index.json`, built from `wiki/{entities,concepts,qa}`)
 contains the refund material, so the question below is genuinely grounded.
+
+> **Read surface unchanged.** `kb ask` and the REPL are untouched by the
+> interface-parity work (ADR-0017). The checks below add coverage for the new
+> write/maintenance subcommands only.
 
 - [ ] **A1 — Grounded answer (wiki stack).** Expect `Grounding: passed`.
   ```powershell
@@ -87,6 +91,28 @@ contains the refund material, so the question below is genuinely grounded.
   > afterward with `git status --porcelain`; if `.kb/index.json` changed, run
   > `git checkout -- .kb/index.json`. **Skip this step if you only want to verify
   > `ask`.**
+
+- [ ] **A6 — Import a local file.** Needs no key.
+  ```powershell
+  uv run kb import docs\refund_policy.md
+  ```
+  Expected: `Imported: refund_policy.md → docs/refund_policy.md [md] status=skipped`
+  (or `status=updated` if the hash drifted). Exit code 0.
+
+- [ ] **A7 — Ingest a single Source.** Calls the LLM — needs `OPENAI_API_KEY`.
+  ```powershell
+  uv run kb ingest refund_policy.md
+  ```
+  Expected: progress line then `Ingested refund_policy.md: N page(s) created/updated.`
+  (or `Skipped ...` on hash-match). Exit code 0. `LLMError` exits with code 1.
+
+- [ ] **A8 — Lint the wiki.** Calls the LLM for the C5 contradiction check — needs
+  `OPENAI_API_KEY`.
+  ```powershell
+  uv run kb lint
+  ```
+  Expected: `No findings — KB is clean.` (or a count + categorised findings) and
+  `Report written to: <path>`. Exit code 0. `LLMError` exits with code 1.
 
 ---
 
@@ -152,7 +178,13 @@ if absent).
 Fully quit (also exit from the system tray), then relaunch so it re-reads the
 config and spawns the server.
 
-### C3 — Exercise the four tools (prompt Claude Desktop in natural language)
+### C3 — Exercise the MCP tools (prompt Claude Desktop in natural language)
+
+> **Read surface unchanged.** `kb_ask_v1`, `kb_search_v1`, `kb_read_hot_v1`, and
+> `kb_save_hot_v1` are untouched by the interface-parity work (ADR-0017). The checks
+> below add coverage for the five new tools.
+
+**Read / ask (unchanged tools):**
 
 - [ ] **`kb_read_hot_v1`** — "Read the hot cache." First time → `content: ""`.
   An empty string is **normal**, not an error.
@@ -170,6 +202,32 @@ config and spawns the server.
 
 > `kb_save_hot_v1` writes `wiki/hot.md`, which is **git-ignored** — it won't dirty
 > the repo and needs no cleanup.
+
+**Write / maintenance (new parity tools — all need no key except `kb_ingest_v1` and `kb_lint_v1`):**
+
+- [ ] **`kb_import_v1`** — "Import the file at `<absolute-path-to>/docs/refund_policy.md`
+  into the KB." → `{ok: true, source: "refund_policy.md", status: "skipped"|"updated"}`.
+  A bad path or unsafe basename returns `isError` with `code: "IMPORT_REJECTED"`.
+
+- [ ] **`kb_capture_v1`** — "Capture this as a KB source named `test_note.md`:
+  `# Test\nThis is a test note.`" → `{ok: true, path: "<abs-path>/docs/test_note.md"}`.
+  An unsafe filename (e.g. `../evil.md`) returns `isError` with
+  `code: "CAPTURE_REJECTED"`.
+
+- [ ] **`kb_ingest_v1`** — "Ingest the source `refund_policy.md`." Needs
+  `OPENAI_API_KEY`. Progress notifications appear during the run. →
+  `{source, pages_created, pages_overwritten, grounding_failed_pages, failed, status}`.
+  `LLMError` returns `isError` with `code: "LLM_UNAVAILABLE"` or `"LLM_ERROR"`.
+
+- [ ] **`kb_index_v1`** — "Rebuild the KB index." Needs no key. →
+  `{files_indexed: N, sections_indexed: M}`.
+  > ⚠️ This **rewrites `.kb/index.json`** — same caveat as A5 above. Run
+  > `git checkout -- .kb/index.json` afterward if you need a clean repo state.
+
+- [ ] **`kb_lint_v1`** — "Run the KB lint check." Needs `OPENAI_API_KEY` for the C5
+  contradiction pass (pass `include_c5: false` to skip it). → structured `LintResponse`
+  (report_path, findings, summary, check_errors). `LLMError` on total C5 failure
+  returns `isError`; per-pair LLM errors appear in `check_errors["c5"]` only.
 
 ### C4 — Key fix confirmation
 
@@ -203,15 +261,24 @@ If `.kb/index.json` changed (e.g. you ran `kb index`): `git checkout -- .kb/inde
 
 | Thing | Value |
 |---|---|
-| `kb` CLI entry point | `kb = "kb_cli.main:app"` (Typer; `ask` / `index` subcommands + bare-`kb` REPL) |
+| `kb` CLI entry point | `kb = "kb_cli.main:app"` (Typer) |
+| CLI subcommands | `kb ask` · `kb index` · `kb import` · `kb ingest` · `kb lint` · bare `kb` (REPL) |
 | MCP launch | `python -m kb_mcp` (FastMCP, stdio transport) |
-| MCP tools | `kb_ask_v1`, `kb_search_v1`, `kb_read_hot_v1`, `kb_save_hot_v1` |
+| MCP tools (read/ask) | `kb_ask_v1` · `kb_search_v1` · `kb_read_hot_v1` · `kb_save_hot_v1` |
+| MCP tools (write/maintenance) | `kb_capture_v1` · `kb_import_v1` · `kb_ingest_v1` · `kb_index_v1` · `kb_lint_v1` |
 | Wiki index source dirs | `wiki/{entities,concepts,qa}` → `.kb/index.json` |
 | Hot cache file | `wiki/hot.md` (git-ignored) |
 | `uv` path | `C:\Users\MaxL\.local\bin\uv.exe` (uv 0.11.13) |
 | Live test marker | `@pytest.mark.live` — skipped unless `-m live` |
 | `.env` required key | `OPENAI_API_KEY` (both stacks call OpenAI to write the answer) |
-| Relevant ADRs | 0015 (LLMError), 0016 (MCP/CLI deep-module adapter, strict schema) |
+| Relevant ADRs | 0015 (LLMError), 0016 (MCP/CLI deep-module adapter, strict schema), 0017 (symmetric interface parity) |
+
+### Concurrency recovery
+
+Concurrent writes from two interfaces (e.g. `kb_ingest_v1` via MCP while `kb ingest`
+runs in a terminal) risk leaving `.kb/index.json` in a stale state at worst. The index
+is fully regenerable: re-run `kb index` (CLI) or call `kb_index_v1` (MCP) to rebuild it
+from the wiki corpus.
 
 ### Gotchas (from the Phase 12 handoff)
 

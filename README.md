@@ -164,6 +164,46 @@ To regenerate or extend the corpus and re-run the comparison, see the
 maintainer runbook at
 [`eval/paraphrase_comparison/README.md`](eval/paraphrase_comparison/README.md).
 
+## CLI and MCP command reference
+
+The CLI (`kb`) and the MCP server (`kb_mcp`) drive the same full lifecycle.
+
+### CLI subcommands (`uv run kb <subcommand>`)
+
+| Command | Description |
+| --- | --- |
+| `kb ask <question>` | Ask a question and print a grounded answer (LLM synthesis + Grounding Check). |
+| `kb index` | (Re)build the BM25 Section Index from the wiki corpus and persist it to `.kb/index.json`. |
+| `kb import <path>` | Import a local file (`.html`, `.txt`, `.md`) into `docs/` via format conversion. |
+| `kb ingest [source]` | Synthesise one named `docs/` Source (or all Sources when omitted) into `wiki/` pages. |
+| `kb lint` | Run the Lint Pass health check (orphans, contradictions, stale pages, coverage gaps) and print findings. |
+| `kb` (bare) | Enter the interactive REPL with a warm index; supports `:stack <wiki\|rag>` and `quit`. |
+
+### MCP tools (`kb_mcp` server)
+
+| Tool | Description |
+| --- | --- |
+| `kb_ask_v1` | Ask a question and receive a grounded LLM answer with citations and a Grounding Check result. |
+| `kb_search_v1` | Retrieve raw Sections or Chunks from the index with no LLM synthesis; returns BM25 scores for the wiki stack. |
+| `kb_read_hot_v1` | Read the working-memory hot cache (`wiki/hot.md`); returns `""` on the first session. |
+| `kb_save_hot_v1` | Persist a working-memory summary (composed by the host) to the hot cache. |
+| `kb_capture_v1` | Write a Markdown Source directly from conversation to `docs/`; stamps provenance frontmatter automatically. |
+| `kb_ingest_v1` | Ingest a single named `docs/` Source into `wiki/` pages synchronously, with progress notifications. |
+| `kb_index_v1` | Rebuild the BM25 Section Index from the wiki corpus and return `{files_indexed, sections_indexed}`. |
+| `kb_lint_v1` | Run the Lint Pass and return structured findings; supports skipping the LLM-backed C5 contradiction check. |
+| `kb_import_v1` | Import a local file by absolute path into `docs/` via the same format-conversion pipeline as `kb import`. |
+
+> **Read surface unchanged.** The interface-parity work (ADR-0017) added write and
+> maintenance tools; the read surface is untouched. `kb ask`, `kb_ask_v1`,
+> `kb_search_v1`, and the Hot Cache pair (`kb_read_hot_v1` / `kb_save_hot_v1`) are
+> exactly as they were before the parity slices.
+
+### Concurrency recovery
+
+Concurrent writes from two interfaces (e.g. `kb_ingest_v1` from MCP while `kb ingest` runs in a terminal) risk leaving `.kb/index.json` in a stale state. The index is fully regenerable: re-run `kb index` (CLI) or call `kb_index_v1` (MCP) to rebuild it from the wiki corpus.
+
+---
+
 ## Deep dive
 
 - [`CONTEXT.md`](CONTEXT.md) — the project's shared vocabulary.
@@ -323,9 +363,50 @@ knowledge_base_qa_bot/
 若要重新產生或擴充語料並重跑比較,請見維護者操作手冊
 [`eval/paraphrase_comparison/README.md`](eval/paraphrase_comparison/README.md)。
 
+## CLI 與 MCP 指令參考
+
+CLI(`kb`)與 MCP 伺服器(`kb_mcp`)共享相同的完整生命週期。
+
+### CLI 子命令（`uv run kb <subcommand>`）
+
+| 命令 | 說明 |
+| --- | --- |
+| `kb ask <question>` | 詢問問題並輸出有根據的答案（LLM 合成 + Grounding Check）。 |
+| `kb index` | 從 wiki 語料重建 BM25 Section Index 並寫入 `.kb/index.json`。 |
+| `kb import <path>` | 將本機檔案（`.html`、`.txt`、`.md`）透過格式轉換匯入 `docs/`。 |
+| `kb ingest [source]` | 把指定的 `docs/` Source（或省略時所有 Source）合成為 `wiki/` 頁面。 |
+| `kb lint` | 執行 Lint Pass 健康度檢查（孤立頁面、矛盾、過時頁面、涵蓋缺口）並印出結果。 |
+| `kb`（直接執行）| 進入有暖索引的互動式 REPL；支援 `:stack <wiki\|rag>` 與 `quit`。 |
+
+### MCP 工具（`kb_mcp` 伺服器）
+
+| 工具 | 說明 |
+| --- | --- |
+| `kb_ask_v1` | 詢問問題並取得帶引用與 Grounding Check 結果的 LLM 有根據答案。 |
+| `kb_search_v1` | 從索引取回原始 Section 或 Chunk，不呼叫 LLM；wiki stack 回傳 BM25 分數。 |
+| `kb_read_hot_v1` | 讀取工作記憶熱快取（`wiki/hot.md`）；第一次呼叫時回傳 `""`。 |
+| `kb_save_hot_v1` | 將由 host 組成的工作記憶摘要寫入熱快取。 |
+| `kb_capture_v1` | 直接從對話將 Markdown Source 寫入 `docs/`；自動加上出處 frontmatter。 |
+| `kb_ingest_v1` | 同步將單一指定 `docs/` Source 合成為 `wiki/` 頁面，並發出進度通知。 |
+| `kb_index_v1` | 從 wiki 語料重建 BM25 Section Index，回傳 `{files_indexed, sections_indexed}`。 |
+| `kb_lint_v1` | 執行 Lint Pass 並回傳結構化結果；支援跳過 LLM-backed C5 矛盾檢查。 |
+| `kb_import_v1` | 透過與 `kb import` 相同的格式轉換流程，用絕對路徑將本機檔案匯入 `docs/`。 |
+
+> **讀取介面不受影響。** 界面對稱工作（ADR-0017）新增了寫入與維護工具；讀取介面
+> 維持原狀。`kb ask`、`kb_ask_v1`、`kb_search_v1` 與熱快取組合
+>（`kb_read_hot_v1` / `kb_save_hot_v1`）在對稱工作前後完全不變。
+
+### 並發復原
+
+兩個界面同時寫入（例如 MCP 的 `kb_ingest_v1` 與終端機的 `kb ingest` 同時執行），
+最壞情況下會讓 `.kb/index.json` 停在過期狀態。索引可完整重新產生：
+重新執行 `kb index`（CLI）或呼叫 `kb_index_v1`（MCP）即可從 wiki 語料重建。
+
+---
+
 ## 深入閱讀
 
 - [`CONTEXT.md`](CONTEXT.md) —— 專案的共用詞彙表。
 - [`PROMPT.md`](PROMPT.md) —— 題目規格與設計解答。
-- [`project-docs/adr/`](project-docs/adr/) —— 架構決策(ADR)。
+- [`project-docs/adr/`](project-docs/adr/) —— 架構決策（ADR）。
 - [`project-docs/roadmap.md`](project-docs/roadmap.md) —— 完整的實作順序。
