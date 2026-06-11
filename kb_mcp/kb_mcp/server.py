@@ -7,6 +7,9 @@ modules directly (NOT the Gateway).  Exposes four tools:
   - ``kb_read_hot_v1``  — read working-memory hot cache
   - ``kb_save_hot_v1``  — persist working-memory hot cache
 
+Phase 12 Slice 7 (ADR-0017 / issue #232).  Adds one write tool:
+  - ``kb_ingest_v1`` — single-Source sync ingest with progress notifications
+
 Launch via ``python -m kb_mcp`` (stdio transport, Claude Desktop compatible).
 
 Server ``instructions`` (~200 tokens) guide the MCP host on:
@@ -24,7 +27,7 @@ from __future__ import annotations
 import json
 from typing import Annotated, Any, Literal
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import CallToolResult, TextContent
 from pydantic import Field
 
@@ -281,6 +284,130 @@ def kb_save_hot_v1(
 
 
 # ---------------------------------------------------------------------------
+# Tool: kb_ingest_v1
+# ---------------------------------------------------------------------------
+@mcp.tool(
+    name="kb_ingest_v1",
+    description=(
+        "Ingest a single named Source from docs/ synchronously, synthesising "
+        "wiki pages and running the Grounding Check.  Use this to curate one "
+        "Source at a time and see the result before moving on.\n\n"
+        "Parameters:\n"
+        "  source — bare filename of the Source to ingest (required);\n"
+        "           e.g. 'refund_policy.md'\n\n"
+        "Returns on success: "
+        "{source, pages_created, pages_overwritten, grounding_failed_pages, "
+        "failed, status}\n"
+        "  pages_created         — list of wiki page paths written for the first time\n"
+        "  pages_overwritten     — list of paths that already existed and were "
+        "overwritten (cross-call slug collision is visible here, not silent — "
+        "#54 / CODING_STANDARD §12.8)\n"
+        "  grounding_failed_pages — list of page slugs that were written but failed "
+        "the Grounding Check (status=failed_grounding); a non-empty list is a "
+        "SUCCESS result (not isError) — it means the KB accepted the page with "
+        "a failed-grounding marker, which is the ADR-0004 fail-soft outcome\n"
+        "  failed                — True when the source was not found or could not be "
+        "parsed (non-LLM failure)\n"
+        "  status                — 'created', 'updated', 'skipped', or 'failed'\n\n"
+        "Returns isError=true on LLM failure:\n"
+        "  {code, message} where code is 'LLM_UNAVAILABLE' (retryable) or\n"
+        "  'LLM_ERROR' (non-retryable, report message to user).\n\n"
+        "Progress notifications are emitted during the run so the host does not "
+        "time out on a slow Source.  No batch parameter is exposed — loop over "
+        "Sources one at a time."
+    ),
+)
+async def kb_ingest_v1(
+    source: Annotated[str, Field(description="Bare filename of the Source to ingest (e.g. 'refund_policy.md').")],
+    ctx: Context,
+) -> Any:
+    """Ingest a single Source synchronously and return a neutral result dict.
+
+    Emits MCP progress notifications before and after the pipeline step so the
+    Claude Desktop host does not time out on slow Sources.
+
+    Cannot-Confirm / grounding-failed outcome: reported as a SUCCESS result
+    (not isError) — ``grounding_failed_pages`` will be non-empty.
+
+    LLMError: caught here and returned as isError with code ∈
+    {LLM_UNAVAILABLE, LLM_ERROR} per ADR-0015.
+
+    Cross-call slug collision visibility (#54 / CODING_STANDARD §12.8):
+    ``pages_overwritten`` is populated when a page already existed on disk and
+    was overwritten.  The caller can detect a cross-call slug collision by
+    checking whether pages_overwritten is non-empty.
+    """
+    from markdown_kb.app.errors import LLMError
+    from markdown_kb.app.ingest import ingest_sources
+
+    async def _progress(n: float, total: float, message: str) -> None:
+        """Emit a progress notification, silently no-op when no request context.
+
+        The in-process test harness and Claude Desktop calls without a progress
+        token both lack a request context; swallowing the ValueError keeps
+        the tool functional in both environments.
+        """
+        try:
+            await ctx.report_progress(n, total, message=message)
+        except (ValueError, Exception):  # noqa: BLE001
+            pass
+
+    await _progress(0, 3, message=f"Starting ingest for {source!r}")
+
+    try:
+        await _progress(1, 3, message=f"Running synthesis pipeline for {source!r}")
+        batch = ingest_sources([source])
+    except LLMError as exc:
+        # ADR-0015 / ADR-0016: LLMError → structured MCP isError payload.
+        code = "LLM_UNAVAILABLE" if exc.retryable else "LLM_ERROR"
+        payload = json.dumps({"code": code, "message": exc.message})
+        return CallToolResult(
+            content=[TextContent(type="text", text=payload)],
+            isError=True,
+        )
+
+    await _progress(2, 3, message=f"Ingest pipeline complete for {source!r}")
+
+    # Map IngestBatchResult → neutral MCP result dict.
+    # batch.results[0] is the outcome for our single Source (when successful).
+    # batch.failed_sources contains the source name on non-LLM failure.
+    # batch.pages_with_failed_grounding lists slugs that failed the Grounding Check.
+    if batch.failed_sources and source in batch.failed_sources:
+        result_payload = {
+            "source": source,
+            "pages_created": [],
+            "pages_overwritten": [],
+            "grounding_failed_pages": [],
+            "failed": True,
+            "status": "failed",
+        }
+    elif batch.results:
+        src_result = batch.results[0]
+        result_payload = {
+            "source": source,
+            "pages_created": src_result.pages_created,
+            "pages_overwritten": src_result.pages_updated,  # updated = overwritten
+            "grounding_failed_pages": batch.pages_with_failed_grounding,
+            "failed": False,
+            "status": src_result.status,
+        }
+    else:
+        # Skipped (hash-match no-op)
+        skipped = batch.skipped_sources[0] if batch.skipped_sources else None
+        result_payload = {
+            "source": source,
+            "pages_created": [],
+            "pages_overwritten": [],
+            "grounding_failed_pages": [],
+            "failed": False,
+            "status": skipped.status if skipped else "skipped",
+        }
+
+    await _progress(3, 3, message=f"Done: {source!r}")
+    return result_payload
+
+
+# ---------------------------------------------------------------------------
 # Patch schema to add additionalProperties:false (ADR-0016 strict schema)
 # ---------------------------------------------------------------------------
 # FastMCP generates the tool parameters schema from the function signature but
@@ -289,7 +416,13 @@ def kb_save_hot_v1(
 # extra fields.  This does not affect FastMCP's internal argument validation.
 def _add_strict_schema() -> None:
     """Patch tool parameter schemas to include additionalProperties:false."""
-    for tool_name in ("kb_ask_v1", "kb_search_v1", "kb_read_hot_v1", "kb_save_hot_v1"):
+    for tool_name in (
+        "kb_ask_v1",
+        "kb_search_v1",
+        "kb_read_hot_v1",
+        "kb_save_hot_v1",
+        "kb_ingest_v1",
+    ):
         tool = mcp._tool_manager.get_tool(tool_name)
         if tool is not None:
             tool.parameters["additionalProperties"] = False

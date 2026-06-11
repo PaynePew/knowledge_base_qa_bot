@@ -70,45 +70,51 @@ def _is_error_result(raw: Any) -> bool:
 # ---------------------------------------------------------------------------
 
 
-class _FakeLLMResponse:
-    def __init__(self, content: str) -> None:
-        self.content = content
+class _FakeLLMStructured:
+    """Stub returned by .with_structured_output(); produces structured Pydantic output.
+
+    Handles both _ClassifierOutput (needs type='concept') and
+    _PageSynthesisOutput (needs body+open_questions).
+    Identifies the schema by its field names.
+    """
+
+    def __init__(self, schema: Any) -> None:
+        self._schema = schema
+
+    def invoke(self, messages: Any) -> Any:
+        schema = self._schema
+        # Determine which schema by checking the model_fields attribute
+        fields = set(getattr(schema, "model_fields", {}).keys())
+        if "type" in fields and "body" not in fields:
+            # _ClassifierOutput
+            return schema(type="concept")
+        elif "body" in fields:
+            # _PageSynthesisOutput
+            return schema(
+                body="A stub concept page body. This is the synthesised content.",
+                open_questions=[],
+            )
+        else:
+            # Fallback: try type= first
+            try:
+                return schema(type="concept")
+            except Exception:
+                return schema()
 
 
 class _FakeLLM:
-    """Stub LLM that returns a minimal parseable SourceType + wiki page body."""
+    """Stub LLM that returns minimal valid structured output for ingest pipeline.
 
-    # For classify_source: returns a JSON string with {"type": "concept"}
-    # For generate_page / generate_entity_page: returns wiki-page-like prose.
-    _type_json = '{"type": "concept"}'
-    _page_body = "A stub concept page body.\n\n[Source: stub.md#stub-section]"
+    Supports:
+      - with_structured_output(schema): for classify_source, generate_page,
+        generate_entity_page — returns a _FakeLLMStructured chain.
+    """
 
     def __init__(self) -> None:
         self._call_count = 0
 
     def with_structured_output(self, schema: Any, **kwargs: Any) -> "_FakeLLMStructured":  # noqa: ANN401
         return _FakeLLMStructured(schema=schema)
-
-    def invoke(self, messages: Any) -> _FakeLLMResponse:
-        self._call_count += 1
-        return _FakeLLMResponse(content=self._page_body)
-
-
-class _FakeLLMStructured:
-    """Stub returned by .with_structured_output(); produces structured Pydantic output."""
-
-    def __init__(self, schema: Any) -> None:
-        self._schema = schema
-
-    def invoke(self, messages: Any) -> Any:
-        # classify_source uses SourceTypeClassification Pydantic model
-        # generate_page uses WikiPageDraft-compatible structured output
-        # We always return type=concept for simplicity
-        try:
-            return self._schema(type="concept")  # type: ignore[call-arg]
-        except Exception:
-            # If schema doesn't accept type kwarg, fall back to mock
-            return type("_Stub", (), {"type": "concept"})()
 
 
 def _grounding_passed():
@@ -153,20 +159,31 @@ def wiki_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture(autouse=True)
 def _patch_ingest_paths(monkeypatch: pytest.MonkeyPatch, docs_dir: Path, wiki_dir: Path) -> None:
-    """Redirect ingest deep module paths to tmp dirs so no real disk I/O occurs."""
-    import markdown_kb.app.ingest as ingest_mod
-    import markdown_kb.app.wiki_writer as wiki_writer_mod
+    """Redirect ingest deep module paths to tmp dirs so no real disk I/O occurs.
 
-    monkeypatch.setattr(ingest_mod, "_resolve_docs_files", lambda d: [])
-    # Redirect DOCS_DIR so single-source lookups go to tmp
+    Redirects DOCS_DIR (used by ingest_sources for source lookup) and WIKI_DIR
+    (used by indexer / wiki_writer for output pages) to tmp_path subdirs.
+    Also redirects the logger LOG_PATH to tmp to avoid touching wiki/log.md.
+
+    Note: the conftest _isolate_module_state autouse fixture already redirects
+    indexer.WIKI_DIR; we redirect it again here to point to our specific wiki_dir
+    fixture (conftest uses tmp_path / 'wiki' which is the same path since we
+    build wiki_dir from tmp_path too, but we do it explicitly for clarity).
+    """
     import markdown_kb.app._paths as paths_mod
-
-    monkeypatch.setattr(paths_mod, "DOCS_DIR", docs_dir)
-
-    # Redirect indexer WIKI_DIR to tmp
     import markdown_kb.app.indexer as indexer_mod
+    import markdown_kb.app.ingest as ingest_mod
+    import markdown_kb.app.logger as logger_mod
 
+    # DOCS_DIR: ingest_sources builds source_path as docs_dir / source_name
+    monkeypatch.setattr(paths_mod, "DOCS_DIR", docs_dir)
+    monkeypatch.setattr(ingest_mod, "DOCS_DIR", docs_dir)
+
+    # WIKI_DIR: used by ingest to look up existing pages + write output
     monkeypatch.setattr(indexer_mod, "WIKI_DIR", wiki_dir)
+
+    # LOG_PATH: log_event appends to wiki/log.md; redirect to tmp
+    monkeypatch.setattr(logger_mod, "LOG_PATH", wiki_dir / "log.md")
 
 
 # ---------------------------------------------------------------------------
@@ -270,12 +287,14 @@ def test_kb_ingest_v1_success_source_name_matches(docs_dir: Path, wiki_dir: Path
 def test_kb_ingest_v1_overwrite_surfaced(docs_dir: Path, wiki_dir: Path, monkeypatch: pytest.MonkeyPatch):
     """pages_overwritten is non-empty when a page already exists on disk.
 
-    This test pre-creates a wiki page at the expected slug location to simulate
-    a cross-call slug collision, then re-ingests the same Source. The tool
-    result must surface the overwrite (pages_overwritten non-empty) so the
-    collision is visible, not silent (#54 / CODING_STANDARD §12.8).
+    Simulates a cross-call slug collision by pre-creating a wiki concept page
+    at the slug the ingest pipeline will produce for the stub Source's section.
+    Because the pre-existing page has a DIFFERENT docs_body_hash (it carries
+    the hash of a different earlier Source), the hash-skip logic does NOT fire —
+    the page is overwritten and pages_overwritten is populated (#54 / §12.8).
     """
     import markdown_kb.app.ingest as ingest_mod
+    import markdown_kb.app.indexer as indexer_mod
     import markdown_kb.app.templates as templates_mod
 
     from kb_mcp.server import mcp
@@ -284,19 +303,42 @@ def test_kb_ingest_v1_overwrite_surfaced(docs_dir: Path, wiki_dir: Path, monkeyp
     monkeypatch.setattr(templates_mod, "get_ingest_llm", lambda: fake_llm)
     monkeypatch.setattr(ingest_mod, "verify", lambda draft, sections: _grounding_passed())
 
-    # First ingest — creates the page
-    raw1 = asyncio.run(mcp.call_tool("kb_ingest_v1", {"source": "stub_source.md"}))
-    assert not _is_error_result(raw1), f"First ingest failed: {raw1}"
-    result1 = _parse_result(raw1)
-    assert result1["pages_created"], f"Expected pages_created to be non-empty: {result1}"
+    # Pre-create a concept page at the slug the pipeline will produce.
+    # The stub source has heading "Stub Section" → slug "stub-section".
+    # Write it with a SOURCE hash that does NOT match stub_source.md's hash,
+    # so the hash-skip logic treats it as "unknown drift" and proceeds to overwrite.
+    slug = "stub-section"
+    concepts_dir = wiki_dir / "concepts"
+    concepts_dir.mkdir(parents=True, exist_ok=True)
+    preexisting_page = concepts_dir / f"{slug}.md"
+    preexisting_page.write_text(
+        "---\n"
+        f"id: {slug}\n"
+        "type: concept\n"
+        "created: '2020-01-01T00:00:00Z'\n"
+        "updated: '2020-01-01T00:00:00Z'\n"
+        "sources:\n"
+        "  - other_source.md#stub-section\n"
+        "status: live\n"
+        "open_questions: []\n"
+        "source_hashes:\n"
+        "  other_source.md:\n"
+        "    raw: null\n"
+        "    docs_body: aaaa1111bbbb2222cccc3333\n"
+        "---\n\n"
+        "# Stub Section\n\nPre-existing page from a different source.\n\n"
+        "[Source: other_source.md#stub-section]\n",
+        encoding="utf-8",
+    )
 
-    # Second ingest of the same source — must overwrite, not silently collide
-    raw2 = asyncio.run(mcp.call_tool("kb_ingest_v1", {"source": "stub_source.md"}))
-    assert not _is_error_result(raw2), f"Second ingest failed: {raw2}"
-    result2 = _parse_result(raw2)
-    # pages_overwritten must be non-empty on the second run (page already exists)
-    assert result2["pages_overwritten"], (
-        f"Expected pages_overwritten to be non-empty on re-ingest: {result2}"
+    # Ingest stub_source.md — the pipeline will see the pre-existing page
+    # (different source hash → NOT skipped) and overwrite it.
+    raw = asyncio.run(mcp.call_tool("kb_ingest_v1", {"source": "stub_source.md"}))
+    assert not _is_error_result(raw), f"Ingest failed: {raw}"
+    result = _parse_result(raw)
+    # The page was pre-existing → pages_overwritten must be non-empty
+    assert result["pages_overwritten"], (
+        f"Expected pages_overwritten to be non-empty when page pre-existed: {result}"
     )
 
 
