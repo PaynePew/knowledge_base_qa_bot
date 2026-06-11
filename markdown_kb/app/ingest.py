@@ -70,6 +70,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ._paths import DOCS_DIR
+from .errors import LLMError
 from .grounding import verify
 from .indexer import _index_lock, parse_markdown, slugify, split_frontmatter
 from .logger import log_event
@@ -322,11 +323,17 @@ def ingest_sources(
         # Source. Feeding it raw lets the LLM misread provenance as Source facts.
         # The synthesis path is already clean — it consumes Section.content from
         # parse_markdown, which strips frontmatter per Rule 2.
+        #
+        # LLMError is re-raised (ADR-0015): it is a domain exception, not a
+        # recoverable source-level failure.  Callers (HTTP route, MCP adapter,
+        # CLI adapter) catch LLMError and map it to their transport representation.
         try:
             raw_source_text = source_path.read_text(encoding="utf-8")
             _, source_content = split_frontmatter(raw_source_text)
             source_type = classify_source(source_content)
             batch._llm_call_count += 1
+        except LLMError:
+            raise
         except Exception as exc:  # noqa: BLE001
             log_event(
                 "ingest_error",
@@ -364,6 +371,8 @@ def ingest_sources(
                         update={"slug": final_slug, "frontmatter": updated_fm}
                     )
                     drafts.append(section_draft)
+        except LLMError:
+            raise
         except Exception as exc:  # noqa: BLE001
             log_event(
                 "ingest_error",
