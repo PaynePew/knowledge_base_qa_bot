@@ -26,8 +26,23 @@ shape, not the search-result shape that ``kb_mcp.normalizer`` maps for the MCP
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import typer
 from dotenv import find_dotenv, load_dotenv
+
+# markdown_kb / vector_rag are PEP 420 namespace packages and `package = false`
+# workspace members (root pyproject) — never installed, so they import only when the
+# repo root is on sys.path. pytest provides it via `pythonpath` and `python -m` via
+# cwd, but the installed `kb` console script has neither (sys.path[0] is the launcher
+# dir), so the lazy `import markdown_kb...` in the command bodies dies with
+# ModuleNotFoundError. Insert the repo root (this file is
+# <repo>/kb_cli/kb_cli/main.py → parents[2]) so `kb` works from any cwd. Relies on
+# the editable workspace layout, which always holds for this dev-only CLI.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 # The `kb` console script does not go through uv's env-file, so without this the
 # grounded-answer path (`kb ask` / REPL) fails with an LLM auth error unless
