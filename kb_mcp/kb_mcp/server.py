@@ -408,9 +408,7 @@ def kb_import_v1(
         )
 
     # Neutral dict shape — no raw importer types cross the MCP boundary.
-    from pathlib import Path as _Path2
-
-    source_basename = _Path2(result.docs_path).name
+    source_basename = _Path(result.docs_path).name
     return {"ok": True, "source": source_basename, "status": result.status}
 
 
