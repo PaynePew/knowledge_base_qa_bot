@@ -194,6 +194,49 @@ def index_cmd() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Subcommand: kb import
+# ---------------------------------------------------------------------------
+
+
+@app.command(name="import")
+def import_cmd(
+    path: str = typer.Argument(..., help="Path to the local file to import (.html, .txt, .md)."),
+) -> None:
+    """Import a local file into the knowledge base.
+
+    Stages the file into ``raw/`` under its basename, then converts it to a
+    ``docs/`` Source programmatically (HTML → Markdown, txt passthrough,
+    .md recognised as canonical).  PDF is wired but the extractor is not yet
+    available — a clear error is printed instead.
+
+    Exit codes follow the ADR-0015 CLI contract:
+        0   — success
+        1   — import failure (invalid file, traversal, unsupported format)
+        2   — bad CLI usage (missing argument, etc.)
+    """
+    from pathlib import Path
+
+    from markdown_kb.app.importer import ImportPathError, import_path
+
+    input_path = Path(path)
+    try:
+        result = import_path(input_path)
+    except ImportPathError as exc:
+        typer.echo(f"Error [{exc.error_type}]: {exc.message}", err=True)
+        raise typer.Exit(code=1) from None
+    except OSError as exc:
+        typer.echo(f"Error [IOError]: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+
+    # Concise success output: format, status, and docs path basename
+    docs_basename = Path(result.docs_path).name
+    typer.echo(
+        f"Imported: {input_path.name} → docs/{docs_basename} "
+        f"[{result.original_format}] status={result.status}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Subcommand: kb ingest [source]
 # ---------------------------------------------------------------------------
 
