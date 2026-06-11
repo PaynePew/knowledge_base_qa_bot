@@ -83,9 +83,7 @@ def test_kb_lint_exits_zero_with_findings(monkeypatch):
     _patch_run_lint(monkeypatch, resp)
 
     result = runner.invoke(app, ["lint"])
-    assert result.exit_code == 0, (
-        f"Expected exit 0, got {result.exit_code}\n{result.output}"
-    )
+    assert result.exit_code == 0, f"Expected exit 0, got {result.exit_code}\n{result.output}"
 
 
 def test_kb_lint_renders_findings(monkeypatch):
@@ -96,9 +94,7 @@ def test_kb_lint_renders_findings(monkeypatch):
     _patch_run_lint(monkeypatch, resp)
 
     result = runner.invoke(app, ["lint"])
-    assert "orphan-page" in result.output, (
-        f"Expected orphan-page slug in output:\n{result.output}"
-    )
+    assert "orphan-page" in result.output, f"Expected orphan-page slug in output:\n{result.output}"
 
 
 def test_kb_lint_shows_summary_counts(monkeypatch):
@@ -210,9 +206,7 @@ def test_kb_lint_llm_error_no_traceback(monkeypatch):
     result = runner.invoke(app, ["lint"])
     combined = result.output or ""
     # If a traceback were present, it would contain "Traceback (most recent call last)"
-    assert "Traceback" not in combined, (
-        f"LLMError must not produce a traceback:\n{combined}"
-    )
+    assert "Traceback" not in combined, f"LLMError must not produce a traceback:\n{combined}"
 
 
 # ---------------------------------------------------------------------------

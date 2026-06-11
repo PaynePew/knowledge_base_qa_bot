@@ -194,6 +194,141 @@ def index_cmd() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Subcommand: kb lint
+# ---------------------------------------------------------------------------
+
+
+def _print_lint_result(response: object) -> None:
+    """Render a LintResponse to stdout in human-readable form.
+
+    Format:
+        Lint Pass — <total> finding(s)  [or "No findings — KB is clean."]
+
+        C11 Orphan pages (<N>):
+          • <page_slug> — <suggested_action>
+
+        C3 Failed grounding (<N>):
+          • <page_slug> — <reason>
+          ...
+
+        C5 Contradictions (<N>):
+          • <page_a> ↔ <page_b> [<severity>] — <summary>
+
+        Report written to: <report_path>
+
+    Sections with zero findings are omitted from output to reduce noise.
+    """
+    findings = response.findings  # type: ignore[attr-defined]
+    summary = response.summary  # type: ignore[attr-defined]
+    report_path = response.report_path  # type: ignore[attr-defined]
+    total = summary.total_findings
+
+    if total == 0:
+        typer.echo("No findings — KB is clean.")
+    else:
+        typer.echo(f"Lint Pass — {total} finding(s)")
+
+    typer.echo("")
+
+    # C11 Orphan pages
+    if findings.orphans:
+        typer.echo(f"C11 Orphan pages ({len(findings.orphans)}):")
+        for f in findings.orphans:
+            typer.echo(f"  • {f.page_slug} — {f.suggested_action}")
+        typer.echo("")
+
+    # C3 Failed grounding
+    if findings.failed_grounding:
+        typer.echo(f"C3 Failed grounding ({len(findings.failed_grounding)}):")
+        for f in findings.failed_grounding:
+            typer.echo(f"  • {f.page_slug} (reason: {f.reason}) — {f.suggested_action}")
+        typer.echo("")
+
+    # C4 Slug collisions
+    if findings.slug_collisions:
+        typer.echo(f"C4 Slug collisions ({len(findings.slug_collisions)}):")
+        for f in findings.slug_collisions:
+            pages = ", ".join(f.pages_in_group)
+            typer.echo(f"  • {f.base_slug}: {pages}")
+        typer.echo("")
+
+    # C6 Stale pages
+    if findings.stale_pages:
+        typer.echo(f"C6 Stale pages ({len(findings.stale_pages)}):")
+        for f in findings.stale_pages:
+            typer.echo(f"  • {f.page_slug} — drift {f.drift_days:.1f} day(s)")
+        typer.echo("")
+
+    # C2 Red links
+    if findings.red_links:
+        typer.echo(f"C2 Red links ({len(findings.red_links)}):")
+        for f in findings.red_links:
+            typer.echo(f"  • [[{f.slug}]] — {f.mention_count} mention(s)")
+        typer.echo("")
+
+    # C1 Coverage gaps
+    if findings.coverage_gaps:
+        typer.echo(f"C1 Coverage gaps ({len(findings.coverage_gaps)}):")
+        for f in findings.coverage_gaps:
+            typer.echo(f"  • {f.query_canonical} (×{f.hit_count}) — {f.suggested_action}")
+        typer.echo("")
+
+    # C5 Contradictions
+    if findings.page_pairs:
+        typer.echo(f"C5 Contradictions ({len(findings.page_pairs)}):")
+        for f in findings.page_pairs:
+            typer.echo(f"  • {f.page_a} ↔ {f.page_b} [{f.severity}] — {f.summary}")
+        typer.echo("")
+
+    # C8 Promotion candidates
+    if findings.promotion_candidates:
+        typer.echo(f"C8 Promotion candidates ({len(findings.promotion_candidates)}):")
+        for f in findings.promotion_candidates:
+            typer.echo(f"  • {f.slug} — count {f.count}, age {f.age_days:.1f} day(s)")
+        typer.echo("")
+
+    # C9 Stale filed answers
+    if findings.stale_filed_answers:
+        typer.echo(f"C9 Stale filed answers ({len(findings.stale_filed_answers)}):")
+        for f in findings.stale_filed_answers:
+            typer.echo(f"  • {f.page_slug} — drift {f.max_drift_days:.1f} day(s)")
+        typer.echo("")
+
+    # C10 Invalid qa schemas
+    if findings.invalid_qa_schemas:
+        typer.echo(f"C10 Invalid qa schemas ({len(findings.invalid_qa_schemas)}):")
+        for f in findings.invalid_qa_schemas:
+            typer.echo(f"  • {f.page_slug}.{f.property_name} = {f.offending_value}")
+        typer.echo("")
+
+    typer.echo(f"Report written to: {report_path}")
+
+
+@app.command(name="lint")
+def lint_cmd() -> None:
+    """Run the Lint Pass health check and render findings to stdout.
+
+    Checks the wiki for contradictions, stale claims, orphan pages, slug
+    collisions, coverage gaps, and red-link backlog — the same health check
+    the Browser exposes via ``POST /lint``.
+
+    On ``LLMError`` (raised by the C5 contradiction check which calls the LLM),
+    prints the error to stderr and exits with code 1 (ADR-0015 CLI contract).
+    """
+    from markdown_kb.app.errors import LLMError
+    from markdown_kb.app.lint import run_lint
+
+    try:
+        response = run_lint()
+    except LLMError as exc:
+        code_label = "LLM_UNAVAILABLE" if exc.retryable else "LLM_ERROR"
+        typer.echo(f"Error [{code_label}]: {exc.message}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    _print_lint_result(response)
+
+
+# ---------------------------------------------------------------------------
 # REPL — bare ``kb`` (no subcommand)
 # ---------------------------------------------------------------------------
 
