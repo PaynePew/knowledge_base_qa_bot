@@ -1,5 +1,7 @@
 # MCP server: direct deep-module adapter with a read-only corpus surface
 
+> **Status: partially superseded by [ADR-0017](0017-symmetric-interface-parity-single-operator.md).** The *deep-module adapter* decision (wrap the modules directly, not the Gateway) stands. The *read-only corpus surface* decision is superseded: under a single-operator posture the CLI and MCP gain the full Import/Ingest/Index/Lint lifecycle plus MCP-only `Capture`. The governance/safety justification below assumed an enterprise posture that does not hold here.
+
 Phase 12 exposes the knowledge base to LLM agents (Claude hosts) over MCP. Two structural decisions shape the server: which layer it adapts, and how much of the system it exposes.
 
 ## Decision
