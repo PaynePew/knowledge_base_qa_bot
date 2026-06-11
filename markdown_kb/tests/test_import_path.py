@@ -20,7 +20,6 @@ from pathlib import Path
 import pytest
 import yaml
 
-
 # ---------------------------------------------------------------------------
 # Fixture: tmp raw/docs dirs wired into importer module
 # ---------------------------------------------------------------------------
@@ -175,19 +174,7 @@ def test_import_path_rejects_basename_with_slash(import_path_env, tmp_path):
     """import_path rejects a basename that would escape via a path separator."""
     from app.importer import ImportPathError, import_path
 
-    # Create an actually existing file but with a "safe" name to test
-    # the rejection by naming — we rely on the validation catching the separator
-    # when we try to pass a path that resolves to an unsafe basename.
-    # On most OS Path() normalises the name, so we verify on the string level.
-    src = tmp_path / "safe.txt"
-    src.write_text("content", encoding="utf-8")
-
-    # Force a basename that contains a path separator — override via a mock
-    import app.importer as importer_module
-
-    original_import_path = importer_module.import_path
-
-    # Just test that a basename with '#' is rejected (shares rejection logic)
+    # Test that a basename with '#' is rejected (shares rejection logic with '/')
     src_hash = tmp_path / "bad#name.txt"
     src_hash.write_text("content", encoding="utf-8")
 
