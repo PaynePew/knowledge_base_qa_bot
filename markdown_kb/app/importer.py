@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``import_sources``, ``ImportBatchResult``, ``ImportSourceResult``, ``ImportFailure``.
+"""Deep module per Ousterhout. Public surface: ``import_sources``, ``import_path``, ``ImportBatchResult``, ``ImportSourceResult``, ``ImportFailure``, ``ImportPathError``.
 
 Multi-Format Import coordinator — raw/ → docs/ format-conversion pipeline.
 
@@ -195,6 +195,20 @@ class ImportBatchResult:
     failed_sources: list[ImportFailure] = field(default_factory=list)
 
 
+class ImportPathError(Exception):
+    """Raised by ``import_path`` when a local-path import cannot proceed.
+
+    Carries a human-readable ``message`` (safe to surface to the caller;
+    no secrets, no stack traces) and an optional ``error_type`` string that
+    mirrors the 12 typed failure modes from ``ImportFailure``.
+    """
+
+    def __init__(self, message: str, *, error_type: str = "ImportPathError") -> None:
+        self.message = message
+        self.error_type = error_type
+        super().__init__(message)
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -245,6 +259,116 @@ def import_sources(source_filter: str | None) -> ImportBatchResult:
 
     _emit_batch_completed(result, batch_start)
     return result
+
+
+def import_path(path: Path) -> ImportSourceResult:
+    """Stage a local file into ``raw/`` and convert it to a ``docs/`` Source.
+
+    This is the path-accepting entry point for the Import deep module (ADR-0017
+    §"Extend the importer deep module with a path-accepting entry").  Adapters
+    (CLI ``kb import``, MCP ``kb_import_v1``) call this function; conversion
+    logic stays here so adapters cannot bypass the programmatic conversion.
+
+    Pipeline:
+        1. Resolve and validate the input path (must exist, must be a file).
+        2. Extract and NFC-normalise the basename; validate it with
+           ``_validate_filename`` (rejects ``#``, ``/``, ``\\``, ``:``,
+           control chars, bidi controls).
+        3. Check extension — supported: ``.html``, ``.txt``, ``.md``;
+           ``.pdf``: raise ``ImportPathError`` with "extractor not yet available"
+           message (wires the path but defers implementation per PRD #226
+           Out-of-Scope); any other extension: raise ``ImportPathError``.
+        4. Copy the raw file bytes into ``raw/<basename>`` atomically.
+        5. Call ``_process_one_source`` against the staged raw path.
+        6. Return the ``ImportSourceResult`` on success, or raise
+           ``ImportPathError`` with the ``ImportFailure`` details on failure.
+
+    Args:
+        path: Absolute (or relative-to-cwd) ``Path`` to the local file to
+            import.  The basename must be traversal-safe.
+
+    Returns:
+        ``ImportSourceResult`` with ``status`` in ``('created', 'updated',
+        'skipped')``.
+
+    Raises:
+        ``ImportPathError`` for any validation or conversion failure.
+    """
+    # Step 1: existence and file-type check.
+    try:
+        if not path.exists():
+            raise ImportPathError(
+                f"File not found: {path}",
+                error_type="FileNotFoundError",
+            )
+        if not path.is_file():
+            raise ImportPathError(
+                f"Path is not a regular file: {path}",
+                error_type="InvalidSourcePath",
+            )
+    except (OSError, PermissionError) as exc:
+        raise ImportPathError(str(exc)[:200], error_type="IOError") from exc
+
+    # Step 2: NFC-normalise and validate the basename.
+    basename = unicodedata.normalize("NFC", path.name)
+    filename_failure = _validate_filename(basename, str(path))
+    if filename_failure is not None:
+        raise ImportPathError(
+            filename_failure.error_message, error_type=filename_failure.error_type
+        )
+
+    # Step 3: extension check.
+    ext = Path(basename).suffix.lower()
+    if ext == ".pdf":
+        raise ImportPathError(
+            f"PDF extractor not yet available: {basename}. "
+            "Convert the PDF to text or Markdown manually and re-import.",
+            error_type="UnsupportedExtension",
+        )
+    if ext not in _SUPPORTED_EXTENSIONS:
+        raise ImportPathError(
+            f"Unsupported file extension '{ext}': {basename}. "
+            f"Supported extensions: {', '.join(sorted(_SUPPORTED_EXTENSIONS))}",
+            error_type="UnsupportedExtension",
+        )
+
+    # Step 4: copy bytes into raw/ atomically.
+    staged_path = RAW_DIR / basename
+    try:
+        raw_bytes = path.read_bytes()
+    except OSError as exc:
+        raise ImportPathError(str(exc)[:200], error_type="IOError") from exc
+
+    try:
+        from .atomic import write_bytes_atomic
+
+        write_bytes_atomic(staged_path, raw_bytes)
+    except OSError as exc:
+        raise ImportPathError(
+            f"Failed to stage {basename} into raw/: {exc}"[:200],
+            error_type="IOError",
+        ) from exc
+
+    # Step 5: convert — delegate to _process_one_source.
+    stem = unicodedata.normalize("NFC", staged_path.stem)
+    batch_result = ImportBatchResult()
+    seen_docs_basenames: dict[str, str] = {}
+    _process_one_source(staged_path, stem, batch_result, seen_docs_basenames)
+
+    # Step 6: surface the outcome.
+    if batch_result.imported_sources:
+        return batch_result.imported_sources[0]
+    if batch_result.skipped_sources:
+        return batch_result.skipped_sources[0]
+    # Failure in _process_one_source → convert to ImportPathError.
+    if batch_result.failed_sources:
+        failure = batch_result.failed_sources[0]
+        raise ImportPathError(failure.error_message, error_type=failure.error_type)
+
+    raise ImportPathError(
+        f"import_path produced no result for {basename}; this is an internal error.",
+        error_type="IOError",
+    )
 
 
 # ---------------------------------------------------------------------------
