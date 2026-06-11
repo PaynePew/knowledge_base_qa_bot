@@ -144,9 +144,7 @@ def test_kb_ingest_batch_calls_ingest_with_none(monkeypatch):
     runner.invoke(app, ["ingest"])
 
     assert len(calls) == 1, f"Expected ingest_sources called once, got {len(calls)}"
-    assert calls[0][0] is None, (
-        f"Expected source_filenames=None for batch mode, got {calls[0][0]}"
-    )
+    assert calls[0][0] is None, f"Expected source_filenames=None for batch mode, got {calls[0][0]}"
 
 
 # ---------------------------------------------------------------------------
@@ -168,9 +166,7 @@ def test_kb_ingest_single_source_prints_source_name(monkeypatch):
     result = runner.invoke(app, ["ingest", "refund_policy.md"])
 
     output = result.output
-    assert "refund_policy" in output, (
-        f"Expected source name in progress output, got:\n{output}"
-    )
+    assert "refund_policy" in output, f"Expected source name in progress output, got:\n{output}"
 
 
 def test_kb_ingest_single_source_prints_done_with_page_count(monkeypatch):

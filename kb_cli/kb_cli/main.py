@@ -194,6 +194,91 @@ def index_cmd() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Subcommand: kb ingest [source]
+# ---------------------------------------------------------------------------
+
+
+def _print_ingest_batch(batch: object) -> None:  # type: ignore[type-arg]
+    """Render an ``IngestBatchResult`` to stdout with per-source progress lines.
+
+    Format per successful source:
+        Ingested refund_policy.md: 2 page(s) created.
+
+    Format for grounding-failed pages (fail-soft — page still written):
+        Warning: page 'cancellation-window' failed grounding check.
+
+    Format for failed sources:
+        Failed: broken_source.md — could not be processed.
+
+    Called after ``ingest_sources`` returns so all per-source outcomes are
+    available.  The grounding-failure lines follow the source summary so a
+    shell script can ``grep "Warning:"`` to detect non-fatal issues.
+    """
+    from markdown_kb.app.ingest import IngestBatchResult
+
+    assert isinstance(batch, IngestBatchResult)
+
+    # Per successfully processed source
+    for src_result in batch.results:
+        page_count = len(src_result.pages_written)
+        status_verb = src_result.status if src_result.status != "skipped" else "skipped"
+        typer.echo(f"Ingested {src_result.source}: {page_count} page(s) {status_verb}.")
+
+    # Per skipped source (hash-match no-op)
+    for skipped in batch.skipped_sources:
+        typer.echo(f"Skipped {skipped.source}: source unchanged (hash match).")
+
+    # Per failed source
+    for failed in batch.failed_sources:
+        typer.echo(f"Failed: {failed} — could not be processed.", err=True)
+
+    # Per page with failed grounding (fail-soft — page written, status=failed_grounding)
+    for slug in batch.pages_with_failed_grounding:
+        typer.echo(f"Warning: page '{slug}' failed grounding check.")
+
+
+@app.command(name="ingest")
+def ingest_cmd(
+    source: str | None = typer.Argument(
+        None,
+        help=(
+            "Bare filename of a single Source to ingest (e.g. 'refund_policy.md'). "
+            "Omit to batch-ingest all Sources under docs/."
+        ),
+    ),
+) -> None:
+    """Synthesise one or all docs/ Sources into wiki page(s).
+
+    ``kb ingest <source>`` ingests a single named Source.
+    ``kb ingest`` (no argument) batch-ingests all Sources under docs/.
+
+    Execution is synchronous.  Per-source progress is printed to stdout as
+    each source completes.  A grounding-failed page is reported but does NOT
+    cause a non-zero exit (fail-soft per ADR-0004).
+
+    On ``LLMError``, prints the error to stderr and exits with code 1.
+    """
+    from markdown_kb.app.errors import LLMError
+    from markdown_kb.app.ingest import ingest_sources
+
+    source_filenames = [source] if source is not None else None
+
+    if source is not None:
+        typer.echo(f"Ingesting {source}...")
+    else:
+        typer.echo("Batch-ingesting all docs/ Sources...")
+
+    try:
+        batch = ingest_sources(source_filenames)
+    except LLMError as exc:
+        code_label = "LLM_UNAVAILABLE" if exc.retryable else "LLM_ERROR"
+        typer.echo(f"Error [{code_label}]: {exc.message}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    _print_ingest_batch(batch)
+
+
+# ---------------------------------------------------------------------------
 # REPL — bare ``kb`` (no subcommand)
 # ---------------------------------------------------------------------------
 
