@@ -40,7 +40,6 @@ from typing import Any
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers: result parsing (mirrors test_kb_ask.py pattern)
 # ---------------------------------------------------------------------------
@@ -113,7 +112,7 @@ class _FakeLLM:
     def __init__(self) -> None:
         self._call_count = 0
 
-    def with_structured_output(self, schema: Any, **kwargs: Any) -> "_FakeLLMStructured":  # noqa: ANN401
+    def with_structured_output(self, schema: Any, **kwargs: Any) -> _FakeLLMStructured:  # noqa: ANN401
         return _FakeLLMStructured(schema=schema)
 
 
@@ -218,9 +217,7 @@ def test_kb_ingest_v1_no_batch_param():
     tool = mcp._tool_manager.get_tool("kb_ingest_v1")
     assert tool is not None
     props = tool.parameters.get("properties", {})
-    assert "sources" not in props, (
-        "Batch 'sources' parameter must NOT be exposed on kb_ingest_v1"
-    )
+    assert "sources" not in props, "Batch 'sources' parameter must NOT be exposed on kb_ingest_v1"
 
 
 def test_kb_ingest_v1_has_source_param():
@@ -239,7 +236,9 @@ def test_kb_ingest_v1_has_source_param():
 # ---------------------------------------------------------------------------
 
 
-def test_kb_ingest_v1_success_result_shape(docs_dir: Path, wiki_dir: Path, monkeypatch: pytest.MonkeyPatch):
+def test_kb_ingest_v1_success_result_shape(
+    docs_dir: Path, wiki_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
     """kb_ingest_v1 returns a success result with required keys."""
     import markdown_kb.app.ingest as ingest_mod
     import markdown_kb.app.templates as templates_mod
@@ -260,7 +259,9 @@ def test_kb_ingest_v1_success_result_shape(docs_dir: Path, wiki_dir: Path, monke
     assert "pages_overwritten" in result, f"Missing 'pages_overwritten' key: {result}"
 
 
-def test_kb_ingest_v1_success_source_name_matches(docs_dir: Path, wiki_dir: Path, monkeypatch: pytest.MonkeyPatch):
+def test_kb_ingest_v1_success_source_name_matches(
+    docs_dir: Path, wiki_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
     """Result.source matches the requested source filename."""
     import markdown_kb.app.ingest as ingest_mod
     import markdown_kb.app.templates as templates_mod
@@ -284,7 +285,9 @@ def test_kb_ingest_v1_success_source_name_matches(docs_dir: Path, wiki_dir: Path
 # ---------------------------------------------------------------------------
 
 
-def test_kb_ingest_v1_overwrite_surfaced(docs_dir: Path, wiki_dir: Path, monkeypatch: pytest.MonkeyPatch):
+def test_kb_ingest_v1_overwrite_surfaced(
+    docs_dir: Path, wiki_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
     """pages_overwritten is non-empty when a page already exists on disk.
 
     Simulates a cross-call slug collision by pre-creating a wiki concept page
@@ -293,8 +296,8 @@ def test_kb_ingest_v1_overwrite_surfaced(docs_dir: Path, wiki_dir: Path, monkeyp
     the hash of a different earlier Source), the hash-skip logic does NOT fire —
     the page is overwritten and pages_overwritten is populated (#54 / §12.8).
     """
-    import markdown_kb.app.ingest as ingest_mod
     import markdown_kb.app.indexer as indexer_mod
+    import markdown_kb.app.ingest as ingest_mod
     import markdown_kb.app.templates as templates_mod
 
     from kb_mcp.server import mcp
@@ -347,7 +350,9 @@ def test_kb_ingest_v1_overwrite_surfaced(docs_dir: Path, wiki_dir: Path, monkeyp
 # ---------------------------------------------------------------------------
 
 
-def test_kb_ingest_v1_grounding_failed_is_success(docs_dir: Path, wiki_dir: Path, monkeypatch: pytest.MonkeyPatch):
+def test_kb_ingest_v1_grounding_failed_is_success(
+    docs_dir: Path, wiki_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
     """A grounding-failed outcome is a SUCCESS result (not isError) — ADR-0015."""
     import markdown_kb.app.ingest as ingest_mod
     import markdown_kb.app.templates as templates_mod
@@ -366,7 +371,9 @@ def test_kb_ingest_v1_grounding_failed_is_success(docs_dir: Path, wiki_dir: Path
     )
 
 
-def test_kb_ingest_v1_grounding_failed_pages_surfaced(docs_dir: Path, wiki_dir: Path, monkeypatch: pytest.MonkeyPatch):
+def test_kb_ingest_v1_grounding_failed_pages_surfaced(
+    docs_dir: Path, wiki_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
     """Grounding-failed pages appear in grounding_failed_pages list."""
     import markdown_kb.app.ingest as ingest_mod
     import markdown_kb.app.templates as templates_mod
@@ -391,7 +398,9 @@ def test_kb_ingest_v1_grounding_failed_pages_surfaced(docs_dir: Path, wiki_dir: 
 # ---------------------------------------------------------------------------
 
 
-def test_kb_ingest_v1_llm_unavailable_iserror(docs_dir: Path, wiki_dir: Path, monkeypatch: pytest.MonkeyPatch):
+def test_kb_ingest_v1_llm_unavailable_iserror(
+    docs_dir: Path, wiki_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
     """LLMError(retryable=True) from ingest → isError=True, code=LLM_UNAVAILABLE."""
     import markdown_kb.app.templates as templates_mod
     from markdown_kb.app.errors import LLMError
@@ -413,7 +422,9 @@ def test_kb_ingest_v1_llm_unavailable_iserror(docs_dir: Path, wiki_dir: Path, mo
     assert "message" in payload, f"Missing 'message' key: {payload}"
 
 
-def test_kb_ingest_v1_llm_error_non_retryable_iserror(docs_dir: Path, wiki_dir: Path, monkeypatch: pytest.MonkeyPatch):
+def test_kb_ingest_v1_llm_error_non_retryable_iserror(
+    docs_dir: Path, wiki_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
     """LLMError(retryable=False) from ingest → isError=True, code=LLM_ERROR."""
     import markdown_kb.app.templates as templates_mod
     from markdown_kb.app.errors import LLMError
@@ -429,7 +440,5 @@ def test_kb_ingest_v1_llm_error_non_retryable_iserror(docs_dir: Path, wiki_dir: 
 
     assert _is_error_result(raw), f"Expected isError=True for LLMError, got: {raw}"
     payload = _parse_result(raw)
-    assert payload.get("code") == "LLM_ERROR", (
-        f"Expected code=LLM_ERROR, got: {payload}"
-    )
+    assert payload.get("code") == "LLM_ERROR", f"Expected code=LLM_ERROR, got: {payload}"
     assert "message" in payload, f"Missing 'message' key: {payload}"

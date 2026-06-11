@@ -24,6 +24,7 @@ Server ``instructions`` (~200 tokens) guide the MCP host on:
 
 from __future__ import annotations
 
+import contextlib
 import json
 from typing import Annotated, Any, Literal
 
@@ -318,7 +319,9 @@ def kb_save_hot_v1(
     ),
 )
 async def kb_ingest_v1(
-    source: Annotated[str, Field(description="Bare filename of the Source to ingest (e.g. 'refund_policy.md').")],
+    source: Annotated[
+        str, Field(description="Bare filename of the Source to ingest (e.g. 'refund_policy.md').")
+    ],
     ctx: Context,
 ) -> Any:
     """Ingest a single Source synchronously and return a neutral result dict.
@@ -347,10 +350,8 @@ async def kb_ingest_v1(
         token both lack a request context; swallowing the ValueError keeps
         the tool functional in both environments.
         """
-        try:
+        with contextlib.suppress(Exception):
             await ctx.report_progress(n, total, message=message)
-        except (ValueError, Exception):  # noqa: BLE001
-            pass
 
     await _progress(0, 3, message=f"Starting ingest for {source!r}")
 
