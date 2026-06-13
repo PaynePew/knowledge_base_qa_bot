@@ -1,12 +1,9 @@
-"""Tests for the ingest size guard — reject oversized Sources before any LLM call.
+"""Tests for the ingest size guard — migrated from byte guard to token guard.
 
-``classify_source`` (and the entity-synthesis path) send the WHOLE Source in a
-single LLM call, so the hard ceiling is the ingest model's context window.  An
-oversized Source must fail fast — *before* parse/classify — as a per-source
-failure (the batch continues) carrying a reason, and must make NO LLM call.
-
-The limit is ``KB_INGEST_MAX_BYTES`` (bytes, read at call time so a restart-free
-env override takes effect), default 256 KiB.
+KB_INGEST_MAX_BYTES has been retired (Fix 2).  The per-section hard token cap
+(KB_INGEST_MAX_SECTION_TOKENS, _max_section_tokens()) replaced it.  These tests
+are kept as a brief smoke layer to document the migration; the full token-guard
+test suite lives in test_ingest_token_guard.py.
 
 All tests hermetic — no OPENAI_API_KEY required.
 """
@@ -20,15 +17,20 @@ import app.ingest as ingest_module
 import app.templates as templates_module
 
 
-def test_oversized_source_fails_without_llm_call(tmp_path, monkeypatch):
-    """A Source over KB_INGEST_MAX_BYTES is rejected before any LLM call."""
+def test_oversized_section_fails_without_llm_call(tmp_path, monkeypatch):
+    """A Source with a section over KB_INGEST_MAX_SECTION_TOKENS is rejected before any LLM call.
+
+    Migrated from byte-guard test: the per-section token cap now gates ingest
+    instead of the retired KB_INGEST_MAX_BYTES byte ceiling.
+    """
     docs_dir = tmp_path / "docs"
     docs_dir.mkdir()
     wiki_dir = tmp_path / "wiki"
 
-    # Tiny configured limit so a small fixture trips it.
-    monkeypatch.setenv("KB_INGEST_MAX_BYTES", "1024")
-    oversized = "## Heading\n\n" + ("x" * 2000) + "\n"
+    # Set a tiny token cap so a small fixture trips it.
+    # _estimate_tokens = len(content) // 3; cap = 10 → need > 30 chars.
+    monkeypatch.setenv("KB_INGEST_MAX_SECTION_TOKENS", "10")
+    oversized = "## Heading\n\n" + ("x" * 100) + "\n"
     (docs_dir / "big.md").write_text(oversized, encoding="utf-8")
 
     # If the guard regresses, classify would reach the LLM — assert it never does.
@@ -40,20 +42,20 @@ def test_oversized_source_fails_without_llm_call(tmp_path, monkeypatch):
 
     assert "big.md" in result.failed_sources
     assert not fake_llm.with_structured_output.called, (
-        "size guard must fire before any LLM call"
+        "section token guard must fire before any LLM call"
     )
     reason = result.failed_reasons.get("big.md", "")
     assert "too large" in reason.lower()
-    assert "KB_INGEST_MAX_BYTES" in reason
 
 
 def test_under_limit_source_reaches_classifier(tmp_path, monkeypatch):
-    """A Source under the limit passes the guard and reaches the classifier."""
+    """A Source under the section token cap passes the guard and reaches the classifier."""
     docs_dir = tmp_path / "docs"
     docs_dir.mkdir()
     wiki_dir = tmp_path / "wiki"
 
-    monkeypatch.setenv("KB_INGEST_MAX_BYTES", str(1024 * 1024))  # 1 MiB — generous
+    # Generous section cap — short fixture passes easily
+    monkeypatch.setenv("KB_INGEST_MAX_SECTION_TOKENS", "500")
     (docs_dir / "small.md").write_text("## Topic\n\nShort body.\n", encoding="utf-8")
 
     class _ReachedClassifier(Exception):
@@ -62,8 +64,6 @@ def test_under_limit_source_reaches_classifier(tmp_path, monkeypatch):
     fake_llm = MagicMock()
 
     def _raise_on_use(_schema):
-        # Proves we got past the guard into classify_source; stop the pipeline
-        # cleanly so the test stays hermetic (no synth/grounding/write).
         raise _ReachedClassifier
 
     fake_llm.with_structured_output.side_effect = _raise_on_use
@@ -72,12 +72,16 @@ def test_under_limit_source_reaches_classifier(tmp_path, monkeypatch):
 
     result = ingest_module.ingest_sources(["small.md"], docs_dir=docs_dir, wiki_dir=wiki_dir)
 
-    assert fake_llm.with_structured_output.called, "guard must let an under-limit Source through"
-    # Failed at classify (our sentinel), NOT blocked by the size guard.
+    assert fake_llm.with_structured_output.called, (
+        "guard must let an under-section-cap Source through to classify"
+    )
     assert "too large" not in (result.failed_reasons.get("small.md") or "").lower()
 
 
-def test_default_limit_is_256_kib(monkeypatch):
-    """Unset env → default ceiling is 256 KiB."""
-    monkeypatch.delenv("KB_INGEST_MAX_BYTES", raising=False)
-    assert ingest_module._max_ingest_bytes() == 256 * 1024
+def test_default_section_cap_is_6k(monkeypatch):
+    """Unset env → default per-section token ceiling is 6000.
+
+    Replaces the retired test_default_limit_is_256_kib (KB_INGEST_MAX_BYTES).
+    """
+    monkeypatch.delenv("KB_INGEST_MAX_SECTION_TOKENS", raising=False)
+    assert ingest_module._max_section_tokens() == 6000
