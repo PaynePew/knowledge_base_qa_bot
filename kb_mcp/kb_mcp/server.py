@@ -463,7 +463,7 @@ async def kb_ingest_v1(
     checking whether pages_overwritten is non-empty.
     """
     from markdown_kb.app.errors import LLMError
-    from markdown_kb.app.ingest import ingest_sources
+    from markdown_kb.app.ingest import aingest_sources
 
     async def _progress(n: float, total: float, message: str) -> None:
         """Emit a progress notification, silently no-op when no request context.
@@ -479,7 +479,9 @@ async def kb_ingest_v1(
 
     try:
         await _progress(1, 3, message=f"Running synthesis pipeline for {source!r}")
-        batch = ingest_sources([source])
+        # Fix 1a: await aingest_sources so the stdio event loop is not blocked
+        # during multi-minute ingest runs (avoids -32001 timeout from Claude Desktop).
+        batch = await aingest_sources([source])
     except LLMError as exc:
         # ADR-0015 / ADR-0016: LLMError → structured MCP isError payload.
         code = "LLM_UNAVAILABLE" if exc.retryable else "LLM_ERROR"
