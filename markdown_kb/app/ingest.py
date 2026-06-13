@@ -327,7 +327,6 @@ def ingest_sources(
         f"sources={len(source_pairs)}",
     )
 
-    max_bytes = _max_ingest_bytes()
     for source_name, source_path in source_pairs:
         if not source_path.exists():
             log_event(
@@ -335,25 +334,6 @@ def ingest_sources(
                 f"source={source_name} error=source_not_found",
             )
             batch.failed_sources.append(source_name)
-            continue
-
-        # Size guard — fail fast BEFORE parse/classify.  classify_source sends
-        # the whole Source in one LLM call, so an oversized file would blow the
-        # model context window (a 10 MB Source ≈ 2.6 M tokens vs a 128 K window).
-        # Reject as a per-source failure with a reason; the batch continues.
-        source_size = source_path.stat().st_size
-        if source_size > max_bytes:
-            log_event(
-                "ingest_error",
-                f"source={source_name} error=too_large:{source_size}>{max_bytes}",
-            )
-            batch.failed_sources.append(source_name)
-            batch.failed_reasons[source_name] = (
-                f"Source too large to ingest: {source_size} bytes exceeds the "
-                f"{max_bytes}-byte limit (KB_INGEST_MAX_BYTES). The classifier sends "
-                f"the whole Source in one LLM call, so it must fit the model context "
-                f"window — split it into smaller Sources."
-            )
             continue
 
         try:
@@ -372,6 +352,33 @@ def ingest_sources(
                 f"source={source_name} error=no_sections",
             )
             batch.failed_sources.append(source_name)
+            continue
+
+        # Per-section HARD token cap — fail fast before any LLM call.
+        #
+        # classify_source operates on build_outline(content), which bounds the
+        # classifier's input, but the entity synthesis path still sends each
+        # section to the LLM individually.  A section that is individually
+        # oversized would blow the synthesis call's context window.  Reject the
+        # whole Source with a clear reason; the batch continues.
+        section_cap = _max_section_tokens()
+        oversized_section: str | None = None
+        for _sec in sections:
+            if _estimate_tokens(_sec.content) > section_cap:
+                oversized_section = _sec.heading
+                break
+        if oversized_section is not None:
+            log_event(
+                "ingest_error",
+                f"source={source_name} error=section_too_large heading={oversized_section[:60]!r}",
+            )
+            batch.failed_sources.append(source_name)
+            batch.failed_reasons[source_name] = (
+                f"Source too large to ingest: section {oversized_section!r} "
+                f"exceeds the {section_cap}-token per-section limit "
+                f"(KB_INGEST_MAX_SECTION_TOKENS). Split the Source into smaller "
+                f"files or shorten the oversized section."
+            )
             continue
 
         # Step 3 (Phase 3 amendment #93): compute docs_body_hash and check
