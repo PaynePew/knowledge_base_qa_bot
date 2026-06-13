@@ -112,27 +112,66 @@ class IngestBatchResult:
 
 
 # ---------------------------------------------------------------------------
-# Size guard
+# Token guard
 # ---------------------------------------------------------------------------
+# KB_INGEST_MAX_BYTES has been retired.  The byte guard was CJK-unsafe (a CJK
+# character is 3 bytes UTF-8 but typically 1-2 tokens, so the byte count
+# over-counted English and under-counted dense CJK equally).  The token guard
+# below uses a uniform //3 estimate (CJK-pessimistic: over-counts ASCII, which
+# is the safe direction) and enforces two independent limits:
+#
+#   KB_INGEST_MAX_SECTION_TOKENS — per-section HARD cap (fail-fast)
+#   KB_INGEST_MAX_TOKENS         — per-Source SOFT cap (routing hint)
+#
+# See project-docs/large-file-ingest-size-limit-findings.md.
 
-# Per-Source byte ceiling for ingest.  ``classify_source`` and the entity
-# synthesis path each send the WHOLE Source in a SINGLE LLM call, so the hard
-# ceiling is the ingest model's context window.  256 KiB keeps even dense CJK
-# (~0.33 tokens/byte ≈ 85K tokens) well under gpt-4o-mini's 128K window, with
-# headroom for the system prompt + structured output.  This is intentionally
-# separate from (and far below) upload.py's MAX_UPLOAD_BYTES = 10 MB: staging a
-# file is not the same as being ingestable.  See
-# project-docs/large-file-ingest-size-limit-findings.md.
-_KB_INGEST_MAX_BYTES_DEFAULT = 256 * 1024
 
+def _estimate_tokens(content: str) -> int:
+    """CJK-pessimistic token estimate: len(content) // 3.
 
-def _max_ingest_bytes() -> int:
-    """Per-Source byte ceiling, read at call time (KB_SCORE_THRESHOLD pattern).
-
-    Override with the ``KB_INGEST_MAX_BYTES`` env var; a restart-free change
-    takes effect on the next ingest.
+    Uses integer floor-division by 3 uniformly regardless of script.
+    This over-counts ASCII tokens (typically 1 char ≈ 0.25 tokens) and
+    under-counts CJK (typically 1 char ≈ 0.5–1 token), which is the
+    safe (conservative) direction for a guard: it may reject a borderline
+    ASCII doc but will never silently pass a large CJK doc.
     """
-    return int(os.getenv("KB_INGEST_MAX_BYTES", str(_KB_INGEST_MAX_BYTES_DEFAULT)))
+    return len(content) // 3
+
+
+def _max_ingest_tokens() -> int:
+    """Per-Source SOFT token cap, read at call time (KB_SCORE_THRESHOLD pattern).
+
+    Override with ``KB_INGEST_MAX_TOKENS``; a restart-free change takes effect
+    on the next ingest.  Default 64 000 tokens (~192 KB UTF-8 ASCII, ~64 KB CJK).
+    Sources that exceed this cap are routed to the async job path (Fix 1b).
+    """
+    return int(os.getenv("KB_INGEST_MAX_TOKENS", "64000"))
+
+
+def _max_section_tokens() -> int:
+    """Per-section HARD token cap, read at call time.
+
+    Override with ``KB_INGEST_MAX_SECTION_TOKENS``; default 6 000 tokens.
+    A Source with ANY section exceeding this cap is rejected with a clear
+    reason before any LLM call is made.
+    """
+    return int(os.getenv("KB_INGEST_MAX_SECTION_TOKENS", "6000"))
+
+
+def _should_route_async(content: str) -> bool:
+    """Return True when the Source text exceeds the per-Source SOFT token cap.
+
+    In Fix 2 this is a routing seam only; actual async routing is wired in
+    Fix 1b.  The SOFT cap does NOT reject synchronous ingest — it is only a
+    hint for the scheduler.
+
+    Args:
+        content: Full Source text (after frontmatter strip).
+
+    Returns:
+        True if _estimate_tokens(content) > _max_ingest_tokens().
+    """
+    return _estimate_tokens(content) > _max_ingest_tokens()
 
 
 # ---------------------------------------------------------------------------
