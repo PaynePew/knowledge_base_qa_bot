@@ -2,15 +2,17 @@
 
 Phase 12 (ADR-0016 / ADR-0017).  Wraps ``markdown_kb`` and ``vector_rag`` deep
 modules directly (NOT the Gateway).  Exposes:
-  - ``kb_ask_v1``       — grounded-answer tool (LLM draft + Grounding Check)
-  - ``kb_search_v1``    — raw-evidence search with no LLM call
-  - ``kb_read_hot_v1``  — read working-memory hot cache
-  - ``kb_save_hot_v1``  — persist working-memory hot cache
-  - ``kb_capture_v1``   — author a Markdown Source from conversation to docs/ (Slice 4, #230)
-  - ``kb_ingest_v1``    — single-Source sync ingest with progress notifications (Slice 7, #232)
-  - ``kb_index_v1``     — rebuild the Section Index via build_index (Slice 5, #231)
-  - ``kb_lint_v1``      — run the Lint Pass via run_lint (Slice 5, #231)
-  - ``kb_import_v1``    — import a local file into docs/ via the Import deep module (Slice 6, #233)
+  - ``kb_ask_v1``            — grounded-answer tool (LLM draft + Grounding Check)
+  - ``kb_search_v1``         — raw-evidence search with no LLM call
+  - ``kb_read_hot_v1``       — read working-memory hot cache
+  - ``kb_save_hot_v1``       — persist working-memory hot cache
+  - ``kb_capture_v1``        — author a Markdown Source from conversation to docs/ (Slice 4, #230)
+  - ``kb_ingest_v1``         — single-Source ingest; auto-routes large Sources to async job (Fix 1b)
+  - ``kb_ingest_start_v1``   — submit large Source to background job; returns job_id immediately (Fix 1b)
+  - ``kb_ingest_status_v1``  — poll a background ingest job for completion (Fix 1b)
+  - ``kb_index_v1``          — rebuild the Section Index via build_index (Slice 5, #231)
+  - ``kb_lint_v1``           — run the Lint Pass via run_lint (Slice 5, #231)
+  - ``kb_import_v1``         — import a local file into docs/ via the Import deep module (Slice 6, #233)
 
 Launch via ``python -m kb_mcp`` (stdio transport, Claude Desktop compatible).
 
@@ -22,6 +24,8 @@ Server ``instructions`` (~200 tokens) guide the MCP host on:
     retry to force an answer)
   - LLMError guidance (isError=True means the LLM service is unavailable;
     code='LLM_UNAVAILABLE' is retryable, 'LLM_ERROR' is not)
+  - Large-Source async flow (kb_ingest_v1 auto-routes; or use kb_ingest_start_v1
+    + kb_ingest_status_v1 directly for very large Sources)
 """
 
 from __future__ import annotations
@@ -79,7 +83,17 @@ _INSTRUCTIONS = (
     "LLM error guidance:\n"
     "- If kb_ask or kb_lint_v1 returns isError=true, the LLM service failed.  "
     "code='LLM_UNAVAILABLE' is transient — retry after a short wait.  "
-    "code='LLM_ERROR' is non-recoverable — report the message to the user."
+    "code='LLM_ERROR' is non-recoverable — report the message to the user.\n\n"
+    "Large-Source async ingest:\n"
+    "- kb_ingest_v1 auto-routes Sources that exceed the soft token cap to a "
+    "background async job and returns immediately with "
+    "{status: 'routed_async', job_id: ..., note: ...}.\n"
+    "- For Sources you know are large, use kb_ingest_start_v1 directly; it "
+    "returns {job_id, status} immediately without waiting for the pipeline.\n"
+    "- Poll kb_ingest_status_v1({job_id}) until status is 'completed' or "
+    "'failed'.  On completed, result carries pages_created etc.  "
+    "On failed, error carries {code, message}.  "
+    "Unknown job_id returns {status: 'unknown'} — not an error."
 )
 
 # ---------------------------------------------------------------------------
@@ -538,6 +552,97 @@ async def kb_ingest_v1(
 
 
 # ---------------------------------------------------------------------------
+# Tool: kb_ingest_start_v1
+# ---------------------------------------------------------------------------
+@mcp.tool(
+    name="kb_ingest_start_v1",
+    description=(
+        "Submit a Source for background ingest and return a job_id immediately.\n\n"
+        "Use this tool instead of kb_ingest_v1 when the Source is large (e.g. > 64 000 "
+        "tokens) and you want to avoid blocking the host tool-call timeout (-32001).  "
+        "The ingest pipeline runs as a background task; poll kb_ingest_status_v1 for "
+        "progress and the final result.\n\n"
+        "Parameters:\n"
+        "  source — bare filename of the Source to ingest (required);\n"
+        "           e.g. 'large_manual.md'\n\n"
+        "Returns immediately: {job_id, status}\n"
+        "  job_id — opaque string; pass to kb_ingest_status_v1 to poll\n"
+        "  status — 'submitted' or 'working' (the pipeline is already running)\n\n"
+        "Note: kb_ingest_v1 automatically calls this for Sources above the soft "
+        "token cap (KB_INGEST_MAX_TOKENS, default 64 000 tokens)."
+    ),
+)
+async def kb_ingest_start_v1(
+    source: Annotated[
+        str,
+        Field(description="Bare filename of the Source to ingest (e.g. 'large_manual.md')."),
+    ],
+) -> dict:
+    """Submit a Source for background ingest; return job_id immediately.
+
+    Delegates to ``ingest_jobs.submit(source)`` which schedules an asyncio.Task
+    and returns a Job without awaiting it.  The caller must use
+    ``kb_ingest_status_v1`` to poll for completion.
+
+    MUST be called from an async context (inside the MCP server's event loop)
+    so that ``asyncio.create_task`` in ``ingest_jobs.submit`` is valid.
+    """
+    from . import ingest_jobs
+
+    job = ingest_jobs.submit(source)
+    return {"job_id": job.job_id, "status": job.status}
+
+
+# ---------------------------------------------------------------------------
+# Tool: kb_ingest_status_v1
+# ---------------------------------------------------------------------------
+@mcp.tool(
+    name="kb_ingest_status_v1",
+    description=(
+        "Poll the status of a background ingest job started by kb_ingest_start_v1.\n\n"
+        "Parameters:\n"
+        "  job_id — the opaque identifier returned by kb_ingest_start_v1 (required)\n\n"
+        "Returns: {job_id, status, progress, result?|error?}\n"
+        "  status   — 'submitted' | 'working' | 'completed' | 'failed' | 'unknown'\n"
+        "  progress — [done, total] integers (e.g. [0, 1] during run, [1, 1] on done)\n"
+        "  result   — present when status='completed'; same shape as kb_ingest_v1 result\n"
+        "  error    — present when status='failed'; {code, message}\n"
+        "             code is 'LLM_UNAVAILABLE' (retryable), 'LLM_ERROR' (non-retryable),\n"
+        "             or 'INGEST_ERROR' (unexpected pipeline failure)\n\n"
+        "An unknown job_id returns {status: 'unknown'} — not an error (isError=false).\n"
+        "Poll every 1–5 seconds until status is 'completed' or 'failed'."
+    ),
+)
+def kb_ingest_status_v1(
+    job_id: Annotated[
+        str,
+        Field(description="Job identifier returned by kb_ingest_start_v1."),
+    ],
+) -> dict:
+    """Look up a background ingest job; return its current state.
+
+    Delegates to ``ingest_jobs.status(job_id)``.  When the job_id is unknown,
+    returns ``{job_id, status: 'unknown'}`` — NEVER raises, NEVER isError.
+    """
+    from . import ingest_jobs
+
+    job = ingest_jobs.status(job_id)
+    if job is None:
+        return {"job_id": job_id, "status": "unknown"}
+
+    payload: dict = {
+        "job_id": job.job_id,
+        "status": job.status,
+        "progress": list(job.progress),
+    }
+    if job.result is not None:
+        payload["result"] = job.result
+    if job.error is not None:
+        payload["error"] = job.error
+    return payload
+
+
+# ---------------------------------------------------------------------------
 # Tool: kb_capture_v1
 # ---------------------------------------------------------------------------
 @mcp.tool(
@@ -672,6 +777,8 @@ def _add_strict_schema() -> None:
         "kb_index_v1",
         "kb_lint_v1",
         "kb_ingest_v1",
+        "kb_ingest_start_v1",
+        "kb_ingest_status_v1",
         "kb_capture_v1",
         "kb_import_v1",
     ):
