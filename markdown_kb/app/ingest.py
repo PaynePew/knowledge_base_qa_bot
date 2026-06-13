@@ -438,17 +438,38 @@ def ingest_sources(
         try:
             if source_type == "entity":
                 source_stem = Path(source_name).stem
-                raw_slug = slugify(source_stem)
-                final_slug = resolve_slug_collision(used_slugs, raw_slug)
-                draft = generate_entity_page(
-                    sections,
-                    source_stem=source_stem,
-                    source_filename=source_name,
-                )
-                # Override the slug with the collision-resolved one
-                draft = draft.model_copy(update={"slug": final_slug})
-                drafts = [draft]
-                batch._llm_call_count += 1
+                if _should_route_async(source_content):
+                    # Large entity: per-section synthesis (one "entity" page per Section).
+                    # Avoids sending the whole concatenated Source to a single LLM call,
+                    # which would overflow the context window for documents above the
+                    # soft cap.  The async routing seam (_should_route_async) is wired
+                    # here for Fix 2; Fix 1b will add the scheduler path.
+                    drafts = []
+                    for section in sections:
+                        raw_slug = slugify(section.heading)
+                        final_slug = resolve_slug_collision(used_slugs, raw_slug)
+                        section_draft = generate_page(section, "entity")
+                        batch._llm_call_count += 1
+                        updated_fm = section_draft.frontmatter.model_copy(
+                            update={"id": final_slug}
+                        )
+                        section_draft = section_draft.model_copy(
+                            update={"slug": final_slug, "frontmatter": updated_fm}
+                        )
+                        drafts.append(section_draft)
+                else:
+                    # Normal-size entity: single page collapsing the whole Source.
+                    raw_slug = slugify(source_stem)
+                    final_slug = resolve_slug_collision(used_slugs, raw_slug)
+                    draft = generate_entity_page(
+                        sections,
+                        source_stem=source_stem,
+                        source_filename=source_name,
+                    )
+                    # Override the slug with the collision-resolved one
+                    draft = draft.model_copy(update={"slug": final_slug})
+                    drafts = [draft]
+                    batch._llm_call_count += 1
             else:
                 # concept: 1:N — one page per Section
                 drafts = []
