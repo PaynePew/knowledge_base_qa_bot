@@ -521,6 +521,9 @@ def ingest_sources(
     )
 
     for source_name, source_path in source_pairs:
+        # DRIFT GUARD: aingest_sources duplicates this pre-flight ladder verbatim —
+        # keep both in sync (see the matching note there). Shared parts:
+        # _resolve_draft_slugs + _finalise_source_drafts.
         if not source_path.exists():
             log_event(
                 "ingest_error",
@@ -820,6 +823,11 @@ async def aingest_sources(
     )
 
     for source_name, source_path in source_pairs:
+        # DRIFT GUARD: this per-Source pre-flight ladder (existence → parse → empty
+        # → section-cap → hash-skip → classify) is kept byte-identical to
+        # ingest_sources. The slug post-pass (_resolve_draft_slugs) and finalise tail
+        # (_finalise_source_drafts) are already shared; only this pre-flight is
+        # duplicated. Edit one guard → edit BOTH (or extract a shared helper — follow-up).
         if not source_path.exists():
             log_event("ingest_error", f"source={source_name} error=source_not_found")
             batch.failed_sources.append(source_name)
@@ -898,6 +906,12 @@ async def aingest_sources(
                     # Large entity: per-section synthesis (same as sync path).
                     # Entity parallelisation is optional (entity is rare and 1 call
                     # per section); run sequentially in thread for simplicity.
+                    # GUARD: the closure below mutates the shared used_slugs set while
+                    # resolving slugs inside a to_thread. Safe ONLY because it runs
+                    # sequentially (not gathered). If entity synthesis is ever
+                    # parallelised, lift slug resolution into a _resolve_draft_slugs-
+                    # style sequential post-pass (as the concept path does) — otherwise
+                    # concurrent used_slugs mutation becomes a slug race.
                     def _large_entity_drafts(_sections=sections, _slug_set=used_slugs):
                         _drafts = []
                         for _section in _sections:
@@ -931,9 +945,13 @@ async def aingest_sources(
                 # gather PRESERVES input order → drafts arrive in section order.
                 async def _synthesize_one(section):
                     async with sem:
+                        # generate_page is a sync, I/O-bound LLM call — run in a thread
+                        # so the GIL releases during the network wait and the semaphore
+                        # actually bounds concurrent in-flight calls.
                         draft = await asyncio.to_thread(generate_page, section, "concept")
-                        # _verify_draft is I/O-bound (another LLM call) — run in thread.
-                        # We do NOT resolve slugs here; that is the post-pass below.
+                        # Slugs and grounding are NOT resolved here: slugs run in the
+                        # sequential _resolve_draft_slugs post-pass below; grounding runs
+                        # in the finalise tail (_finalise_source_drafts).
                         return draft
 
                 tasks = [_synthesize_one(s) for s in sections]
