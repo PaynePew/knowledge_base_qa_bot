@@ -342,6 +342,94 @@ def _verify_draft(draft, sections: list) -> tuple:
     return draft, True
 
 
+def _finalise_source_drafts(
+    drafts: list,
+    *,
+    sections: list,
+    source_name: str,
+    source_path: Path,
+    docs_body_hash: str,
+    resolved_wiki_dir: Path,
+) -> tuple:
+    """Run steps 6-11 of the ingest pipeline on a resolved list of drafts.
+
+    This is the shared finalise tail used by both ``ingest_sources`` (sync)
+    and ``aingest_sources`` (async, called via ``asyncio.to_thread`` so the
+    ``_index_lock`` acquire does not block the event loop).
+
+    Steps performed (in order):
+    6.  Preserve ``created`` timestamp from any existing wiki page on disk.
+    7.  Populate ``source_hashes`` frontmatter from the current ingest run.
+    9.  Run grounding verifier on each draft (ADR-0004 fail-soft).
+    10-11. Under ``_index_lock``: delete orphans, then write pages.
+
+    Returns:
+        (write_result, deleted, grounding_failed_slugs, grounding_log_entries)
+        where ``grounding_log_entries`` is a list of ``(slug, reason, claims)``
+        tuples for the caller to pass to ``log_event("ingest_grounding_failed"…)``.
+        Callers are responsible for emitting those log entries and appending
+        ``grounding_failed_slugs`` to ``batch.pages_with_failed_grounding``.
+    """
+    # Step 6: Preserve ``created`` timestamp for pages that already exist.
+    drafts_with_preserved_timestamps: list = []
+    for draft in drafts:
+        subdir_name = "entities" if draft.frontmatter.type == "entity" else "concepts"
+        page_path = resolved_wiki_dir / subdir_name / f"{draft.slug}.md"
+        existing_fm = read_existing_frontmatter(page_path)
+        if existing_fm is not None and "created" in existing_fm:
+            preserved_fm = draft.frontmatter.model_copy(
+                update={"created": existing_fm["created"]}
+            )
+            draft = draft.model_copy(update={"frontmatter": preserved_fm})
+        drafts_with_preserved_timestamps.append(draft)
+
+    # Step 7: Populate source_hashes in each draft's frontmatter.
+    raw_hash: str | None = None
+    if sections:
+        raw_hash = sections[0].metadata.get("content_sha256")
+
+    source_hashes_entry: dict[str, str | None] = {
+        "raw": raw_hash,
+        "docs_body": docs_body_hash,
+    }
+    new_source_hashes: dict[str, dict[str, str | None]] = {source_name: source_hashes_entry}
+
+    drafts_with_source_hashes: list = []
+    for draft in drafts_with_preserved_timestamps:
+        updated_fm = draft.frontmatter.model_copy(update={"source_hashes": new_source_hashes})
+        drafts_with_source_hashes.append(draft.model_copy(update={"frontmatter": updated_fm}))
+
+    # Step 9: Run grounding verifier on each draft (ADR-0004 fail-soft).
+    drafts_with_grounding: list = []
+    grounding_failed_slugs: list[str] = []
+    grounding_log_entries: list[tuple[str, str, list]] = []
+    for draft in drafts_with_source_hashes:
+        draft, grounding_failed = _verify_draft(draft, sections)
+        drafts_with_grounding.append(draft)
+        if grounding_failed:
+            gf = draft.frontmatter.grounding_failure
+            reason_str = gf.reason if gf else "unknown"
+            claims_str = gf.unsupported_claims if gf else []
+            grounding_log_entries.append((draft.slug, reason_str, claims_str))
+            grounding_failed_slugs.append(draft.slug)
+
+    # Steps 10-11: Under the index lock, delete orphans then write pages.
+    current_page_ids = {d.slug for d in drafts_with_grounding}
+    with _index_lock:
+        deleted = delete_orphans(
+            source_name,
+            current_page_ids,
+            wiki_dir=resolved_wiki_dir,
+        )
+        write_result = write_pages_for_source(
+            source_name,
+            drafts_with_grounding,
+            wiki_dir=resolved_wiki_dir,
+        )
+
+    return write_result, deleted, grounding_failed_slugs, grounding_log_entries
+
+
 def _resolve_draft_slugs(drafts: list, sections: list, used_slugs: set) -> list:
     """Assign collision-resolved slugs to a list of drafts (in section order).
 
@@ -597,95 +685,26 @@ def ingest_sources(
             batch.failed_sources.append(source_name)
             continue
 
-        # Step 6: Preserve `created` timestamp for pages that already exist.
-        #
-        # For each draft whose target file already exists on disk, read the
-        # existing frontmatter and carry forward the original `created` value.
-        # The `updated` value is set by the LLM/templates layer and is NOT
-        # overridden here — it represents "now" from the caller's perspective.
-        drafts_with_preserved_timestamps: list = []
-        for draft in drafts:
-            subdir_name = "entities" if draft.frontmatter.type == "entity" else "concepts"
-            page_path = resolved_wiki_dir / subdir_name / f"{draft.slug}.md"
-            existing_fm = read_existing_frontmatter(page_path)
-            if existing_fm is not None and "created" in existing_fm:
-                # Preserve the original created timestamp
-                preserved_fm = draft.frontmatter.model_copy(
-                    update={"created": existing_fm["created"]}
-                )
-                draft = draft.model_copy(update={"frontmatter": preserved_fm})
-            drafts_with_preserved_timestamps.append(draft)
-
-        # Step 7 (Phase 3 amendment #93): populate source_hashes in each draft's
-        # frontmatter. This is done AFTER slug resolution and created-preservation
-        # so source_hashes carries the correct hash for the current ingest run.
-        #
-        # source_hashes[source_name] = {
-        #     "raw":       content_sha256 from docs frontmatter (or null),
-        #     "docs_body": sha256(source_path.read_text('utf-8').encode()),
-        # }
-        #
-        # `raw` is the hash written by importer.py (Phase 7-3) for the original
-        # raw bytes. Hand-authored docs that never passed through /import have no
-        # content_sha256 in their frontmatter — record null in that case.
-        #
-        # All Sections from a Source share the same docs frontmatter metadata
-        # (indexer.parse_markdown attaches the file's YAML to every Section), so
-        # reading sections[0].metadata is sufficient.
-        raw_hash: str | None = None
-        if sections:
-            raw_hash = sections[0].metadata.get("content_sha256")
-
-        source_hashes_entry: dict[str, str | None] = {
-            "raw": raw_hash,
-            "docs_body": docs_body_hash,
-        }
-        new_source_hashes: dict[str, dict[str, str | None]] = {source_name: source_hashes_entry}
-
-        drafts_with_source_hashes: list = []
-        for draft in drafts_with_preserved_timestamps:
-            updated_fm = draft.frontmatter.model_copy(update={"source_hashes": new_source_hashes})
-            drafts_with_source_hashes.append(draft.model_copy(update={"frontmatter": updated_fm}))
-
-        # Step 9: Run grounding verifier on each draft (ADR-0004 fail-soft).
-        #
-        # Verifier uses OPENAI_VERIFIER_MODEL (independent of OPENAI_INGEST_MODEL).
-        # On claim_supported: status stays "live".
-        # On claim_unsupported or verifier_unavailable: status="failed_grounding"
-        # + grounding_failure frontmatter block.  Page is still written (fail-soft).
-        # CitableContent Protocol: each draft's body acts as the "draft answer";
-        # sections from the source act as the "citable content".
-        drafts_with_grounding: list = []
-        for draft in drafts_with_source_hashes:
-            draft, grounding_failed = _verify_draft(draft, sections)
-            drafts_with_grounding.append(draft)
-            if grounding_failed:
-                gf = draft.frontmatter.grounding_failure
-                reason_str = gf.reason if gf else "unknown"
-                claims_str = gf.unsupported_claims if gf else []
-                log_event(
-                    "ingest_grounding_failed",
-                    f"page={draft.slug} reason={reason_str} claims={claims_str}",
-                )
-                batch.pages_with_failed_grounding.append(draft.slug)
-
-        # Step 10+11: Under the index lock, delete orphans then write pages.
-        #
-        # Orphan scope is per-Source: only pages derived from source_name are
-        # considered.  current_page_ids is the set of slugs in the target set.
-        current_page_ids = {d.slug for d in drafts_with_grounding}
-
-        with _index_lock:
-            deleted = delete_orphans(
-                source_name,
-                current_page_ids,
-                wiki_dir=resolved_wiki_dir,
+        # Steps 6-11: finalise drafts (timestamp preservation, source_hashes,
+        # grounding verify, orphan delete, write).  Shared with aingest_sources
+        # via _finalise_source_drafts — behaviour is IDENTICAL in both paths.
+        write_result, deleted, grounding_failed_slugs, grounding_log_entries = (
+            _finalise_source_drafts(
+                drafts,
+                sections=sections,
+                source_name=source_name,
+                source_path=source_path,
+                docs_body_hash=docs_body_hash,
+                resolved_wiki_dir=resolved_wiki_dir,
             )
-            write_result = write_pages_for_source(
-                source_name,
-                drafts_with_grounding,
-                wiki_dir=resolved_wiki_dir,
+        )
+
+        for slug, reason_str, claims_str in grounding_log_entries:
+            log_event(
+                "ingest_grounding_failed",
+                f"page={slug} reason={reason_str} claims={claims_str}",
             )
+        batch.pages_with_failed_grounding.extend(grounding_failed_slugs)
 
         if write_result.errors:
             slug, err_msg = write_result.errors[0]
@@ -729,6 +748,272 @@ def ingest_sources(
     failed_grounding = len(batch.pages_with_failed_grounding)
 
     # --- ingest_batch_completed ---
+    log_event(
+        "ingest_batch_completed",
+        f"sources={len(source_pairs)}"
+        f" total_pages={total_pages}"
+        f" llm_calls={batch._llm_call_count}"
+        f" cost_usd=0.00"
+        f" failed_grounding={failed_grounding}",
+    )
+
+    return batch
+
+
+# ---------------------------------------------------------------------------
+# Async public API
+# ---------------------------------------------------------------------------
+
+
+async def aingest_sources(
+    source_filenames: list[str] | None,
+    *,
+    docs_dir: Path | None = None,
+    wiki_dir: Path | None = None,
+    force: bool = False,
+    concurrency: int | None = None,
+) -> IngestBatchResult:
+    """Async sibling of ingest_sources with bounded-concurrency concept synthesis.
+
+    Identical pre-checks and finalise tail as ``ingest_sources``; the
+    difference is in Step 5 (concept path): per-section synthesis calls fan
+    out concurrently via ``asyncio.to_thread`` bounded by a semaphore
+    (``KB_INGEST_CONCURRENCY``, default 8).  LLM calls are I/O-bound and
+    the GIL releases during the network wait so threads give real concurrency.
+
+    ``asyncio.gather`` preserves input order, so drafts arrive in section
+    order before the deterministic slug post-pass (``_resolve_draft_slugs``).
+    The finalise tail (timestamp preservation, source_hashes, grounding verify,
+    orphan delete, write) runs via ``asyncio.to_thread`` so the blocking
+    ``_index_lock`` acquire does NOT sit on the event loop.
+
+    Args:
+        source_filenames: Same as ``ingest_sources``.
+        docs_dir:   Override docs directory (tests).
+        wiki_dir:   Override wiki directory (tests).
+        force:      Bypass hash-skip idempotency.
+        concurrency: Override ``KB_INGEST_CONCURRENCY`` (tests).
+
+    Returns:
+        IngestBatchResult with per-Source outcomes.
+    """
+    from . import indexer as _indexer_module
+
+    if docs_dir is None:
+        docs_dir = DOCS_DIR
+
+    resolved_wiki_dir: Path = wiki_dir if wiki_dir is not None else _indexer_module.WIKI_DIR
+
+    if source_filenames is None:
+        source_pairs: list[tuple[str, Path]] = _resolve_docs_files(docs_dir)
+    else:
+        source_pairs = [(name, docs_dir / name) for name in source_filenames]
+
+    sem = asyncio.Semaphore(concurrency if concurrency is not None else _max_concurrency())
+
+    batch = IngestBatchResult()
+    used_slugs: set[str] = set()
+
+    log_event(
+        "ingest_batch_started",
+        f"sources={len(source_pairs)}",
+    )
+
+    for source_name, source_path in source_pairs:
+        if not source_path.exists():
+            log_event("ingest_error", f"source={source_name} error=source_not_found")
+            batch.failed_sources.append(source_name)
+            continue
+
+        try:
+            sections = parse_markdown(source_path)
+        except Exception as exc:  # noqa: BLE001
+            log_event(
+                "ingest_error",
+                f"source={source_name} error={type(exc).__name__}:parse_error",
+            )
+            batch.failed_sources.append(source_name)
+            continue
+
+        if not sections:
+            log_event("ingest_error", f"source={source_name} error=no_sections")
+            batch.failed_sources.append(source_name)
+            continue
+
+        section_cap = _max_section_tokens()
+        oversized_section: str | None = None
+        for _sec in sections:
+            if _estimate_tokens(_sec.content) > section_cap:
+                oversized_section = _sec.heading
+                break
+        if oversized_section is not None:
+            log_event(
+                "ingest_error",
+                f"source={source_name} error=section_too_large heading={oversized_section[:60]!r}",
+            )
+            batch.failed_sources.append(source_name)
+            batch.failed_reasons[source_name] = (
+                f"Source too large to ingest: section {oversized_section!r} "
+                f"exceeds the {section_cap}-token per-section limit "
+                f"(KB_INGEST_MAX_SECTION_TOKENS). Split the Source into smaller "
+                f"files or shorten the oversized section."
+            )
+            continue
+
+        docs_body_hash = _compute_docs_body_hash(source_path)
+        should_skip, slugs_checked = _should_skip_source(
+            source_name, docs_body_hash, resolved_wiki_dir, force
+        )
+        if should_skip:
+            log_event(
+                "ingest_skipped",
+                f"source={source_name} slugs_checked={slugs_checked} docs_body_hash={docs_body_hash}",
+            )
+            batch.skipped_sources.append(
+                IngestSourceResult(source=source_name, pages_written=[], status="skipped")
+            )
+            continue
+
+        try:
+            raw_source_text = source_path.read_text(encoding="utf-8")
+            _, source_content = split_frontmatter(raw_source_text)
+            # classify_source is an LLM call — run in thread so it doesn't block the loop.
+            source_type = await asyncio.to_thread(classify_source, source_content)
+            batch._llm_call_count += 1
+        except LLMError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            log_event(
+                "ingest_error",
+                f"source={source_name} error={type(exc).__name__}:classify_failed",
+            )
+            batch.failed_sources.append(source_name)
+            continue
+
+        # Step 5: generate draft(s)
+        try:
+            if source_type == "entity":
+                source_stem = Path(source_name).stem
+                if _should_route_async(source_content):
+                    # Large entity: per-section synthesis (same as sync path).
+                    # Entity parallelisation is optional (entity is rare and 1 call
+                    # per section); run sequentially in thread for simplicity.
+                    def _large_entity_drafts(_sections=sections, _slug_set=used_slugs):
+                        _drafts = []
+                        for _section in _sections:
+                            _raw = slugify(_section.heading)
+                            _final = resolve_slug_collision(_slug_set, _raw)
+                            _draft = generate_page(_section, "entity")
+                            _ufm = _draft.frontmatter.model_copy(update={"id": _final})
+                            _drafts.append(
+                                _draft.model_copy(
+                                    update={"slug": _final, "frontmatter": _ufm}
+                                )
+                            )
+                        return _drafts
+
+                    drafts = await asyncio.to_thread(_large_entity_drafts)
+                    batch._llm_call_count += len(drafts)
+                else:
+                    raw_slug = slugify(source_stem)
+                    final_slug = resolve_slug_collision(used_slugs, raw_slug)
+                    draft = await asyncio.to_thread(
+                        generate_entity_page,
+                        sections,
+                        source_stem=source_stem,
+                        source_filename=source_name,
+                    )
+                    draft = draft.model_copy(update={"slug": final_slug})
+                    drafts = [draft]
+                    batch._llm_call_count += 1
+            else:
+                # concept: fan out per-section synthesis with bounded semaphore.
+                # gather PRESERVES input order → drafts arrive in section order.
+                async def _synthesize_one(section):
+                    async with sem:
+                        draft = await asyncio.to_thread(generate_page, section, "concept")
+                        # _verify_draft is I/O-bound (another LLM call) — run in thread.
+                        # We do NOT resolve slugs here; that is the post-pass below.
+                        return draft
+
+                tasks = [_synthesize_one(s) for s in sections]
+                raw_drafts = await asyncio.gather(*tasks)
+                batch._llm_call_count += len(raw_drafts)
+                # Slug post-pass: sequential + deterministic (SAME function as sync path).
+                drafts = _resolve_draft_slugs(list(raw_drafts), sections, used_slugs)
+        except LLMError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            log_event(
+                "ingest_error",
+                f"source={source_name} error={type(exc).__name__}:generate_failed",
+            )
+            batch.failed_sources.append(source_name)
+            continue
+
+        # Steps 6-11: finalise (timestamp preservation, source_hashes, grounding,
+        # orphan delete, write).  Run via to_thread so _index_lock acquire does
+        # NOT block the event loop.
+        try:
+            write_result, deleted, grounding_failed_slugs, grounding_log_entries = (
+                await asyncio.to_thread(
+                    _finalise_source_drafts,
+                    drafts,
+                    sections=sections,
+                    source_name=source_name,
+                    source_path=source_path,
+                    docs_body_hash=docs_body_hash,
+                    resolved_wiki_dir=resolved_wiki_dir,
+                )
+            )
+        except LLMError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            log_event(
+                "ingest_error",
+                f"source={source_name} error={type(exc).__name__}:finalise_failed",
+            )
+            batch.failed_sources.append(source_name)
+            continue
+
+        for slug_str, reason_str, claims_lst in grounding_log_entries:
+            log_event(
+                "ingest_grounding_failed",
+                f"page={slug_str} reason={reason_str} claims={claims_lst}",
+            )
+        batch.pages_with_failed_grounding.extend(grounding_failed_slugs)
+
+        if write_result.errors:
+            err_slug, err_msg = write_result.errors[0]
+            log_event(
+                "ingest_error",
+                f"source={source_name} error=write_error:{err_slug} detail={err_msg}",
+            )
+            batch.failed_sources.append(source_name)
+            continue
+
+        log_event(
+            "ingest_source",
+            f"source={source_name} type={source_type}"
+            f" pages_created={len(write_result.pages_created)}"
+            f" pages_updated={len(write_result.pages_updated)}"
+            f" pages_deleted={len(deleted)}",
+        )
+        result_status = "updated" if write_result.pages_updated else "created"
+        batch.results.append(
+            IngestSourceResult(
+                source=source_name,
+                pages_written=write_result.pages_written,
+                pages_created=write_result.pages_created,
+                pages_updated=write_result.pages_updated,
+                pages_deleted=deleted,
+                status=result_status,
+            )
+        )
+
+    total_pages = sum(len(r.pages_written) for r in batch.results)
+    failed_grounding = len(batch.pages_with_failed_grounding)
+
     log_event(
         "ingest_batch_completed",
         f"sources={len(source_pairs)}"
