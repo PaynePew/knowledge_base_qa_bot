@@ -160,6 +160,58 @@ def _build_entity_user_message(sections: list[Section], source_stem: str) -> str
 
 
 # ---------------------------------------------------------------------------
+# Outline builder
+# ---------------------------------------------------------------------------
+
+
+def build_outline(content: str, *, max_tokens: int = 2000) -> str:
+    """Build a compact outline from Source Markdown content.
+
+    Returns ALL heading lines (lines that start with 1–6 ``#`` characters
+    followed by a space) PLUS the first ``max_tokens * 3`` characters of
+    non-heading body text, joined together.  This bounds the classifier's
+    input while preserving structural context.
+
+    LangChain-free — pure string work only (CODING_STANDARD §2.4).
+
+    Args:
+        content:    Full Markdown content of the Source (frontmatter stripped).
+        max_tokens: Approximate token budget for body text.  The body char
+                    limit is ``max_tokens * 3`` (inverse of ``_estimate_tokens``
+                    //3 rounding, i.e. safe upper-bound for that estimate).
+
+    Returns:
+        A string with all headings preserved and body truncated to the char
+        limit.  Headings always appear even when the body limit is 0.
+    """
+    # Rule 1: every line starting with 1-6 # followed by a space is a heading.
+    heading_lines: list[str] = []
+    body_chars: list[str] = []
+    body_budget = max_tokens * 3
+
+    for line in content.splitlines(keepends=True):
+        stripped = line.lstrip()
+        # Rule 1: heading detection
+        if stripped and stripped[0] == "#":
+            # Count leading hashes
+            i = 0
+            while i < len(stripped) and stripped[i] == "#":
+                i += 1
+            if i <= 6 and len(stripped) > i and stripped[i] == " ":
+                heading_lines.append(line.rstrip("\n"))
+                continue
+        # Rule 2: body text — collect up to body_budget chars
+        if body_budget > 0:
+            chunk = line[:body_budget]
+            body_chars.append(chunk)
+            body_budget -= len(chunk)
+
+    # Headings first, then body
+    parts = heading_lines + ["".join(body_chars)]
+    return "\n".join(p for p in parts if p)
+
+
+# ---------------------------------------------------------------------------
 # Prompt templates — classifier
 # ---------------------------------------------------------------------------
 
@@ -192,18 +244,26 @@ def classify_source(content: str) -> SourceType:
     `_ClassifierOutput`.  Returns the plain SourceType string so callers
     never touch LangChain types (CODING_STANDARD §2.4).
 
+    The classifier receives ``build_outline(content)`` rather than the full
+    Source text.  This bounds the LLM context usage: all headings are
+    preserved (structural signal for classification) while body text is
+    truncated to the first ~6 000 chars (2 000 tokens × 3 chars/token).
+    Callers need not strip content before passing it here.
+
     Args:
-        content: Full Markdown text of the Source document.
+        content: Full Markdown text of the Source document (frontmatter
+                 already stripped by the caller in ingest.py).
 
     Returns:
         "entity" or "concept".
     """
+    outline = build_outline(content)
     llm = get_ingest_llm()
     chain = llm.with_structured_output(_ClassifierOutput)
     output: _ClassifierOutput = chain.invoke(
         [
             SystemMessage(content=_CLASSIFIER_SYSTEM_PROMPT),
-            HumanMessage(content=_build_classifier_user_message(content)),
+            HumanMessage(content=_build_classifier_user_message(outline)),
         ]
     )
     return output.type

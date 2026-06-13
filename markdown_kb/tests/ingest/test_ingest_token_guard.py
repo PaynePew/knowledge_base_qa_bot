@@ -124,7 +124,9 @@ def test_classify_uses_outline_not_full_content(tmp_path, monkeypatch):
     """build_outline is used; classifier chain never sees content past outline window.
 
     We plant a sentinel string FAR past the outline window (after 10 000 chars of
-    body), then assert the message passed to chain.invoke() does NOT contain it.
+    body), then assert the message passed to the CLASSIFIER chain does NOT contain it.
+    Only the classifier chain's invoke is checked; the synthesis chain (concept page)
+    is a separate with_structured_output call and intentionally sees section content.
     """
     docs_dir = tmp_path / "docs"
     docs_dir.mkdir()
@@ -139,32 +141,44 @@ def test_classify_uses_outline_not_full_content(tmp_path, monkeypatch):
     monkeypatch.setenv("KB_INGEST_MAX_SECTION_TOKENS", "99999")
     monkeypatch.setenv("KB_INGEST_MAX_TOKENS", "999999")
 
-    captured_messages = []
+    # Only capture messages from the CLASSIFIER call (first with_structured_output call)
+    classifier_messages: list[str] = []
 
-    class _FakeChain:
+    class _ClassifierChain:
+        """Fake chain for the _ClassifierOutput call — captures what goes in."""
         def invoke(self, messages):
             for m in messages:
-                # m may be a LangChain HumanMessage or SystemMessage object
                 content = getattr(m, "content", str(m))
-                captured_messages.append(content)
-            # Return a minimal _ClassifierOutput-like object
+                classifier_messages.append(content)
             class _Out:
                 type = "concept"
             return _Out()
 
+    class _SynthChain:
+        """Fake chain for synthesis calls — not relevant to this test."""
+        def invoke(self, messages):
+            class _Out:
+                body = "Synthesised."
+                open_questions = []
+            return _Out()
+
+    def _dispatch_chain(schema):
+        from app.templates import _ClassifierOutput
+        if schema is _ClassifierOutput:
+            return _ClassifierChain()
+        return _SynthChain()
+
     fake_llm = MagicMock()
-    fake_llm.with_structured_output.return_value = _FakeChain()
+    fake_llm.with_structured_output.side_effect = _dispatch_chain
     monkeypatch.setattr(templates_module, "get_ingest_llm", lambda: fake_llm)
     monkeypatch.setattr(indexer_module, "WIKI_DIR", wiki_dir)
-
-    # Also mock grounding verify so it passes without real LLM
-    import app.ingest as _ingest_mod
     monkeypatch.setattr("app.ingest.verify", lambda body, sections: _make_grounding_pass())
 
     ingest_module.ingest_sources(["outline_test.md"], docs_dir=docs_dir, wiki_dir=wiki_dir)
 
-    all_text = " ".join(captured_messages)
-    assert sentinel not in all_text, (
+    assert classifier_messages, "Expected at least one message to be captured for the classifier"
+    classifier_text = " ".join(classifier_messages)
+    assert sentinel not in classifier_text, (
         "The sentinel placed past the outline window must not reach the classifier"
     )
 
