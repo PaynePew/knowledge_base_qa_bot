@@ -271,9 +271,14 @@ def _print_ingest_batch(batch: object) -> None:
     for skipped in batch.skipped_sources:
         typer.echo(f"Skipped {skipped.source}: source unchanged (hash match).")
 
-    # Per failed source
+    # Per failed source.  Surface the deep module's reason (e.g. the size guard)
+    # when present, otherwise the generic line.
     for failed in batch.failed_sources:
-        typer.echo(f"Failed: {failed} — could not be processed.", err=True)
+        reason = batch.failed_reasons.get(failed)
+        if reason:
+            typer.echo(f"Failed: {failed} — {reason}", err=True)
+        else:
+            typer.echo(f"Failed: {failed} — could not be processed.", err=True)
 
     # Per page with failed grounding (fail-soft — page still written, slug
     # tracked in batch.pages_with_failed_grounding rather than a status field).

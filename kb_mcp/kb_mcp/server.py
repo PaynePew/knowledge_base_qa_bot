@@ -426,8 +426,11 @@ def kb_lint_v1(
         "the Grounding Check (status=failed_grounding); a non-empty list is a "
         "SUCCESS result (not isError) — it means the KB accepted the page with "
         "a failed-grounding marker, which is the ADR-0004 fail-soft outcome\n"
-        "  failed                — True when the source was not found or could not be "
-        "parsed (non-LLM failure)\n"
+        "  failed                — True when the source was not found, could not be "
+        "parsed, or was rejected by the size guard (non-LLM failure)\n"
+        "  reason                — present only on failure: a human-readable cause "
+        "(e.g. the Source exceeds the ingest size limit). Report it to the user "
+        "instead of retrying\n"
         "  status                — 'created', 'updated', 'skipped', or 'failed'\n\n"
         "Returns isError=true on LLM failure:\n"
         "  {code, message} where code is 'LLM_UNAVAILABLE' (retryable) or\n"
@@ -501,6 +504,11 @@ async def kb_ingest_v1(
             "failed": True,
             "status": "failed",
         }
+        # Surface a per-source failure reason when the deep module recorded one
+        # (e.g. the size guard) so the host sees *why*, not just failed=True.
+        reason = batch.failed_reasons.get(source)
+        if reason:
+            result_payload["reason"] = reason
     elif batch.results:
         src_result = batch.results[0]
         result_payload = {
