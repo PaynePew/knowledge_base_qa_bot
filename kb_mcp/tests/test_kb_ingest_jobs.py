@@ -119,8 +119,11 @@ def docs_dir_large(tmp_path: Path) -> Path:
     even with the default 64 000 token cap.  Uses a 1-token-per-3-chars estimate,
     so we need > 64 000 * 3 = 192 000 chars.  We write 200 000 'a' chars split
     across 2 sections.
+
+    NOTE: uses a separate subdir (large_docs/) to avoid colliding with the
+    docs/ created by docs_dir in the _patch_ingest_paths autouse fixture.
     """
-    d = tmp_path / "docs"
+    d = tmp_path / "large_docs"
     d.mkdir(parents=True)
     large_body = "a " * 96_001  # ~192 002 chars → ~64 001 token estimate
     content = f"# Big Section One\n\n{large_body}\n\n# Big Section Two\n\n{large_body}\n"
