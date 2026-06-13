@@ -132,3 +132,46 @@ To measure real ingest timing **and** probe the #234 Desktop host timeout, use a
 - **KB cleanup** (§6) — revert test pollution; add a contributor note "findings → `project-docs/`,
   never `docs/`".
 - (Optional) section-count soft warning for concept Sources (§5.4).
+
+## 9. Why claude-obsidian / Karpathy-wiki don't hit this wall (and what to borrow)
+
+The project's inspiration sources (CLAUDE.md: Karpathy LLM Wiki + AgriciDaniel/claude-obsidian)
+**never hit the large-file context wall — because they do NO server-side LLM synthesis.** Verified:
+
+- **claude-obsidian is not even an MCP server** — it's a Claude Code *plugin* (skills + agents +
+  commands). Its `/wiki-ingest` agent's declared tools are `Read, Write, Edit, Glob, Grep, Bash`;
+  `/save`'s are `Read Write Edit Glob Grep`. **There is no LLM-call tool — because the host agent
+  *is* the LLM.** "Ingest" is prompt instructions the host Claude executes step by step (read
+  source → read index → write entity/concept pages).
+- The Obsidian MCP servers it can use (**MarkusPfundstein/mcp-obsidian**, **StevenStavrakis/
+  obsidian-mcp**) are **pure file CRUD + search** — verified zero LLM SDK in their dependencies.
+  The MCP layer is a file-access *transport*, not a synthesis engine.
+- **`/save`**: the **host** composes the summary; the server (if any) only persists the finished
+  bytes. (This is exactly the pattern our **Hot Cache** `kb_save_hot_v1` already follows.)
+- **Karpathy LLM Wiki**: the agent reads/writes files; there is no server-side "ingest tool" in the
+  concept at all.
+
+**Why this avoids the wall:** the host reads a large doc **incrementally** — section by section,
+summarize-as-you-go, multi-turn agentic loop, can `Grep`/skim first — so it never needs the whole
+file in one call. We hit the wall because we deliberately put `classify + generate` **inside a
+server-side tool** (ADR-0016 deep-module) and fed it the whole file in one shot, inheriting a
+single-call context ceiling the file size blows straight through.
+
+**The asymmetry in our own design:** `kb_save_hot_v1` follows the claude-obsidian "server persists
+bytes, host composes" pattern — but `kb_ingest_v1` does the opposite (server-side synthesis). That
+asymmetry is the root of this problem.
+
+**What to borrow (do NOT just rip out server-side ingest — it's deterministic, testable,
+interface-agnostic across CLI/HTTP/MCP, and enforces the grounding contract):**
+- **Short term (shipped):** the §5 size guard — reject what one server-side call can't handle, with
+  a clear reason.
+- **Medium term:** keep server-side synthesis but **chunk the Source before classify** so size
+  scales (classify on a sample/outline, synthesize per-Section which the concept path already does).
+- **Long term (if large docs become a real need):** add a **host-driven ingest** path for big
+  Sources — the agent reads the doc in passes and calls `kb_save`-style write tools — matching the
+  inspiration sources. This trades the grounding-contract guarantee for scale, so it's a real ADR.
+
+Sources (verified by sub-agent): `github.com/AgriciDaniel/claude-obsidian`
+(`agents/wiki-ingest.md`, `skills/save/SKILL.md`, README), `github.com/MarkusPfundstein/mcp-obsidian`
+(`src/mcp_obsidian/tools.py`, `pyproject.toml` — no LLM dep), `github.com/StevenStavrakis/obsidian-mcp`,
+Karpathy LLM Wiki gist `442a6bf555914893e9891c11519de94f`.
