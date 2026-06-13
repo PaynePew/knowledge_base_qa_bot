@@ -477,7 +477,8 @@ async def kb_ingest_v1(
     checking whether pages_overwritten is non-empty.
     """
     from markdown_kb.app.errors import LLMError
-    from markdown_kb.app.ingest import aingest_sources
+    from markdown_kb.app.ingest import _should_route_async, aingest_sources
+    from markdown_kb.app.indexer import split_frontmatter
 
     async def _progress(n: float, total: float, message: str) -> None:
         """Emit a progress notification, silently no-op when no request context.
@@ -490,6 +491,43 @@ async def kb_ingest_v1(
             await ctx.report_progress(n, total, message=message)
 
     await _progress(0, 3, message=f"Starting ingest for {source!r}")
+
+    # Fix 1b: large-source routing.
+    # Read the Source text and check whether it exceeds the per-Source SOFT token
+    # cap (KB_INGEST_MAX_TOKENS).  If so, do NOT run the pipeline inline — that
+    # would risk the MCP host tool-call timeout (-32001) on a huge Source.
+    # Instead, auto-submit a background job and return immediately so the host can
+    # poll kb_ingest_status_v1 for the result.
+    #
+    # Small Sources (<= cap) continue through the original inline await path below.
+    # Source not-found / unreadable falls through to the inline path (aingest_sources
+    # will record the failure in batch.failed_sources, as before).
+    try:
+        import markdown_kb.app._paths as _paths_mod
+
+        source_path = _paths_mod.DOCS_DIR / source
+        if source_path.exists():
+            raw_text = source_path.read_text(encoding="utf-8")
+            _, source_content = split_frontmatter(raw_text)
+            if _should_route_async(source_content):
+                # Over soft cap → submit background job and return immediately.
+                from . import ingest_jobs
+
+                job = ingest_jobs.submit(source)
+                return {
+                    "status": "routed_async",
+                    "job_id": job.job_id,
+                    "note": (
+                        f"Source {source!r} exceeds the soft token cap and has been "
+                        "submitted as a background ingest job.  "
+                        "Poll kb_ingest_status_v1 with the job_id to track progress "
+                        "and retrieve the result."
+                    ),
+                }
+    except Exception:  # noqa: BLE001
+        # If the routing check itself fails (e.g. unexpected IO error), fall
+        # through to the regular inline path so behaviour is unchanged.
+        pass
 
     try:
         await _progress(1, 3, message=f"Running synthesis pipeline for {source!r}")
