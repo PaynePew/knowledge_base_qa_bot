@@ -50,7 +50,7 @@ def get_ingest_llm() -> ChatOpenAI:
         _ingest_llm = ChatOpenAI(
             model=model_name,
             timeout=60,
-            max_retries=1,
+            max_retries=int(os.getenv("KB_INGEST_MAX_RETRIES", "5")),
         )
     return _ingest_llm
 
