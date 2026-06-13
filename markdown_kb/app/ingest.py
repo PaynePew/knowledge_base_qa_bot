@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``ingest_sources``.
+"""Deep module per Ousterhout. Public surface: ``ingest_sources``, ``aingest_sources``.
 
 Ingest coordinator — Source → wiki synthesis page pipeline.
 
@@ -21,6 +21,12 @@ pipeline for one or more Sources:
     11. Write pages via wiki_writer.write_pages_for_source
     12. Return an IngestBatchResult summarising outcomes with meaningful
         pages_created / pages_updated / pages_deleted per Source
+
+Also provides `aingest_sources(source_filenames)` — async sibling that fans
+out the per-section concept synthesis concurrently via ``asyncio.to_thread``
+with a bounded semaphore (``KB_INGEST_CONCURRENCY``, default 8).  Slug
+resolution and the write tail run sequentially after gather so slug
+determinism and index-lock safety are preserved.
 
 Continue-on-error: a Source that throws at any stage is recorded in
 `failed_sources` but does not stop the batch (Q3 grill decision).
@@ -65,6 +71,7 @@ See PRD #28 for the full pipeline design.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import os
 from dataclasses import dataclass, field
@@ -156,6 +163,15 @@ def _max_section_tokens() -> int:
     reason before any LLM call is made.
     """
     return int(os.getenv("KB_INGEST_MAX_SECTION_TOKENS", "6000"))
+
+
+def _max_concurrency() -> int:
+    """Maximum concurrent in-flight LLM calls for aingest_sources.
+
+    Override with ``KB_INGEST_CONCURRENCY``; default 8.  A restart-free change
+    takes effect on the next aingest_sources call.
+    """
+    return int(os.getenv("KB_INGEST_CONCURRENCY", "8"))
 
 
 def _should_route_async(content: str) -> bool:
@@ -266,6 +282,95 @@ def _should_skip_source(
         return True, slugs_checked
     # No pages found → fresh write
     return False, []
+
+
+# ---------------------------------------------------------------------------
+# Per-Source pipeline helpers (shared by sync and async paths)
+# ---------------------------------------------------------------------------
+
+
+def _synthesize_concept_drafts(sections: list) -> list:
+    """Generate one WikiPageDraft per Section via the concept synthesis LLM call.
+
+    Returns drafts in SECTION ORDER.  Slugs are NOT yet resolved for
+    collision — callers must pass the result to ``_resolve_draft_slugs``.
+
+    Args:
+        sections: Parsed Section list for one concept Source.
+
+    Returns:
+        List of WikiPageDraft in the same order as ``sections``.
+    """
+    drafts = []
+    for section in sections:
+        section_draft = generate_page(section, "concept")
+        drafts.append(section_draft)
+    return drafts
+
+
+def _verify_draft(draft, sections: list) -> tuple:
+    """Run the grounding verifier on one WikiPageDraft.
+
+    Returns:
+        (draft, failed: bool) — draft may be mutated with
+        status=failed_grounding + grounding_failure frontmatter when the
+        verifier does not pass.  ``failed`` is True when the page must be
+        added to IngestBatchResult.pages_with_failed_grounding.
+    """
+    grounding_outcome = verify(draft.body, sections)
+    if grounding_outcome.passed:
+        return draft, False
+
+    reason = grounding_outcome.reason
+    unsupported: list[str] = []
+    if (
+        grounding_outcome.result is not None
+        and grounding_outcome.result.unsupported_claims
+    ):
+        unsupported = grounding_outcome.result.unsupported_claims
+
+    # mypy cannot narrow grounding_outcome.reason (full 6-variant Literal)
+    # to GroundingFailure.reason from the runtime guard above.
+    gf = GroundingFailure(
+        reason=reason,  # type: ignore[arg-type]
+        unsupported_claims=unsupported,
+    )
+    failed_fm = draft.frontmatter.model_copy(
+        update={"status": "failed_grounding", "grounding_failure": gf}
+    )
+    draft = draft.model_copy(update={"frontmatter": failed_fm})
+    return draft, True
+
+
+def _resolve_draft_slugs(drafts: list, sections: list, used_slugs: set) -> list:
+    """Assign collision-resolved slugs to a list of drafts (in section order).
+
+    Calls ``resolve_slug_collision(used_slugs, slugify(section.heading))`` for
+    each draft in order, then returns a new list of drafts with ``slug`` and
+    ``frontmatter.id`` updated.  Mutates ``used_slugs`` in place.
+
+    Both the sync and async paths MUST use this same sequential post-pass so
+    slug assignment is deterministic and identical across both paths.
+
+    Args:
+        drafts:     Drafts in section order (output of ``_synthesize_concept_drafts``
+                    or the async gather step).
+        sections:   The original Section list — provides the heading for slug
+                    derivation in the same order as ``drafts``.
+        used_slugs: The batch-level slug collision set; mutated by this call.
+
+    Returns:
+        New list of WikiPageDraft objects with resolved slugs.
+    """
+    resolved = []
+    for draft, section in zip(drafts, sections):
+        raw_slug = slugify(section.heading)
+        final_slug = resolve_slug_collision(used_slugs, raw_slug)
+        updated_fm = draft.frontmatter.model_copy(update={"id": final_slug})
+        resolved.append(
+            draft.model_copy(update={"slug": final_slug, "frontmatter": updated_fm})
+        )
+    return resolved
 
 
 # ---------------------------------------------------------------------------
@@ -475,19 +580,13 @@ def ingest_sources(
                     drafts = [draft]
                     batch._llm_call_count += 1
             else:
-                # concept: 1:N — one page per Section
-                drafts = []
-                for section in sections:
-                    raw_slug = slugify(section.heading)
-                    final_slug = resolve_slug_collision(used_slugs, raw_slug)
-                    section_draft = generate_page(section, "concept")
-                    batch._llm_call_count += 1
-                    # Override slug and frontmatter.id with collision-resolved value
-                    updated_fm = section_draft.frontmatter.model_copy(update={"id": final_slug})
-                    section_draft = section_draft.model_copy(
-                        update={"slug": final_slug, "frontmatter": updated_fm}
-                    )
-                    drafts.append(section_draft)
+                # concept: 1:N — one page per Section via shared helper.
+                # _synthesize_concept_drafts returns drafts in section order
+                # with unresolved slugs; _resolve_draft_slugs assigns
+                # collision-resolved slugs deterministically.
+                raw_drafts = _synthesize_concept_drafts(sections)
+                batch._llm_call_count += len(raw_drafts)
+                drafts = _resolve_draft_slugs(raw_drafts, sections, used_slugs)
         except LLMError:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -558,38 +657,15 @@ def ingest_sources(
         # sections from the source act as the "citable content".
         drafts_with_grounding: list = []
         for draft in drafts_with_source_hashes:
-            grounding_outcome = verify(draft.body, sections)
-            if grounding_outcome.passed:
-                # claim_supported — keep status=live
-                drafts_with_grounding.append(draft)
-            else:
-                # claim_unsupported or verifier_unavailable — fail-soft
-                reason = grounding_outcome.reason
-                unsupported: list[str] = []
-                if (
-                    grounding_outcome.result is not None
-                    and grounding_outcome.result.unsupported_claims
-                ):
-                    unsupported = grounding_outcome.result.unsupported_claims
-
-                # mypy cannot narrow grounding_outcome.reason (full 6-variant Literal)
-                # to GroundingFailure.reason ({"claim_unsupported", "verifier_unavailable"})
-                # from the runtime `not grounding_outcome.passed` guard above — the
-                # narrowing is provable from the verify() implementation but invisible
-                # to the static checker.
-                gf = GroundingFailure(
-                    reason=reason,  # type: ignore[arg-type]
-                    unsupported_claims=unsupported,
-                )
-                failed_fm = draft.frontmatter.model_copy(
-                    update={"status": "failed_grounding", "grounding_failure": gf}
-                )
-                draft = draft.model_copy(update={"frontmatter": failed_fm})
-                drafts_with_grounding.append(draft)
-
+            draft, grounding_failed = _verify_draft(draft, sections)
+            drafts_with_grounding.append(draft)
+            if grounding_failed:
+                gf = draft.frontmatter.grounding_failure
+                reason_str = gf.reason if gf else "unknown"
+                claims_str = gf.unsupported_claims if gf else []
                 log_event(
                     "ingest_grounding_failed",
-                    f"page={draft.slug} reason={reason} claims={unsupported}",
+                    f"page={draft.slug} reason={reason_str} claims={claims_str}",
                 )
                 batch.pages_with_failed_grounding.append(draft.slug)
 
