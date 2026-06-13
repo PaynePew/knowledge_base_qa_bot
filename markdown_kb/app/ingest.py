@@ -444,6 +444,10 @@ def ingest_sources(
                     # which would overflow the context window for documents above the
                     # soft cap.  The async routing seam (_should_route_async) is wired
                     # here for Fix 2; Fix 1b will add the scheduler path.
+                    # NOTE: each per-section page therefore cites only its own Section
+                    # (section.file#slug), not the whole-Source citation list that the
+                    # single-page entity branch collapses below — an intentional
+                    # consequence of splitting one entity into N pages, not a bug.
                     drafts = []
                     for section in sections:
                         raw_slug = slugify(section.heading)

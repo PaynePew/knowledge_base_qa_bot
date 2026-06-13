@@ -183,6 +183,13 @@ def build_outline(content: str, *, max_tokens: int = 2000) -> str:
     Returns:
         A string with all headings preserved and body truncated to the char
         limit.  Headings always appear even when the body limit is 0.
+
+    Note:
+        Only ATX headings (1-6 ``#`` then a space) are recognised, matching the
+        canonical Section parser (``indexer.HEADING_RE``).  Setext headings (a
+        line underlined by ``===``/``---``) are not detected and their underline
+        counts toward the body budget; real Sources in this KB use ATX, so
+        classification is unaffected.
     """
     # Rule 1: every line starting with 1-6 # followed by a space is a heading.
     heading_lines: list[str] = []
