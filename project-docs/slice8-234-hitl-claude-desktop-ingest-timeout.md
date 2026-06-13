@@ -16,8 +16,8 @@ first if the server isn't wired yet; this file focuses on the **timeout question
 
 `kb_ingest_v1` runs the synthesis pipeline **synchronously** and emits MCP **progress
 notifications** during the run so the Desktop host doesn't kill the call as "hung". The open
-PRD question: *does a realistic — or large — Source still blow past the host's tool-call
-timeout despite progress?* MCP hosts generally **reset** their inactivity timer on each
+PRD question: _does a realistic — or large — Source still blow past the host's tool-call
+timeout despite progress?_ MCP hosts generally **reset** their inactivity timer on each
 progress notification, so a steady stream of progress should keep an arbitrarily long call
 alive. This slice verifies that empirically. If it fails, the remedy is a **deferred async
 start/poll ingest** slice (per ADR-0017) — **not** built here.
@@ -26,15 +26,19 @@ start/poll ingest** slice (per ADR-0017) — **not** built here.
 
 ## 1. Prerequisites
 
-- [ ] Windows machine with **Claude Desktop** installed (this is a desktop-app-only check —
+- [x] Windows machine with **Claude Desktop** installed (this is a desktop-app-only check —
       the in-process pytest harness cannot exercise the real host timeout).
 - [ ] Repo synced to `main` at or after the #232 merge (PR #241). Confirm the tool exists:
       ```powershell
-      uv run python -c "import kb_mcp.server as s; print('kb_ingest_v1' in [t for t in dir(s)] or 'see registry'); "
-      uv run python -m kb_mcp --help  # should start without ImportError (repo-root bootstrap, #222)
+      uv run python -c "import kb_mcp.server as s; print('kb_ingest_v1' in [t for t in dir(s)] or 'see registry')"
+      uv run python -c "import kb_mcp.__main__; print('OK: imports cleanly — repo-root bootstrap (#222) works')"
       ```
+      Note: bare `uv run python -m kb_mcp` (no flags) **starts the stdio server and then waits
+      silently with no output** — that is success, press Ctrl+C to stop. The module takes no CLI
+      flags, so `--help` does **not** print usage; it just starts the server and hangs the same way.
+      The two import smokes above exit immediately, so use those for a quick check.
       Or just grep: the tool is registered in `kb_mcp/kb_mcp/server.py` (`@mcp.tool(name="kb_ingest_v1" ...)` and in the `_add_strict_schema()` tuple).
-- [ ] `OPENAI_API_KEY` available — `kb_ingest_v1` calls the LLM (synthesis + grounding).
+- [x] `OPENAI_API_KEY` available — `kb_ingest_v1` calls the LLM (synthesis + grounding).
       `kb_ingest_v1` is the **only** tool in this check that needs a key.
 - [ ] `uv` on PATH (this repo: `C:\Users\MaxL\.local\bin\uv.exe`).
 - [ ] At least one **representative** `docs/` Source (e.g. `docs/refund_policy.md`) and,
@@ -46,7 +50,7 @@ start/poll ingest** slice (per ADR-0017) — **not** built here.
 
 Config file (Windows): `%APPDATA%\Claude\claude_desktop_config.json`.
 
-```jsonc
+```json
 {
   "mcpServers": {
     "knowledge_base_qa_bot": {
@@ -55,13 +59,20 @@ Config file (Windows): `%APPDATA%\Claude\claude_desktop_config.json`.
         "run", "--directory",
         "C:\\Users\\MaxL\\work\\projects\\live_sessions\\knowledge_base_qa_bot",
         "python", "-m", "kb_mcp"
-      ],
-      "env": { "OPENAI_API_KEY": "sk-...your-key..." }
+      ]
     }
   }
 }
 ```
 
+- [ ] **No API key in this config.** `__main__.py` runs `load_dotenv(find_dotenv(usecwd=True))`
+      before importing the server, and `uv run --directory <repo>` sets the process cwd to the
+      repo root — so the repo-root `.env` (the same `OPENAI_API_KEY` you already set for the CLI /
+      gateway, per `.env.example`) is loaded automatically. Do **not** duplicate the secret here.
+- [ ] ⚠️ **Strict JSON — no trailing commas, no comments.** `claude_desktop_config.json` is parsed
+      as strict JSON; a stray trailing comma makes Claude Desktop **fail to load the server
+      silently** (it never appears, with no error). This is the #1 cause of "configured but
+      nothing happens." Keep the block exactly as above.
 - [ ] Save the file.
 - [ ] **Fully quit** Claude Desktop (also exit from the system tray), then relaunch so it
       re-reads the config and spawns the server (per `phase12-live-verify.md` §C2).
@@ -96,19 +107,19 @@ In the Claude Desktop chat:
 
 1. [ ] **Representative Source.** Prompt in natural language, e.g.:
    > "Use the knowledge base tools: ingest the source `refund_policy.md`."
-   Approve the tool call when prompted.
+   > Approve the tool call when prompted.
 2. [ ] **Observe during the run:**
    - Do **progress notifications** appear / does the call show an in-progress state rather
      than spinning silently?
    - Does the call **complete** and return the result dict
      (`{source, pages_created, pages_overwritten, grounding_failed_pages, failed, status}`)?
-   - Any host error like *"the tool call timed out"* / *"MCP server did not respond"*?
+   - Any host error like _"the tool call timed out"_ / _"MCP server did not respond"_?
 3. [ ] **Large Source (the real stress test).** Repeat with the largest Source you have.
-   This is where a single sync call is most likely to exceed the host timeout. Watch the
-   same three things.
+       This is where a single sync call is most likely to exceed the host timeout. Watch the
+       same three things.
 4. [ ] If you can, **force a slow run** to probe the ceiling: a very large Source, or a
-   Source that produces many concept/entity pages (each page = an LLM call). The question is
-   whether progress keeps the call alive **regardless** of total duration.
+       Source that produces many concept/entity pages (each page = an LLM call). The question is
+       whether progress keeps the call alive **regardless** of total duration.
 
 ---
 
@@ -178,8 +189,8 @@ reset the host inactivity timer" OR "host killed the call at ~<X>s despite progr
       git status   # review any new wiki/ pages; discard if this was only a smoke test
       ```
 - [ ] `wiki/hot.md` is git-ignored — no cleanup needed.
-- [ ] Remove the test `env` key from `claude_desktop_config.json` if you don't want the API
-      key persisted there.
+- [ ] No secret-cleanup needed in `claude_desktop_config.json`: §2 keeps the API key in the
+      repo-root `.env`, not in the Desktop config, so nothing sensitive was written there.
 
 ---
 
@@ -191,6 +202,7 @@ reset the host inactivity timer" OR "host killed the call at ~<X>s despite progr
 - **`ModuleNotFoundError: markdown_kb` (or `vector_rag`):** the entry point must bootstrap the
   repo root onto `sys.path` — this was fixed in #222; confirm you're on a recent `main`.
 - **`isError` with `LLM_UNAVAILABLE` / `LLM_ERROR`:** the `OPENAI_API_KEY` is missing/invalid
-  in the config `env`, or OpenAI is unreachable. This is the LLMError path, not a timeout.
+  in the repo-root `.env` (§2 loads it from there, not the Desktop config), or OpenAI is
+  unreachable. This is the LLMError path, not a timeout.
 - **Call returns instantly with `status: "skipped"`:** the Source hash matched an earlier
   ingest (no-op). Edit the Source to force a real run, then `git checkout --` it after.
