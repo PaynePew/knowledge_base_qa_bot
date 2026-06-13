@@ -66,6 +66,7 @@ See PRD #28 for the full pipeline design.
 from __future__ import annotations
 
 import hashlib
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -104,9 +105,34 @@ class IngestBatchResult:
 
     results: list[IngestSourceResult] = field(default_factory=list)
     failed_sources: list[str] = field(default_factory=list)
+    failed_reasons: dict[str, str] = field(default_factory=dict)
     pages_with_failed_grounding: list[str] = field(default_factory=list)
     skipped_sources: list[IngestSourceResult] = field(default_factory=list)
     _llm_call_count: int = 0
+
+
+# ---------------------------------------------------------------------------
+# Size guard
+# ---------------------------------------------------------------------------
+
+# Per-Source byte ceiling for ingest.  ``classify_source`` and the entity
+# synthesis path each send the WHOLE Source in a SINGLE LLM call, so the hard
+# ceiling is the ingest model's context window.  256 KiB keeps even dense CJK
+# (~0.33 tokens/byte ≈ 85K tokens) well under gpt-4o-mini's 128K window, with
+# headroom for the system prompt + structured output.  This is intentionally
+# separate from (and far below) upload.py's MAX_UPLOAD_BYTES = 10 MB: staging a
+# file is not the same as being ingestable.  See
+# project-docs/large-file-ingest-size-limit-findings.md.
+_KB_INGEST_MAX_BYTES_DEFAULT = 256 * 1024
+
+
+def _max_ingest_bytes() -> int:
+    """Per-Source byte ceiling, read at call time (KB_SCORE_THRESHOLD pattern).
+
+    Override with the ``KB_INGEST_MAX_BYTES`` env var; a restart-free change
+    takes effect on the next ingest.
+    """
+    return int(os.getenv("KB_INGEST_MAX_BYTES", str(_KB_INGEST_MAX_BYTES_DEFAULT)))
 
 
 # ---------------------------------------------------------------------------
@@ -262,6 +288,7 @@ def ingest_sources(
         f"sources={len(source_pairs)}",
     )
 
+    max_bytes = _max_ingest_bytes()
     for source_name, source_path in source_pairs:
         if not source_path.exists():
             log_event(
@@ -269,6 +296,25 @@ def ingest_sources(
                 f"source={source_name} error=source_not_found",
             )
             batch.failed_sources.append(source_name)
+            continue
+
+        # Size guard — fail fast BEFORE parse/classify.  classify_source sends
+        # the whole Source in one LLM call, so an oversized file would blow the
+        # model context window (a 10 MB Source ≈ 2.6 M tokens vs a 128 K window).
+        # Reject as a per-source failure with a reason; the batch continues.
+        source_size = source_path.stat().st_size
+        if source_size > max_bytes:
+            log_event(
+                "ingest_error",
+                f"source={source_name} error=too_large:{source_size}>{max_bytes}",
+            )
+            batch.failed_sources.append(source_name)
+            batch.failed_reasons[source_name] = (
+                f"Source too large to ingest: {source_size} bytes exceeds the "
+                f"{max_bytes}-byte limit (KB_INGEST_MAX_BYTES). The classifier sends "
+                f"the whole Source in one LLM call, so it must fit the model context "
+                f"window — split it into smaller Sources."
+            )
             continue
 
         try:
