@@ -1,4 +1,6 @@
-"""MCP-agnostic in-memory job registry for background ingest tasks (Fix 1b).
+"""Deep module per Ousterhout. Public surface: ``submit``, ``status``.
+
+MCP-agnostic in-memory job registry for background ingest tasks (Fix 1b).
 
 Provides a submit/poll pattern so large Sources that would exceed the MCP host
 tool-call timeout (-32001) can be offloaded to a background asyncio.Task and
@@ -23,7 +25,6 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from typing import Optional
 from uuid import uuid4
 
 
@@ -48,9 +49,9 @@ class Job:
     job_id: str
     status: str = "submitted"
     progress: tuple[int, int] = field(default_factory=lambda: (0, 1))
-    result: Optional[dict] = None
-    error: Optional[dict] = None
-    _task: Optional[asyncio.Task] = field(default=None, repr=False)
+    result: dict | None = None
+    error: dict | None = None
+    _task: asyncio.Task | None = field(default=None, repr=False)
 
 
 # ---------------------------------------------------------------------------
