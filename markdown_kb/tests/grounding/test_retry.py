@@ -444,7 +444,10 @@ def test_verifier_model_env_override(tmp_path, monkeypatch) -> None:
 
     captured_model: list[str] = []
 
-    def fake_chat_openai(model: str) -> MagicMock:
+    def fake_chat_openai(model: str, **_kwargs) -> MagicMock:
+        # **_kwargs tolerates temperature=0 (and any future construction kwarg);
+        # this spy asserts model selection only — temperature is covered by
+        # test_llm_determinism.test_verifier_llm_pinned_to_temperature_zero.
         captured_model.append(model)
         fake_llm = MagicMock()
         fake_chain = MagicMock()
@@ -466,7 +469,10 @@ def test_verifier_model_fallback_to_openai_model(tmp_path, monkeypatch) -> None:
 
     captured_model: list[str] = []
 
-    def fake_chat_openai(model: str) -> MagicMock:
+    def fake_chat_openai(model: str, **_kwargs) -> MagicMock:
+        # **_kwargs tolerates temperature=0 (and any future construction kwarg);
+        # this spy asserts model selection only — temperature is covered by
+        # test_llm_determinism.test_verifier_llm_pinned_to_temperature_zero.
         captured_model.append(model)
         fake_llm = MagicMock()
         fake_chain = MagicMock()
@@ -488,7 +494,10 @@ def test_verifier_model_default_is_gpt4o_mini(tmp_path, monkeypatch) -> None:
 
     captured_model: list[str] = []
 
-    def fake_chat_openai(model: str) -> MagicMock:
+    def fake_chat_openai(model: str, **_kwargs) -> MagicMock:
+        # **_kwargs tolerates temperature=0 (and any future construction kwarg);
+        # this spy asserts model selection only — temperature is covered by
+        # test_llm_determinism.test_verifier_llm_pinned_to_temperature_zero.
         captured_model.append(model)
         fake_llm = MagicMock()
         fake_chain = MagicMock()

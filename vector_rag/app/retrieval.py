@@ -90,8 +90,12 @@ def get_llm() -> ChatOpenAI:
     """Return the lazily-constructed chat LLM (CODING_STANDARD §10 lazy-singleton)."""
     global _llm
     if _llm is None:
+        # temperature=0: the draft must be deterministic so the same question
+        # does not flip between a grounded answer and a false Cannot Confirm
+        # across calls (mirrors markdown_kb.app.retrieval.get_llm).
         _llm = ChatOpenAI(
             model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            temperature=0,
             request_timeout=20,
             max_retries=1,
         )

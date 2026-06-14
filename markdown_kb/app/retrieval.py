@@ -94,8 +94,13 @@ _retry_llm = None
 def get_llm():
     global _llm
     if _llm is None:
+        # temperature=0: the draft must be deterministic. At the langchain
+        # default temperature the model intermittently self-refuses on a
+        # question it can answer, so the same query flip-flops between a
+        # grounded answer and a false Cannot Confirm across calls.
         _llm = ChatOpenAI(
             model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            temperature=0,
             timeout=20,
             max_retries=1,
         )
