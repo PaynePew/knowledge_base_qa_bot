@@ -56,8 +56,13 @@ def get_rewrite_llm() -> ChatOpenAI:
             "OPENAI_REWRITE_MODEL",
             os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
         )
+        # temperature=0: the rewrite must be deterministic. A non-deterministic
+        # rewrite reformulates the same follow-up differently across calls, which
+        # retrieves different Sections and propagates into the grounded/Cannot
+        # Confirm flip-flop one stage earlier (mirrors retrieval/grounding pins).
         _rewrite_llm = ChatOpenAI(
             model=model_name,
+            temperature=0,
             timeout=30,
             max_retries=1,
         )
