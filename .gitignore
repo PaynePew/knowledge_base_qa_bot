@@ -60,6 +60,8 @@ venv/
 # Secrets
 .env
 .env.local
+# Production deploy secrets (companion to the committed .env.prod.example, #270).
+.env.prod
 
 # Editor / OS
 .DS_Store
