@@ -40,6 +40,9 @@ STOP_WORDS = {
     "an",
     "and",
     "are",
+    "as",
+    "at",
+    "by",
     "can",
     "do",
     "does",
@@ -47,15 +50,18 @@ STOP_WORDS = {
     "from",
     "how",
     "i",
+    "in",
     "is",
     "it",
     "my",
     "of",
+    "on",
     "the",
     "to",
     "what",
     "when",
     "which",
+    "with",
 }
 
 # Thread-safety: callers hold _index_lock when swapping the sections list.
@@ -183,10 +189,13 @@ def tokenize(text: str) -> list[str]:
     - CJK runs tokenise as sliding character bigrams (unigram fallback for
       length-1 runs). CJK bigrams are never filtered by STOP_WORDS (which
       contains only ASCII words).
-    - All other text (Latin, digits, punctuation) tokenises exactly as before:
-      ``TOKEN_RE.findall(text.lower())`` with STOP_WORDS removal.
-    - Pure-ASCII input produces a byte-identical token list to the pre-change
-      implementation (new CJK logic only triggers on codepoints > 127).
+    - All other text (Latin, digits, punctuation) tokenises via
+      ``TOKEN_RE.findall(text.lower())`` with STOP_WORDS removal AND a length-1
+      Latin-token filter (issue #252): single letters — chiefly possessive /
+      contraction clitics ("What's" -> "s", "don't" -> "t") — carry no retrieval
+      signal and produced spurious BM25 hits. Single DIGITS are preserved.
+    - CJK logic only triggers on codepoints > 127, so CJK bigrams and the
+      single-CJK-char unigram fallback are unaffected by the length-1 filter.
     """
     tokens: list[str] = []
     # Walk through the text, extracting CJK runs and non-CJK segments
@@ -202,7 +211,16 @@ def tokenize(text: str) -> list[str]:
     def _flush_non_cjk() -> None:
         if non_cjk_buf:
             segment = "".join(non_cjk_buf)
-            tokens.extend(t for t in TOKEN_RE.findall(segment.lower()) if t not in STOP_WORDS)
+            # Drop length-1 Latin tokens (issue #252): a possessive/contraction
+            # clitic ("What's" -> "s", "don't" -> "t") and stray single letters
+            # carry no retrieval signal and create spurious BM25 hits. Single
+            # DIGITS are kept (quantities/years matter), so filter only len-1
+            # alphabetic tokens, not all len-1 tokens.
+            tokens.extend(
+                t
+                for t in TOKEN_RE.findall(segment.lower())
+                if t not in STOP_WORDS and not (len(t) == 1 and t.isalpha())
+            )
             non_cjk_buf.clear()
 
     for ch in text:
