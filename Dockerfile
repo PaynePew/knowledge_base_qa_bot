@@ -8,11 +8,12 @@
 # no OpenAI key needed at *build* time (FAISS is NOT rebuilt here).
 #
 # uv workspace has SIX members (markdown_kb, vector_rag, gateway, kb_cli, kb_mcp,
-# eval/paraphrase_comparison). `uv sync --frozen` resolves the whole workspace,
-# so every member manifest must be present before the deps-only sync or it fails
-# (`uv sync --package gateway` can't be scoped — gateway/pyproject doesn't declare
-# vector-rag though main.py imports it). `--no-dev` keeps eval's
-# deepeval/matplotlib/anthropic and everyone's pytest/ruff out of the image.
+# eval/paraphrase_comparison). The deployable `gateway` imports markdown_kb AND
+# vector_rag, but gateway/pyproject doesn't declare vector-rag — so the build
+# can't be scoped with `uv sync --package gateway`. We sync the whole workspace
+# with `--all-packages` (see the RUN below for why that flag is load-bearing).
+# `--no-dev` keeps eval's deepeval/matplotlib/anthropic and everyone's
+# pytest/ruff out of the image.
 
 # --- builder: resolve + install the workspace into a self-contained .venv ------
 FROM python:3.11-slim AS builder
@@ -29,28 +30,20 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 WORKDIR /app
 
-# Step 1 — deps only. COPY the lockfile + python pin + the root manifest, then
-# ALL SIX member manifests (workspace resolution reads every member's pyproject).
-# `--no-install-project` installs only third-party deps, so this layer is cached
-# across source-only edits.
-COPY pyproject.toml uv.lock .python-version ./
-COPY markdown_kb/pyproject.toml markdown_kb/pyproject.toml
-COPY vector_rag/pyproject.toml vector_rag/pyproject.toml
-COPY gateway/pyproject.toml gateway/pyproject.toml
-COPY kb_cli/pyproject.toml kb_cli/pyproject.toml
-COPY kb_mcp/pyproject.toml kb_mcp/pyproject.toml
-COPY eval/paraphrase_comparison/pyproject.toml eval/paraphrase_comparison/pyproject.toml
-
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-install-project
-
-# Step 2 — project source. `.dockerignore` keeps the baked seed (.kb/ wiki/ docs/)
-# and drops eval/ source, but eval's manifest was COPYed above so the workspace
-# still resolves. The second sync builds the in-tree package members (kb_cli,
-# kb_mcp) now that their source is present.
+# Install the whole workspace into /app/.venv in ONE sync after copying the full
+# source. `--all-packages` is REQUIRED: a plain `uv sync` installs only the ROOT
+# project's deps (python-dotenv) and leaves every member dep (uvicorn, fastapi,
+# langchain, faiss-cpu, ...) UNINSTALLED — the container would then exit with
+# "Failed to spawn: uvicorn" on boot. We do NOT split out a deps-only
+# `--no-install-project` pre-source layer: `--all-packages` builds the
+# package=true members (kb_cli, kb_mcp), which need their source present, so that
+# combination fails before `COPY . .`. The uv cache mount keeps wheels warm so a
+# single post-source sync still rebuilds fast.
+# `.dockerignore` keeps the baked seed (.kb/ wiki/ docs/) and drops eval/ source;
+# eval's manifest survives (re-included) so workspace resolution still succeeds.
 COPY . .
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev
+    uv sync --frozen --no-dev --all-packages
 
 # --- runtime: slim image carrying only the built venv + app source -------------
 FROM python:3.11-slim AS runtime
@@ -75,6 +68,7 @@ COPY --from=builder /app /app
 EXPOSE 8000
 
 # Single worker per CODING_STANDARD's single-process assumption (in-process
-# singletons, append-only Wiki Log). `--no-dev` keeps the dev group out of the
-# resolution `uv run` would otherwise re-check.
-CMD ["uv", "run", "--no-dev", "uvicorn", "gateway.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+# singletons, append-only Wiki Log). Invoke the venv's uvicorn directly (it is on
+# PATH via /app/.venv/bin) rather than `uv run`, which would re-resolve the env at
+# boot — slower and fragile in the runtime stage.
+CMD ["uvicorn", "gateway.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
