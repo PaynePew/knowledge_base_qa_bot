@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import tempfile
 from collections import defaultdict
+from collections.abc import Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -40,16 +41,21 @@ class NegativeCaseReport:
     outcomes: list[tuple[NegativeCase, RefusalOutcome]] = field(default_factory=list)
 
 
-def run_negative_case(corpus_dir: Path | None = None) -> NegativeCaseReport:
+def run_negative_case(
+    corpus_dir: Path | None = None,
+    negative_cases: Sequence[NegativeCase] = NEGATIVE_CASES,
+) -> NegativeCaseReport:
     """Build the corpus index, run every negative case, compute the fallback rate.
 
-    Assumes production paths are already isolated (see ``main`` /
-    ``_isolate_production_paths``); tests rely on the autouse conftest fixture.
+    ``negative_cases`` defaults to the committed English set, so existing call sites
+    (and ``test_runner``) are unchanged; ``main`` passes a different language's set
+    via ``lang.resolve_lang``. Assumes production paths are already isolated (see
+    ``main`` / ``_isolate_production_paths``); tests rely on the autouse conftest.
     """
     index_corpus(corpus_dir)
 
     outcomes: list[tuple[NegativeCase, RefusalOutcome]] = [
-        (case, evaluate_case(case.query)) for case in NEGATIVE_CASES
+        (case, evaluate_case(case.query)) for case in negative_cases
     ]
 
     per_category: dict[str, list[RefusalOutcome]] = defaultdict(list)
@@ -66,10 +72,19 @@ def run_negative_case(corpus_dir: Path | None = None) -> NegativeCaseReport:
     )
 
 
-def render_report(report: NegativeCaseReport) -> str:
-    """Render the report as Markdown (the committed deliverable)."""
+def render_report(report: NegativeCaseReport, lang: str = "en") -> str:
+    """Render the report as Markdown (the committed deliverable).
+
+    ``lang`` defaults to ``en`` (byte-identical to the baseline); ``zh`` only
+    localises the title — the table structure stays identical for comparability.
+    """
+    title = (
+        "# Negative-case eval — fallback rate · Traditional Chinese (#256)"
+        if lang == "zh"
+        else "# Negative-case eval — fallback rate (Week 6 FM4)"
+    )
     lines = [
-        "# Negative-case eval — fallback rate (Week 6 FM4)",
+        title,
         "",
         "Measures whether the bot correctly **refuses** (Cannot Confirm) out-of-scope",
         "queries the KB cannot answer. The refusal decision is the production pre-LLM",
@@ -141,12 +156,20 @@ def _isolate_production_paths():
 
 
 def main() -> None:
-    """CLI entry: run the eval under production isolation and write report.md."""
+    """CLI entry: run the eval for one language under production isolation.
+
+    Language comes from ``KB_EVAL_LANG`` (default ``en``); the zh run uses a ``_zh``
+    report suffix so it never clobbers the committed English report.md.
+    """
+    from .lang import resolve_lang
+
+    cfg = resolve_lang()
     with _isolate_production_paths():
-        report = run_negative_case()
-    REPORT_PATH.write_text(render_report(report), encoding="utf-8")
-    print(f"Correct-refusal rate: {report.rate:.0%}")
-    print(f"Report written to {REPORT_PATH}")
+        report = run_negative_case(cfg.corpus_dir, cfg.negative_cases)
+    report_path = REPORT_PATH.with_name(f"report{cfg.report_suffix}.md")
+    report_path.write_text(render_report(report, lang=cfg.lang), encoding="utf-8")
+    print(f"[{cfg.lang}] Correct-refusal rate: {report.rate:.0%}")
+    print(f"Report written to {report_path}")
 
 
 if __name__ == "__main__":
