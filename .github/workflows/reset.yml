@@ -1,0 +1,48 @@
+# Self-reset cron for the `ask-wiki-rag` VPS tenant (issue #272).
+#
+# Recreating the container from the SAME baked image discards its ephemeral
+# writable layer, returning it to the pre-ingested / pre-indexed seed. There is
+# NO pull and NO rebuild here, so the seed is exactly the image that is already
+# on the box -> the reset costs ZERO OpenAI tokens (nothing ingests or indexes
+# at boot). This workflow only force-recreates the single `ask-wiki-rag`
+# service and smokes /healthz.
+name: reset
+
+on:
+  # Cron is UTC-only on GitHub Actions. `0 4 */2 * *` => 04:00 UTC on every odd
+  # day-of-month (1, 3, 5, ... 29, 31), i.e. roughly every 2 days. day-of-month
+  # stepping is NOT a true 48h rolling interval: the 31->1 wrap and short months
+  # (Feb 29->Mar 1) produce a 1-day cadence at the month boundary. That drift is
+  # acceptable for a "reset to seed every couple of days" hygiene job; a strict
+  # 48h interval is not expressible in cron and is not required here.
+  schedule:
+    - cron: "0 4 */2 * *"
+  workflow_dispatch:
+
+# Do not let a scheduled reset overlap a manual reset on the same box.
+concurrency:
+  group: reset-ask-wiki-rag
+  cancel-in-progress: false
+
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Force-recreate to seed over SSH and smoke /healthz
+        uses: appleboy/ssh-action@v1
+        with:
+          host: box.paynepew.dev
+          username: deploy
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            cd /opt/ask-wiki-rag
+            # Scoping guardrail (platform contract): always pin the project with
+            # -p AND name the single service, and NEVER pass --remove-orphans.
+            # A bare `--force-recreate` / a stray --remove-orphans against a
+            # shared project is exactly what bounced the shared Caddy in the
+            # Phase-0 saga. This recreates ONLY ask-wiki-rag in its own project →
+            # zero blast radius to the scheduler / qrcode tenants.
+            docker compose -p ask-wiki-rag -f docker-compose.prod.yml up -d --force-recreate ask-wiki-rag
+            docker compose -p ask-wiki-rag -f docker-compose.prod.yml exec -T ask-wiki-rag \
+              curl -fsS http://localhost:8000/healthz
