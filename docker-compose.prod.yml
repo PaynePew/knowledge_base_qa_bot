@@ -1,0 +1,26 @@
+# Prod compose for the `ask-wiki-rag` VPS tenant (issue #271).
+#
+# Deploys behind the shared `edge` Caddy as one self-contained compose
+# project. Per the platform tenant contract:
+#   - unique `name:` so this project is never merged into another tenant.
+#   - NO host ports - `edge` owns :80/:443 and reverse-proxies to this
+#     service at `ask-wiki-rag:8000` over the external `edge` network.
+#   - `mem_limit` + `cpus` are both mandatory (bulkhead): a single tenant
+#     cannot starve the box.
+#   - Baked read-only KB, ephemeral writes, no named volume, no backup.
+name: ask-wiki-rag
+
+services:
+  ask-wiki-rag:
+    image: ghcr.io/paynepew/knowledge_base_qa_bot:latest
+    mem_limit: 512m
+    cpus: "0.5"
+    env_file: .env.prod
+    networks:
+      - default
+      - edge
+    restart: unless-stopped
+
+networks:
+  edge:
+    external: true
