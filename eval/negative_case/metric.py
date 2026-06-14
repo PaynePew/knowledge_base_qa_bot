@@ -1,4 +1,6 @@
-"""Deterministic negative-case metric: did the bot correctly refuse?
+"""Deep module per Ousterhout. Public surface: ``is_refusal``, ``correct_refusal_rate``.
+
+Deterministic negative-case metric: did the bot correctly refuse?
 
 The metric is binary per case (refused = 1.0, answered = 0.0); the headline is the
 **correct-refusal rate** (the "fallback rate" the Week 6 deck asks for). Kept as

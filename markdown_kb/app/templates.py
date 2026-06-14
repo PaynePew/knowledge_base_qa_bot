@@ -1,4 +1,4 @@
-"""Medium module per Ousterhout. Public surface: ``classify_source``, ``generate_page``, ``generate_entity_page``.
+"""Medium module per Ousterhout. Public surface: ``classify_source``, ``generate_page``, ``generate_entity_page``, ``ingest_model_context_window``.
 
 LLM synthesis templates for wiki page generation.
 

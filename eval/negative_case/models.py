@@ -1,4 +1,4 @@
-"""Data models for the negative-case eval."""
+"""Shallow module per Ousterhout. Data models for the negative-case eval."""
 
 from __future__ import annotations
 

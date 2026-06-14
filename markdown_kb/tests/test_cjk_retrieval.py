@@ -37,12 +37,15 @@ from .conftest import FakeLLMResponse
 
 
 def test_tokenize_ascii_byte_identical_regression():
-    """Pure-ASCII input tokenises byte-identically to the pre-change output.
+    """These pure-ASCII inputs are unaffected by the CJK branch (codepoints > 127).
 
-    This is the hard invariant: new CJK logic must only trigger on codepoints
-    > 127. English BM25 scores must be unaffected.
+    Guards CJK-branch isolation: adding CJK handling must not change ASCII
+    tokenisation. NOTE: pure-ASCII output overall is NOT frozen — #252 (§11 /
+    ADR-0014 amended) deliberately changed it (dropped junk tokens, eval-backed).
+    These specific samples simply don't hit the #252 filter, so they pin the
+    CJK-isolation guarantee, not a byte-identical-forever guarantee.
     """
-    # Known pre-change output for these inputs (pinned values):
+    # Pinned values: unaffected by both the CJK branch and the #252 filter.
     assert tokenize("refund policy") == ["refund", "policy"]
     assert tokenize("How do I cancel?") == ["cancel"]
     assert tokenize("the quick brown fox") == ["quick", "brown", "fox"]

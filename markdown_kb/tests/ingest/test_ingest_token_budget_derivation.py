@@ -59,8 +59,8 @@ def test_context_window_unknown_model_pessimistic(monkeypatch):
     monkeypatch.setenv("OPENAI_INGEST_MODEL", "totally-made-up-model-9000")
     window = templates_module.ingest_model_context_window()
     assert window == 32_000
-    # Fallback must be conservative: smaller than the smallest mainstream model
-    # we'd actually configure, so an unrecognised model under-fills not overflows.
+    # Fallback is pessimistic relative to modern (large-window) models, so an
+    # unrecognised newer model under-fills rather than overflows its real window.
     assert window < 128_000
 
 

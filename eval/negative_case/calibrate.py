@@ -1,4 +1,6 @@
-"""Threshold calibration for KB_SCORE_THRESHOLD (#253).
+"""Deep module per Ousterhout. Public surface: ``sweep``, ``recommend``, ``collect_scores``, ``render_calibration_report``, ``main``.
+
+Threshold calibration for KB_SCORE_THRESHOLD (#253).
 
 The pre-LLM Cannot Confirm gate refuses a query when its top BM25 score falls
 below ``KB_SCORE_THRESHOLD``. That score is threshold-independent, so the whole
@@ -28,8 +30,8 @@ _PKG_ROOT = Path(__file__).resolve().parent
 REPORT_PATH = _PKG_ROOT / "calibration_report.md"
 
 # BM25 scores are unbounded; this grid spans the observed range for the committed
-# corpus (clearly-out-of-scope ~0, real hits ~1.5+). CURRENT_DEFAULT is the value
-# shipped in retrieval._SCORE_THRESHOLD, included for side-by-side comparison.
+# corpus (clearly-out-of-scope ~0, real hits ~1.5+). CURRENT_DEFAULT mirrors
+# retrieval._KB_SCORE_THRESHOLD_DEFAULT, included for side-by-side comparison.
 DEFAULT_THRESHOLDS: tuple[float, ...] = (0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0)
 CURRENT_DEFAULT = 0.5
 
