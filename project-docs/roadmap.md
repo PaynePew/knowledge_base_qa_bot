@@ -172,6 +172,10 @@ Scoped during a 2026-05-28 grill (after Phase 8's comparison shipped). Capture s
 - **Everything downstream is reused unchanged.** Because the unit is `Section`, `expand_to_pages` / `build_prompt` / `grounding.verify` (Section satisfies `CitableContent`) / Cannot Confirm gate / `derived_from` all work as-is. The only genuinely new code is the dense index + the ~20-line RRF merge.
 - **Slice plan:** H-1 dense-over-wiki index (4-6h) → H-2 RRF + hybrid `query()` (4-6h) → H-3 thin serving surface `/health`/`/index`/`/chat` (3-5h) → ADR + CONTEXT + reviewer (2-3h) → regression + real-embedding smoke (1-2h).
 - **Relation to #107:** if the pluggable `Retriever` protocol lands, this hybrid is its 3rd implementation (Wiki / Vector-RAG / Hybrid), togglable alongside the other two — so it strengthens, not conflicts with, #107.
+- **Week 6 failure-mode cross-ref (系統設計實戰營 deck).** The Week 6 "Evaluation & Failure Modes" deck names the two retrieval failure modes this phase targets; both line up with decisions already locked above:
+  - **FM2 (Semantic False Positive)** — the deck's remedy is *two-stage retrieval + intent-aware rerank*. That is exactly the **cross-encoder reranker AFTER RRF** deferred above; treat the deck as a design source when the rerank slice is scoped (ship RRF-only first, then measure whether the reranker is warranted).
+  - **FM3 (Wrong Retrieval Unit)** — the deck's remedy is *parent-child chunk + breadcrumb metadata* to recover lost parent context. Because this phase embeds at **Section granularity** (not char-chunk), the "lost parent context" failure is **avoided by construction** — so FM3 validates the Section-unit decision rather than adding work.
+  - FM1 (Keyword Miss) is the recall-union case RRF directly addresses; FM4 (Knowledge Gap) is an eval/fallback concern, tracked separately (negative-case + fallback-rate eval, issue #249).
 
 ### Phase 14 (README / Getting-Started docs) — grill outline (content TBD)
 
