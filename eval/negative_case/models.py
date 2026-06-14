@@ -21,6 +21,19 @@ class NegativeCase:
 
 
 @dataclass(frozen=True)
+class PositiveCase:
+    """An in-scope query the bot SHOULD answer (a real answer exists in the KB).
+
+    Used by the threshold calibration (#253) to measure *over-refusal*: a positive
+    case refused by the gate is a false refusal — the cost of setting the threshold
+    too high.
+    """
+
+    query: str
+    note: str
+
+
+@dataclass(frozen=True)
 class RefusalOutcome:
     """The system's pre-LLM response to one negative case.
 

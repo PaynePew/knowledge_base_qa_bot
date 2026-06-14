@@ -41,12 +41,24 @@ from .grounding import GroundingOutcome
 from .logger import log_event
 from .prompt_builder import SYSTEM_PROMPT, build_prompt
 
-# Score threshold below which retrieval is treated as "no match".
-# Default 0.5 — calibrated against the sample corpus. Override with
-# KB_SCORE_THRESHOLD env var. Read at import time: a server restart picks
-# up a new value; runtime changes do not (tests monkeypatch _SCORE_THRESHOLD
+# Score threshold below which retrieval is treated as "no match" and the bot
+# returns Cannot Confirm.
+#
+# The default is empirically justified by the #253 calibration sweep
+# (eval/negative_case/calibration_report.md): every threshold in the [0.25, 1.25]
+# plateau rejects all clearly-out-of-scope queries (~0 BM25 score) at 0%
+# over-refusal of in-scope queries (min in-scope score ~1.41). 0.5 sits inside
+# that plateau with margin on both sides, so it is kept (a working default is not
+# churned to a different equally-good value). The residual adjacent-absent leaks
+# score inside the in-scope range and are unreachable by ANY threshold without
+# over-refusing real queries — they need semantic reranking (Phase 13 / FM2), not
+# threshold tuning.
+#
+# Override with KB_SCORE_THRESHOLD env var. Read at import time: a server restart
+# picks up a new value; runtime changes do not (tests monkeypatch _SCORE_THRESHOLD
 # directly).
-_SCORE_THRESHOLD = float(os.getenv("KB_SCORE_THRESHOLD", "0.5"))
+_KB_SCORE_THRESHOLD_DEFAULT = 0.5
+_SCORE_THRESHOLD = float(os.getenv("KB_SCORE_THRESHOLD", str(_KB_SCORE_THRESHOLD_DEFAULT)))
 
 # Sentinel strings the system returns to /chat clients. Tests import these
 # constants so a typo in production is caught instead of silently passing
