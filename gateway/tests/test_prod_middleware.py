@@ -207,6 +207,30 @@ def test_budget_does_not_block_non_heavy_path(monkeypatch):
     assert resp.status_code == 200
 
 
+def test_shed_request_does_not_consume_budget(client):
+    """A request shed by the concurrency cap must NOT consume daily budget.
+
+    Regression (issue #269 review): charging before the semaphore gate let a
+    burst of shed traffic drain the $/day ceiling on zero real spend and then
+    503 every heavy path for the rest of the UTC day. Budget is now charged only
+    AFTER a request is admitted past the concurrency gate.
+    """
+    import gateway.app.budget as budget_mod
+    import gateway.app.middleware as mw_mod
+
+    before = budget_mod.budget.day_total()
+    acquired = []
+    while mw_mod.read_sem.acquire(blocking=False):
+        acquired.append(True)
+    try:
+        resp = client.post("/wiki/chat", json={"query": "hi"})
+        assert resp.status_code == 503  # shed by the read semaphore
+    finally:
+        for _ in acquired:
+            mw_mod.read_sem.release()
+    assert budget_mod.budget.day_total() == before, "a shed request must not be charged"
+
+
 def test_budget_accumulates_then_blocks(monkeypatch):
     """A tiny cap allows the first heavy charge, then blocks once at the cap."""
     import gateway.app.budget as budget_mod

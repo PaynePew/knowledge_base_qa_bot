@@ -183,13 +183,17 @@ class ProdMiddleware:
                 await _send_json(send, 401, {"detail": "admin token required"})
                 return
 
-        # 2. Daily USD budget — reject once the UTC-day total has hit the cap,
-        #    otherwise charge this request's conservative estimate and proceed.
+        # 2. Daily USD budget GATE — reject once the UTC-day total has hit the
+        #    cap. The actual charge is deferred until AFTER the concurrency gate
+        #    admits the request (below), so a request that is shed by the
+        #    semaphore — and therefore never reaches the handler / OpenAI — does
+        #    NOT consume budget. Charging here instead would let a burst of
+        #    shed traffic drain the $/day ceiling on zero real spend and 503 all
+        #    heavy paths for the rest of the UTC day.
         if _budget.budget.over_cap():
             _log_event("budget_block", f"path={path} cap={_budget.budget.cap_usd}")
             await _send_json(send, 503, {"detail": "daily demo budget reached"})
             return
-        _budget.budget.charge(path)
 
         # 3. Concurrency cap — non-blocking acquire; over-limit sheds immediately.
         sem = read_sem if is_read else admin_sem
@@ -197,6 +201,11 @@ class ProdMiddleware:
             _log_event("overload_shed", f"path={path} kind={'read' if is_read else 'admin'}")
             await _send_json(send, 503, {"detail": "server busy, please retry"})
             return
+
+        # Admitted past both gates → only now charge the conservative estimate.
+        # Only requests that actually proceed to the handler (and may call
+        # OpenAI) consume budget; over-cap and shed rejections never do.
+        _budget.budget.charge(path)
 
         try:
             # 4. Graceful provider failure for NON-streaming heavy handlers.
