@@ -83,7 +83,12 @@ from .grounding import verify
 from .indexer import _index_lock, parse_markdown, slugify, split_frontmatter
 from .logger import log_event
 from .schemas import GroundingFailure, IngestSourceResult
-from .templates import classify_source, generate_entity_page, generate_page
+from .templates import (
+    classify_source,
+    generate_entity_page,
+    generate_page,
+    ingest_model_context_window,
+)
 from .wiki_writer import (
     delete_orphans,
     read_existing_frontmatter,
@@ -145,33 +150,63 @@ def _estimate_tokens(content: str) -> int:
     return len(content) // 3
 
 
-def _max_ingest_tokens() -> int:
-    """Per-Source SOFT token cap, read at call time (KB_SCORE_THRESHOLD pattern).
+# Tunable defaults — named module constants (mirrors lint.py's _KB_LINT_*_DEFAULT
+# discipline) so every magic number has a name and a documented logical basis.
+_KB_INGEST_TOKEN_FRACTION_DEFAULT = 0.5  # share of the model window the SOFT cap uses
+_KB_INGEST_MAX_SECTION_TOKENS_DEFAULT = 6000  # per-section quality cap (NOT model-derived)
+_KB_INGEST_CONCURRENCY_DEFAULT = 8  # max in-flight LLM calls in aingest_sources
 
-    Override with ``KB_INGEST_MAX_TOKENS``; a restart-free change takes effect
-    on the next ingest.  Default 64 000 tokens (~192 KB UTF-8 ASCII, ~64 KB CJK).
-    Sources that exceed this cap are routed to the async job path (Fix 1b).
+
+def _max_ingest_tokens() -> int:
+    """Per-Source SOFT token cap, DERIVED from the configured model's window.
+
+    Precedence (two-tier knob), all read at call time:
+        1. ``KB_INGEST_MAX_TOKENS``    — absolute override, wins outright.
+        2. ``ingest_model_context_window() * KB_INGEST_TOKEN_FRACTION`` (default 0.5).
+
+    Deriving from the live model means swapping ``OPENAI_INGEST_MODEL`` re-scales
+    the budget automatically; the frozen literal this replaced only fit a 128 K
+    window.  For the default gpt-4o-mini (128 K) the 0.5 fraction reproduces the
+    historical 64 000 exactly (zero behaviour regression).  Sources over this cap
+    route to the async job path (Fix 1b).
     """
-    return int(os.getenv("KB_INGEST_MAX_TOKENS", "64000"))
+    override = os.getenv("KB_INGEST_MAX_TOKENS")
+    if override is not None:
+        return int(override)
+    fraction = float(
+        os.getenv("KB_INGEST_TOKEN_FRACTION", str(_KB_INGEST_TOKEN_FRACTION_DEFAULT))
+    )
+    return int(ingest_model_context_window() * fraction)
 
 
 def _max_section_tokens() -> int:
     """Per-section HARD token cap, read at call time.
 
-    Override with ``KB_INGEST_MAX_SECTION_TOKENS``; default 6 000 tokens.
-    A Source with ANY section exceeding this cap is rejected with a clear
-    reason before any LLM call is made.
+    Override with ``KB_INGEST_MAX_SECTION_TOKENS``; default
+    ``_KB_INGEST_MAX_SECTION_TOKENS_DEFAULT`` (6 000).  Unlike the per-Source cap
+    this is a *quality* cap, not a capacity cap: a section larger than ~6 K tokens
+    is almost always a malformed unsplit blob that will not synthesise into a
+    clean page, so it is a fixed constant and deliberately does NOT scale with the
+    model window.  A Source with ANY section over this cap is rejected with a
+    clear reason before any LLM call is made.
     """
-    return int(os.getenv("KB_INGEST_MAX_SECTION_TOKENS", "6000"))
+    return int(
+        os.getenv(
+            "KB_INGEST_MAX_SECTION_TOKENS",
+            str(_KB_INGEST_MAX_SECTION_TOKENS_DEFAULT),
+        )
+    )
 
 
 def _max_concurrency() -> int:
     """Maximum concurrent in-flight LLM calls for aingest_sources.
 
-    Override with ``KB_INGEST_CONCURRENCY``; default 8.  A restart-free change
-    takes effect on the next aingest_sources call.
+    Override with ``KB_INGEST_CONCURRENCY``; default
+    ``_KB_INGEST_CONCURRENCY_DEFAULT`` (8).  A restart-free change takes effect on
+    the next aingest_sources call.  This is a provider rate-limit / account-tier
+    knob, not a model-derived value — left a named constant by design.
     """
-    return int(os.getenv("KB_INGEST_CONCURRENCY", "8"))
+    return int(os.getenv("KB_INGEST_CONCURRENCY", str(_KB_INGEST_CONCURRENCY_DEFAULT)))
 
 
 def _should_route_async(content: str) -> bool:
