@@ -350,6 +350,32 @@ def _draft_and_verify(
 
     draft = _call_llm_with_error_handling(question, prompt_text)
 
+    # LLM self-refusal short-circuit (green-light-on-non-answer fix).
+    # SYSTEM_PROMPT Rules 3/6 instruct the model to emit CANNOT_CONFIRM_PHRASE
+    # verbatim when the CONTEXT is insufficient. This fires on "adjacent-absent"
+    # queries that clear the BM25 threshold but whose specific answer is not in the
+    # retrieved Sections (the FM2 leak noted at _SCORE_THRESHOLD). The refusal carries
+    # no factual claim, so grounding.verify() has nothing to refute and would return
+    # passed=True — surfacing a green "Grounded" badge on a non-answer. Treat the
+    # model's own refusal as Cannot Confirm directly and skip the verifier entirely
+    # (nothing to verify, and the spurious pass is exactly the bug). reason reuses
+    # claim_unsupported — the draft is not a grounded answer — so the outcome stays
+    # within the existing GroundingInfo / lint value set with no schema change, and
+    # Phase 5 /lint C1 still aggregates it into the coverage backlog.
+    if draft.strip() == CANNOT_CONFIRM_PHRASE:
+        cited_ids = ",".join(sec.id for sec in expanded_sections)
+        log_event(
+            "chat_grounding_fallback",
+            f'"{question[:60].replace(chr(34), chr(39))}" reason=claim_unsupported'
+            f" cited={cited_ids}",
+        )
+        _write_chat_log(question, ranked)
+        return {
+            "answer": CANNOT_CONFIRM_PHRASE,
+            "sources": sources,
+            "grounding_outcome": GroundingOutcome(passed=False, reason="claim_unsupported"),
+        }
+
     # Post-LLM Grounding Check (ADR-0004 layer 3).
     # verify() never raises — all verifier failures map to
     # grounding_outcome.reason = "verifier_unavailable".
