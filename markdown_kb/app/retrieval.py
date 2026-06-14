@@ -60,6 +60,25 @@ from .prompt_builder import SYSTEM_PROMPT, build_prompt
 _KB_SCORE_THRESHOLD_DEFAULT = 0.5
 _SCORE_THRESHOLD = float(os.getenv("KB_SCORE_THRESHOLD", str(_KB_SCORE_THRESHOLD_DEFAULT)))
 
+# Per-language Chinese threshold (#261). Chinese bigram BM25 scores sit in a higher
+# band than English (the same query emits more tokens, inflating the summed score —
+# ADR-0014), so the English-calibrated 0.5 leaks Chinese adjacent-absent queries.
+# The #256/#261 re-sweep over the enlarged 10-topic Chinese corpus
+# (eval/negative_case/calibration_report_zh.md) found the catchable adjacent-absent
+# leaks at ~1.9-2.8 sitting below the min in-scope score ~4.9, with 4.0 the
+# Youden-J-optimal separator (correct-refusal 95%, over-refusal 0%): it lifts
+# Chinese correct-refusal from 76% (at the global 0.5) to 95%.
+#
+# INTERIM — superseded by the Phase 13 reranker (roadmap Phase 13 / ADR-0014). A
+# per-language threshold cannot catch the residual adjacent-absent leak that scores
+# *inside* the in-scope range (a query whose surface tokens match a real Section but
+# whose specific ask is absent); that semantic-overlap case is Phase 13 territory in
+# both languages. When Phase 13 lands, this knob and its routing should be retired.
+#
+# Override with KB_SCORE_THRESHOLD_ZH env var (import-time, like KB_SCORE_THRESHOLD).
+_KB_SCORE_THRESHOLD_ZH_DEFAULT = 4.0
+_SCORE_THRESHOLD_ZH = float(os.getenv("KB_SCORE_THRESHOLD_ZH", str(_KB_SCORE_THRESHOLD_ZH_DEFAULT)))
+
 # Sentinel strings the system returns to /chat clients. Tests import these
 # constants so a typo in production is caught instead of silently passing
 # against a hardcoded test literal.
@@ -251,6 +270,11 @@ def _retrieve_and_gate(question: str) -> dict:
     ranked = indexer.search(question, k=3)
     top_score = ranked[0][1] if ranked else 0.0
 
+    # Per-language gate routing (#261): a CJK query is gated by the Chinese-calibrated
+    # threshold, a Latin query by the English one. Call-time so a single mixed-language
+    # index serves both. INTERIM — retired by the Phase 13 reranker (see _SCORE_THRESHOLD_ZH).
+    threshold = _SCORE_THRESHOLD_ZH if _is_cjk_query(question) else _SCORE_THRESHOLD
+
     # Phase 6 Slice 6-3: each entry carries an optional ``derived_from`` chain
     # populated from the parent wiki page's ``frontmatter.sources``. This is
     # response-only audit data — the chain must NEVER appear in the LLM CONTEXT
@@ -266,7 +290,7 @@ def _retrieve_and_gate(question: str) -> dict:
         for sec, score in ranked
     ]
 
-    if top_score < _SCORE_THRESHOLD:
+    if top_score < threshold:
         truncated = question[:60].replace('"', "'")
         gate_reason = "retrieval_empty" if not ranked else "below_threshold"
         if ranked:
@@ -354,6 +378,16 @@ def _draft_and_verify(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _is_cjk_query(question: str) -> bool:
+    """True when the query contains any CJK character → route to the zh threshold (#261).
+
+    Reuses ``indexer._is_cjk`` (the same predicate the CJK-bigram tokeniser uses,
+    ADR-0014) so query-language detection and tokenisation never drift apart.
+    INTERIM — retired by the Phase 13 reranker (see ``_SCORE_THRESHOLD_ZH``).
+    """
+    return any(indexer._is_cjk(ch) for ch in question)
 
 
 def _derived_from_for_section(sec: indexer.Section) -> list[dict] | None:

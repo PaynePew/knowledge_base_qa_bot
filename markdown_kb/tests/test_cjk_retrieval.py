@@ -259,6 +259,12 @@ def test_chinese_query_returns_grounded_answer_with_cjk(chinese_wiki_section_ind
     monkeypatch.setattr(ret_module, "get_llm", lambda: fake_llm)
     monkeypatch.setattr(ret_module, "get_retry_llm", lambda: fake_llm)
 
+    # This test asserts CJK retrieval + answer plumbing (AC4), not the gate value.
+    # Insulate it from the per-language Chinese gate (#261): the small 2-Section
+    # fixture scores below the production _SCORE_THRESHOLD_ZH (4.0), so pin it to 0.0
+    # here — the routed-threshold behaviour itself is covered by test_zh_score_threshold.
+    monkeypatch.setattr(ret_module, "_SCORE_THRESHOLD_ZH", 0.0)
+
     # Mock grounding.verify to return claim_supported (hermetic — no LLM call)
     supported_outcome = GroundingOutcome(passed=True, reason="claim_supported", result=None)
     monkeypatch.setattr(
