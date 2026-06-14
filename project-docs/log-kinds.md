@@ -223,9 +223,19 @@ happened** (turn 2+, history non-empty); a turn-1 passthrough writes no entry.
 Phase 5 `/lint` reads `wiki/log.md` only (kinds `chat_fallback` /
 `chat_grounding_fallback`) and is therefore unaffected by this channel.
 
+The production overload + cost-protection kinds (`budget_block`,
+`overload_shed`, `provider_quota_503`) are gateway-specific, authorized by
+GitHub issue #269 (deploy S1 — Gateway production middleware). They are emitted
+by `gateway/app/middleware.py::ProdMiddleware` when a heavy request is rejected
+by one of the three demo guards (daily USD budget, concurrency cap, provider
+quota), so the `gateway/log.md` carries an operator-facing audit of every shed.
+
 | Kind | When fired | Summary template |
 |---|---|---|
 | `chat_rewrite` | Turn 2+ query rewriting succeeded inside `_sse_generator`; emitted right after `rewrite_query()` returns | `session=<uuid> raw="<60-char-bounded raw follow-up>" rewritten="<60-char-bounded self-contained query>"` |
+| `budget_block` | A heavy request is rejected because the UTC-day cost estimate has reached `KB_DAILY_USD_CAP` | `path=<mounted-path> cap=<usd>` |
+| `overload_shed` | A heavy request is rejected because its semaphore (read or admin) is fully held | `path=<mounted-path> kind=<read\|admin>` |
+| `provider_quota_503` | A non-streaming heavy request raised an OpenAI `insufficient_quota` / 429, mapped to a friendly 503 | `path=<mounted-path> exc=<ExceptionClassName>` |
 
 `raw` and `rewritten` are truncated to 60 chars and have inner `"` replaced
 with `'` (per CODING_STANDARD §5.3 bounded-summary idiom).

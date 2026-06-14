@@ -14,6 +14,12 @@ The Gateway is a thin parent ASGI app that:
     the selected stack's stream_query() and emits SSE events per ADR-0009.
   - Exposes ``POST /upload`` (multipart) that delegates to
     ``markdown_kb.app.upload.upload_files`` (ADR-0011).
+  - Installs ``ProdMiddleware`` (issue #269): read/admin concurrency caps, a
+    daily USD budget guard, an optional admin-token kill-switch, and a
+    graceful OpenAI-quota→503 mapping for non-streaming heavy paths.
+  - Exposes ``GET /healthz`` (always 200 liveness) and ``GET /healthz/shed``
+    (200 normally, 503 when the read semaphore is saturated — edge-active
+    health check).
 """
 
 from __future__ import annotations
@@ -27,13 +33,14 @@ from dotenv import find_dotenv, load_dotenv
 load_dotenv(find_dotenv(usecwd=True))
 
 from fastapi import FastAPI  # noqa: E402
-from fastapi.responses import FileResponse, HTMLResponse  # noqa: E402
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 # Import sub-apps AFTER env is loaded so retrieval singletons see OPENAI_API_KEY.
 from markdown_kb.app.main import app as _wiki_app  # noqa: E402
 from vector_rag.app.main import app as _rag_app  # noqa: E402
 
+from .middleware import ProdMiddleware, read_saturated  # noqa: E402
 from .routes import router  # noqa: E402
 
 # Path constants — resolved relative to this file so they work regardless of cwd.
@@ -50,12 +57,42 @@ _FAVICON_PATH = _STATIC_DIR / "favicon.svg"
 _FAVICON_CACHE = "public, max-age=86400"
 
 app = FastAPI(title="KB Gateway", version="0.1.0")
+# Production overload + cost-protection guard (issue #269).  Added BEFORE the
+# routes/mounts so it wraps every request to the parent app and both sub-apps.
+app.add_middleware(ProdMiddleware)
 app.include_router(router)
 app.mount("/wiki", _wiki_app)
 app.mount("/rag", _rag_app)
 # Serve shared.css (and any future static assets) at /static/<filename>.
 # Must be mounted AFTER include_router so /static doesn't shadow API routes.
 app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+
+
+@app.get("/healthz", include_in_schema=False)
+def healthz() -> JSONResponse:
+    """Liveness probe — ALWAYS 200 (issue #269 AC1).
+
+    Stays 200 even when the daily budget is exhausted or the read semaphore is
+    saturated: a non-200 here would make the box's orchestrator (Docker
+    restart-policy) kill an otherwise-healthy, merely-busy worker, turning a
+    transient overload into a restart loop.  Readiness/shedding lives in the
+    separate ``/healthz/shed`` probe.
+    """
+    return JSONResponse({"status": "ok"})
+
+
+@app.get("/healthz/shed", include_in_schema=False)
+def healthz_shed() -> Response:
+    """Readiness / load-shed probe — 200 normally, 503 when read-saturated.
+
+    Reflects ONLY the read semaphore's saturation (issue #269 AC2): the edge
+    load balancer drains this box from the read pool while it is full, then
+    re-adds it when a slot frees.  Admin-semaphore saturation does NOT flip
+    this — index/maintenance load must not shed reader traffic at the edge.
+    """
+    if read_saturated():
+        return JSONResponse({"status": "shedding"}, status_code=503)
+    return JSONResponse({"status": "ok"})
 
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
