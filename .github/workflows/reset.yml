@@ -44,5 +44,13 @@ jobs:
             # Phase-0 saga. This recreates ONLY ask-wiki-rag in its own project →
             # zero blast radius to the scheduler / qrcode tenants.
             docker compose -p ask-wiki-rag -f docker-compose.prod.yml up -d --force-recreate ask-wiki-rag
-            docker compose -p ask-wiki-rag -f docker-compose.prod.yml exec -T ask-wiki-rag \
-              curl -fsS http://localhost:8000/healthz
+            # /healthz smoke via python (python:3.11-slim has NO curl). Retry to
+            # let uvicorn + the langchain/faiss imports finish starting.
+            for i in $(seq 1 10); do
+              if docker compose -p ask-wiki-rag -f docker-compose.prod.yml exec -T ask-wiki-rag \
+                   python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz', timeout=5).status == 200 else 1)"; then
+                echo "healthz OK"; break
+              fi
+              [ "$i" -eq 10 ] && { echo "healthz did not come up in time"; exit 1; }
+              echo "waiting for healthz... ($i/10)"; sleep 3
+            done
