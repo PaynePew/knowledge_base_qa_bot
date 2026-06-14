@@ -173,9 +173,7 @@ def _max_ingest_tokens() -> int:
     override = os.getenv("KB_INGEST_MAX_TOKENS")
     if override is not None:
         return int(override)
-    fraction = float(
-        os.getenv("KB_INGEST_TOKEN_FRACTION", str(_KB_INGEST_TOKEN_FRACTION_DEFAULT))
-    )
+    fraction = float(os.getenv("KB_INGEST_TOKEN_FRACTION", str(_KB_INGEST_TOKEN_FRACTION_DEFAULT)))
     return int(ingest_model_context_window() * fraction)
 
 
@@ -358,10 +356,7 @@ def _verify_draft(draft, sections: list) -> tuple:
 
     reason = grounding_outcome.reason
     unsupported: list[str] = []
-    if (
-        grounding_outcome.result is not None
-        and grounding_outcome.result.unsupported_claims
-    ):
+    if grounding_outcome.result is not None and grounding_outcome.result.unsupported_claims:
         unsupported = grounding_outcome.result.unsupported_claims
 
     # mypy cannot narrow grounding_outcome.reason (full 6-variant Literal)
@@ -412,9 +407,7 @@ def _finalise_source_drafts(
         page_path = resolved_wiki_dir / subdir_name / f"{draft.slug}.md"
         existing_fm = read_existing_frontmatter(page_path)
         if existing_fm is not None and "created" in existing_fm:
-            preserved_fm = draft.frontmatter.model_copy(
-                update={"created": existing_fm["created"]}
-            )
+            preserved_fm = draft.frontmatter.model_copy(update={"created": existing_fm["created"]})
             draft = draft.model_copy(update={"frontmatter": preserved_fm})
         drafts_with_preserved_timestamps.append(draft)
 
@@ -486,13 +479,11 @@ def _resolve_draft_slugs(drafts: list, sections: list, used_slugs: set) -> list:
         New list of WikiPageDraft objects with resolved slugs.
     """
     resolved = []
-    for draft, section in zip(drafts, sections):
+    for draft, section in zip(drafts, sections, strict=True):
         raw_slug = slugify(section.heading)
         final_slug = resolve_slug_collision(used_slugs, raw_slug)
         updated_fm = draft.frontmatter.model_copy(update={"id": final_slug})
-        resolved.append(
-            draft.model_copy(update={"slug": final_slug, "frontmatter": updated_fm})
-        )
+        resolved.append(draft.model_copy(update={"slug": final_slug, "frontmatter": updated_fm}))
     return resolved
 
 
@@ -685,9 +676,7 @@ def ingest_sources(
                         final_slug = resolve_slug_collision(used_slugs, raw_slug)
                         section_draft = generate_page(section, "entity")
                         batch._llm_call_count += 1
-                        updated_fm = section_draft.frontmatter.model_copy(
-                            update={"id": final_slug}
-                        )
+                        updated_fm = section_draft.frontmatter.model_copy(update={"id": final_slug})
                         section_draft = section_draft.model_copy(
                             update={"slug": final_slug, "frontmatter": updated_fm}
                         )
@@ -955,9 +944,7 @@ async def aingest_sources(
                             _draft = generate_page(_section, "entity")
                             _ufm = _draft.frontmatter.model_copy(update={"id": _final})
                             _drafts.append(
-                                _draft.model_copy(
-                                    update={"slug": _final, "frontmatter": _ufm}
-                                )
+                                _draft.model_copy(update={"slug": _final, "frontmatter": _ufm})
                             )
                         return _drafts
 
@@ -1008,16 +995,19 @@ async def aingest_sources(
         # orphan delete, write).  Run via to_thread so _index_lock acquire does
         # NOT block the event loop.
         try:
-            write_result, deleted, grounding_failed_slugs, grounding_log_entries = (
-                await asyncio.to_thread(
-                    _finalise_source_drafts,
-                    drafts,
-                    sections=sections,
-                    source_name=source_name,
-                    source_path=source_path,
-                    docs_body_hash=docs_body_hash,
-                    resolved_wiki_dir=resolved_wiki_dir,
-                )
+            (
+                write_result,
+                deleted,
+                grounding_failed_slugs,
+                grounding_log_entries,
+            ) = await asyncio.to_thread(
+                _finalise_source_drafts,
+                drafts,
+                sections=sections,
+                source_name=source_name,
+                source_path=source_path,
+                docs_body_hash=docs_body_hash,
+                resolved_wiki_dir=resolved_wiki_dir,
             )
         except LLMError:
             raise
