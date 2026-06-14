@@ -1,4 +1,6 @@
-"""Run the negative-case eval and render the fallback-rate report.
+"""Deep module per Ousterhout. Public surface: ``run_negative_case``, ``render_report``, ``main``.
+
+Run the negative-case eval and render the fallback-rate report.
 
 ``run_negative_case`` does the work (build the in-scope corpus index, drive every
 out-of-scope query through the pre-LLM gate, compute the correct-refusal rate) and
@@ -57,7 +59,8 @@ def run_negative_case(corpus_dir: Path | None = None) -> NegativeCaseReport:
     return NegativeCaseReport(
         rate=correct_refusal_rate(o for _, o in outcomes),
         by_category={
-            cat: correct_refusal_rate(outs) for cat, outs in sorted(per_category.items())
+            cat: correct_refusal_rate(outs)
+            for cat, outs in sorted(per_category.items())
         },
         outcomes=outcomes,
     )
