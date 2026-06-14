@@ -1,0 +1,51 @@
+# Docker build context exclusions (issue #270, deploy S2).
+#
+# DELIBERATELY NOT a mirror of .gitignore. .gitignore lists `.kb/`, but the
+# curated seed (`.kb/index.json`, `.kb/faiss_index/*`, `wiki/`) is force-committed
+# (git add -f) as the first-run demo seed. If this file excluded `.kb/`, the image
+# would ship an EMPTY index and `/chat` would fail until a key-backed rebuild.
+# So `.kb/`, `wiki/`, and `docs/` are intentionally KEPT in the build context.
+
+# Version control + local virtualenv (the image builds its own .venv).
+.git
+.gitignore
+.venv
+venv
+
+# Python bytecode / build caches.
+**/__pycache__
+*.pyc
+*.py[cod]
+*.egg-info
+.pytest_cache
+.ruff_cache
+
+# Eval framework telemetry + scratch.
+.deepeval
+.deepeval-cache.json
+.tmp
+.doc.local
+
+# Eval source is excluded from the image (deepeval/matplotlib/anthropic are
+# dev-only and not baked). But the Dockerfile COPYs eval's pyproject.toml
+# explicitly BEFORE `COPY . .` so workspace resolution sees the manifest.
+# .dockerignore filters the build context *before* any COPY runs, so the
+# manifest must be re-included (negation) or that explicit COPY would fail with
+# "file not found". Net effect: only the eval *source tree* is stripped, the one
+# manifest survives.
+eval/
+!eval/paraphrase_comparison/pyproject.toml
+
+# Test suites — not shipped in the runtime image.
+**/tests/
+
+# Local-only secrets / env (never bake credentials into an image).
+.env
+.env.local
+.env.prod
+
+# Editor / OS noise.
+.DS_Store
+.idea
+.vscode
+*.swp
