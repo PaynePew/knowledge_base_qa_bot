@@ -236,19 +236,24 @@ def stream_query(question: str) -> Iterator[dict]:
 # ---------------------------------------------------------------------------
 # Pre-LLM distance-relevance gate config (issue #257)
 # ---------------------------------------------------------------------------
-# OFF by default: a FAISS distance ceiling is corpus- and embedding-specific, so
-# shipping a hand-picked number would repeat the magic-number anti-pattern (#253).
-# Until it is calibrated against an eval (eval/negative_case), the gate stays
-# disabled and RAG behaviour is unchanged. Set KB_RAG_DISTANCE_THRESHOLD to enable.
-_KB_RAG_DISTANCE_THRESHOLD_DEFAULT: float | None = None
+# Calibrated default (eval/rag_distance, #257/#258 follow-up): with real
+# text-embedding-3-small the FAISS L2 distance ceiling 1.1 perfectly separated the
+# in-scope eval set (max distance 0.989) from the out-of-scope set (min 1.278) —
+# a Youden-J-optimal plateau {1.0, 1.1, 1.2}, 1.1 = median (max margin). The model
+# is unit-norm so L2² = 2 − 2·cos, i.e. this ceiling is equivalently a cosine floor.
+# Enabled by default for parity with the wiki BM25 gate (CODING_STANDARD §4.3):
+# both stacks refuse weak retrieval pre-LLM. Set KB_RAG_DISTANCE_THRESHOLD to
+# override (e.g. a large value to disable). See eval/rag_distance/calibration_report.md.
+_KB_RAG_DISTANCE_THRESHOLD_DEFAULT: float | None = 1.1
 
 
 def _max_rag_distance() -> float | None:
     """Max distance for the closest chunk before a pre-LLM Cannot Confirm.
 
-    ``None`` (env unset) disables the gate. Read at call time so an env change
-    takes effect on the next query without a restart — unlike the wiki
-    ``KB_SCORE_THRESHOLD``, which is read once at import.
+    Defaults to the calibrated ceiling (``_KB_RAG_DISTANCE_THRESHOLD_DEFAULT``);
+    ``KB_RAG_DISTANCE_THRESHOLD`` overrides it (set a large value to disable). Read
+    at call time so an env change takes effect on the next query without a restart —
+    unlike the wiki ``KB_SCORE_THRESHOLD``, which is read once at import.
     """
     raw = os.getenv("KB_RAG_DISTANCE_THRESHOLD")
     return float(raw) if raw is not None else _KB_RAG_DISTANCE_THRESHOLD_DEFAULT
@@ -329,8 +334,9 @@ def _retrieve_and_gate(question: str) -> dict:
     # the (expensive) post-LLM grounding net alone. When the CLOSEST chunk is still
     # farther than the configured ceiling, refuse before the LLM — symmetric with
     # the wiki BM25 gate (CODING_STANDARD §4.3 gate parity). Lives in this deep
-    # module so Browser / MCP / CLI all inherit it. OFF unless
-    # KB_RAG_DISTANCE_THRESHOLD is set (the ceiling must be calibrated, not guessed).
+    # module so Browser / MCP / CLI all inherit it. ON by default at the calibrated
+    # ceiling (eval/rag_distance); KB_RAG_DISTANCE_THRESHOLD overrides it (set a
+    # large value to disable).
     max_distance = _max_rag_distance()
     if max_distance is not None and min(d for _, d in results) > max_distance:
         log_event(

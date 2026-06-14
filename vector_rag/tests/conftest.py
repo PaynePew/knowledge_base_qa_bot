@@ -105,6 +105,22 @@ def _redirect_paths_to_tmp(tmp_path, monkeypatch):
     vr_indexer.chunks_indexed = 0
 
 
+@pytest.fixture(autouse=True)
+def _neutralize_rag_distance_gate(monkeypatch):
+    """Disable the calibrated distance gate for the general suite.
+
+    The RAG distance gate ships ON by default (calibrated ceiling 1.1 against REAL
+    text-embedding-3-small distances — eval/rag_distance). This suite embeds with the
+    offline ``_FakeEmbeddings`` whose hash-derived distances are not comparable
+    to that real-embedding ceiling, so an enabled gate would refuse every fake query
+    and mask the answer/error paths. Neutralise it with a large permissive ceiling so
+    non-gate tests reach synthesis; the gate-behaviour tests
+    (``test_rag_distance_gate``) set ``KB_RAG_DISTANCE_THRESHOLD`` explicitly, which
+    overrides this autouse default.
+    """
+    monkeypatch.setenv("KB_RAG_DISTANCE_THRESHOLD", "1000.0")
+
+
 @pytest.fixture()
 def fake_embeddings(monkeypatch):
     """Swap vector_rag's embeddings leaf for the deterministic offline fake.
