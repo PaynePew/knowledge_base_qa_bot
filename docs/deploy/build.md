@@ -41,17 +41,18 @@ baked into the image.
 ## Smoke
 
 ```bash
-# Liveness: the wiki sub-app health route returns 200 {"status":"ok"}.
-curl -fsS http://localhost:8000/wiki/health
-# The RAG sub-app exposes the same:
-curl -fsS http://localhost:8000/rag/health
+# Liveness: top-level /healthz returns 200 {"status":"ok"} (added in #269).
+# This is the route the VPS health check / CD smoke step targets.
+curl -fsS http://localhost:8000/healthz
+# Readiness / load-shed: 200 normally, 503 when the read pool is saturated.
+curl -fsS http://localhost:8000/healthz/shed
 # Reader UI (HTML 200):
 curl -fsS -o /dev/null -w '%{http_code}\n' http://localhost:8000/
 ```
 
-> Note: there is no top-level `/healthz` route yet — the Gateway exposes health
-> via the mounted sub-apps (`/wiki/health`, `/rag/health`). If a flat `/healthz`
-> is later added for the VPS health check, point the curl above at it.
+> The mounted sub-apps still expose `/wiki/health` and `/rag/health`, but the
+> top-level `/healthz` (liveness) + `/healthz/shed` (readiness) added in #269 are
+> the canonical probes for the deploy.
 
 A one-shot grounded answer (needs `OPENAI_API_KEY` set):
 
