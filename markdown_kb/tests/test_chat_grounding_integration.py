@@ -321,6 +321,59 @@ def test_grounding_verifier_unavailable(indexed_corpus, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Scenario 7: LLM self-refusal must NOT be laundered into a green light
+# ---------------------------------------------------------------------------
+
+
+def test_grounding_llm_self_refusal_not_passed(indexed_corpus, monkeypatch):
+    """When the LLM itself returns the Cannot-Confirm phrase, the response must be
+    Cannot Confirm (passed=False) — even if the verifier would pass the refusal.
+
+    Regression for the "green light on a non-answer" bug: SYSTEM_PROMPT Rules 3/6
+    make the model emit CANNOT_CONFIRM_PHRASE verbatim when the retrieved CONTEXT is
+    insufficient (the adjacent-absent BM25 leak — a query that clears the threshold
+    but whose specific answer is not in the retrieved Sections). A refusal carries no
+    factual claim, so grounding.verify() has nothing to refute and returns
+    passed=True — which previously surfaced a green "Grounded" badge on a non-answer.
+    _draft_and_verify must treat the model's own refusal as Cannot Confirm directly
+    and never run it through (or trust) the verifier.
+    """
+    # LLM self-refuses with the exact Cannot-Confirm phrase.
+    fake_llm = FakeLLM(source_id=REFUND_SECTION_ID, content=CANNOT_CONFIRM_PHRASE)
+    monkeypatch.setattr(retrieval_module, "_llm", fake_llm)
+    monkeypatch.setattr(retrieval_module, "get_llm", lambda: fake_llm)
+
+    # The verifier, if reached, LAUNDERS the refusal into a pass. Record whether it
+    # is called and force the buggy passed=True so the test proves the short-circuit
+    # ignores it (behaviour assertion is the contract; the not-called assertion pins
+    # the "skip the verifier on self-refusal" design + the saved LLM call).
+    verify_called = {"hit": False}
+
+    def _laundering_verify(draft, sections):
+        verify_called["hit"] = True
+        return _approved_outcome(REFUND_SECTION_ID)  # passed=True
+
+    monkeypatch.setattr(retrieval_module.grounding_module, "verify", _laundering_verify)
+
+    from app.main import app
+
+    client = TestClient(app)
+    resp = client.post("/chat", json={"query": "How long do refunds take?"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert body["answer"] == CANNOT_CONFIRM_PHRASE
+    assert body["grounding"]["passed"] is False, (
+        f"LLM self-refusal must not surface a green light, got: {body['grounding']}"
+    )
+    assert body["grounding"]["reason"] == "claim_unsupported", (
+        f"Expected reason=claim_unsupported for self-refusal, got: {body['grounding']['reason']!r}"
+    )
+    assert verify_called["hit"] is False, "verify() must be skipped on LLM self-refusal"
+
+
+# ---------------------------------------------------------------------------
 # sources populated on below_threshold (ADR-0004 / PRD User Story 22)
 # ---------------------------------------------------------------------------
 
