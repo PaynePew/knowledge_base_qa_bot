@@ -34,26 +34,24 @@ REPORT_PATH = _PKG_ROOT / "calibration_report.md"
 # corpus (clearly-out-of-scope ~0, real hits ~1.5+). CURRENT_DEFAULT mirrors
 # retrieval._KB_SCORE_THRESHOLD_DEFAULT, included for side-by-side comparison.
 DEFAULT_THRESHOLDS: tuple[float, ...] = (0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0)
-# Chinese (bigram) BM25 top-scores land in a higher band than English (#256:
-# in-scope min ~2.2, hits up to ~9.9), so the English grid is too short to bracket
-# the Chinese separating gap. This grid keeps 0.5 (for side-by-side comparison),
-# resolves the (max-leak, min-in-scope] gap finely, and extends up far enough to
-# show where over-refusal begins.
+# Chinese (bigram) BM25 top-scores land in a higher band than English. #261's
+# enlarged 10-topic corpus puts the in-scope min ~4.9 (hits up to ~16.9) and the
+# catchable adjacent-absent leaks at ~1.9-2.8, so the English grid is far too short
+# to bracket the Chinese separating gap. This grid keeps 0.5 (side-by-side with the
+# English default), resolves the (max-catchable-leak, min-in-scope] gap ~(2.85, 4.9]
+# finely, and extends past min-in-scope so the over-refusal onset is visible.
 DEFAULT_THRESHOLDS_ZH: tuple[float, ...] = (
-    0.25,
     0.5,
-    0.75,
     1.0,
-    1.25,
     1.5,
-    1.75,
-    1.875,
     2.0,
-    2.25,
     2.5,
     3.0,
+    3.5,
     4.0,
+    4.5,
     5.0,
+    6.0,
 )
 CURRENT_DEFAULT = 0.5
 # English baseline's min in-scope BM25 score, surfaced in the zh cross-language
@@ -142,20 +140,30 @@ def _cross_language_verdict(
     positive_scores: Sequence[float],
     negative_scores: Sequence[float],
 ) -> list[str]:
-    """The #256 AC: does one global threshold serve both languages? (zh report only).
+    """The #256 / #261 AC: does one global threshold serve both languages? (zh report only).
 
-    Compares the Chinese score distribution to the English baseline and states an
-    explicit verdict + recommendation, picking the path the data implies:
+    Compares the Chinese score distribution to the English baseline, then splits the
+    non-zero leaks into:
+      - *catchable* leaks below the min in-scope score — a per-language threshold
+        separates them (the #261 magnitude-mismatch fix), and
+      - *residual* leaks at/above the min in-scope score — inside the real-answer
+        band, where no threshold separates them (semantic-reranking / Phase 13 territory).
+
+    Four outcomes:
       - 0.5 itself J-optimal → one global threshold serves both;
-      - leaks below the in-scope range → a per-language threshold separates them;
-      - leaks inside the in-scope range → semantic reranking, not threshold tuning.
+      - all leaks catchable (clean gap) → a per-language threshold cleanly separates;
+      - some catchable + some residual (the representative-corpus case) → a per-language
+        threshold fixes the magnitude mismatch, residual leaks → Phase 13;
+      - none catchable (every leak inside the in-scope range) → threshold tuning cannot
+        help at all; Phase 13 only.
     """
     min_pos = min(positive_scores)
     leaks = sorted(s for s in negative_scores if s > 0.0)
-    max_leak = leaks[-1] if leaks else 0.0
+    catchable = [s for s in leaks if s < min_pos]
+    residual = [s for s in leaks if s >= min_pos]
     refusal_at_default = _rate_below(negative_scores, CURRENT_DEFAULT)
     lines = [
-        "## Cross-language verdict (#256)",
+        "## Cross-language verdict (#256 / #261)",
         "",
         f"Chinese BM25 top-scores sit in a **higher band** than English: min in-scope "
         f"**{min_pos:.3f}** (English baseline {_EN_MIN_IN_SCOPE}), "
@@ -169,34 +177,63 @@ def _cross_language_verdict(
             f"✅ `KB_SCORE_THRESHOLD={CURRENT_DEFAULT}` is itself Youden-J-optimal for "
             "Chinese — **one global threshold serves both languages**; no change needed."
         )
-    elif leaks and max_leak >= min_pos:
+    elif not catchable:
+        # No non-zero leaks, or every leak sits inside the in-scope range — a
+        # per-language threshold cannot improve on the global default.
         lines.append(
             f"⚠️ At {CURRENT_DEFAULT} correct-refusal is {refusal_at_default:.0%}; the "
-            f"{len(leaks)} non-zero leaks ({[round(s, 3) for s in leaks]}) fall **inside** "
-            f"the in-scope range (≥ {min_pos:.3f}), so — like the English `adjacent_absent` "
-            "leaks — **no threshold separates them**. This needs semantic reranking "
-            "(Phase 13 hybrid / FM2), not threshold tuning or a per-language value."
+            f"{len(residual)} non-zero leaks ({[round(s, 3) for s in residual]}) fall "
+            f"**inside** the in-scope range (≥ {min_pos:.3f}), so — like the English "
+            "`adjacent_absent` leaks — **no threshold separates them**. This needs "
+            "semantic reranking (Phase 13 hybrid / FM2), not threshold tuning or a "
+            "per-language value."
         )
-    else:
+    elif not residual:
+        # Clean gap: every non-zero leak is below the in-scope range.
         lines.append(
             f"❌ **One global `KB_SCORE_THRESHOLD={CURRENT_DEFAULT}` does NOT serve "
             f"Chinese.** At {CURRENT_DEFAULT} correct-refusal is only "
-            f"{refusal_at_default:.0%}: the {len(leaks)} adjacent-absent leaks "
-            f"({[round(s, 3) for s in leaks]}) clear the gate. Unlike English, the Chinese "
-            f"leaks fall **below** the min in-scope score, leaving a clean gap "
-            f"({max_leak:.3f}, {min_pos:.3f}]; the sweep recommends **{recommended.threshold}** "
-            f"(correct-refusal {recommended.correct_refusal_rate:.0%}, over-refusal "
+            f"{refusal_at_default:.0%}: the {len(catchable)} adjacent-absent leaks "
+            f"({[round(s, 3) for s in catchable]}) clear the gate. Unlike English, the "
+            f"Chinese leaks fall **below** the min in-scope score, leaving a clean gap "
+            f"({max(catchable):.3f}, {min_pos:.3f}]; the sweep recommends "
+            f"**{recommended.threshold}** (correct-refusal "
+            f"{recommended.correct_refusal_rate:.0%}, over-refusal "
             f"{recommended.over_refusal_rate:.0%})."
         )
         lines += [
             "",
-            "**Recommendation:** adopt a per-language Chinese threshold. Because "
-            "`retrieval._SCORE_THRESHOLD` is read globally at import time, this means "
-            "either a per-language override (a `KB_SCORE_THRESHOLD_ZH` consulted when the "
-            "query is detected as CJK) or BM25 score normalisation so a single threshold "
-            "spans both languages. The magnitude gap is robust; the exact value is "
-            "illustrative on this small corpus and should be re-swept on a larger Chinese "
-            "KB before shipping a production default.",
+            "**Recommendation:** adopt a per-language Chinese threshold "
+            "(`KB_SCORE_THRESHOLD_ZH`). The magnitude gap is robust; re-sweep whenever "
+            "the Chinese corpus grows.",
+        ]
+    else:
+        # Mixed (the representative-corpus case, #261): some leaks are catchable by a
+        # per-language threshold, some sit inside the in-scope range (Phase 13 only).
+        lines.append(
+            f"❌ **One global `KB_SCORE_THRESHOLD={CURRENT_DEFAULT}` does NOT serve "
+            f"Chinese.** At {CURRENT_DEFAULT} correct-refusal is only "
+            f"{refusal_at_default:.0%}. The {len(catchable)} catchable adjacent-absent "
+            f"leaks ({[round(s, 3) for s in catchable]}) sit **below** the min in-scope "
+            f"score ({min_pos:.3f}), so a per-language threshold separates them: the "
+            f"sweep recommends **{recommended.threshold}** (correct-refusal "
+            f"{recommended.correct_refusal_rate:.0%}, over-refusal "
+            f"{recommended.over_refusal_rate:.0%})."
+        )
+        lines += [
+            "",
+            f"The remaining {len(residual)} leak(s) "
+            f"({[round(s, 3) for s in residual]}) fall **inside** the in-scope range "
+            f"(≥ {min_pos:.3f}) — e.g. an order-page query whose surface tokens match a "
+            "real Section but whose specific ask is absent — so, exactly like the English "
+            "`adjacent_absent` leaks, **no threshold (per-language or not) separates "
+            "them**; they are semantic-reranking (Phase 13 hybrid / FM2) territory in "
+            "both languages.",
+            "",
+            "**Recommendation:** adopt a per-language Chinese threshold "
+            "(`KB_SCORE_THRESHOLD_ZH`) to fix the magnitude mismatch — an **interim** "
+            "measure, superseded by the Phase 13 reranker (which also catches the "
+            "in-scope-range residual). Re-sweep whenever the Chinese corpus grows.",
         ]
     lines.append("")
     return lines
@@ -217,7 +254,7 @@ def render_calibration_report(
     pos_sorted = sorted(positive_scores)
     neg_nonzero = sorted(s for s in negative_scores if s > 0.0)
     title = (
-        "# KB_SCORE_THRESHOLD calibration — Traditional Chinese (#256)"
+        "# KB_SCORE_THRESHOLD calibration — Traditional Chinese (#256 / #261)"
         if lang == "zh"
         else "# KB_SCORE_THRESHOLD calibration (#253)"
     )
