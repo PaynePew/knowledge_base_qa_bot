@@ -197,7 +197,7 @@ above) because they are emitted by a different module against a different file.
 | `index_built` | `vector_rag.indexer.build_index()` completed (including the empty-corpus no-op) | `files=N chunks=M` |
 | `index_loaded` | Persisted FAISS index rehydrated from `.kb/faiss_index/` on app startup | `files=N chunks=M` |
 | `chat` | Successful `/chat` response written | `"<truncated query>" top=<chunk source> count=N` |
-| `chat_fallback` | Pre-LLM gate fires (index missing, or vector search empty) | `"<truncated query>" reason=<not_indexed\|retrieval_empty>` |
+| `chat_fallback` | Pre-LLM gate fires (index missing, vector search empty, or closest chunk distance over the ceiling) | `"<truncated query>" reason=<not_indexed\|retrieval_empty\|below_threshold> [rag_distance=X]` |
 | `chat_grounding_fallback` | Post-LLM verifier returned not-passed; reply replaced with Cannot Confirm | `"<truncated query>" reason=<outcome.reason> cited=<comma_separated_chunk_sources>` |
 | `chat_error` | OpenAI exception during `/chat` or the `/index` embedding call; mapped per [`CODING_STANDARD.md`](CODING_STANDARD.md) § 4.2 | `"<truncated query>" kind=<openai_transient\|openai_auth\|openai_api> exc=<ExcClass>` (chat) or `op=index kind=<…> exc=<ExcClass>` (index embedding) |
 

@@ -233,6 +233,27 @@ def stream_query(question: str) -> Iterator[dict]:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Pre-LLM distance-relevance gate config (issue #257)
+# ---------------------------------------------------------------------------
+# OFF by default: a FAISS distance ceiling is corpus- and embedding-specific, so
+# shipping a hand-picked number would repeat the magic-number anti-pattern (#253).
+# Until it is calibrated against an eval (eval/negative_case), the gate stays
+# disabled and RAG behaviour is unchanged. Set KB_RAG_DISTANCE_THRESHOLD to enable.
+_KB_RAG_DISTANCE_THRESHOLD_DEFAULT: float | None = None
+
+
+def _max_rag_distance() -> float | None:
+    """Max distance for the closest chunk before a pre-LLM Cannot Confirm.
+
+    ``None`` (env unset) disables the gate. Read at call time so an env change
+    takes effect on the next query without a restart — unlike the wiki
+    ``KB_SCORE_THRESHOLD``, which is read once at import.
+    """
+    raw = os.getenv("KB_RAG_DISTANCE_THRESHOLD")
+    return float(raw) if raw is not None else _KB_RAG_DISTANCE_THRESHOLD_DEFAULT
+
+
 def _retrieve_and_gate(question: str) -> dict:
     """Vector search + all pre-LLM Cannot Confirm gates (ADR-0001).
 
@@ -271,9 +292,9 @@ def _retrieve_and_gate(question: str) -> dict:
             "chunks": [],
         }
 
-    chunks = indexer.search(question, k=3)
+    results = indexer.search_with_distance(question, k=3)
 
-    if not chunks:
+    if not results:
         # Pre-LLM Cannot Confirm gate — no LLM call (ADR-0001).
         log_event("chat_fallback", f'"{truncated}" reason=retrieval_empty')
         return {
@@ -286,10 +307,13 @@ def _retrieve_and_gate(question: str) -> dict:
             "chunks": [],
         }
 
+    chunks = [chunk for chunk, _distance in results]
+
     # RAG source shape: citation id + heading + content ONLY.
     # NO score (prevents the model reasoning "low score → guess", PROMPT.md Q3).
     # NO derived_from (RAG serves raw docs/ Sources; frontmatter chains are a
-    # wiki-layer concept — issue #120 spec).
+    # wiki-layer concept — issue #120 spec). The distance stays a gate-only signal
+    # and never enters sources.
     sources = [
         {
             "source": chunk.source,
@@ -298,6 +322,31 @@ def _retrieve_and_gate(question: str) -> dict:
         }
         for chunk in chunks
     ]
+
+    # Pre-LLM distance-relevance gate (#257). FAISS k-NN always returns k
+    # neighbours, so "retrieved something" does NOT mean "relevant" — without this
+    # an out-of-scope query forwards its least-far chunks to the LLM and relies on
+    # the (expensive) post-LLM grounding net alone. When the CLOSEST chunk is still
+    # farther than the configured ceiling, refuse before the LLM — symmetric with
+    # the wiki BM25 gate (CODING_STANDARD §4.3 gate parity). Lives in this deep
+    # module so Browser / MCP / CLI all inherit it. OFF unless
+    # KB_RAG_DISTANCE_THRESHOLD is set (the ceiling must be calibrated, not guessed).
+    max_distance = _max_rag_distance()
+    if max_distance is not None and min(d for _, d in results) > max_distance:
+        log_event(
+            "chat_fallback",
+            f'"{truncated}" reason=below_threshold'
+            f" rag_distance={round(min(d for _, d in results), 3)}",
+        )
+        return {
+            "sources": sources,
+            "grounding_outcome": GroundingOutcome(
+                passed=False, reason="below_threshold"
+            ),
+            "early_exit": True,
+            "answer": CANNOT_CONFIRM_PHRASE,
+            "chunks": [],
+        }
 
     return {
         "sources": sources,

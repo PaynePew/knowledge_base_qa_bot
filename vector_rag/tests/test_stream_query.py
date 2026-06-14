@@ -214,7 +214,7 @@ def test_stream_query_index_missing_emits_cannot_confirm_phrase(
 
 def test_stream_query_empty_retrieval_no_llm_call(indexed_corpus, monkeypatch):
     """stream_query() with empty retrieval yields two dicts; LLM is NOT called."""
-    monkeypatch.setattr(indexer, "search", lambda q, k=3: [])
+    monkeypatch.setattr(indexer, "search_with_distance", lambda q, k=3: [])
     sentinel_llm = FakeLLM()
     monkeypatch.setattr(retrieval, "_llm", sentinel_llm)
     monkeypatch.setattr(retrieval, "get_llm", lambda: sentinel_llm)
@@ -229,7 +229,7 @@ def test_stream_query_empty_retrieval_full_result_cannot_confirm(
     indexed_corpus, monkeypatch
 ):
     """On empty-retrieval path, second yield is Cannot Confirm."""
-    monkeypatch.setattr(indexer, "search", lambda q, k=3: [])
+    monkeypatch.setattr(indexer, "search_with_distance", lambda q, k=3: [])
     monkeypatch.setattr(retrieval, "get_llm", lambda: FakeLLM())
 
     results = list(retrieval.stream_query("anything"))

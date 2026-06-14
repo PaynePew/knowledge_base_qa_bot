@@ -173,17 +173,31 @@ def build_index(docs_dir: Path = DOCS_DIR) -> tuple[int, int]:
 # ---------------------------------------------------------------------------
 # Search
 # ---------------------------------------------------------------------------
+def search_with_distance(query: str, k: int = 3) -> list[tuple[Chunk, float]]:
+    """Return the top-``k`` ``(Chunk, distance)`` pairs for ``query``.
+
+    The FAISS distance (lower = closer; default L2) is the signal the pre-LLM
+    relevance gate needs (``retrieval._retrieve_and_gate``, issue #257). Plain
+    ``search`` discards it; this variant surfaces it. The distance is a
+    **gate-only** signal — it must NEVER enter the RAG ``sources`` shape (the
+    RAG-no-score invariant, PROMPT.md Q3). Returns domain ``Chunk`` objects only
+    (no LangChain ``Document`` leak, §2.4). Empty when the index is not built.
+    """
+    if vectorstore is None:
+        return []
+    scored = vectorstore.similarity_search_with_score(query, k=k)
+    return [(_chunk_from_document(doc), float(distance)) for doc, distance in scored]
+
+
 def search(query: str, k: int = 3) -> list[Chunk]:
     """Return the top-``k`` Chunks for ``query`` by vector similarity.
 
     Returns domain ``Chunk`` objects (never LangChain ``Document``) so no
     LangChain type leaks past this module (CODING_STANDARD §2.4). An empty list
-    is returned when the index has not been built.
+    is returned when the index has not been built. Thin wrapper over
+    ``search_with_distance`` that drops the gate-only distance.
     """
-    if vectorstore is None:
-        return []
-    scored = vectorstore.similarity_search_with_score(query, k=k)
-    return [_chunk_from_document(doc) for doc, _score in scored]
+    return [chunk for chunk, _distance in search_with_distance(query, k=k)]
 
 
 # ---------------------------------------------------------------------------
