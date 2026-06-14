@@ -48,9 +48,6 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # --- runtime: slim image carrying only the built venv + app source -------------
 FROM python:3.11-slim AS runtime
 
-# Copy uv so the CMD's `uv run` works (it just activates the already-built venv).
-COPY --from=ghcr.io/astral-sh/uv:0.11.13 /uv /uvx /bin/
-
 # PYTHONPATH=/app puts the repo root on sys.path so the `markdown_kb` /
 # `vector_rag` namespace packages resolve the same way the test harness wires
 # them (CLAUDE.md memory: entry points need repo root on sys.path).
