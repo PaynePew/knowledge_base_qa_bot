@@ -25,3 +25,18 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if item.get_closest_marker("live"):
             item.add_marker(skip_live)
+
+
+@pytest.fixture(autouse=True)
+def _neutralize_rag_distance_gate(monkeypatch):
+    """Disable the calibrated RAG distance gate for the gateway suite.
+
+    The RAG distance gate ships ON by default (calibrated ceiling 1.1 against REAL
+    text-embedding-3-small distances — eval/rag_distance). Gateway RAG-stream tests
+    build the index with offline fake embeddings whose hash-derived distances are not
+    comparable to that ceiling, so an enabled gate would refuse every fake query and
+    mask the grounded-answer / SSE-ordering assertions. A large permissive ceiling
+    neutralises it (the wiki BM25 path is unaffected). The gate's own behaviour is
+    covered in vector_rag/tests/test_rag_distance_gate.py.
+    """
+    monkeypatch.setenv("KB_RAG_DISTANCE_THRESHOLD", "1000.0")

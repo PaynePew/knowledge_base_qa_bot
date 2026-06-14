@@ -2,8 +2,8 @@
 
 FAISS k-NN always returns k neighbours, so the wiki path's pre-LLM relevance gate
 had no RAG counterpart — the FAISS distance was computed and discarded. These
-tests cover the new gate: env parsing, OFF-by-default (non-breaking), fires when
-the closest distance exceeds the ceiling, passes within it, the RAG-no-score
+tests cover the new gate: env parsing, the calibrated ON-by-default ceiling, fires
+when the closest distance exceeds the ceiling, passes within it, the RAG-no-score
 invariant on the gate path, and parity (the public ``query`` inherits the gate).
 
 Hermetic: ``indexed_corpus`` builds a real FAISS index with deterministic offline
@@ -16,9 +16,10 @@ from __future__ import annotations
 import vector_rag.app.retrieval as retrieval
 
 
-def test_max_rag_distance_unset_is_none(monkeypatch):
+def test_max_rag_distance_unset_uses_calibrated_default(monkeypatch):
+    """Env unset → the calibrated default ceiling (eval/rag_distance), not None/off."""
     monkeypatch.delenv("KB_RAG_DISTANCE_THRESHOLD", raising=False)
-    assert retrieval._max_rag_distance() is None
+    assert retrieval._max_rag_distance() == 1.1
 
 
 def test_max_rag_distance_parses_env(monkeypatch):
@@ -26,11 +27,18 @@ def test_max_rag_distance_parses_env(monkeypatch):
     assert retrieval._max_rag_distance() == 1.5
 
 
-def test_gate_off_by_default_lets_retrieval_through(indexed_corpus, monkeypatch):
-    """Unset threshold → gate disabled → a query that retrieves does NOT early-exit."""
+def test_gate_on_by_default_uses_calibrated_ceiling(indexed_corpus, monkeypatch):
+    """Env unset → the calibrated default (1.1) is applied — the gate is ON, not off.
+
+    The offline fake distances are not comparable to the real-embedding ceiling, so
+    rather than hard-code their magnitude this asserts that the env-unset outcome
+    matches setting the ceiling to 1.1 explicitly — i.e. the default is wired through.
+    """
     monkeypatch.delenv("KB_RAG_DISTANCE_THRESHOLD", raising=False)
-    gate = retrieval._retrieve_and_gate("refund policy")
-    assert gate["early_exit"] is False
+    default_gate = retrieval._retrieve_and_gate("refund policy")
+    monkeypatch.setenv("KB_RAG_DISTANCE_THRESHOLD", "1.1")
+    explicit_gate = retrieval._retrieve_and_gate("refund policy")
+    assert default_gate["early_exit"] == explicit_gate["early_exit"]
 
 
 def test_gate_fires_when_closest_distance_exceeds_ceiling(indexed_corpus, monkeypatch):
