@@ -37,6 +37,12 @@ jobs:
           script: |
             set -euo pipefail
             cd /opt/ask-wiki-rag
-            docker compose -f docker-compose.prod.yml up -d --force-recreate ask-wiki-rag
-            docker compose -f docker-compose.prod.yml exec -T ask-wiki-rag \
+            # Scoping guardrail (platform contract): always pin the project with
+            # -p AND name the single service, and NEVER pass --remove-orphans.
+            # A bare `--force-recreate` / a stray --remove-orphans against a
+            # shared project is exactly what bounced the shared Caddy in the
+            # Phase-0 saga. This recreates ONLY ask-wiki-rag in its own project →
+            # zero blast radius to the scheduler / qrcode tenants.
+            docker compose -p ask-wiki-rag -f docker-compose.prod.yml up -d --force-recreate ask-wiki-rag
+            docker compose -p ask-wiki-rag -f docker-compose.prod.yml exec -T ask-wiki-rag \
               curl -fsS http://localhost:8000/healthz

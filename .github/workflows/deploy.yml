@@ -63,7 +63,7 @@ jobs:
           script: |
             set -euo pipefail
             cd /opt/ask-wiki-rag
-            docker compose -f docker-compose.prod.yml pull
-            docker compose -f docker-compose.prod.yml up -d ask-wiki-rag
-            docker compose -f docker-compose.prod.yml exec -T ask-wiki-rag \
+            docker compose -p ask-wiki-rag -f docker-compose.prod.yml pull
+            docker compose -p ask-wiki-rag -f docker-compose.prod.yml up -d ask-wiki-rag
+            docker compose -p ask-wiki-rag -f docker-compose.prod.yml exec -T ask-wiki-rag \
               curl -fsS http://localhost:8000/healthz
