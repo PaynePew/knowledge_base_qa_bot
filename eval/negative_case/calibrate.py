@@ -24,6 +24,7 @@ from pathlib import Path
 
 from .cases import NEGATIVE_CASES
 from .driver import evaluate_case, index_corpus
+from .models import NegativeCase, PositiveCase
 from .positive_cases import POSITIVE_CASES
 
 _PKG_ROOT = Path(__file__).resolve().parent
@@ -33,7 +34,32 @@ REPORT_PATH = _PKG_ROOT / "calibration_report.md"
 # corpus (clearly-out-of-scope ~0, real hits ~1.5+). CURRENT_DEFAULT mirrors
 # retrieval._KB_SCORE_THRESHOLD_DEFAULT, included for side-by-side comparison.
 DEFAULT_THRESHOLDS: tuple[float, ...] = (0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0)
+# Chinese (bigram) BM25 top-scores land in a higher band than English (#256:
+# in-scope min ~2.2, hits up to ~9.9), so the English grid is too short to bracket
+# the Chinese separating gap. This grid keeps 0.5 (for side-by-side comparison),
+# resolves the (max-leak, min-in-scope] gap finely, and extends up far enough to
+# show where over-refusal begins.
+DEFAULT_THRESHOLDS_ZH: tuple[float, ...] = (
+    0.25,
+    0.5,
+    0.75,
+    1.0,
+    1.25,
+    1.5,
+    1.75,
+    1.875,
+    2.0,
+    2.25,
+    2.5,
+    3.0,
+    4.0,
+    5.0,
+)
 CURRENT_DEFAULT = 0.5
+# English baseline's min in-scope BM25 score, surfaced in the zh cross-language
+# verdict for a magnitude comparison. Mirrors the committed English
+# calibration_report.md ("min in-scope score = 1.406"); keep the two in sync.
+_EN_MIN_IN_SCOPE = 1.406
 
 
 @dataclass(frozen=True)
@@ -93,16 +119,87 @@ def recommend(points: Sequence[ThresholdPoint]) -> ThresholdPoint:
     return optimal[len(optimal) // 2]
 
 
-def collect_scores(corpus_dir: Path | None = None) -> tuple[list[float], list[float]]:
+def collect_scores(
+    corpus_dir: Path | None = None,
+    positive_cases: Sequence[PositiveCase] = POSITIVE_CASES,
+    negative_cases: Sequence[NegativeCase] = NEGATIVE_CASES,
+) -> tuple[list[float], list[float]]:
     """Index the corpus and return ``(positive_scores, negative_scores)`` top scores.
 
-    Assumes production paths are isolated (the runner's ``_isolate_production_paths``
-    or the test conftest).
+    The case sets default to the committed English constants, so existing call
+    sites (and ``test_calibrate``) are unchanged; ``main`` passes a different
+    language's sets via ``lang.resolve_lang``. Assumes production paths are isolated
+    (the runner's ``_isolate_production_paths`` or the test conftest).
     """
     index_corpus(corpus_dir)
-    positive = [evaluate_case(c.query).top_score for c in POSITIVE_CASES]
-    negative = [evaluate_case(c.query).top_score for c in NEGATIVE_CASES]
+    positive = [evaluate_case(c.query).top_score for c in positive_cases]
+    negative = [evaluate_case(c.query).top_score for c in negative_cases]
     return positive, negative
+
+
+def _cross_language_verdict(
+    recommended: ThresholdPoint,
+    positive_scores: Sequence[float],
+    negative_scores: Sequence[float],
+) -> list[str]:
+    """The #256 AC: does one global threshold serve both languages? (zh report only).
+
+    Compares the Chinese score distribution to the English baseline and states an
+    explicit verdict + recommendation, picking the path the data implies:
+      - 0.5 itself J-optimal → one global threshold serves both;
+      - leaks below the in-scope range → a per-language threshold separates them;
+      - leaks inside the in-scope range → semantic reranking, not threshold tuning.
+    """
+    min_pos = min(positive_scores)
+    leaks = sorted(s for s in negative_scores if s > 0.0)
+    max_leak = leaks[-1] if leaks else 0.0
+    refusal_at_default = _rate_below(negative_scores, CURRENT_DEFAULT)
+    lines = [
+        "## Cross-language verdict (#256)",
+        "",
+        f"Chinese BM25 top-scores sit in a **higher band** than English: min in-scope "
+        f"**{min_pos:.3f}** (English baseline {_EN_MIN_IN_SCOPE}), "
+        f"hits up to {max(positive_scores):.3f}. "
+        "Bigram tokenisation emits more tokens per query, inflating raw scores "
+        "(ADR-0014), so the English-calibrated 0.5 is not transferable as-is.",
+        "",
+    ]
+    if recommended.threshold == CURRENT_DEFAULT:
+        lines.append(
+            f"✅ `KB_SCORE_THRESHOLD={CURRENT_DEFAULT}` is itself Youden-J-optimal for "
+            "Chinese — **one global threshold serves both languages**; no change needed."
+        )
+    elif leaks and max_leak >= min_pos:
+        lines.append(
+            f"⚠️ At {CURRENT_DEFAULT} correct-refusal is {refusal_at_default:.0%}; the "
+            f"{len(leaks)} non-zero leaks ({[round(s, 3) for s in leaks]}) fall **inside** "
+            f"the in-scope range (≥ {min_pos:.3f}), so — like the English `adjacent_absent` "
+            "leaks — **no threshold separates them**. This needs semantic reranking "
+            "(Phase 13 hybrid / FM2), not threshold tuning or a per-language value."
+        )
+    else:
+        lines.append(
+            f"❌ **One global `KB_SCORE_THRESHOLD={CURRENT_DEFAULT}` does NOT serve "
+            f"Chinese.** At {CURRENT_DEFAULT} correct-refusal is only "
+            f"{refusal_at_default:.0%}: the {len(leaks)} adjacent-absent leaks "
+            f"({[round(s, 3) for s in leaks]}) clear the gate. Unlike English, the Chinese "
+            f"leaks fall **below** the min in-scope score, leaving a clean gap "
+            f"({max_leak:.3f}, {min_pos:.3f}]; the sweep recommends **{recommended.threshold}** "
+            f"(correct-refusal {recommended.correct_refusal_rate:.0%}, over-refusal "
+            f"{recommended.over_refusal_rate:.0%})."
+        )
+        lines += [
+            "",
+            "**Recommendation:** adopt a per-language Chinese threshold. Because "
+            "`retrieval._SCORE_THRESHOLD` is read globally at import time, this means "
+            "either a per-language override (a `KB_SCORE_THRESHOLD_ZH` consulted when the "
+            "query is detected as CJK) or BM25 score normalisation so a single threshold "
+            "spans both languages. The magnitude gap is robust; the exact value is "
+            "illustrative on this small corpus and should be re-swept on a larger Chinese "
+            "KB before shipping a production default.",
+        ]
+    lines.append("")
+    return lines
 
 
 def render_calibration_report(
@@ -110,12 +207,22 @@ def render_calibration_report(
     recommended: ThresholdPoint,
     positive_scores: Sequence[float],
     negative_scores: Sequence[float],
+    lang: str = "en",
 ) -> str:
-    """Render the calibration sweep + recommendation as Markdown."""
+    """Render the calibration sweep + recommendation as Markdown.
+
+    ``lang`` defaults to ``en`` (the report is byte-identical to the #253 baseline);
+    ``zh`` localises the title and appends the cross-language verdict (#256).
+    """
     pos_sorted = sorted(positive_scores)
     neg_nonzero = sorted(s for s in negative_scores if s > 0.0)
+    title = (
+        "# KB_SCORE_THRESHOLD calibration — Traditional Chinese (#256)"
+        if lang == "zh"
+        else "# KB_SCORE_THRESHOLD calibration (#253)"
+    )
     lines = [
-        "# KB_SCORE_THRESHOLD calibration (#253)",
+        title,
         "",
         "The Cannot Confirm gate refuses when the top BM25 score < `KB_SCORE_THRESHOLD`.",
         "Below is the trade-off between **correct-refusal** (rejecting out-of-scope",
@@ -161,22 +268,38 @@ def render_calibration_report(
         "every real hit.",
         "",
     ]
+    if lang == "zh":
+        lines += _cross_language_verdict(recommended, positive_scores, negative_scores)
     return "\n".join(lines)
 
 
 def main() -> None:
-    """CLI entry: run the sweep under production isolation and write the report."""
+    """CLI entry: sweep one language under production isolation and write its report.
+
+    Language comes from ``KB_EVAL_LANG`` (default ``en``); the zh run uses the wider
+    Chinese grid and a ``_zh`` report suffix so it never clobbers the English report.
+    """
+    from .lang import resolve_lang
     from .runner import _isolate_production_paths
 
+    cfg = resolve_lang()
+    thresholds = DEFAULT_THRESHOLDS_ZH if cfg.lang == "zh" else DEFAULT_THRESHOLDS
     with _isolate_production_paths():
-        positive, negative = collect_scores()
-    points = sweep(positive, negative)
+        positive, negative = collect_scores(
+            cfg.corpus_dir, cfg.positive_cases, cfg.negative_cases
+        )
+    points = sweep(positive, negative, thresholds)
     best = recommend(points)
-    REPORT_PATH.write_text(
-        render_calibration_report(points, best, positive, negative), encoding="utf-8"
+    report_path = REPORT_PATH.with_name(f"calibration_report{cfg.report_suffix}.md")
+    report_path.write_text(
+        render_calibration_report(points, best, positive, negative, lang=cfg.lang),
+        encoding="utf-8",
     )
-    print(f"Recommended threshold: {best.threshold} (Youden J = {best.youden_j:.2f})")
-    print(f"Report written to {REPORT_PATH}")
+    print(
+        f"[{cfg.lang}] Recommended threshold: {best.threshold} "
+        f"(Youden J = {best.youden_j:.2f})"
+    )
+    print(f"Report written to {report_path}")
 
 
 if __name__ == "__main__":
