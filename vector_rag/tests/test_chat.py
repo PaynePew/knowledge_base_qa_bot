@@ -171,7 +171,7 @@ def test_chat_before_index_says_not_indexed(fake_embeddings, monkeypatch):
 # ---------------------------------------------------------------------------
 def test_chat_empty_retrieval_returns_cannot_confirm(indexed_corpus, monkeypatch):
     sentinel = FakeLLM("should not be called")
-    monkeypatch.setattr(indexer, "search", lambda q, k=3: [])
+    monkeypatch.setattr(indexer, "search_with_distance", lambda q, k=3: [])
     client = _make_client(monkeypatch, sentinel)
 
     resp = client.post("/chat", json={"query": "Which restaurants are nearby?"})
