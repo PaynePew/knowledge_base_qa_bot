@@ -34,21 +34,55 @@ from .schemas import SourceType, WikiPageDraft, WikiPageFrontmatter
 
 _ingest_llm = None
 
+# Context-window token budgets (input limits) for known ingest models, taken from
+# the provider model reference.  The per-Source ingest budget is *derived* from
+# this (see ingest._max_ingest_tokens) so swapping OPENAI_INGEST_MODEL re-scales
+# the budget instead of silently mismatching a frozen literal.  An unknown model
+# falls back to _FALLBACK_CONTEXT_WINDOW — deliberately small, so an unrecognised
+# model under-fills rather than overflows its real window.
+_MODEL_CONTEXT_WINDOWS: dict[str, int] = {
+    "gpt-4o-mini": 128_000,
+    "gpt-4o": 128_000,
+    "gpt-4-turbo": 128_000,
+    "gpt-4.1": 1_000_000,
+    "gpt-4.1-mini": 1_000_000,
+    "gpt-3.5-turbo": 16_385,
+}
+_FALLBACK_CONTEXT_WINDOW = 32_000
+
+
+def _ingest_model_name() -> str:
+    """Resolve the configured ingest model name — single source of truth.
+
+    Resolution (two-layer fallback per Slice #1 AC):
+        OPENAI_INGEST_MODEL  →  OPENAI_MODEL  →  gpt-4o-mini
+    Read at call time so a restart-free env change takes effect on the next call.
+    """
+    return os.getenv("OPENAI_INGEST_MODEL", os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
+
+
+def ingest_model_context_window() -> int:
+    """Return the context-window token budget for the configured ingest model.
+
+    Looks the resolved model name up in ``_MODEL_CONTEXT_WINDOWS``; an unknown
+    model returns ``_FALLBACK_CONTEXT_WINDOW`` (pessimistic — never over-estimate
+    capacity, so an unrecognised model under-fills rather than overflows).
+    Callers derive their token budgets from this; set ``KB_INGEST_MAX_TOKENS`` to
+    override the derived budget outright.
+    """
+    return _MODEL_CONTEXT_WINDOWS.get(_ingest_model_name(), _FALLBACK_CONTEXT_WINDOW)
+
 
 def get_ingest_llm() -> ChatOpenAI:
     """Return a lazy singleton ChatOpenAI for ingest synthesis.
 
-    Model resolution (two-layer fallback per Slice #1 AC):
-        OPENAI_INGEST_MODEL  →  OPENAI_MODEL  →  gpt-4o-mini
+    Model resolution delegates to ``_ingest_model_name`` (the single source of
+    truth shared with ``ingest_model_context_window``).
     """
     global _ingest_llm
     if _ingest_llm is None:
-        model_name = os.getenv(
-            "OPENAI_INGEST_MODEL",
-            os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-        )
         _ingest_llm = ChatOpenAI(
-            model=model_name,
+            model=_ingest_model_name(),
             timeout=60,
             max_retries=int(os.getenv("KB_INGEST_MAX_RETRIES", "5")),
         )
