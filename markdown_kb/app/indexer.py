@@ -171,6 +171,63 @@ def _is_cjk(ch: str) -> bool:
     return 0xF900 <= cp <= 0xFAFF
 
 
+# Fraction of "letter" characters that must be CJK for a text to count as "zh".
+# Letter characters = CJK ideographs + ASCII/Unicode alphabetic chars (the
+# language-bearing signal); digits, whitespace, and punctuation are ignored so
+# a Chinese sentence ending in "7天" or an English one with a stray "退" is
+# classified by its dominant script, not diluted by neutral characters. The gate
+# is deliberately low (a single CJK character among otherwise-Latin letters is
+# rare in this corpus and almost always means the text is Chinese) but kept off
+# zero so an all-Latin string with one accidental ideograph still reads "en"
+# only when CJK is genuinely the minority.
+_ZH_RATIO_THRESHOLD = 0.20
+
+# The defined default for text that carries no language signal (empty,
+# whitespace-only, or digits/symbols only — no CJK and no alphabetic letters).
+# English is the fail-closed default for the bilingual demo (PRD #284): it is
+# the larger corpus, and an untagged Chunk/Section defaulting to "en" never
+# strips Chinese coverage that does not exist yet.
+_DEFAULT_LANG = "en"
+
+
+def detect_lang(text: str) -> str:
+    """Classify ``text`` as ``"zh"`` (Chinese) or ``"en"`` (English) by CJK ratio.
+
+    The single, stable language-classification interface (issue #285, PRD #284).
+    Consolidates the scattered "is this CJK?" logic — ``_is_cjk`` (ADR-0014
+    bigram tokenisation) and ``retrieval._is_cjk_query`` (#261 threshold routing)
+    — into one tested unit consumed by both index-time ``lang`` tagging and
+    query-time routing, so the two can never drift.
+
+    Decision rule (PRD #284 tie-break): compute the CJK character ratio over the
+    *letter* characters only (CJK ideographs + alphabetic chars). Neutral
+    characters — whitespace, digits, punctuation — are excluded so they neither
+    inflate nor dilute the signal. The text is ``"zh"`` when that ratio crosses
+    ``_ZH_RATIO_THRESHOLD``, else ``"en"``. Mixed text therefore resolves to the
+    dominant script by ratio.
+
+    Default: text with no letter characters at all (empty, whitespace-only,
+    digits/symbols only) has no language signal and returns ``_DEFAULT_LANG``
+    (``"en"``) — the defined fail-closed default.
+
+    Pure function — no I/O, no mutation, deterministic for a given input. Derives
+    its decision from content only; callers must pass content (never a filename
+    or folder) per PRD #284 "Routing is metadata-driven, not folder-driven".
+    """
+    cjk = 0
+    letters = 0
+    for ch in text:
+        if _is_cjk(ch):
+            cjk += 1
+            letters += 1
+        elif ch.isalpha():
+            letters += 1
+    if letters == 0:
+        # No language-bearing characters → no signal → defined default.
+        return _DEFAULT_LANG
+    return "zh" if cjk / letters >= _ZH_RATIO_THRESHOLD else "en"
+
+
 def _bigrams(run: str) -> list[str]:
     """Produce sliding character bigrams from a CJK run.
 
