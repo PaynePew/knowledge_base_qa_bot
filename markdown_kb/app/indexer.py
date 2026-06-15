@@ -189,6 +189,12 @@ _ZH_RATIO_THRESHOLD = 0.20
 # strips Chinese coverage that does not exist yet.
 _DEFAULT_LANG = "en"
 
+# Metadata key under which the index-time, content-derived language tag is
+# stored on every Section (issue #285). It is a SYSTEM-INJECTED tag, distinct
+# from author-written YAML frontmatter — consumers that reason about "did this
+# page have frontmatter?" (e.g. the qa-status filter) must exclude this key.
+LANG_METADATA_KEY = "lang"
+
 
 def detect_lang(text: str) -> str:
     """Classify ``text`` as ``"zh"`` (Chinese) or ``"en"`` (English) by CJK ratio.
@@ -226,6 +232,31 @@ def detect_lang(text: str) -> str:
         # No language-bearing characters → no signal → defined default.
         return _DEFAULT_LANG
     return "zh" if cjk / letters >= _ZH_RATIO_THRESHOLD else "en"
+
+
+def _section_metadata(frontmatter: dict, heading: str, content: str) -> dict:
+    """Return a per-Section metadata dict carrying the content-derived ``lang``.
+
+    Issue #285: every Section is tagged with ``lang`` (``"zh"``/``"en"``) so
+    retrieval can later filter by language without a folder convention. The tag
+    is derived from CONTENT, never the filename or folder (PRD #284): we classify
+    the Section body, falling back to the heading text only when the body is
+    empty (heading-only leaf, Rule 8) so an empty-body Section is still tagged by
+    its own heading rather than left untagged.
+
+    The frontmatter dict is copied first so each Section owns an independent
+    metadata mapping (the prior ``dict(metadata)`` contract is preserved). A
+    ``lang`` key already present in frontmatter is overwritten by the detected
+    value — content is the source of truth, not a hand-authored hint.
+    """
+    meta = dict(frontmatter)
+    # Body is the primary signal; fall back to the heading for empty-body leaves
+    # (Rule 8). The heading here is a real Markdown heading at every call site
+    # that owns body text — the only heading-without-body case is a leaf, whose
+    # heading IS its content. Callers must never pass a filename as ``heading``.
+    signal = content if content.strip() else heading
+    meta[LANG_METADATA_KEY] = detect_lang(signal)
+    return meta
 
 
 def _bigrams(run: str) -> list[str]:
@@ -477,7 +508,7 @@ def parse_markdown(path: Path, source_id: str | None = None) -> list[Section]:
                     heading_path=entry["path"],
                     content=content,
                     tokens=tokens,
-                    metadata=dict(metadata),
+                    metadata=_section_metadata(metadata, heading_text, content),
                 )
             )
         else:
@@ -543,15 +574,20 @@ def parse_markdown(path: Path, source_id: str | None = None) -> list[Section]:
 
     # Rule 7: no headings found → single Section for the whole file
     if not found_any_heading:
+        whole_body = body.strip()
         result.append(
             Section(
                 id=source_prefix,
                 file=source_prefix,
                 heading=source_prefix,
                 heading_path=[source_prefix],
-                content=body.strip(),
+                content=whole_body,
                 tokens=tokenize(body),
-                metadata=dict(metadata),
+                # Rule 7 no-heading Section: classify the body only. Pass an
+                # empty heading fallback so a body-less file defaults to "en"
+                # via detect_lang without the filename (source_prefix) leaking
+                # into the language decision (PRD #284 content-not-filename).
+                metadata=_section_metadata(metadata, "", whole_body),
             )
         )
 
@@ -593,15 +629,19 @@ def _passes_index_filter(md_file: Path, page_sections: list[Section]) -> bool:
     if md_file.parent.name != "qa":
         return True
 
-    # qa page: gate on frontmatter.status.
+    # qa page: gate on frontmatter.status. Exclude the system-injected language
+    # tag (issue #285) so this emptiness check still asks "did the author write
+    # any YAML frontmatter?" — every Section now carries a ``lang`` key, which
+    # must not be mistaken for real frontmatter content.
     metadata = page_sections[0].metadata
+    author_frontmatter = {k: v for k, v in metadata.items() if k != LANG_METADATA_KEY}
     # Empty / absent metadata (e.g. frontmatter parse failed, or no frontmatter
     # at all on a qa page) — parse_markdown already emitted parse_warning when
     # the YAML was malformed. Skip silently to avoid the double-log noise that
     # PRD #78 §"Orphan-visibility three-layer defence" explicitly calls out.
-    if not metadata:
+    if not author_frontmatter:
         return False
-    status = metadata.get("status")
+    status = author_frontmatter.get("status")
 
     if status == "live":
         return True
