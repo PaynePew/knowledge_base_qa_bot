@@ -78,11 +78,17 @@ def get_ingest_llm() -> ChatOpenAI:
 
     Model resolution delegates to ``_ingest_model_name`` (the single source of
     truth shared with ``ingest_model_context_window``).
+
+    Pinned to ``temperature=0`` for deterministic, faithful curation: re-running
+    ingest over the same Sources reproduces the same wiki layer (clean diffs,
+    reproducible baked seed), and the Source-type classification step in
+    particular stays stable. Mirrors the answer-path determinism fix (PR #283).
     """
     global _ingest_llm
     if _ingest_llm is None:
         _ingest_llm = ChatOpenAI(
             model=_ingest_model_name(),
+            temperature=0,
             timeout=60,
             max_retries=int(os.getenv("KB_INGEST_MAX_RETRIES", "5")),
         )
