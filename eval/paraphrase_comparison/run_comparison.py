@@ -56,9 +56,23 @@ def _install_fake_embeddings() -> None:
         def __init__(self, documents):
             self._docs = [_FakeDoc(d.page_content, dict(d.metadata)) for d in documents]
 
-        def similarity_search_with_score(self, query: str, k: int = 3):
+        def similarity_search_with_score(
+            self, query: str, k: int = 3, filter=None, fetch_k: int = 20
+        ):
+            # Mirror FAISS's dict-metadata filter (#290 RAG language filter): drop
+            # docs whose metadata does not match every key in ``filter`` BEFORE
+            # ranking, so the offline comparison reproduces the real same-language
+            # retrieval rather than cross-language leaking. ``fetch_k`` is accepted
+            # for signature parity but the in-memory fake ranks all docs anyway.
+            docs = self._docs
+            if filter:
+                docs = [
+                    d
+                    for d in docs
+                    if all(d.metadata.get(fk) == fv for fk, fv in filter.items())
+                ]
             q = set(tokenize(query))
-            scored = [(d, len(q & set(tokenize(d.page_content)))) for d in self._docs]
+            scored = [(d, len(q & set(tokenize(d.page_content)))) for d in docs]
             scored.sort(key=lambda t: -t[1])
             return [(d, 1.0 / (1.0 + o)) for d, o in scored[:k]]
 

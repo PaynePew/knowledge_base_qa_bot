@@ -50,10 +50,24 @@ class _FakeVectorStore:
             for d in documents
         ]
 
-    def similarity_search_with_score(self, query: str, k: int = 3):
+    def similarity_search_with_score(
+        self, query: str, k: int = 3, filter=None, fetch_k: int = 20
+    ):
+        # Mirror FAISS's dict-metadata filter (#290 RAG language filter): drop
+        # docs whose metadata does not match every key in ``filter`` before
+        # ranking, so the offline fake reproduces same-language retrieval rather
+        # than cross-language leaking. ``fetch_k`` is accepted for signature
+        # parity with the real FAISS method; the in-memory fake ranks all docs.
+        docs = self._docs
+        if filter:
+            docs = [
+                doc
+                for doc in docs
+                if all(doc.metadata.get(fk) == fv for fk, fv in filter.items())
+            ]
         q = set(tokenize(query))
         scored = []
-        for doc in self._docs:
+        for doc in docs:
             overlap = len(q & set(tokenize(doc.page_content)))
             distance = 1.0 / (1.0 + overlap)  # more overlap -> smaller distance
             scored.append((doc, distance, overlap))
