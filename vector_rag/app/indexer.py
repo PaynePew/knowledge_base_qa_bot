@@ -49,9 +49,16 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 # coupling so a Chunk's parent-Section id uses the identical slug convention as
 # the docs Section ids Stack A is scored against. Importing the leaf functions
 # only — no markdown_kb state is mutated from here.
-from markdown_kb.app.indexer import parse_markdown
+from markdown_kb.app.indexer import detect_lang, parse_markdown
 
 from .logger import log_event
+
+# The default content language for a chunk that carries no language signal —
+# sourced from detect_lang itself (its documented empty-input default) so this
+# stack and markdown_kb share one source of truth without importing a private
+# constant. Used as the Chunk.lang dataclass default and the load-time fallback
+# for any chunk persisted before the tag existed (issue #285).
+_DEFAULT_LANG = detect_lang("")
 
 # ---------------------------------------------------------------------------
 # Paths and constants
@@ -89,12 +96,19 @@ class Chunk:
     so Citations stay Section-granular. ``id``, ``heading_path`` and ``content``
     satisfy the ``CitableContent`` Protocol so grounding.verify() consumes a
     Chunk with no changes (ADR-0004 Q9).
+
+    ``lang`` is the content-derived language tag (``"zh"``/``"en"``, issue #285)
+    computed at index time via ``detect_lang`` over the chunk text. It defaults
+    to ``markdown_kb``'s default language so a Chunk reconstructed from an older
+    persisted index that predates the tag still satisfies the dataclass — no
+    LangChain ``Document`` metadata key is required to be present.
     """
 
     id: str
     source: str
     heading_path: list[str]
     content: str
+    lang: str = _DEFAULT_LANG
 
 
 # ---------------------------------------------------------------------------
@@ -353,9 +367,15 @@ def _load_documents(docs_dir: Path) -> list[Document]:
     """Section-then-char-split the corpus into chunk-carrying LangChain Documents.
 
     Each Document's ``page_content`` is one Chunk's text; its metadata carries
-    ``source`` (parent Section id), ``heading_path`` (joined breadcrumb) and
-    ``file`` (for the files-indexed count). Empty-body Sections (heading-only
-    leaves) are skipped — a vector chunk needs body text to embed meaningfully.
+    ``source`` (parent Section id), ``heading_path`` (joined breadcrumb),
+    ``file`` (for the files-indexed count) and ``lang`` (the content-derived
+    language tag, issue #285). Empty-body Sections (heading-only leaves) are
+    skipped — a vector chunk needs body text to embed meaningfully.
+
+    The ``lang`` tag is derived from each chunk PIECE's own text via
+    ``detect_lang`` (never the filename or folder, PRD #284). This slice only
+    ADDS the tag; nothing filters the FAISS search on it yet, so retrieval
+    results and answers are unchanged.
     """
     documents: list[Document] = []
     for md_file in sorted(docs_dir.glob("**/*.md")):
@@ -370,6 +390,7 @@ def _load_documents(docs_dir: Path) -> list[Document]:
                             "source": section.id,
                             "heading_path": list(section.heading_path),
                             "file": section.file,
+                            "lang": detect_lang(piece),
                         },
                     )
                 )
@@ -389,4 +410,8 @@ def _chunk_from_document(doc: Document) -> Chunk:
         source=source,
         heading_path=list(doc.metadata.get("heading_path", [])),
         content=doc.page_content,
+        # Reconstruct the content language tag (issue #285). Fall back to the
+        # default for any chunk persisted before the tag existed so an older
+        # on-disk index still loads.
+        lang=doc.metadata.get("lang", _DEFAULT_LANG),
     )
