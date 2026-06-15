@@ -276,7 +276,10 @@ def verify(draft: str, sections: list[CitableContent]) -> GroundingOutcome:
         )
 
     model_name = os.getenv("OPENAI_VERIFIER_MODEL", os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
-    llm = ChatOpenAI(model=model_name)
+    # temperature=0: a non-deterministic verifier intermittently marks a
+    # supported claim as unsupported, flipping a correct grounded answer to
+    # Cannot Confirm when the same question is re-asked.
+    llm = ChatOpenAI(model=model_name, temperature=0)
     chain = llm.with_structured_output(GroundingResult)
 
     user_message = _build_user_message(draft, sections)
