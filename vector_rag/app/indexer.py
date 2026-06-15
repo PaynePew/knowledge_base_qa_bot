@@ -49,7 +49,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 # coupling so a Chunk's parent-Section id uses the identical slug convention as
 # the docs Section ids Stack A is scored against. Importing the leaf functions
 # only — no markdown_kb state is mutated from here.
-from markdown_kb.app.indexer import detect_lang, parse_markdown
+from markdown_kb.app.indexer import LANG_METADATA_KEY, detect_lang, parse_markdown
 
 from .logger import log_event
 
@@ -188,18 +188,41 @@ def build_index(docs_dir: Path = DOCS_DIR) -> tuple[int, int]:
 # Search
 # ---------------------------------------------------------------------------
 def search_with_distance(query: str, k: int = 3) -> list[tuple[Chunk, float]]:
-    """Return the top-``k`` ``(Chunk, distance)`` pairs for ``query``.
+    """Return the top-``k`` ``(Chunk, distance)`` pairs in the QUERY's language.
+
+    Language-filtered retrieval (#290, PRD #284): the FAISS search is restricted
+    to Chunks whose index-time ``lang`` tag (#285) matches the query language, via
+    the consolidated ``detect_lang`` query-language predicate — the SAME helper that
+    tagged each Chunk at index time (``_load_documents``), so query-time routing and
+    index-time tagging share one classifier and can never drift (PRD #284 story 16).
+
+    This is the **essential** cross-language fix: the PRD probe showed cross-language
+    retrieval lives only on the RAG stack (the multilingual embeddings cross-retrieve,
+    so a Chinese query can pull an English chunk into the top-``k``). The metadata
+    filter closes that leak BEFORE results reach the pre-LLM distance gate. When the
+    query's language has no covering Chunk, FAISS returns an empty list, which the
+    gate (``retrieval._retrieve_and_gate``) turns into the existing Cannot Confirm
+    sentinel — fail-closed, never a wrong-language answer (PRD #284 story 3 / 14).
 
     The FAISS distance (lower = closer; default L2) is the signal the pre-LLM
-    relevance gate needs (``retrieval._retrieve_and_gate``, issue #257). Plain
-    ``search`` discards it; this variant surfaces it. The distance is a
-    **gate-only** signal — it must NEVER enter the RAG ``sources`` shape (the
-    RAG-no-score invariant, PROMPT.md Q3). Returns domain ``Chunk`` objects only
-    (no LangChain ``Document`` leak, §2.4). Empty when the index is not built.
+    relevance gate needs (issue #257). Plain ``search`` discards it; this variant
+    surfaces it. The distance is a **gate-only** signal — it must NEVER enter the RAG
+    ``sources`` shape (the RAG-no-score invariant, PROMPT.md Q3). Returns domain
+    ``Chunk`` objects only (no LangChain ``Document`` leak, §2.4). Empty when the
+    index is not built OR when no Chunk matches the query language.
     """
     if vectorstore is None:
         return []
-    scored = vectorstore.similarity_search_with_score(query, k=k)
+    query_lang = detect_lang(query)
+    # fetch_k must exceed the default (20) so the post-retrieval metadata filter has
+    # enough same-language candidates to fill k even when the query language is the
+    # minority of a large index — FAISS filters AFTER fetching fetch_k neighbours.
+    scored = vectorstore.similarity_search_with_score(
+        query,
+        k=k,
+        filter={LANG_METADATA_KEY: query_lang},
+        fetch_k=max(k * 20, 100),
+    )
     return [(_chunk_from_document(doc), float(distance)) for doc, distance in scored]
 
 
@@ -390,7 +413,7 @@ def _load_documents(docs_dir: Path) -> list[Document]:
                             "source": section.id,
                             "heading_path": list(section.heading_path),
                             "file": section.file,
-                            "lang": detect_lang(piece),
+                            LANG_METADATA_KEY: detect_lang(piece),
                         },
                     )
                 )
@@ -413,5 +436,5 @@ def _chunk_from_document(doc: Document) -> Chunk:
         # Reconstruct the content language tag (issue #285). Fall back to the
         # default for any chunk persisted before the tag existed so an older
         # on-disk index still loads.
-        lang=doc.metadata.get("lang", _DEFAULT_LANG),
+        lang=doc.metadata.get(LANG_METADATA_KEY, _DEFAULT_LANG),
     )
