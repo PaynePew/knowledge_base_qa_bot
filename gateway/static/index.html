@@ -514,16 +514,32 @@ var REASON_TEXT = {
 };
 
 /* ── PRESET QUESTIONS ────────────────────────────────────────────────────────
-   Suggested first questions shown in the empty state. These are static UI copy
-   (not server-derived), grounded in the sample FAQ corpus so a first click
-   returns a real grounded answer rather than "Cannot confirm". Same set works
-   for both stacks (shared corpus). */
-var PRESET_QUESTIONS = [
-  "How long do refunds take to process?",
-  "Can I cancel an order after it has shipped?",
-  "How long does standard shipping take?",
-  "How do I reset my password?",
-];
+   Suggested first questions shown in the empty state, per language (#289, PRD
+   #284). These are static UI copy (not server-derived), grounded in the bilingual
+   sample FAQ corpus so a first click returns a real grounded answer in the
+   visitor's language rather than "Cannot confirm". The empty state shows BOTH
+   sets so a visitor in either language has a usable starter without any
+   client-side language detection (§12.5 — no client business logic).
+
+   Each question was validated OFFLINE against the baked BM25 index: its top hit
+   clears the pre-LLM Cannot-Confirm gate (en KB_SCORE_THRESHOLD=0.5,
+   zh KB_SCORE_THRESHOLD_ZH=4.0) on a single-intent, well-covered topic page.
+   Same sets work for both stacks (shared corpus). See
+   gateway/tests/test_ui_bilingual_starters.py for the probe that pins them. */
+var PRESET_QUESTIONS = {
+  zh: [
+    "退款政策是什麼？",
+    "你們接受哪些付款方式？",
+    "國際配送需要多久時間？",
+    "紅利點數怎麼累積？",
+  ],
+  en: [
+    "What is your return policy?",
+    "What payment methods do you accept?",
+    "How long does standard shipping take?",
+    "How do I claim warranty?",
+  ],
+};
 
 /* ── STATE ───────────────────────────────────────────────────────────────── */
 var stack = "wiki";
@@ -705,23 +721,34 @@ function renderEmptyState() {
     : "Answers are retrieved from the source corpus by semantic similarity and checked against every cited record — if the sources don’t support a claim, the bot says so instead of guessing."
   });
 
-  var prompts = el("div", { class: "empty-prompts" },
-    el("div", { class: "empty-prompts-label", text: "Try asking" }));
-  PRESET_QUESTIONS.forEach(function(q) {
-    prompts.append(el("button", { class: "empty-q", type: "button",
-      onclick: function() { ask(q); } },
-      el("span", { class: "empty-q-text", text: q }),
-      el("span", { class: "arrow", text: "→" }),
-    ));
-  });
+  /* Render a per-language preset group: a small label + its clickable questions.
+     Each click routes through the existing ask() helper (fill composer + submit)
+     — no new client business logic (§12.5). Both groups are shown so a visitor
+     in either language has a usable starter without client-side language
+     detection (#289). */
+  function renderPresetGroup(label, questions) {
+    var group = el("div", { class: "empty-prompts" },
+      el("div", { class: "empty-prompts-label", text: label }));
+    questions.forEach(function(q) {
+      group.append(el("button", { class: "empty-q", type: "button",
+        onclick: function() { ask(q); } },
+        el("span", { class: "empty-q-text", text: q }),
+        el("span", { class: "arrow", text: "→" }),
+      ));
+    });
+    return group;
+  }
+
+  var promptsZh = renderPresetGroup("中文範例提問", PRESET_QUESTIONS.zh);
+  var promptsEn = renderPresetGroup("Try asking", PRESET_QUESTIONS.en);
 
   var wrap = el("div", { class: "empty" },
-    el("div", { class: "empty-inner" }, eyebrow, title, sub, prompts));
+    el("div", { class: "empty-inner" }, eyebrow, title, sub, promptsZh, promptsEn));
   stream.replaceChildren(wrap);
 
   /* Staggered reveal on load (skipped under reduced-motion). */
   if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    [eyebrow, title, sub, prompts].forEach(function(node, i) {
+    [eyebrow, title, sub, promptsZh, promptsEn].forEach(function(node, i) {
       node.animate(
         [{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }],
         { duration: 460, delay: 80 + i * 90, easing: "cubic-bezier(.22,.61,.36,1)", fill: "backwards" }
