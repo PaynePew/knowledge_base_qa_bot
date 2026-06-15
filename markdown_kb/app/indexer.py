@@ -866,9 +866,47 @@ def bm25_score(
     return score + boost
 
 
+def _section_lang(section: Section) -> str:
+    """Return a Section's language, preferring its index-time ``lang`` tag.
+
+    Every Section built since #285 carries ``metadata['lang']`` (``"zh"``/``"en"``).
+    For a legacy index built before that tag existed, fall back to classifying the
+    Section content with the same ``detect_lang`` helper — so the language filter
+    works on a not-yet-rebuilt corpus without silently dropping every Section.
+    Content is the source of truth either way (PRD #284), so the fallback agrees
+    with what a rebuild would tag.
+    """
+    tagged = (section.metadata or {}).get(LANG_METADATA_KEY)
+    if tagged in ("zh", "en"):
+        return tagged
+    return detect_lang(section.content)
+
+
 def search(query: str, k: int = 3) -> list[tuple[Section, float]]:
+    """Return the top-``k`` BM25 Sections in the QUERY's language.
+
+    Language-filtered retrieval (#287, PRD #284): a Chinese query is scored only
+    against ``zh``-tagged Sections and an English query only against ``en``-tagged
+    ones, using the consolidated ``detect_lang`` query-language predicate (#285) so
+    query-time routing and index-time ``lang`` tagging share one classifier and
+    never drift.
+
+    This makes EXPLICIT the routing that CJK-bigram tokenisation (ADR-0014) already
+    does implicitly (English tokens never match Chinese bigrams), so it does not
+    regress same-language answers. Its load-bearing effect is closing the residual
+    cross-language leak the implicit routing misses: a query and a wrong-language
+    Section can still share an ASCII token (a brand name, a number, a code), which
+    under plain BM25 lets the wrong-language Section match — and sometimes out-rank
+    — the right one. Filtering by language is belt-and-suspenders for the BM25 stack
+    and the essential gate for the RAG stack (PRD #284).
+    """
+    query_lang = detect_lang(query)
     query_tokens = tokenize(query)
-    ranked = [(section, bm25_score(query_tokens, section)) for section in sections]
+    ranked = [
+        (section, bm25_score(query_tokens, section))
+        for section in sections
+        if _section_lang(section) == query_lang
+    ]
     ranked.sort(key=lambda item: item[1], reverse=True)
     return [(section, score) for section, score in ranked[:k] if score > 0]
 
