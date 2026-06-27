@@ -362,6 +362,7 @@ If you want a debug-only signal inside a package, either:
 - Tests that mutate the module-level sections list MUST restore it via `monkeypatch` (auto-restores) or an explicit teardown.
 - **Tests MUST NOT mutate committed on-disk invariants** — chiefly `.kb/index.json`. Any test that exercises a real write path (`build_index`, `ingest_sources`, `import_sources`) MUST redirect `INDEX_PATH` / `WIKI_DIR` / `LOG_PATH` (and `SOURCE_DIRS` when calling `build_index()` with no `docs_dir`) to `tmp_path`. The repo-root `conftest` session guard snapshots and restores `.kb/index.json` as a backstop and **warns** if a test mutated it — that warning means a test's isolation leaked (typically a live test), not that the guard is the fix. The guard is a safety net, not a license to skip per-test redirection.
 - Test fixtures are hand-written, deterministic, and mirror the shape of real Sources / Wiki Pages; never LLM-generated at test time.
+- **Fixture fidelity (a real, recurring trap).** "Mirror the shape" means *include the structural elements the real producer writes* — not a simplified ideal. Canonical example: every Wiki Page written by `POST /ingest` (`wiki_writer._render_page`) begins with an auto-generated sentinel HTML comment *before* the `---` frontmatter; a wiki-page fixture that starts directly with `---` does not mirror reality, so a parser/consumer regression that only triggers on the real shape passes under it. (Incident 2026-06-28: `_derived_from_for_section` and the #266 citation path were silently broken in production while the suite stayed green, because `_write_concept_page` omitted the sentinel comment — see `project-docs/findings-indexer-frontmatter-comment.md`.) When a producer gains a new structural element, every consumer's fixtures must gain it too.
 
 ---
 
@@ -532,6 +533,7 @@ Each signal has a **severity** that determines the reviewer's action:
 - [ ] **FLAG** — A test asserts specific LLM output text content beyond shape + `[Source:` marker (will break across model updates; per §6.2). For Phase 16, asserting an answer is "in Chinese" means CJK code-point presence, not specific words.
 - [ ] **FIX** — A test mutates the module-level sections list without restoring via `monkeypatch` or explicit teardown (per §6.5).
 - [ ] **FAIL** — A test exercises a real write path (`build_index` / `ingest_sources` / `import_sources`) without redirecting `INDEX_PATH` / `WIKI_DIR` / `LOG_PATH` (and `SOURCE_DIRS` for a default `build_index()`) to `tmp_path`, so it writes the committed `.kb/index.json` or real `wiki/` (per §6.5). The repo-root session guard restoring the file + warning is the signal, not the remedy.
+- [ ] **FAIL** — A fixture for a Wiki Page / Source omits a structural element its real producer writes (e.g. the `/ingest` sentinel HTML comment before frontmatter, or `importer`-written provenance frontmatter), so it cannot catch a regression the real artifact would trigger (per §6.5 fixture fidelity).
 
 ### Dependencies drift (§7)
 

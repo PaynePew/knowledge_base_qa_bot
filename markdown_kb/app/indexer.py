@@ -324,6 +324,34 @@ def tokenize(text: str) -> list[str]:
     return tokens
 
 
+def _strip_leading_html_comment(text: str) -> str:
+    """Drop a leading HTML comment (and the blank line(s) after it) from ``text``.
+
+    The one shared comment-skipping convention used by BOTH ``split_frontmatter``
+    and ``parse_markdown`` Rule 2 (issue #299). Every wiki page produced by
+    ``POST /ingest`` (``wiki_writer._render_page``) begins with a MULTI-LINE
+    auto-generated sentinel HTML comment *before* the ``---`` frontmatter fence,
+    so a bare ``startswith("---\\n")`` check never saw the frontmatter and folded
+    the comment + YAML into the body. Callers apply the existing ``---\\n``
+    detection on the result, so the comment never reaches the BM25 corpus.
+
+    Fail-soft: when ``text`` does not start with ``<!--``, or the comment is
+    unterminated (no closing ``-->``), the text is returned UNCHANGED — so the
+    downstream ``---\\n`` check then fails and the caller's ``({}, text)``
+    fallback runs. A page that already starts with ``---`` is therefore
+    byte-identical, preserving the no-comment path.
+    """
+    if not text.startswith("<!--"):
+        return text
+    close = text.find("-->")
+    if close == -1:
+        # Unterminated comment — leave the text untouched so the caller's
+        # frontmatter detection fails and the fail-soft path runs.
+        return text
+    # Skip the comment plus any blank line(s) separating it from the fence.
+    return text[close + 3 :].lstrip("\n")
+
+
 def split_frontmatter(text: str) -> tuple[dict, str]:
     """Split a leading YAML frontmatter block from a Markdown document.
 
@@ -332,30 +360,34 @@ def split_frontmatter(text: str) -> tuple[dict, str]:
     raw Source text fed to the LLM excludes provenance frontmatter that
     importer.py writes (``imported_from``/``original_format``/``imported_at``/
     ``content_sha256``). Recognises that on-disk format: a document beginning
-    with ``---\\n``, its closing fence ``\\n---\\n``, and the body following.
+    with ``---\\n`` (optionally behind a leading auto-generated HTML comment,
+    issue #299), its closing fence ``\\n---\\n``, and the body following.
 
     Returns ``(metadata, body)``:
     - metadata: parsed YAML mapping (``{}`` when absent, malformed, or PyYAML is
       unavailable).
-    - body: the document text with the leading frontmatter block removed
-      (byte-identical to the input when no frontmatter is present, so the
-      no-frontmatter path is unaffected).
+    - body: the document text with the leading frontmatter block (and any
+      leading sentinel comment) removed; byte-identical to the input when no
+      frontmatter is present, so the no-frontmatter path is unaffected.
 
     Never raises: missing closing fence, malformed YAML, and absent PyYAML all
-    fall back to ``({}, text)`` and emit a ``parse_warning`` (consistent with
-    parse_markdown's fail-soft handling).
+    fall back to ``({}, text)`` (the ORIGINAL text, comment included) and emit a
+    ``parse_warning`` (consistent with parse_markdown's fail-soft handling).
     """
     from .logger import log_event
 
-    if not text.startswith("---\n"):
+    # Skip an optional leading sentinel HTML comment (issue #299) before the
+    # frontmatter check, then operate on the remainder.
+    candidate = _strip_leading_html_comment(text)
+    if not candidate.startswith("---\n"):
         return {}, text
 
     try:
         import yaml  # optional; PyYAML is not yet a hard dep (Wiki layer territory)
 
-        end = text.index("\n---\n", 4)  # closing fence
-        metadata = yaml.safe_load(text[4:end]) or {}
-        return metadata, text[end + 5 :]  # skip \n---\n
+        end = candidate.index("\n---\n", 4)  # closing fence
+        metadata = yaml.safe_load(candidate[4:end]) or {}
+        return metadata, candidate[end + 5 :]  # skip \n---\n
     except ImportError:
         log_event(
             "parse_warning",
@@ -439,17 +471,22 @@ def parse_markdown(path: Path, source_id: str | None = None) -> list[Section]:
     source_prefix = source_id if source_id is not None else filename
     raw = path.read_text(encoding="utf-8")
 
-    # Rule 2: YAML frontmatter
+    # Rule 2: YAML frontmatter. Skip an optional leading sentinel HTML comment
+    # (issue #299) via the shared convention before the ``---\n`` detection, so
+    # /ingest pages (comment + frontmatter) parse identically to bare ones and
+    # the comment never lands in the body / BM25 corpus. On any failure the body
+    # falls back to ``raw`` (original text), preserving the fail-soft contract.
     metadata: dict = {}
     body = raw
-    if raw.startswith("---\n"):
+    candidate = _strip_leading_html_comment(raw)
+    if candidate.startswith("---\n"):
         try:
             import yaml  # optional; PyYAML is not yet a hard dep (Wiki layer territory)
 
-            end = raw.index("\n---\n", 4)  # closing fence
-            fm_text = raw[4:end]
+            end = candidate.index("\n---\n", 4)  # closing fence
+            fm_text = candidate[4:end]
             metadata = yaml.safe_load(fm_text) or {}
-            body = raw[end + 5 :]  # skip \n---\n
+            body = candidate[end + 5 :]  # skip \n---\n
         except ImportError:
             log_event(
                 "parse_warning",
