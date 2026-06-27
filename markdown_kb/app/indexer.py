@@ -729,7 +729,14 @@ def write_index_json(index_path: Path | None = None) -> None:
             "files_indexed": files_indexed,
             "sections_indexed": len(sections),
             "avg_doc_len": avg_doc_len,
-            "doc_freq": dict(doc_freq),
+            # Canonical (sorted) key order so re-baking the committed seed
+            # produces a stable diff. ``doc_freq`` is a Counter built by
+            # iterating ``set(sec.tokens)`` (see rebuild_stats), whose
+            # iteration order is non-deterministic across processes under
+            # hash randomisation — without sorting, every re-bake emits a
+            # spurious full-file reorder. Sorting is metadata-only: BM25 reads
+            # doc_freq by key, never by position, so scores are unchanged.
+            "doc_freq": dict(sorted(doc_freq.items())),
         },
     }
 
