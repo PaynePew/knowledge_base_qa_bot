@@ -265,6 +265,10 @@ def chat_stream(
             }
             if "derived_from" in s:
                 entry["derived_from"] = s["derived_from"]
+            # Issue #266: forward the resolvable wiki-page path (Wiki stack only;
+            # RAG sources don't carry it) so the reader UI can link the citation.
+            if "path" in s:
+                entry["path"] = s["path"]
             source_list.append(entry)
         yield encode_event("sources", {"sources": source_list})
 

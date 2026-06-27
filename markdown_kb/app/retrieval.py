@@ -291,6 +291,7 @@ def _retrieve_and_gate(question: str) -> dict:
             "score": round(score, 3),
             "content": sec.content[:240],
             "derived_from": _derived_from_for_section(sec),
+            "path": _wiki_page_path_for_section(sec),
         }
         for sec, score in ranked
     ]
@@ -419,6 +420,27 @@ def _is_cjk_query(question: str) -> bool:
     INTERIM — retired by the Phase 13 reranker (see ``_SCORE_THRESHOLD_ZH``).
     """
     return any(indexer._is_cjk(ch) for ch in question)
+
+
+def _wiki_page_path_for_section(sec: indexer.Section) -> str | None:
+    """Return the repo-relative path to the wiki page a retrieved Section came from.
+
+    Issue #266: the reader UI renders a clickable citation that opens this file
+    in-page via ``GET /read/file`` (which whitelists ``wiki/``). The path is
+    decided here (server-side, CODING_STANDARD §12.5) because the client cannot
+    reconstruct the wiki ``type`` subdir from the bare ``slug#heading`` Section id.
+
+    The Section was indexed FROM ``wiki/<subdir>/<slug>.md`` (same layout
+    ``_derived_from_for_section`` resolves), so the path resolves by construction.
+    Returns ``None`` when the page ``type`` is absent/unknown (e.g. a docs-style
+    test corpus), so the UI degrades to plain, non-clickable citation text.
+    """
+    page_type = (sec.metadata or {}).get("type")
+    subdir = {"entity": "entities", "concept": "concepts", "qa": "qa"}.get(page_type)
+    if subdir is None:
+        return None
+    # Forward slashes: this is a /read/file relpath (URL-style), not an OS path.
+    return f"wiki/{subdir}/{sec.file}.md"
 
 
 def _derived_from_for_section(sec: indexer.Section) -> list[dict] | None:

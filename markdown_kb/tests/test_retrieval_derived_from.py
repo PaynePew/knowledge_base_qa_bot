@@ -458,3 +458,87 @@ def test_derived_from_not_in_llm_prompt_or_verifier(tmp_path, monkeypatch):
         f"Check verifier prompt. derived_from is audit-only — PRD #78 Q4b. "
         f"Verifier user message:\n{verifier_user_message}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Issue #266: each retrieved wiki source carries a resolvable ``path`` to its
+# wiki page, so the reader UI can render a clickable citation link. The path is
+# server-decided (§12.5) — the client cannot build it from the bare
+# ``slug#heading`` id (the wiki type subdir is not derivable client-side).
+# ---------------------------------------------------------------------------
+
+
+def test_source_carries_resolvable_wiki_page_path(tmp_path, monkeypatch):
+    """A retrieved concept source carries ``path == 'wiki/concepts/<slug>.md'``.
+
+    The section was indexed FROM that file, so the path resolves by construction
+    and is consumable by ``GET /read/file`` (which whitelists ``wiki/``).
+    """
+    wiki_dir, _, concepts_dir, _ = _setup_wiki(tmp_path)
+    _write_concept_page(
+        concepts_dir,
+        "refund-timeline",
+        sources_yaml="  - refund_policy.md#refund-timeline",
+        body_keyword="refund",
+    )
+    _patch_indexer(monkeypatch, tmp_path, wiki_dir)
+    indexer_module.build_index()
+
+    fake_llm = _RecordingLLM("Refunds within 5-7 business days. [Source: refund-timeline]")
+    monkeypatch.setattr(retrieval_module, "_llm", fake_llm)
+    monkeypatch.setattr(retrieval_module, "get_llm", lambda: fake_llm)
+    monkeypatch.setattr(
+        retrieval_module.grounding_module,
+        "verify",
+        lambda draft, sections: _approved_outcome([sections[0].id]),
+    )
+    monkeypatch.setattr(retrieval_module, "_SCORE_THRESHOLD", 0.0)
+
+    result = retrieval_module.query("refund timeline")
+
+    assert result["sources"], "retrieval should return at least one source"
+    top = result["sources"][0]
+    assert "path" in top, "source dict must carry a 'path' for the citation link"
+    assert top["path"] == "wiki/concepts/refund-timeline.md", (
+        f"path must be the resolvable wiki page relpath, got {top['path']!r}"
+    )
+
+
+def test_qa_source_path_uses_qa_subdir(tmp_path, monkeypatch):
+    """A ``type: qa`` page maps to the ``wiki/qa/`` subdir (not pluralised)."""
+    wiki_dir, _, _, qa_dir = _setup_wiki(tmp_path)
+    body = (
+        "---\n"
+        "id: how-to-return\n"
+        "type: qa\n"
+        'created: "2026-05-27T00:00:00Z"\n'
+        'updated: "2026-05-27T00:00:00Z"\n'
+        "sources: []\n"
+        "status: live\n"
+        "question: How do I return an item?\n"
+        "open_questions: []\n"
+        "---\n\n"
+        "# How To Return\n\nReturn an item within the stated window with rich content.\n"
+    )
+    (qa_dir / "how-to-return.md").write_text(body, encoding="utf-8")
+
+    _patch_indexer(monkeypatch, tmp_path, wiki_dir)
+    indexer_module.build_index()
+
+    fake_llm = _RecordingLLM("Return within the window. [Source: how-to-return]")
+    monkeypatch.setattr(retrieval_module, "_llm", fake_llm)
+    monkeypatch.setattr(retrieval_module, "get_llm", lambda: fake_llm)
+    monkeypatch.setattr(
+        retrieval_module.grounding_module,
+        "verify",
+        lambda draft, sections: _approved_outcome([sections[0].id]),
+    )
+    monkeypatch.setattr(retrieval_module, "_SCORE_THRESHOLD", 0.0)
+
+    result = retrieval_module.query("how do I return an item")
+
+    assert result["sources"], "retrieval should return at least one source"
+    top = result["sources"][0]
+    assert top["path"] == "wiki/qa/how-to-return.md", (
+        f"qa page path must use the wiki/qa subdir, got {top['path']!r}"
+    )

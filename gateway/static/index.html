@@ -431,12 +431,96 @@
     border-color: var(--ink-3);
   }
 
+  /* ── Citation source viewer (issue #266) ─────────────────────────────────
+     A record's citation is clickable: it opens the grounding source in-page.
+     /read/file returns JSON, so the viewer fetches + strips + renders here
+     (never navigates away). Desktop: an inline card in the reading column.
+     Mobile (≤540px): a bottom sheet (see the @media block below).            */
+  .cite-link {
+    background: none; border: 0;
+    display: inline-block; text-align: left; cursor: pointer;
+    padding: 4px 4px; margin: -4px -4px; border-radius: 3px;
+    text-decoration: underline; text-decoration-color: var(--rule-2);
+    text-underline-offset: 3px; text-decoration-thickness: 1px;
+    transition: background-color .15s ease, text-decoration-color .15s ease;
+  }
+  .cite-link:hover, .cite-link:focus-visible {
+    text-decoration-color: var(--ink-3);
+    background: var(--selection); outline: none;
+  }
+  .cite-viewer {
+    margin: 14px 0 4px;
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    background: var(--surface);
+    overflow: hidden;
+  }
+  .cite-viewer-head {
+    position: sticky; top: 0; z-index: 1;
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 14px; border-bottom: 1px solid var(--rule);
+    background: var(--surface);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px; letter-spacing: .04em; color: var(--ink-3);
+  }
+  .cite-viewer-head .file-name {
+    color: var(--ink-2);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .cite-viewer-close {
+    margin-left: auto; min-height: 32px;
+    background: none; border: 1px solid var(--rule); border-radius: 3px;
+    padding: 4px 10px;
+    font-family: "IBM Plex Mono", monospace; font-size: 10.5px; color: var(--ink-3);
+  }
+  .cite-viewer-close:hover, .cite-viewer-close:focus-visible {
+    color: var(--ink); border-color: var(--ink-3); outline: none;
+  }
+  .cite-content {
+    margin: 0; padding: 14px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px; line-height: 1.6; color: var(--ink);
+    white-space: pre-wrap; word-break: break-word;
+    overflow: auto; max-height: min(58dvh, 560px);
+    scrollbar-width: thin; scrollbar-color: var(--rule) transparent;
+  }
+  .cite-scrim { display: none; }
+
   @media (max-width: 540px) {
     .page { padding: 0 20px; }
     .query { font-size: 17px; }
     .answer .body { font-size: 15px; }
     .empty-title { font-size: 26px; }
+
+    /* Citation viewer → bottom sheet on small screens. The chat is a locked
+       app-shell (body overflow:hidden), so an inline card would bury the answer;
+       a sheet keeps the answer visible behind the scrim. */
+    .cite-scrim {
+      display: block; position: fixed; inset: 0; z-index: 40;
+      background: rgba(17, 17, 17, .34);
+      touch-action: none;                 /* the stream behind stays inert */
+      animation: cite-fade .18s ease both;
+    }
+    .cite-viewer {
+      position: fixed; z-index: 50; left: 0; right: 0; bottom: 0;
+      margin: 0; max-height: 88dvh;
+      display: flex; flex-direction: column;
+      border-radius: 14px 14px 0 0; border-bottom: 0;
+      box-shadow: 0 -8px 28px rgba(17, 17, 17, .18);
+      padding-bottom: env(safe-area-inset-bottom);   /* iOS home indicator */
+      animation: cite-slide .22s cubic-bezier(.22, .61, .36, 1) both;
+    }
+    .cite-viewer::before {              /* grab handle */
+      content: ""; flex: none;
+      width: 36px; height: 4px; border-radius: 2px;
+      background: var(--ink-4); margin: 8px auto 2px;
+    }
+    .cite-content { max-height: none; flex: 1; font-size: 12.5px; }
+    .cite-viewer-close { min-height: 40px; padding: 6px 14px; }
+    .cite-link { padding: 8px 6px; margin: -8px -6px; }
   }
+  @keyframes cite-slide { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  @keyframes cite-fade  { from { opacity: 0; } to { opacity: 1; } }
 </style>
 </head>
 <body>
@@ -794,6 +878,80 @@ function onQuery(text) {
   scrollTurnIntoView(entry);
 }
 
+/* ── CITATION SOURCE VIEWER (issue #266) ──────────────────────────────────────
+   A record's citation is clickable: it opens the grounding source IN-PAGE. The
+   resolvable path is server-supplied (source.path — §12.5, the client never
+   builds docs/wiki paths from a bare slug). /read/file returns JSON
+   {relpath, content}; we fetch it, strip the YAML frontmatter, and render the
+   raw Markdown body via textContent (§12.4 — never innerHTML). Presentation is
+   RWD: an inline card on desktop, a bottom sheet at ≤540px (the .cite-viewer
+   @media block). One viewer is open at a time.                                 */
+var citeReturnFocus = null;
+
+function stripFrontmatter(text) {
+  /* Drop an optional leading HTML comment + the first --- … --- YAML block and
+     return the Markdown body. Mirrors the Operator Console's draft reader. */
+  var lines = String(text).split("\n");
+  var dashes = [];
+  for (var i = 0; i < lines.length; i++) {
+    if (lines[i].trim() === "---") { dashes.push(i); if (dashes.length === 2) break; }
+  }
+  if (dashes.length === 2) return lines.slice(dashes[1] + 1).join("\n").replace(/^\n+/, "");
+  return text;
+}
+
+function citeOnKeydown(e) { if (e.key === "Escape") closeCitation(); }
+
+function closeCitation() {
+  var host = document.getElementById("cite-host");
+  if (host) host.remove();
+  document.removeEventListener("keydown", citeOnKeydown);
+  if (citeReturnFocus && citeReturnFocus.focus) { try { citeReturnFocus.focus(); } catch (_) {} }
+  citeReturnFocus = null;
+}
+
+function openCitation(path, label, triggerEl) {
+  closeCitation();  /* only one viewer at a time; reopening replaces it */
+  citeReturnFocus = triggerEl || null;
+
+  var isMobile = matchMedia("(max-width: 540px)").matches;
+  var scrim = el("div", { class: "cite-scrim", onclick: closeCitation });
+  var closeBtn = el("button", {
+    class: "cite-viewer-close", type: "button", text: "close", onclick: closeCitation,
+  });
+  var pre = el("pre", { class: "cite-content", text: "loading…" });
+  var viewer = el("div", {
+    class: "cite-viewer",
+    role: isMobile ? "dialog" : "region",
+    "aria-modal": isMobile ? "true" : null,
+    "aria-label": "Cited source: " + (label || path),
+  },
+    el("div", { class: "cite-viewer-head" },
+      el("span", { text: "source" }),
+      el("span", { text: "·" }),
+      el("span", { class: "file-name", text: label || path }),
+      closeBtn,
+    ),
+    pre,
+  );
+  var host = el("div", { id: "cite-host" }, scrim, viewer);
+  add(host);
+  document.addEventListener("keydown", citeOnKeydown);
+  try { closeBtn.focus(); } catch (_) {}
+  if (!isMobile) scrollStreamToBottom();
+
+  /* /read/file → JSON {relpath, content}. On error the viewer shows the message
+     in place (it never silently closes). A stale fetch (viewer already replaced)
+     writes to a detached <pre>, which is harmless. */
+  fetch("/read/file?" + new URLSearchParams({ path: path }))
+    .then(function(r) {
+      if (!r.ok) return r.json().then(function(j) { throw new Error(j.detail || ("HTTP " + r.status)); });
+      return r.json();
+    })
+    .then(function(data) { pre.textContent = stripFrontmatter(data.content || ""); })
+    .catch(function(err) { pre.textContent = "Failed to load source: " + (err.message || String(err)); });
+}
+
 function onSources(sources) {
   /* §12.3 sources-first: this function is called before any answer area is
      created. The answer entry is only created in onToken, which runs after.
@@ -821,9 +979,19 @@ function onSources(sources) {
     var rec = el("div", { class: "rec" });
     rec.append(el("div", { class: "num", text: String(i + 1).padStart(2, "0") }));
     var body = el("div", { class: "body" });
-    /* §12.4: all server-derived content via textContent */
+    /* §12.4: all server-derived content via textContent. Issue #266: when the
+       server supplies a resolvable path, the citation id becomes a button that
+       opens the grounding source in-page (§12.5 — the path is a server decision,
+       not built on the client). Without a path it stays plain text. */
+    var idNode;
+    if (s.path) {
+      idNode = el("button", { class: "id cite-link", type: "button", text: s.source });
+      idNode.addEventListener("click", function() { openCitation(s.path, s.source, idNode); });
+    } else {
+      idNode = el("div", { class: "id", text: s.source });
+    }
     body.append(
-      el("div", { class: "id", text: s.source }),
+      idNode,
       el("div", { class: "crumb", text: s.heading }),
       el("div", { class: "snip", text: s.content }),
     );

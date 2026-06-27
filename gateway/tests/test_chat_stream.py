@@ -194,11 +194,20 @@ def test_chat_stream_sources_event_non_empty(gateway_client):
     sources = sources_event["data"]["sources"]
     assert len(sources) >= 1, "Expected at least one source"
     item = sources[0]
-    # Wiki source shape: citation id, heading, content snippet, derived_from.
+    # Wiki source shape: citation id, heading, content snippet, derived_from,
+    # plus a resolvable wiki-page path for the clickable citation link (#266).
     assert "source" in item, "source field missing"
     assert "heading" in item, "heading field missing"
     assert "content" in item, "content field missing"
     assert "derived_from" in item, "derived_from field missing"
+    # The gateway forwards the path the deep module decided (§12.5). This fixture
+    # indexes docs-style Sources with no wiki `type`, so the value is None here;
+    # the resolvable "wiki/<subdir>/<slug>.md" value is asserted against real wiki
+    # pages in markdown_kb/tests/test_retrieval_derived_from.py.
+    assert "path" in item, "path field missing (citation link target, #266)"
+    assert item["path"] is None or item["path"].startswith("wiki/"), (
+        f"path must be None or a resolvable wiki/ relpath, got {item['path']!r}"
+    )
 
 
 def test_chat_stream_sources_emitted_before_answer_tokens(gateway_client):
