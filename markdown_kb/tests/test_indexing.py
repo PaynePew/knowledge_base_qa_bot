@@ -446,6 +446,41 @@ def test_write_and_load_index_json(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Slice S2 (#300): deterministic serialization — stats.doc_freq keys are sorted
+# ---------------------------------------------------------------------------
+
+
+def test_write_index_json_doc_freq_keys_are_sorted(tmp_path, monkeypatch):
+    """The persisted ``stats.doc_freq`` must have keys in canonical sorted order.
+
+    ``doc_freq`` is a Counter built by iterating ``set(sec.tokens)``, whose
+    iteration order is non-deterministic across processes (hash randomisation),
+    so persisting ``dict(doc_freq)`` produced a spurious full-file reorder diff
+    on every re-bake of the committed ``.kb/index.json`` seed. Sorting the keys
+    makes the serialization deterministic. This is metadata-only: BM25 reads
+    doc_freq by key, never by position, so scores are unchanged.
+    """
+    kb_dir = tmp_path / ".kb"
+    index_path = kb_dir / "index.json"
+    monkeypatch.setattr(indexer, "INDEX_PATH", index_path)
+
+    # Index the hermetic 3-Source fixture so doc_freq has many distinct tokens.
+    fixture_docs = Path(__file__).resolve().parent / "fixtures" / "docs"
+    build_index(fixture_docs)
+
+    raw = index_path.read_text(encoding="utf-8")
+    # Preserve JSON object key order from the file (default dict preserves it).
+    parsed = json.loads(raw)
+    doc_freq_keys = list(parsed["stats"]["doc_freq"].keys())
+
+    assert len(doc_freq_keys) > 1, "fixture corpus must yield multiple tokens"
+    assert doc_freq_keys == sorted(doc_freq_keys), (
+        "stats.doc_freq keys must be persisted in sorted order for a stable "
+        f"re-bake diff; got: {doc_freq_keys}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Slice 4-2 AC: wiki_layer_empty emitted when both subdirs have zero sections
 # ---------------------------------------------------------------------------
 
