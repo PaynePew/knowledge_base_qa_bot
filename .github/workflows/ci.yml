@@ -46,4 +46,10 @@ jobs:
         run: uv sync --all-packages
 
       - name: Run pytest (default markers — skips live tests)
-        run: uv run pytest
+        # Two tests make REAL OpenAI calls in the default suite (not mocked, not
+        # marked live) and 401 on the dummy key — deselected here pending the
+        # hermeticity fix in #332. Remove these --deselect lines once #332 lands.
+        run: >-
+          uv run pytest
+          --deselect "markdown_kb/tests/lint/test_c3_c4a_c11.py::TestCombinedC3C4aC11::test_combined_run_all_checks_fire"
+          --deselect "gateway/tests/test_chat_stream.py::test_chat_stream_rag_stack_no_longer_returns_501"
