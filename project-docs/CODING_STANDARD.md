@@ -196,7 +196,7 @@ The reviewer opens the source file to discover a module's depth — there is no 
 
 ### 2.4 Forbidden cross-module patterns
 
-- **No reaching into private state of another module.** Module-level public lists and dicts are public; private attributes (leading `_`) are not.
+- **No reaching into private state of another module.** Module-level public lists and dicts are public; private attributes (leading `_`) — including module-level `_private` *functions* — are not. **Blessed exception:** a cross-package `_private` import is acceptable ONLY when a named ADR records it as blessed coupling (ADR-0018 blesses `hybrid_kb`'s reuse of `markdown_kb._passes_index_filter` / `_section_lang` and `vector_rag._max_rag_distance()`, because the dense arm MUST share the BM25 arm's exact filter + threshold). Absent that ADR line, it is a §11 drift signal. **Escalation:** the moment a *second* package needs the same `_private` symbol, promote it to the owner's public API instead of importing it privately again (#326 promotes `hybrid_kb._ensure_indexes_loaded` to a public warmup seam for exactly this reason).
 - **No circular imports.** When a module needs another, the import is at the top. When the cycle is unavoidable, use a function-scope import + a comment explaining the cycle (see §1.8 on WHY-comments).
 - **No LangChain types leak to non-LLM modules.** LangChain message types, client types, and `with_structured_output` schemas stay inside **LLM-facing modules** — defined as modules that own an LLM call site. LLM-facing modules are enumerated in ADR-0005 § Consequences. Routes / schemas / indexer / logger / prompt-builder / wiki-index modules see only Python primitives and Pydantic models. The prompt-builder module was extracted precisely so its output can be asserted *as a string* without touching LangChain types.
 
@@ -364,6 +364,10 @@ If you want a debug-only signal inside a package, either:
 - Test fixtures are hand-written, deterministic, and mirror the shape of real Sources / Wiki Pages; never LLM-generated at test time.
 - **Fixture fidelity (a real, recurring trap).** "Mirror the shape" means *include the structural elements the real producer writes* — not a simplified ideal. Canonical example: every Wiki Page written by `POST /ingest` (`wiki_writer._render_page`) begins with an auto-generated sentinel HTML comment *before* the `---` frontmatter; a wiki-page fixture that starts directly with `---` does not mirror reality, so a parser/consumer regression that only triggers on the real shape passes under it. (Incident 2026-06-28: `_derived_from_for_section` and the #266 citation path were silently broken in production while the suite stayed green, because `_write_concept_page` omitted the sentinel comment — see `project-docs/findings-indexer-frontmatter-comment.md`.) When a producer gains a new structural element, every consumer's fixtures must gain it too.
 
+### 6.6 Eval & report artifacts encode trust level
+
+Committed eval/report artifacts (e.g. `eval/paraphrase_comparison/report.md`) carry a **trust level in the filename**, never only in their contents. A run that produces anything less than real data — `--fake-embeddings`, offline stand-ins, placeholder/synthetic numbers — MUST write to a trust-marked path (`<name>.offline-tracer.<ext>`) led by a loud top-of-file header (`⚠️ PLACEHOLDER — NOT REAL DATA …`, defined once as a module constant per §3.3). Only a real-data run writes the **canonical** name. Trust is **file-level and worst-case**: if *any* arm/column is non-real (e.g. the BM25 numbers are real but the dense arms are faked), the whole file takes the trust-marked name. The writer picks the path from the run mode — a `--fake` flag must never overwrite a canonical artifact (#328; the direct lesson from the fake-`report.md` footgun).
+
 ---
 
 ## 7. Dependencies
@@ -507,6 +511,7 @@ Each signal has a **severity** that determines the reviewer's action:
 - [ ] **FAIL** — A code change breaks any `**Invariant**`-tagged line in `project-docs/adr/*.md` (or a PRD-encoded invariant) without a paired new ADR superseding it. See §2.5.
 - [ ] **FAIL** — Pre-LLM Cannot Confirm gate is bypassed when retrieval score is "just barely below threshold" (violates ADR-0001 + §4.3).
 - [ ] **FAIL** — A `Retriever` protocol / plugin layer is extracted **as part of a feature slice** instead of the dedicated #107 refactor. Both stacks now work (ADR-0002's "premature" bar is lifted), but [ADR-0018](adr/0018-hybrid-retrieval-third-stack-rrf-over-wiki.md) adds the third stack (Hybrid) via the existing string→callable dispatch; extracting the protocol would touch the two existing apps, which is out of Phase 13 scope.
+- [ ] **FLAG** — A module imports another *package's* `_private` symbol (function or state) that no ADR blesses (§2.4). Note it + require a WHY-comment and a tracked promotion issue (the #315→#326 pattern). **Escalates to FAIL** if it ships undocumented, or if a *second* package imports the same `_private` symbol — then it MUST be promoted to the owner's public API. Blessed exceptions (grep the ADR for the symbol): ADR-0018 → `_passes_index_filter` / `_section_lang` / `_max_rag_distance`.
 
 ### Error handling drift (§4)
 
@@ -551,6 +556,7 @@ Each signal has a **severity** that determines the reviewer's action:
 
 - [ ] **FAIL** — A PRD-encoded invariant is broken. (Note: prd.md's original "`wiki/log.md` committed, not gitignored" intent was **superseded** by the `wiki/` artifact taxonomy — `wiki/README.md`, commit `d00d9e3`. `wiki/index.md` / `wiki/log.md` / `wiki/hot.md` and every `<package>/log.md` are generated / runtime-trace artifacts and stay **gitignored** per §5.1; *committing* one is now the drift.)
 - [ ] **FAIL** — An ADR-tagged `**Invariant**` is broken **without** a paired new ADR superseding it. Locate them via `grep -nE "Invariant" project-docs/adr/*.md`.
+- [ ] **FAIL** — A code path that can emit fake/offline/placeholder eval data writes to a *canonical* artifact name (e.g. `report.md`) instead of a trust-marked `*.offline-tracer.*` path with the placeholder header (§6.6). Committing a non-real artifact under a real name is the footgun #328 closes.
 
 ### Frontend drift (§12)
 
