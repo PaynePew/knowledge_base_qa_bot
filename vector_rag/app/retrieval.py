@@ -67,6 +67,14 @@ NOT_INDEXED_MESSAGE = (
     "The knowledge base has not been indexed yet. Call POST /index first."
 )
 
+# Whitelist roots a clickable citation ``path`` may live under — must mirror the
+# keys of ``markdown_kb.app.read._WHITELIST_ROOTS`` (the gate GET /read/file uses).
+# A RAG source only ever resolves to ``docs/`` in practice; ``raw/``/``wiki/`` are
+# included for parity/future-proofing. Emitting ``path`` only when it begins with
+# one of these keeps "a citation is clickable iff the viewer can open it" true at
+# the source, so no clickable-but-404 citation can reach the UI (#307).
+_CITATION_PATH_ROOTS = ("docs/", "raw/", "wiki/")
+
 # ---------------------------------------------------------------------------
 # System prompt — Stack B's own literal of the ADR-0001 strict-grounded contract
 # ---------------------------------------------------------------------------
@@ -325,9 +333,13 @@ def _retrieve_and_gate(question: str) -> dict:
     # score → guess", PROMPT.md Q3). NO derived_from (RAG serves raw docs/
     # Sources; frontmatter chains are a wiki-layer concept — issue #120 spec). The
     # distance stays a gate-only signal and never enters sources. ``path`` is
-    # emitted only when the chunk carries a non-empty ``file`` (omitted entirely
-    # otherwise — never ``path: None``), so an older persisted index whose chunks
-    # lack the metadata degrades to a non-clickable citation.
+    # emitted only when the chunk's ``file`` resolves under a GET /read/file
+    # whitelist root (``docs/`` in practice; ``raw/``/``wiki/`` future-proof —
+    # mirrors markdown_kb.app.read._WHITELIST_ROOTS). Gating on the root keeps the
+    # invariant honest at the boundary: a citation is clickable iff the viewer can
+    # actually open it, so a corpus indexed outside those roots (or an older
+    # persisted index whose chunks lack the metadata) degrades to a non-clickable
+    # citation instead of a clickable-but-404 one — never ``path: None``.
     sources = []
     for chunk in chunks:
         source: dict = {
@@ -335,7 +347,7 @@ def _retrieve_and_gate(question: str) -> dict:
             "heading": " > ".join(chunk.heading_path),
             "content": chunk.content[:240],
         }
-        if chunk.file:
+        if chunk.file.startswith(_CITATION_PATH_ROOTS):
             source["path"] = chunk.file
         sources.append(source)
 

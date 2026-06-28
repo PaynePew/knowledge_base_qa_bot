@@ -139,6 +139,33 @@ def test_source_with_file_emits_that_path(monkeypatch):
     assert gate["sources"][0]["path"] == "docs/refund_policy.md"
 
 
+def test_source_with_non_whitelisted_file_emits_no_path(monkeypatch):
+    """A Chunk whose ``file`` is not under a /read/file whitelist root omits path.
+
+    Boundary hardening (#307): the emit gate is the whitelist ROOT prefix, not mere
+    non-emptiness — so a corpus indexed outside ``docs/``/``raw/``/``wiki/`` (a
+    repo-relative fixture path, an out-of-repo tmp corpus whose file degraded to a
+    bare basename, or an absolute path) can never surface a clickable-but-404
+    citation. Keeps "clickable iff openable" true at the source.
+    """
+    for bad_file in (
+        "markdown_kb/tests/fixtures/docs/x.md",  # repo-relative, not a whitelist root
+        "x.md",                                   # bare basename (out-of-repo fallback)
+        "/abs/x.md",                              # absolute
+    ):
+        chunk = indexer.Chunk(
+            id="x.md#h", source="x.md#h", heading_path=["X"], content="body",
+            file=bad_file,
+        )
+        monkeypatch.setattr(indexer, "vectorstore", object())
+        monkeypatch.setattr(
+            indexer, "search_with_distance", lambda q, k=3, _c=chunk: [(_c, 0.5)]
+        )
+        gate = retrieval._retrieve_and_gate("anything")
+        for s in gate["sources"]:
+            assert "path" not in s, f"non-whitelisted file {bad_file!r} must omit path: {s}"
+
+
 # ---------------------------------------------------------------------------
 # _chunk_from_document plumbs the file metadata (with back-compat default)
 # ---------------------------------------------------------------------------
