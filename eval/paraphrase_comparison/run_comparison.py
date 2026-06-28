@@ -41,10 +41,21 @@ from .spotcheck import (
 
 
 def _install_fake_embeddings() -> None:
-    """Swap vector_rag's FAISS factory for a deterministic token-overlap ranker."""
+    """Install deterministic offline stand-ins for BOTH dense arms (B and C).
+
+    Stack B (vector_rag): swap its FAISS factory for a token-overlap ranker.
+    Stack C (hybrid_kb dense-over-wiki): swap its ``get_embeddings`` leaf for a
+    deterministic hash-based ``Embeddings`` so the REAL FAISS build/search path
+    runs offline (mirrors the eval test conftest's ``fake_dense_embeddings`` and
+    the hybrid_kb suite). Neither touches the network, so the whole three-arm
+    comparison is reproducible without ``OPENAI_API_KEY``.
+    """
+    import hashlib
     from dataclasses import dataclass
 
+    import hybrid_kb.app.dense_index as hk_dense
     import vector_rag.app.indexer as vr_indexer
+    from langchain_core.embeddings import Embeddings
     from markdown_kb.app.indexer import tokenize
 
     @dataclass
@@ -85,6 +96,24 @@ def _install_fake_embeddings() -> None:
 
     vr_indexer._build_faiss = lambda documents: _FakeVectorStore(documents)
 
+    class _FakeDenseEmbeddings(Embeddings):
+        """Deterministic SHA-256-derived embeddings for Stack C's dense-over-wiki arm."""
+
+        _DIM = 16
+
+        def _vec(self, text: str) -> list[float]:
+            digest = hashlib.sha256(text.encode("utf-8")).digest()
+            return [b / 255.0 for b in digest[: self._DIM]]
+
+        def embed_documents(self, texts):
+            return [self._vec(t) for t in texts]
+
+        def embed_query(self, text):
+            return self._vec(text)
+
+    _fake_dense = _FakeDenseEmbeddings()
+    hk_dense.get_embeddings = lambda: _fake_dense
+
 
 def _isolate_production_paths() -> None:
     """Redirect markdown_kb + vector_rag persisted-index/log paths to a temp dir.
@@ -98,6 +127,8 @@ def _isolate_production_paths() -> None:
     import tempfile
     from pathlib import Path
 
+    import hybrid_kb.app.dense_index as hk_dense
+    import hybrid_kb.app.logger as hk_logger
     import markdown_kb.app.indexer as mk_indexer
     import markdown_kb.app.logger as mk_logger
     import vector_rag.app.indexer as vr_indexer
@@ -109,6 +140,10 @@ def _isolate_production_paths() -> None:
     mk_logger.LOG_PATH = iso / "wiki" / "log.md"
     vr_indexer.FAISS_INDEX_DIR = iso / ".kb" / "faiss_index"
     vr_logger.LOG_PATH = iso / "vector_rag" / "log.md"
+    # Stack C's dense-over-wiki seed (.kb/hybrid_dense/) must be isolated too, so
+    # the standalone CLI never overwrites the committed seed (#316 / #307 lesson).
+    hk_dense.DENSE_INDEX_DIR = iso / ".kb" / "hybrid_dense"
+    hk_logger.LOG_PATH = iso / "hybrid_kb" / "log.md"
 
 
 def _judge_config(args: argparse.Namespace) -> JudgeConfig | None:

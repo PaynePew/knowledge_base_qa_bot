@@ -27,6 +27,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import hybrid_kb.app.dense_index as hk_dense
+import hybrid_kb.app.logger as hk_logger
 import markdown_kb.app.indexer as mk_indexer
 import markdown_kb.app.logger as mk_logger
 import vector_rag.app.indexer as vr_indexer
@@ -35,7 +37,7 @@ from deepeval.test_case import LLMTestCase
 
 from . import charts, stacks
 from .loader import load_metadata, load_paraphrases, write_text_atomic
-from .metric import DEFAULT_K, HitRateAtK
+from .metric import DEFAULT_K, HitRateAtK, hit_at_k, reciprocal_rank_at_k
 from .models import (
     CORE_PARAPHRASE_TYPES,
     PROBE_PARAPHRASE_TYPES,
@@ -50,13 +52,41 @@ from .spotcheck import (
     SpotcheckResult,
     run_spotcheck,
 )
-from .statistics import TypeStatResult, compute_type_stats, holm_correct
+from .statistics import (
+    CochranQResult,
+    TypeStatResult,
+    cochran_q,
+    compute_type_stats,
+    holm_correct,
+    mcnemar_exact_p,
+)
 
 _PKG_ROOT = Path(__file__).resolve().parent
 REPORT_PATH = _PKG_ROOT / "report.md"
 
 # A Retrieval Stack's retrieval entry point.
 StackRetrieval = Callable[[str, int], list[RetrievedItem]]
+
+# ---------------------------------------------------------------------------
+# Three-arm cutoff-sweep methodology (Phase 13, ADR-0018 / #316)
+# ---------------------------------------------------------------------------
+# The upgraded methodology that SUPERSEDES the Phase 8 single-cutoff (hit@3)
+# report: each arm overfetches a deep candidate pool ONCE per Paraphrase (at
+# ``DEEP_POOL``), and hit-rate is read off that one pool at every cutoff in
+# ``SWEEP_CUTOFFS`` — never re-retrieving per cutoff. ``PRIMARY_CUTOFF`` is the
+# cutoff the per-type table, charts, the legacy A-vs-B McNemar, and the three-arm
+# omnibus are reported at (kept at 3 so the headline stays comparable to Phase 8).
+SWEEP_CUTOFFS: tuple[int, ...] = (1, 3, 5, 10)
+PRIMARY_CUTOFF = 3
+DEEP_POOL = max(SWEEP_CUTOFFS)
+
+# The three post-hoc pairwise comparisons run after a significant Cochran's Q,
+# in a fixed order so the Holm correction and the report rows are deterministic.
+_POSTHOC_PAIRS: tuple[tuple[str, str, str], ...] = (
+    ("Wiki ↔ RAG", "Stack A", "Stack B"),
+    ("Hybrid ↔ Wiki", "Stack C", "Stack A"),
+    ("Hybrid ↔ RAG", "Stack C", "Stack B"),
+)
 
 # Expected winner per Paraphrase Type — the architectural prediction the
 # comparison tests (PRD #100, roadmap prep note #3). "B" = the rewrite stresses
@@ -122,6 +152,61 @@ class CoreStats:
     holm_p_by_type: dict[str, float]
 
 
+@dataclass(frozen=True)
+class SweepScores:
+    """Per-arm hit_rate + MRR across the cutoff sweep, per Paraphrase Type.
+
+    ``hit_by_cutoff[cutoff][ptype]`` is the type's hit_rate@cutoff and
+    ``mrr_by_cutoff[cutoff][ptype]`` its MRR@cutoff, both read off ONE deep
+    retrieval pool (no per-cutoff re-retrieval). ``n_by_type`` is the Paraphrase
+    count per type so the report can weight a Core macro-average.
+    """
+
+    stack: str
+    cutoffs: tuple[int, ...]
+    hit_by_cutoff: dict[int, dict[str, float]]
+    mrr_by_cutoff: dict[int, dict[str, float]]
+    n_by_type: dict[str, int]
+
+
+@dataclass(frozen=True)
+class ThreeArmStats:
+    """Cochran's Q omnibus + post-hoc pairwise McNemar over the pooled Core set.
+
+    ``cutoff`` — the cutoff the binary hit outcomes were taken at (PRIMARY_CUTOFF).
+    ``cochran`` — the three-way omnibus (Q, df=2, p). ``posthoc_significant`` is
+    the gate: when ``cochran.p_value < 0.05`` the three pairwise McNemar tests
+    (Wiki↔RAG, Hybrid↔Wiki, Hybrid↔RAG) are warranted and Holm-corrected; the
+    parallel ``pair_*`` tuples carry each pair's label, discordant (b, c), raw
+    McNemar p, and Holm-adjusted p in ``_POSTHOC_PAIRS`` order.
+    """
+
+    cutoff: int
+    cochran: CochranQResult
+    posthoc_significant: bool
+    pair_labels: tuple[str, ...]
+    pair_bc: tuple[tuple[int, int], ...]
+    pair_raw_p: tuple[float, ...]
+    pair_holm_p: tuple[float, ...]
+
+
+@dataclass(frozen=True)
+class ThreeArmScoring:
+    """The full three-arm scoring bundle the report renders.
+
+    ``primary`` — (Stack A, B, C) ``StackScores`` at PRIMARY_CUTOFF (per-type
+    table, charts, legacy A-vs-B McNemar). ``sweep`` — the parallel
+    ``SweepScores`` triple across SWEEP_CUTOFFS. ``core_stats`` — the legacy
+    per-Core-type A-vs-B McNemar / Wilson / Holm. ``three_arm`` — the new
+    Cochran's Q omnibus + post-hoc.
+    """
+
+    primary: tuple[StackScores, StackScores, StackScores]
+    sweep: tuple[SweepScores, SweepScores, SweepScores]
+    core_stats: CoreStats
+    three_arm: ThreeArmStats
+
+
 # ---------------------------------------------------------------------------
 # Test-case assembly + scoring (the DeepEval seam)
 # ---------------------------------------------------------------------------
@@ -183,91 +268,8 @@ def score_stack(
 
 
 # ---------------------------------------------------------------------------
-# Paired scoring — both stacks in one pass for McNemar
+# Per-Core-Type paired McNemar / Wilson / Holm (legacy A-vs-B stats)
 # ---------------------------------------------------------------------------
-
-
-def score_paired(
-    paraphrases: list[Paraphrase],
-    retrieve_a: StackRetrieval,
-    retrieve_b: StackRetrieval,
-    k: int = DEFAULT_K,
-) -> tuple[StackScores, StackScores, CoreStats]:
-    """Score both Stacks in one pass and compute per-Core-Type McNemar statistics.
-
-    Running both stacks against the same Paraphrases in one pass ensures the
-    per-Paraphrase (hit_a, hit_b) pairs are aligned — essential for McNemar.
-    Returns ``(stack_a_scores, stack_b_scores, core_stats)``.
-    """
-    metric = HitRateAtK(k=k)
-    per_type_hits_a: dict[str, list[float]] = defaultdict(list)
-    per_type_hits_b: dict[str, list[float]] = defaultdict(list)
-    per_type_rr_a: dict[str, list[float]] = defaultdict(list)
-    per_type_rr_b: dict[str, list[float]] = defaultdict(list)
-    # Raw paired binary outcomes for McNemar (0/1 per paraphrase per type)
-    paired_hits_a: dict[str, list[int]] = defaultdict(list)
-    paired_hits_b: dict[str, list[int]] = defaultdict(list)
-
-    for para in paraphrases:
-        ptype = para.paraphrase_type
-        # Score Stack A
-        items_a = retrieve_a(para.text, k)
-        case_a = LLMTestCase(
-            input=para.text,
-            actual_output="",
-            expected_output=para.gold_docs_section_id,
-            retrieval_context=[it.source_section_id for it in items_a] or ["<none>"],
-            metadata={
-                "retrieved_items": items_a,
-                "key_tokens": sorted(para.key_tokens),
-                "paraphrase_type": ptype,
-            },
-        )
-        metric.measure(case_a)
-        hit_a = int(metric.score)
-        per_type_hits_a[ptype].append(metric.score)
-        per_type_rr_a[ptype].append(metric.reciprocal_rank)
-        # Score Stack B
-        items_b = retrieve_b(para.text, k)
-        case_b = LLMTestCase(
-            input=para.text,
-            actual_output="",
-            expected_output=para.gold_docs_section_id,
-            retrieval_context=[it.source_section_id for it in items_b] or ["<none>"],
-            metadata={
-                "retrieved_items": items_b,
-                "key_tokens": sorted(para.key_tokens),
-                "paraphrase_type": ptype,
-            },
-        )
-        metric.measure(case_b)
-        hit_b = int(metric.score)
-        per_type_hits_b[ptype].append(metric.score)
-        per_type_rr_b[ptype].append(metric.reciprocal_rank)
-        # Accumulate paired binary outcomes for McNemar (Core types only)
-        if ptype in CORE_PARAPHRASE_TYPES:
-            paired_hits_a[ptype].append(hit_a)
-            paired_hits_b[ptype].append(hit_b)
-
-    def _to_scores(
-        stack_name: str,
-        hits: dict[str, list[float]],
-        rrs: dict[str, list[float]],
-    ) -> StackScores:
-        return StackScores(
-            stack=stack_name,
-            k=k,
-            by_type={t: sum(s) / len(s) for t, s in hits.items()},
-            mrr_by_type={t: sum(r) / len(r) for t, r in rrs.items()},
-            n_by_type={t: len(s) for t, s in hits.items()},
-        )
-
-    stack_a = _to_scores("Stack A", per_type_hits_a, per_type_rr_a)
-    stack_b = _to_scores("Stack B", per_type_hits_b, per_type_rr_b)
-    core_stats = _compute_core_stats(paired_hits_a, paired_hits_b)
-    return stack_a, stack_b, core_stats
-
-
 def _compute_core_stats(
     paired_hits_a: dict[str, list[int]],
     paired_hits_b: dict[str, list[int]],
@@ -288,6 +290,140 @@ def _compute_core_stats(
 
 
 # ---------------------------------------------------------------------------
+# Three-arm cutoff-sweep scoring (Phase 13 methodology — AC1 / AC2 / AC3)
+# ---------------------------------------------------------------------------
+def _mean(values: list[float]) -> float:
+    return sum(values) / len(values) if values else 0.0
+
+
+def score_three_arms(
+    paraphrases: list[Paraphrase],
+    retrieve_a: StackRetrieval,
+    retrieve_b: StackRetrieval,
+    retrieve_c: StackRetrieval,
+    *,
+    cutoffs: tuple[int, ...] = SWEEP_CUTOFFS,
+    primary_cutoff: int = PRIMARY_CUTOFF,
+    deep_pool: int = DEEP_POOL,
+) -> ThreeArmScoring:
+    """Score all three arms over one deep retrieval pass and the cutoff sweep.
+
+    Each arm retrieves ONCE per Paraphrase at ``deep_pool`` (the max cutoff); the
+    hit_rate + MRR at every cutoff in ``cutoffs`` are read off that single pool
+    (the AC2 decoupling — candidate depth is never re-retrieved per cutoff). The
+    three arms are scored in the SAME pass so the per-Paraphrase binary outcomes
+    at ``primary_cutoff`` are aligned across arms — required for the paired
+    Cochran's Q omnibus and the post-hoc pairwise McNemar.
+
+    Returns a :class:`ThreeArmScoring`: the primary-cutoff ``StackScores`` triple
+    (per-type table + charts), the ``SweepScores`` triple, the legacy A-vs-B
+    per-Core-type ``CoreStats``, and the new three-arm ``ThreeArmStats``.
+    """
+    arms = (("Stack A", retrieve_a), ("Stack B", retrieve_b), ("Stack C", retrieve_c))
+    # hit_acc[stack][cutoff][ptype] -> list of per-Paraphrase hit (1.0/0.0)
+    hit_acc = {name: {c: defaultdict(list) for c in cutoffs} for name, _ in arms}
+    rr_acc = {name: {c: defaultdict(list) for c in cutoffs} for name, _ in arms}
+    n_by_type: dict[str, int] = defaultdict(int)
+    # paired_at_primary[stack][ptype] -> aligned 0/1 hit at primary cutoff (Core only)
+    paired_at_primary: dict[str, dict[str, list[int]]] = {
+        name: defaultdict(list) for name, _ in arms
+    }
+
+    for para in paraphrases:
+        ptype = para.paraphrase_type
+        gold = para.gold_docs_section_id
+        key_tokens = sorted(para.key_tokens)
+        n_by_type[ptype] += 1
+        for name, retrieve in arms:
+            items = retrieve(para.text, deep_pool)  # one deep pass per arm
+            for cutoff in cutoffs:
+                hit_acc[name][cutoff][ptype].append(
+                    hit_at_k(items, gold, key_tokens, k=cutoff)
+                )
+                rr_acc[name][cutoff][ptype].append(
+                    reciprocal_rank_at_k(items, gold, key_tokens, k=cutoff)
+                )
+            if ptype in CORE_PARAPHRASE_TYPES:
+                hit_primary = hit_at_k(items, gold, key_tokens, k=primary_cutoff)
+                paired_at_primary[name][ptype].append(int(hit_primary))
+
+    def _sweep(name: str) -> SweepScores:
+        return SweepScores(
+            stack=name,
+            cutoffs=cutoffs,
+            hit_by_cutoff={
+                c: {t: _mean(v) for t, v in hit_acc[name][c].items()} for c in cutoffs
+            },
+            mrr_by_cutoff={
+                c: {t: _mean(v) for t, v in rr_acc[name][c].items()} for c in cutoffs
+            },
+            n_by_type=dict(n_by_type),
+        )
+
+    def _primary(name: str) -> StackScores:
+        return StackScores(
+            stack=name,
+            k=primary_cutoff,
+            by_type={t: _mean(v) for t, v in hit_acc[name][primary_cutoff].items()},
+            mrr_by_type={t: _mean(v) for t, v in rr_acc[name][primary_cutoff].items()},
+            n_by_type=dict(n_by_type),
+        )
+
+    primary = (_primary("Stack A"), _primary("Stack B"), _primary("Stack C"))
+    sweep = (_sweep("Stack A"), _sweep("Stack B"), _sweep("Stack C"))
+    core_stats = _compute_core_stats(
+        paired_at_primary["Stack A"], paired_at_primary["Stack B"]
+    )
+    three_arm = _compute_three_arm_stats(paired_at_primary, primary_cutoff)
+    return ThreeArmScoring(
+        primary=primary, sweep=sweep, core_stats=core_stats, three_arm=three_arm
+    )
+
+
+def _compute_three_arm_stats(
+    paired_at_primary: dict[str, dict[str, list[int]]],
+    primary_cutoff: int,
+) -> ThreeArmStats:
+    """Pooled Cochran's Q over the Core set, then Holm-corrected post-hoc McNemar.
+
+    The Core Paraphrases are pooled across types (in CORE_PARAPHRASE_TYPES order,
+    identically for every arm so the three hit vectors stay index-aligned) into a
+    single paired binary sample per arm at ``primary_cutoff``. Cochran's Q is the
+    omnibus; the three pairwise McNemar tests (``_POSTHOC_PAIRS``) are computed and
+    Holm-corrected, and ``posthoc_significant`` records whether Q opened the gate.
+    """
+    core_types = [t for t in CORE_PARAPHRASE_TYPES if t in paired_at_primary["Stack A"]]
+
+    def _pool(name: str) -> list[int]:
+        return [hit for t in core_types for hit in paired_at_primary[name][t]]
+
+    hits = {name: _pool(name) for name in ("Stack A", "Stack B", "Stack C")}
+    cochran = cochran_q(hits["Stack A"], hits["Stack B"], hits["Stack C"])
+
+    pair_labels: list[str] = []
+    pair_bc: list[tuple[int, int]] = []
+    pair_raw_p: list[float] = []
+    for label, left, right in _POSTHOC_PAIRS:
+        x, y = hits[left], hits[right]
+        b = sum(1 for xi, yi in zip(x, y) if xi == 1 and yi == 0)
+        c = sum(1 for xi, yi in zip(x, y) if xi == 0 and yi == 1)
+        pair_labels.append(label)
+        pair_bc.append((b, c))
+        pair_raw_p.append(mcnemar_exact_p(b, c))
+    pair_holm_p = holm_correct(pair_raw_p)
+
+    return ThreeArmStats(
+        cutoff=primary_cutoff,
+        cochran=cochran,
+        posthoc_significant=cochran.p_value < 0.05,
+        pair_labels=tuple(pair_labels),
+        pair_bc=tuple(pair_bc),
+        pair_raw_p=tuple(pair_raw_p),
+        pair_holm_p=tuple(pair_holm_p),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Report rendering
 # ---------------------------------------------------------------------------
 def render_report(
@@ -298,38 +434,45 @@ def render_report(
     chart_files: list[Path] | None = None,
     spotcheck: SpotcheckResult | None = None,
     core_stats: CoreStats | None = None,
+    stack_c: StackScores | None = None,
+    sweep: tuple[SweepScores, SweepScores, SweepScores] | None = None,
+    three_arm: ThreeArmStats | None = None,
 ) -> str:
     """Render the full ``report.md`` deliverable for the retrieval comparison.
 
-    Structure (PRD #100 + issue #140): TL;DR → Experiment Setup (incl. cost log)
-    → Core Comparison (per-type hit_rate@k + MRR + Δ + expected + n, then
-    McNemar / Wilson CI / Holm statistical tests, then a Core macro-average WITH
-    a caveat) → Structural Probes (separate table, framed as expected-limit
-    confirmation) → Spot-check Validation (only when ``--judge`` was run) →
-    Limitations (six+1 honest disclosures + faithfulness-drift) → Interview
+    Structure (PRD #100 + #140 + Phase 13 #316): TL;DR → Experiment Setup (incl.
+    cost log + the methodology delta that supersedes Phase 8) → Cutoff Sweep
+    (hit@{1,3,5,10} + MRR for all arms) → Core Comparison (per-type hit_rate@k +
+    MRR + Δ + expected + n, then the three-arm Cochran's Q omnibus + post-hoc
+    pairwise McNemar, then the legacy A-vs-B McNemar / Wilson CI / Holm, then a
+    Core macro-average WITH a caveat) → Structural Probes (separate table) →
+    Spot-check Validation (only when ``--judge`` was run) → Limitations → Interview
     Talking Points appendix.
 
-    ``embedding_mode`` annotates how Stack B's vectors were produced ("real"
+    ``embedding_mode`` annotates how the dense vectors were produced ("real"
     OpenAI embeddings vs a "fake" deterministic offline stand-in) so a reader
     never mistakes an offline tracer number for a real-embedding result.
-    ``metadata`` is the ``queries.yaml`` metadata block (read for the honest cost
-    log); ``chart_files`` are the rendered PNGs to embed. ``spotcheck`` is the
-    primitive-only L2 result (``None`` when the opt-in judge was not run — the
-    report then notes how to enable it).  ``core_stats`` carries the McNemar /
-    Wilson CI / Holm results for the five Core types (``None`` falls back to
-    omitting the statistical sub-section — e.g. when called from a legacy test
-    that pre-dates this upgrade).
+    ``metadata`` is the ``queries.yaml`` metadata block; ``chart_files`` are the
+    rendered PNGs to embed. ``spotcheck`` is the primitive-only L2 result.
+    ``core_stats`` carries the legacy A-vs-B McNemar / Wilson CI / Holm.
+
+    ``stack_c`` / ``sweep`` / ``three_arm`` are the Phase 13 three-arm additions:
+    when all three are present the report renders the Hybrid arm columns, the
+    cutoff-sweep table, and the Cochran's Q omnibus + post-hoc section. When they
+    are ``None`` the report falls back to the two-arm shape (a legacy caller).
     """
     metadata = metadata or {}
     chart_files = chart_files or []
     k = stack_a.k
     offline = embedding_mode == "fake"
     judged = spotcheck is not None
+    three_arms = stack_c is not None
 
     parts = [
-        _render_header(offline),
-        _render_tldr(stack_a, stack_b, k, offline),
-        _render_setup(embedding_mode, metadata, k, spotcheck),
+        _render_header(offline, three_arms),
+        _render_tldr(stack_a, stack_b, k, offline, stack_c),
+        _render_setup(embedding_mode, metadata, k, spotcheck, three_arms),
+        _render_cutoff_sweep(sweep),
         _render_family_section(
             "Core Comparison",
             CORE_PARAPHRASE_TYPES,
@@ -339,6 +482,8 @@ def render_report(
             chart_files,
             with_macro_average=True,
             core_stats=core_stats,
+            stack_c=stack_c,
+            three_arm=three_arm,
         ),
         _render_family_section(
             "Structural Probes",
@@ -348,6 +493,7 @@ def render_report(
             k,
             chart_files,
             with_macro_average=False,
+            stack_c=stack_c,
         ),
         _render_spotcheck(spotcheck),
         _render_limitations(offline, judged),
@@ -356,16 +502,25 @@ def render_report(
     return "\n\n".join(p for p in parts if p) + "\n"
 
 
-def _render_header(offline: bool) -> str:
+def _render_header(offline: bool, three_arms: bool = False) -> str:
     banner = (
         "\n\n> ⚠️ **OFFLINE TRACER NUMBERS.** Every score below was produced WITHOUT "
         "`OPENAI_API_KEY`: the Core Paraphrases are hand-authored offline stand-ins "
-        "(not gpt-4o output) and Stack B's vectors come from a deterministic "
-        "token-overlap stand-in, NOT real `text-embedding-3-small` embeddings. These "
-        "numbers exercise the pipeline end-to-end but are **not the real experiment**. "
-        "Re-run with `OPENAI_API_KEY` (and a regenerated `queries.yaml`) for headline "
-        "figures.\n"
+        "(not gpt-4o output) and the dense arms (Stack B's Chunks and Stack C's wiki "
+        "Sections) come from a deterministic hash/token-overlap stand-in, NOT real "
+        "`text-embedding-3-small` embeddings. These numbers exercise the pipeline "
+        "end-to-end but are **not the real experiment**. Re-run with `OPENAI_API_KEY` "
+        "(and a regenerated `queries.yaml`) for headline figures.\n"
         if offline
+        else ""
+    )
+    third_arm = (
+        " A third arm — **Stack C** (Hybrid: BM25 + a dense-over-wiki Section index, "
+        "fused by Reciprocal Rank Fusion over the SAME curated `wiki/` corpus) — is "
+        "compared alongside, under an upgraded methodology (deep candidate overfetch, "
+        "a cutoff sweep, and a three-way Cochran's Q omnibus) that **supersedes the "
+        "Phase 8 single-cutoff hit@3 report**."
+        if three_arms
         else ""
     )
     return (
@@ -374,25 +529,34 @@ def _render_header(offline: bool) -> str:
         "(**Stack A** — LLM-synthesised `wiki/` + BM25) out-retrieve a traditional "
         "Vector RAG pipeline (**Stack B** — chunk + embed + FAISS) fed the **same** raw "
         "corpus? Scored at the retrieval layer only by the deterministic C5c hit "
-        "metric (source-match AND dual-side Key-Token overlap). K=3." + banner
+        "metric (source-match AND dual-side Key-Token overlap)." + third_arm + banner
     )
 
 
 def _render_tldr(
-    stack_a: StackScores, stack_b: StackScores, k: int, offline: bool
+    stack_a: StackScores,
+    stack_b: StackScores,
+    k: int,
+    offline: bool,
+    stack_c: StackScores | None = None,
 ) -> str:
     core_a = _macro_average(stack_a.by_type, CORE_PARAPHRASE_TYPES)
     core_b = _macro_average(stack_b.by_type, CORE_PARAPHRASE_TYPES)
     qualifier = "offline tracer" if offline else "L1 (deterministic)"
     n_sources = len(list(stacks.FIXTURES["corpus"].glob("*.md")))
+    arm_c = ""
+    if stack_c is not None:
+        core_c = _macro_average(stack_c.by_type, CORE_PARAPHRASE_TYPES)
+        arm_c = f" vs **Stack C (Hybrid) {core_c:.3f}**"
     return (
         "## TL;DR\n\n"
         f"On this {n_sources}-Source Acme Shop corpus, the Core macro-average hit_rate@{k} is "
-        f"**Stack A {core_a:.3f}** vs **Stack B {core_b:.3f}** ({qualifier} numbers). "
-        "The per-type breakdown is the real signal — the macro-average is a "
-        "researcher-chosen type mix and is reported only with the caveat below. "
-        "Structural probes are reported separately and framed as expected-limit "
-        "confirmation, never folded into a headline number."
+        f"**Stack A {core_a:.3f}** vs **Stack B {core_b:.3f}**{arm_c} "
+        f"({qualifier} numbers). "
+        "The per-type breakdown and the cutoff sweep below are the real signal — the "
+        "macro-average is a researcher-chosen type mix and is reported only with the "
+        "caveat below. Structural probes are reported separately and framed as "
+        "expected-limit confirmation, never folded into a headline number."
     )
 
 
@@ -401,6 +565,7 @@ def _render_setup(
     metadata: dict,
     k: int,
     spotcheck: SpotcheckResult | None = None,
+    three_arms: bool = False,
 ) -> str:
     cost = metadata.get("cost_usd", "n/a")
     generator = metadata.get("generator_model", "gpt-4o")
@@ -431,6 +596,28 @@ def _render_setup(
         if spotcheck is not None
         else "| L2 cross-family judge Spot-check | not run (opt-in via `--judge`) |\n"
     )
+    stack_c_line = (
+        "- **Stack C (Hybrid)**: BM25 AND a dense-over-wiki Section index over the "
+        "SAME curated `wiki/` corpus Stack A indexes (dense ids align 1:1 with the "
+        "BM25 Section ids), fused by Reciprocal Rank Fusion. Additive — it does not "
+        "modify Stack A or Stack B.\n"
+        if three_arms
+        else ""
+    )
+    methodology_line = (
+        "- **Methodology change (supersedes the Phase 8 single-cutoff report)**: each "
+        "arm overfetches a deep candidate pool (target top-"
+        f"{DEEP_POOL}) ONCE per Paraphrase, DECOUPLED from the final cutoff; hit-rate "
+        f"is reported across a **cutoff sweep** (hit@{{{','.join(str(c) for c in SWEEP_CUTOFFS)}}}) "
+        "plus MRR for all arms; and a three-way **Cochran's Q** omnibus gates "
+        "**post-hoc pairwise McNemar** (Wiki↔RAG, Hybrid↔Wiki, Hybrid↔RAG) with Holm "
+        "correction. The earlier Phase 8 report scored a SINGLE cutoff (hit@3) with "
+        "shallow per-stack depth and could not fairly measure a fused arm; its numbers "
+        "are superseded by this run, so a reader comparing the two should expect the "
+        "headline figures to differ for this reason.\n"
+        if three_arms
+        else ""
+    )
     return (
         "## Experiment Setup\n\n"
         f"- **Corpus**: {n_sources} raw Acme Shop Sources (`corpus/`), fed identically "
@@ -438,7 +625,9 @@ def _render_setup(
         "then BM25; Stack B chunks + embeds the raw Sources into FAISS and never runs "
         "`/ingest`. This isolates curated-synthesis-then-keyword vs raw-chunk-then-vector "
         "as the single variable.\n"
-        f"- **Paraphrases**: `queries.yaml` (DeepEval Synthesizer — generator "
+        + stack_c_line
+        + methodology_line
+        + f"- **Paraphrases**: `queries.yaml` (DeepEval Synthesizer — generator "
         f"`{generator}` + `{critic}` same-family critic, seed `{seed}`, "
         f"corpus snapshot `{snapshot}`). {n_core} Core "
         f"({len(CORE_PARAPHRASE_TYPES)} LLM types {core_mult}) + {n_probes} hand-written "
@@ -446,7 +635,7 @@ def _render_setup(
         f"- **Metric**: C5c L1 deterministic — hit_rate@{k} and MRR. A hit requires the "
         "retrieved unit's source to equal the Gold Section AND its content to share at "
         "least one dual-side Key Token, so a correct-id-wrong-content chunk is a miss.\n"
-        f"- **Stack B embedding mode**: **{embedding_mode}** (`fake` = deterministic "
+        f"- **Dense embedding mode**: **{embedding_mode}** (`fake` = deterministic "
         "offline stand-in when `OPENAI_API_KEY` is absent; `real` = OpenAI "
         "`text-embedding-3-small`).\n\n"
         "### Cost log\n\n"
@@ -481,10 +670,13 @@ def _render_family_section(
     chart_files: list[Path],
     with_macro_average: bool,
     core_stats: CoreStats | None = None,
+    stack_c: StackScores | None = None,
+    three_arm: ThreeArmStats | None = None,
 ) -> str:
     types = [t for t in family_types if t in stack_a.by_type or t in stack_b.by_type]
     if not types:
         return ""
+    three_arms = stack_c is not None
     intro = (
         "The five LLM-generated natural-rewrite types. Read each Δ against the "
         "stated `expected` direction; the per-type rows are the real signal."
@@ -494,15 +686,22 @@ def _render_family_section(
         "headline result — they are deliberately adversarial and must never be "
         "averaged into the Core story."
     )
-    lines = [
-        f"## {title}",
-        "",
-        intro,
-        "",
-        f"| Paraphrase Type | hit_rate@{k} (A) | hit_rate@{k} (B) | MRR (A) | "
-        f"MRR (B) | Δ (B−A) | expected | n |",
-        "|---|---|---|---|---|---|---|---|",
-    ]
+    # The per-type table is rendered at the PRIMARY cutoff (k); the full sweep
+    # lives in its own section above. Stack C adds three columns when present.
+    if three_arms:
+        header = (
+            f"| Paraphrase Type | hit_rate@{k} (A) | hit_rate@{k} (B) | "
+            f"hit_rate@{k} (C) | MRR (A) | MRR (B) | MRR (C) | Δ (B−A) | Δ (C−A) | "
+            "expected | n |"
+        )
+        sep = "|---|---|---|---|---|---|---|---|---|---|---|"
+    else:
+        header = (
+            f"| Paraphrase Type | hit_rate@{k} (A) | hit_rate@{k} (B) | MRR (A) | "
+            f"MRR (B) | Δ (B−A) | expected | n |"
+        )
+        sep = "|---|---|---|---|---|---|---|---|"
+    lines = [f"## {title}", "", intro, "", header, sep]
     for ptype in types:
         a = stack_a.by_type.get(ptype, 0.0)
         b = stack_b.by_type.get(ptype, 0.0)
@@ -511,22 +710,37 @@ def _render_family_section(
         n = stack_a.n_by_type.get(ptype, stack_b.n_by_type.get(ptype, 0))
         delta = b - a
         expected = _EXPECTED_WINNER.get(ptype, "—")
-        lines.append(
-            f"| {ptype} | {a:.3f} | {b:.3f} | {mrr_a:.3f} | {mrr_b:.3f} | "
-            f"{delta:+.3f} | {expected} | {n} |"
-        )
+        if three_arms:
+            c = stack_c.by_type.get(ptype, 0.0)
+            mrr_c = stack_c.mrr_by_type.get(ptype, 0.0)
+            lines.append(
+                f"| {ptype} | {a:.3f} | {b:.3f} | {c:.3f} | {mrr_a:.3f} | "
+                f"{mrr_b:.3f} | {mrr_c:.3f} | {delta:+.3f} | {c - a:+.3f} | "
+                f"{expected} | {n} |"
+            )
+        else:
+            lines.append(
+                f"| {ptype} | {a:.3f} | {b:.3f} | {mrr_a:.3f} | {mrr_b:.3f} | "
+                f"{delta:+.3f} | {expected} | {n} |"
+            )
 
     if with_macro_average:
         core_a = _macro_average(stack_a.by_type, types)
         core_b = _macro_average(stack_b.by_type, types)
         mrr_core_a = _macro_average(stack_a.mrr_by_type, types)
         mrr_core_b = _macro_average(stack_b.mrr_by_type, types)
+        hit_c_clause = mrr_c_clause = ""
+        if three_arms:
+            core_c = _macro_average(stack_c.by_type, types)
+            mrr_core_c = _macro_average(stack_c.mrr_by_type, types)
+            hit_c_clause = f" vs Stack C **{core_c:.3f}**"
+            mrr_c_clause = f" vs Stack C **{mrr_core_c:.3f}**"
         lines += [
             "",
             f"**Core macro-average** (unweighted mean across the {len(types)} Core "
             f"types): hit_rate@{k} Stack A **{core_a:.3f}** vs Stack B "
-            f"**{core_b:.3f}**; MRR Stack A **{mrr_core_a:.3f}** vs Stack B "
-            f"**{mrr_core_b:.3f}**.",
+            f"**{core_b:.3f}**{hit_c_clause}; MRR Stack A **{mrr_core_a:.3f}** vs "
+            f"Stack B **{mrr_core_b:.3f}**{mrr_c_clause}.",
             "",
             "> **Caveat (PRD #100).** This macro-average is reported ONLY as an "
             "unweighted mean over a researcher-chosen set of Core types. It is NOT a "
@@ -534,12 +748,106 @@ def _render_family_section(
             "the type mix is a design choice, not a representative query distribution. "
             "The per-type rows are authoritative.",
         ]
+        if three_arm is not None:
+            lines += ["", _render_three_arm_stats(three_arm)]
         if core_stats is not None:
             lines += ["", _render_statistical_tests(core_stats, k)]
 
     chart_md = _embed_family_charts(title, chart_files)
     if chart_md:
         lines += ["", chart_md]
+    return "\n".join(lines)
+
+
+def _render_cutoff_sweep(
+    sweep: tuple[SweepScores, SweepScores, SweepScores] | None,
+) -> str:
+    """Render the Core macro-average hit_rate + MRR across the cutoff sweep.
+
+    One row per cutoff in the sweep, columns = hit_rate (A/B/C) then MRR (A/B/C),
+    each a Core macro-average. This is the AC2 deliverable: hit@{1,3,5,10} + MRR
+    for all three arms, read off the single deep pool (no per-cutoff re-retrieval).
+    ``None`` (a two-arm legacy call) renders nothing.
+    """
+    if sweep is None:
+        return ""
+    sweep_a, sweep_b, sweep_c = sweep
+    cutoffs = sweep_a.cutoffs
+    lines = [
+        "## Cutoff Sweep (hit_rate + MRR across cutoffs, Core macro-average)",
+        "",
+        "Each arm overfetches a deep candidate pool ONCE per Paraphrase; the rows "
+        "below read that one pool at each cutoff (no per-cutoff re-retrieval). The "
+        "macro-average is the unweighted mean over the Core types — the per-type "
+        "rows in the Core Comparison remain authoritative; this sweep shows whether "
+        "a single-cutoff ceiling hid a real difference (the reason the Phase 8 "
+        "hit@3 report is superseded).",
+        "",
+        "| Cutoff | hit_rate (A) | hit_rate (B) | hit_rate (C) | "
+        "MRR (A) | MRR (B) | MRR (C) |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for cutoff in cutoffs:
+        ha = _macro_average(sweep_a.hit_by_cutoff[cutoff], CORE_PARAPHRASE_TYPES)
+        hb = _macro_average(sweep_b.hit_by_cutoff[cutoff], CORE_PARAPHRASE_TYPES)
+        hc = _macro_average(sweep_c.hit_by_cutoff[cutoff], CORE_PARAPHRASE_TYPES)
+        ma = _macro_average(sweep_a.mrr_by_cutoff[cutoff], CORE_PARAPHRASE_TYPES)
+        mb = _macro_average(sweep_b.mrr_by_cutoff[cutoff], CORE_PARAPHRASE_TYPES)
+        mc = _macro_average(sweep_c.mrr_by_cutoff[cutoff], CORE_PARAPHRASE_TYPES)
+        lines.append(
+            f"| hit@{cutoff} | {ha:.3f} | {hb:.3f} | {hc:.3f} | "
+            f"{ma:.3f} | {mb:.3f} | {mc:.3f} |"
+        )
+    return "\n".join(lines)
+
+
+def _render_three_arm_stats(three_arm: ThreeArmStats) -> str:
+    """Render the three-arm Cochran's Q omnibus + Holm-corrected post-hoc McNemar.
+
+    The omnibus (Q, df, p) tests whether the three arms share one hit_rate at the
+    primary cutoff over the pooled Core set; a significant Q gates the three
+    pairwise McNemar comparisons (Holm-corrected). When Q is non-significant the
+    post-hoc table is shown for completeness but flagged as not warranted.
+    """
+    q = three_arm.cochran
+    sig = q.p_value < 0.05
+    gate = (
+        "significant (Q gate **open** → post-hoc pairwise McNemar warranted)"
+        if sig
+        else "not significant (Q gate **closed** → the arms are statistically "
+        "indistinguishable overall; the post-hoc rows below are descriptive only)"
+    )
+    lines = [
+        "### Three-Arm Statistical Tests (Cochran's Q omnibus + post-hoc McNemar)",
+        "",
+        f"Omnibus over the pooled Core set at hit@{three_arm.cutoff} (the three arms "
+        "scored on the SAME Paraphrases — a paired design): **Cochran's Q = "
+        f"{q.q:.4f}**, df = {q.df}, p = **{q.p_value:.4f}** — {gate}.",
+        "",
+        "Post-hoc: exact McNemar on each pair, Holm-corrected across the 3 "
+        "comparisons. b = left-hit right-miss, c = left-miss right-hit.",
+        "",
+        "| Pair | b | c | McNemar p | Holm p | sig |",
+        "|---|---|---|---|---|---|",
+    ]
+    for label, (b, c), raw_p, holm_p in zip(
+        three_arm.pair_labels,
+        three_arm.pair_bc,
+        three_arm.pair_raw_p,
+        three_arm.pair_holm_p,
+    ):
+        pair_sig = "✓" if (sig and holm_p < 0.05) else "—"
+        lines.append(
+            f"| {label} | {b} | {c} | {raw_p:.4f} | {holm_p:.4f} | {pair_sig} |"
+        )
+    lines += [
+        "",
+        "> **Interpretation.** Cochran's Q is the omnibus for 3+ related binary "
+        "samples (χ² with k−1 df); it asks whether ANY arm differs before any "
+        "pairwise claim is made, controlling the family-wise error a naive set of "
+        "three McNemar tests would inflate. A pairwise row is read as significant "
+        "(sig=✓) only when the omnibus gate is open AND its Holm-corrected p < 0.05.",
+    ]
     return "\n".join(lines)
 
 
@@ -762,10 +1070,15 @@ def _render_limitations(offline: bool, judged: bool = False) -> str:
         "8. **The committed numbers are OFFLINE tracer data.** With no "
         "`OPENAI_API_KEY` in the generation environment, the Core Paraphrases are "
         "hand-authored stand-ins for gpt-4o-mini output (faithfully mirroring the "
-        "deterministic sha256 section sampling and per-type rules) and Stack B's "
-        "retrieval uses a deterministic token-overlap stand-in, NOT real "
-        "`text-embedding-3-small` embeddings. Readers must NOT mistake these tracer "
-        "numbers for the real experiment — a real run requires `OPENAI_API_KEY` and a "
+        "deterministic sha256 section sampling and per-type rules) and BOTH dense "
+        "arms use deterministic stand-ins — Stack B a token-overlap ranker and Stack "
+        "C's dense-over-wiki arm a hash-based vector — NOT real "
+        "`text-embedding-3-small` embeddings. **Stack C (Hybrid) is hit hardest by "
+        "this:** with a random hash-vector dense arm, RRF fuses BM25's real ranking "
+        "with noise, so the offline Hybrid numbers UNDERSTATE its true performance and "
+        "are not a basis for any Hybrid-vs-Wiki/RAG verdict. Readers must NOT mistake "
+        "these tracer numbers for the real experiment — the real run (which gates the "
+        "`README.md` / `why-wiki.md` update) requires `OPENAI_API_KEY` and a "
         "regenerated `queries.yaml`."
     )
     body = "\n".join(disclosures + ([offline_disclosure] if offline else []))
@@ -840,8 +1153,11 @@ def run_comparison(
     charts_dir = charts_dir or (report_path.parent / "charts")
     paraphrases = load_paraphrases()
     metadata = load_metadata()
-    stack_a, stack_b, core_stats, spotcheck = _run_scored(paraphrases, k, judge)
-    chart_files = charts.render_charts(stack_a, stack_b, charts_dir=charts_dir)
+    scoring, spotcheck = _run_scored(paraphrases, k, judge)
+    stack_a, stack_b, stack_c = scoring.primary
+    chart_files = charts.render_charts(
+        stack_a, stack_b, charts_dir=charts_dir, stack_c=stack_c
+    )
     write_text_atomic(
         report_path,
         render_report(
@@ -851,7 +1167,10 @@ def run_comparison(
             metadata=metadata,
             chart_files=chart_files,
             spotcheck=spotcheck,
-            core_stats=core_stats,
+            core_stats=scoring.core_stats,
+            stack_c=stack_c,
+            sweep=scoring.sweep,
+            three_arm=scoring.three_arm,
         ),
     )
     return stack_a, stack_b
@@ -859,25 +1178,28 @@ def run_comparison(
 
 def _run_scored(
     paraphrases: list[Paraphrase], k: int, judge: JudgeConfig | None = None
-) -> tuple[StackScores, StackScores, CoreStats, SpotcheckResult | None]:
-    """Build both indexes under production isolation, then score each Stack.
+) -> tuple[ThreeArmScoring, SpotcheckResult | None]:
+    """Build all three indexes under production isolation, then score every arm.
 
-    Uses ``score_paired`` so McNemar contingency tables are built from aligned
-    per-Paraphrase outcomes (both Stacks scored in one pass).  When ``judge`` is
-    set, the opt-in L2 Spot-check runs here too — inside the same isolation
-    context and against the same in-process Stack retrieval callables — so its
-    zones are built from the identical L1 verdicts.
+    Uses ``score_three_arms`` so the cutoff-sweep, the per-type table, the
+    legacy A-vs-B McNemar, and the three-arm Cochran's Q omnibus are all built
+    from aligned per-Paraphrase outcomes (the three arms scored in one pass).
+    Stack C's dense arm is built from BM25's Section list (``index_stack_c``
+    after ``index_stack_a``) so dense ids align 1:1 with BM25 ids. When ``judge``
+    is set, the opt-in L2 Spot-check (A vs B) runs here too — inside the same
+    isolation context and against the same in-process callables.
     """
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         _isolate_production_paths(tmp_path)
         stacks.index_stack_a()
         stacks.index_stack_b()
-        a, b, core_stats = score_paired(
+        stacks.index_stack_c()  # dense-over-wiki, from BM25's Section list
+        scoring = score_three_arms(
             paraphrases,
             stacks.stack_a_retrieval,
             stacks.stack_b_retrieval,
-            k,
+            stacks.stack_c_retrieval,
         )
         spotcheck = None
         if judge is not None:
@@ -891,21 +1213,24 @@ def _run_scored(
                 marginal_threshold=judge.marginal_threshold,
                 control_sample_size=judge.control_sample_size,
             )
-    return a, b, core_stats, spotcheck
+    return scoring, spotcheck
 
 
 def _isolate_production_paths(tmp_path: Path) -> None:
-    """Redirect both Stacks' persistent-state targets to ``tmp_path``.
+    """Redirect all three Stacks' persistent-state targets to ``tmp_path``.
 
     SOURCE_DIRS / DOCS_DIR are repointed inside ``stacks.index_stack_{a,b}``;
     here we redirect every persistence + log target so the builds' atomic-write
     side effects land in tmp, never in production ``.kb/`` / ``wiki/`` /
-    ``vector_rag/log.md``. vector_rag's ``build_index`` now persists the FAISS
-    index on success (issue #103), so its ``FAISS_INDEX_DIR`` must be isolated
-    here too.
+    ``vector_rag/log.md`` / ``hybrid_kb/log.md``. vector_rag's ``build_index``
+    persists the FAISS index on success (issue #103) and hybrid_kb's dense
+    ``build_index`` persists the dense seed under ``.kb/hybrid_dense/`` (#316), so
+    both must be isolated here too (the #307 committed-seed lesson).
     """
     mk_indexer.INDEX_PATH = tmp_path / ".kb" / "index.json"
     mk_indexer.WIKI_DIR = tmp_path / "wiki"
     mk_logger.LOG_PATH = tmp_path / "wiki" / "log.md"
     vr_indexer.FAISS_INDEX_DIR = tmp_path / ".kb" / "faiss_index"
     vr_logger.LOG_PATH = tmp_path / "vector_rag" / "log.md"
+    hk_dense.DENSE_INDEX_DIR = tmp_path / ".kb" / "hybrid_dense"
+    hk_logger.LOG_PATH = tmp_path / "hybrid_kb" / "log.md"

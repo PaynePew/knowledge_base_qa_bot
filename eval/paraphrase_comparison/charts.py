@@ -46,9 +46,11 @@ if TYPE_CHECKING:
 _PKG_ROOT = Path(__file__).resolve().parent
 CHARTS_DIR = _PKG_ROOT / "charts"
 
-# Colour roles (winner-coded). Stack B is the "challenger" Vector RAG arm.
+# Colour roles (winner-coded). Stack B is the "challenger" Vector RAG arm;
+# Stack C is the Hybrid (RRF over the wiki corpus) arm.
 _COLOR_STACK_A = "#4c72b0"  # Wiki + BM25
 _COLOR_STACK_B = "#dd8452"  # Vector RAG
+_COLOR_STACK_C = "#55a868"  # Hybrid (BM25 + dense, RRF)
 _COLOR_TIE = "#999999"
 
 
@@ -59,34 +61,48 @@ def render_charts(
     stack_a: StackScores,
     stack_b: StackScores,
     charts_dir: Path = CHARTS_DIR,
+    stack_c: StackScores | None = None,
 ) -> list[Path]:
     """Render all comparison charts (Core + probes, separate figures) to ``charts_dir``.
 
     Returns the list of PNG paths written, in a stable order. Each is produced
     via atomic tmp + ``os.replace`` so partial writes never surface. Types absent
-    from both Stacks' score maps are skipped (a chart is only drawn for the types
+    from every Stack's score map are skipped (a chart is only drawn for the types
     actually present, so an offline subset run still produces valid figures).
+
+    ``stack_c`` (Hybrid) is the Phase 13 third arm: when present the grouped-bar
+    hit_rate and MRR figures gain a third bar per type. The signed-delta figure
+    stays the legacy Wiki-vs-RAG (B − A) view — the three-arm omnibus + post-hoc
+    in the report is the authoritative three-way comparison.
     """
     charts_dir.mkdir(parents=True, exist_ok=True)
     k = stack_a.k
     written: list[Path] = []
+    three_arms = stack_c is not None
+    arms_label = "A vs B vs C" if three_arms else "Stack A vs Stack B"
 
     families = [
         ("core", CORE_PARAPHRASE_TYPES),
         ("probes", PROBE_PARAPHRASE_TYPES),
     ]
     for family, all_types in families:
-        types = [t for t in all_types if t in stack_a.by_type or t in stack_b.by_type]
-        if not types:
+        present = [t for t in all_types if t in stack_a.by_type or t in stack_b.by_type]
+        if not present:
             continue
+        types = present
+        c_hit = {t: stack_c.by_type.get(t, 0.0) for t in types} if three_arms else None
+        c_mrr = (
+            {t: stack_c.mrr_by_type.get(t, 0.0) for t in types} if three_arms else None
+        )
         written.append(
             _grouped_bar(
                 charts_dir / f"{family}_hit_rate_at_{k}.png",
                 types,
                 {t: stack_a.by_type.get(t, 0.0) for t in types},
                 {t: stack_b.by_type.get(t, 0.0) for t in types},
-                title=f"{family.capitalize()} — hit_rate@{k} (Stack A vs Stack B)",
+                title=f"{family.capitalize()} — hit_rate@{k} ({arms_label})",
                 ylabel=f"hit_rate@{k}",
+                c_by_type=c_hit,
             )
         )
         written.append(
@@ -104,8 +120,9 @@ def render_charts(
                 types,
                 {t: stack_a.mrr_by_type.get(t, 0.0) for t in types},
                 {t: stack_b.mrr_by_type.get(t, 0.0) for t in types},
-                title=f"{family.capitalize()} — MRR@{k} (Stack A vs Stack B)",
+                title=f"{family.capitalize()} — MRR@{k} ({arms_label})",
                 ylabel=f"MRR@{k}",
+                c_by_type=c_mrr,
             )
         )
     return written
@@ -121,27 +138,34 @@ def _grouped_bar(
     b_by_type: dict[str, float],
     title: str,
     ylabel: str,
+    c_by_type: dict[str, float] | None = None,
 ) -> Path:
-    """Grouped-bar of a per-type metric, Stack A beside Stack B; atomic-write the PNG."""
+    """Grouped-bar of a per-type metric (Stack A beside B, plus C when given)."""
     fig, ax = plt.subplots(figsize=(max(6.0, 1.4 * len(types)), 4.5))
     positions = range(len(types))
-    width = 0.38
-    a_vals = [a_by_type[t] for t in types]
-    b_vals = [b_by_type[t] for t in types]
-    ax.bar(
-        [p - width / 2 for p in positions],
-        a_vals,
-        width,
-        label="Stack A (Wiki + BM25)",
-        color=_COLOR_STACK_A,
-    )
-    ax.bar(
-        [p + width / 2 for p in positions],
-        b_vals,
-        width,
-        label="Stack B (Vector RAG)",
-        color=_COLOR_STACK_B,
-    )
+    if c_by_type is not None:
+        width = 0.27
+        offsets = (-width, 0.0, width)
+        series = [
+            (a_by_type, "Stack A (Wiki + BM25)", _COLOR_STACK_A),
+            (b_by_type, "Stack B (Vector RAG)", _COLOR_STACK_B),
+            (c_by_type, "Stack C (Hybrid, RRF)", _COLOR_STACK_C),
+        ]
+    else:
+        width = 0.38
+        offsets = (-width / 2, width / 2)
+        series = [
+            (a_by_type, "Stack A (Wiki + BM25)", _COLOR_STACK_A),
+            (b_by_type, "Stack B (Vector RAG)", _COLOR_STACK_B),
+        ]
+    for offset, (by_type, label, color) in zip(offsets, series):
+        ax.bar(
+            [p + offset for p in positions],
+            [by_type[t] for t in types],
+            width,
+            label=label,
+            color=color,
+        )
     ax.set_xticks(list(positions))
     ax.set_xticklabels(types, rotation=30, ha="right")
     ax.set_ylim(0.0, 1.05)

@@ -8,14 +8,20 @@ by hand-calculation.
 
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from eval.paraphrase_comparison.statistics import (
-    TypeStatResult,
+    CochranQResult,
+    cochran_q,
     compute_type_stats,
     holm_correct,
     mcnemar_exact_p,
     wilson_ci,
+)
+from eval.paraphrase_comparison.statistics import (
+    TypeStatResult,
 )
 
 
@@ -240,3 +246,96 @@ def test_compute_type_stats_raises_on_length_mismatch():
 def test_compute_type_stats_raises_on_empty():
     with pytest.raises(ValueError):
         compute_type_stats([], [])
+
+
+# ---------------------------------------------------------------------------
+# cochran_q — three-arm omnibus (the Phase 13 / #316 addition)
+# ---------------------------------------------------------------------------
+# All expected values below are hand-computed from Cochran's Q definition:
+#
+#   Q = (k-1) * (k * Σ C_j² − N²) / (k * N − Σ R_i²)
+#
+# where k = number of arms, C_j = column total (successes per arm),
+# R_i = row total (arms that hit on block i), and N = Σ C_j = Σ R_i.
+# Q is distributed χ² with k-1 df; for df=2 the survival function has the
+# closed form P(χ²_2 > x) = exp(-x/2), which the p-value tests below pin.
+
+
+def test_cochran_q_hand_checked_three_arms():
+    """Hand-computed Q = 2/3 for a 3-arm × 4-block fixture.
+
+    arms (rows = blocks p1..p4):
+        a = [1,1,0,1]  → C_a = 3
+        b = [1,0,1,1]  → C_b = 3
+        c = [0,0,1,1]  → C_c = 2
+    N = 8, Σ C_j² = 9+9+4 = 22.
+    R_i = [2,1,2,3], Σ R_i² = 4+1+4+9 = 18.
+    Q = (3-1)*(3*22 − 8²)/(3*8 − 18) = 2*(66−64)/(24−18) = 4/6 = 0.6667.
+    """
+    result = cochran_q([1, 1, 0, 1], [1, 0, 1, 1], [0, 0, 1, 1])
+    assert isinstance(result, CochranQResult)
+    assert result.q == pytest.approx(2.0 / 3.0)
+    assert result.df == 2
+
+
+def test_cochran_q_max_separation_is_significant():
+    """One arm always hits, the other two never → Q = 8 (df=2), significant.
+
+    a = [1,1,1,1] (C=4), b = c = [0,0,0,0] (C=0).
+    N = 4, Σ C_j² = 16; R_i = [1,1,1,1], Σ R_i² = 4.
+    Q = 2*(3*16 − 16)/(3*4 − 4) = 2*32/8 = 8.  p = exp(-4) ≈ 0.0183 < 0.05.
+    """
+    result = cochran_q([1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0])
+    assert result.q == pytest.approx(8.0)
+    assert result.df == 2
+    assert result.p_value < 0.05
+
+
+def test_cochran_q_all_concordant_is_zero_and_p_one():
+    """Identical arms (every block all-hit or all-miss) → Q undefined → 0, p=1.0.
+
+    The denominator k*N − Σ R_i² collapses to 0 when every block agrees; by the
+    McNemar convention (no discordant evidence) Q is reported 0.0 and p 1.0.
+    """
+    result = cochran_q([1, 1, 0, 0], [1, 1, 0, 0], [1, 1, 0, 0])
+    assert result.q == 0.0
+    assert result.p_value == 1.0
+
+
+def test_cochran_q_p_value_matches_chi2_df2_closed_form():
+    """For df=2 the χ² survival function is exactly exp(-Q/2); pin the p-value to it."""
+    result = cochran_q([1, 1, 0, 1], [1, 0, 1, 1], [0, 0, 1, 1])
+    assert result.p_value == pytest.approx(math.exp(-result.q / 2.0))
+
+
+def test_cochran_q_p_value_in_unit_interval():
+    for arms in [
+        ([1, 0, 1, 0], [0, 1, 0, 1], [1, 1, 0, 0]),
+        ([1, 1, 1, 1], [0, 0, 0, 0], [1, 0, 1, 0]),
+        ([1, 1, 0, 1, 0], [1, 0, 0, 1, 1], [0, 1, 1, 0, 1]),
+    ]:
+        result = cochran_q(*arms)
+        assert 0.0 <= result.p_value <= 1.0
+
+
+def test_cochran_q_df_tracks_arm_count():
+    """df = k − 1: two arms → df 1, four arms → df 3."""
+    two = cochran_q([1, 0, 1], [0, 1, 1])
+    four = cochran_q([1, 0], [0, 1], [1, 1], [0, 0])
+    assert two.df == 1
+    assert four.df == 3
+
+
+def test_cochran_q_raises_on_length_mismatch():
+    with pytest.raises(ValueError):
+        cochran_q([1, 0, 1], [1, 0], [1, 1, 0])
+
+
+def test_cochran_q_raises_on_too_few_arms():
+    with pytest.raises(ValueError):
+        cochran_q([1, 0, 1])
+
+
+def test_cochran_q_raises_on_empty_blocks():
+    with pytest.raises(ValueError):
+        cochran_q([], [], [])
