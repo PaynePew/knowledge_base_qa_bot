@@ -222,6 +222,32 @@ def test_chat_stream_rag_sources_have_no_derived_from(rag_gateway_client):
         assert "derived_from" not in src, f"RAG source must not carry 'derived_from': {src}"
 
 
+def test_chat_stream_rag_sources_carry_resolvable_docs_path(rag_gateway_client):
+    """RAG source objects flow a docs/ path through the gateway, resolvable via the
+    SAME whitelist GET /read/file uses (#307, parity with wiki #266).
+
+    The gateway forwards ``path`` generically (routes.py ``if "path" in s``); this
+    proves the RAG stack now emits it AND that it opens the real docs file — so the
+    browser UI links the citation exactly like a wiki citation.
+    """
+    from markdown_kb.app import read as kb_read
+
+    resp = rag_gateway_client.post(
+        "/chat/stream?stack=rag",
+        json={"query": "What is the refund policy?"},
+    )
+    events = _parse_sse_response(resp.text)
+    sources = events[0]["data"]["sources"]
+    assert sources, "expected at least one RAG source"
+    for src in sources:
+        assert "path" in src, f"RAG source must carry a clickable path (#307): {src}"
+        path = src["path"]
+        assert path.startswith("docs/") and path.endswith(".md")
+        assert "\\" not in path, f"path must be forward-slashed: {path!r}"
+        # Resolves through the real read_file whitelist that GET /read/file uses.
+        assert kb_read.read_file(path).strip(), f"path {path!r} must open real content"
+
+
 def test_chat_stream_rag_token_events_form_verified_answer(rag_gateway_client):
     """Joining all token texts reconstructs the LLM-generated (verified) answer."""
     resp = rag_gateway_client.post(

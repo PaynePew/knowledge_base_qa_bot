@@ -25,8 +25,11 @@ the shared ``markdown_kb.app.sse.events_for_result()`` serializer; this module i
 a shallow dispatcher (CODING_STANDARD §2.3).  The dispatch mapping
 (``_STACK_STREAM_FN``) is the only place that knows which stream function to call
 per stack — the generator body is identical for both (ADR-0010: gateway is the
-composition layer).  RAG sources carry ONLY citation id + heading + content (no
-score, no derived_from — issue #120); the shared serializer renders them as-is.
+composition layer).  RAG sources carry citation id + heading + content plus an
+OPTIONAL ``path`` for the clickable citation (#266/#307) — but NO score, NO
+derived_from: issue #120 excludes the ranking/wiki-layer signals, and ``path`` is
+orthogonal (it is the UI-resolution target the gateway forwards generically). The
+shared serializer renders them as-is.
 
 SSE event contract (ADR-0009, extended by Phase 11):
   status{phase:"rewriting"}  — emitted on turn 2+ BEFORE sources (Phase 11 Slice 4)
@@ -132,10 +135,12 @@ def chat_stream(
          retrieval starts, signals that query rewriting is underway.
       2. ``sources`` — emitted immediately after retrieval, before any LLM call.
          Carries the retrieved sources. For ``stack=wiki``: citation id, heading,
-         content snippet, derived_from. For ``stack=rag``: citation id, heading,
-         content snippet only (no score, no derived_from). This is the genuine
-         latency win — retrieval is ~instant; the user sees grounding context
-         while the LLM drafts (~4-7s).
+         content snippet, derived_from, plus a resolvable wiki-page ``path``. For
+         ``stack=rag``: citation id, heading, content snippet, plus an OPTIONAL
+         docs/-relative ``path`` for the clickable citation (#307; present when
+         the chunk carries source-path metadata) — but no score, no derived_from.
+         This is the genuine latency win — retrieval is ~instant; the user sees
+         grounding context while the LLM drafts (~4-7s).
       3. ``status:{phase:"verifying"}`` — liveness signal emitted after sources,
          before the first token, on the LLM path only (early-exit CC paths skip
          this).
@@ -251,11 +256,11 @@ def chat_stream(
         # First yield: sources_ready partial — emit sources event only.
         partial = next(gen)
         # Pass through only the keys that each stack's source dict carries.
-        # Wiki sources carry: source, heading, content, derived_from.
-        # RAG sources carry: source, heading, content (NO derived_from, NO score).
-        # Using dict comprehension over allowed keys + conditional derived_from
-        # preserves the per-stack contract without coupling this layer to
-        # individual field names beyond the mandatory three.
+        # Wiki sources carry: source, heading, content, derived_from, path.
+        # RAG sources carry: source, heading, content, and an OPTIONAL path
+        # (#307) — NO derived_from, NO score. Using a fixed mandatory trio plus
+        # conditional derived_from / path forwarding preserves each stack's
+        # contract without coupling this layer to individual field names.
         source_list = []
         for s in partial.get("sources", []):
             entry: dict = {
@@ -265,8 +270,10 @@ def chat_stream(
             }
             if "derived_from" in s:
                 entry["derived_from"] = s["derived_from"]
-            # Issue #266: forward the resolvable wiki-page path (Wiki stack only;
-            # RAG sources don't carry it) so the reader UI can link the citation.
+            # Forward the resolvable source path so the reader UI can link the
+            # citation: the wiki-page path (#266) and the docs/ path on the RAG
+            # stack (#307). Generic by design — both stacks emit ``path`` only
+            # when the source is resolvable, so this single check serves both.
             if "path" in s:
                 entry["path"] = s["path"]
             source_list.append(entry)
