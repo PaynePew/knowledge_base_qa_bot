@@ -27,6 +27,26 @@ dev = [
 # vector_rag is only ever imported via its ``vector_rag.app`` namespace, so the
 # two ``app`` packages never collide). Each member's own pyproject still works
 # for the standalone ``cd <member> && uv run pytest`` workflow.
+#
+# Import-mode rationale (issue #324):
+#   Two workspace members — ``kb_cli`` and ``kb_mcp`` — have no ``__init__.py``
+#   in their ``tests/`` directories (they are not installed packages, just test
+#   directories). Under pytest's default ``prepend`` import mode, both of those
+#   conftest.py files are imported as the bare module name ``conftest``, which
+#   shadows the repo-root ``conftest.py`` (defining ``_PROTECTED`` etc.) in
+#   ``sys.modules`` during cross-member collection. ``test_invariant_guard.py``
+#   does ``import conftest`` at the top level and therefore picks up the wrong
+#   module, causing an ``AttributeError`` on ``_PROTECTED``.
+#
+#   ``--import-mode=importlib`` makes pytest derive a unique, fully-qualified
+#   module name for every conftest (e.g. ``kb_cli.tests.conftest`` rather than
+#   bare ``conftest``), so basename collisions are impossible regardless of
+#   whether a test directory contains an ``__init__.py``.  This future-proofs
+#   the suite against any new rootless test directory being added later.
+#
+#   ``pythonpath=["."]`` is retained so the repo-root-level ``import conftest``
+#   and ``import conftest_support`` in existing tests continue to resolve
+#   correctly — importlib mode does not remove repo root from sys.path.
 [tool.pytest.ini_options]
 testpaths = ["markdown_kb/tests", "vector_rag/tests", "hybrid_kb/tests", "eval/paraphrase_comparison/tests", "eval/negative_case/tests", "eval/rag_distance/tests", "gateway/tests", "kb_mcp/tests", "kb_cli/tests"]
 pythonpath = [".", "markdown_kb"]
@@ -34,7 +54,7 @@ pythonpath = [".", "markdown_kb"]
 # package must be resolved as the unique ``vector_rag.tests`` rather than a bare
 # ``tests`` that collides with markdown_kb's on-pythonpath ``tests`` package.
 consider_namespace_packages = true
-addopts = "--strict-markers"
+addopts = "--strict-markers --import-mode=importlib"
 markers = [
     "live: Opt-in live tests that make real OpenAI/embedding API calls; skipped by default.",
 ]
