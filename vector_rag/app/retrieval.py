@@ -318,19 +318,26 @@ def _retrieve_and_gate(question: str) -> dict:
 
     chunks = [chunk for chunk, _distance in results]
 
-    # RAG source shape: citation id + heading + content ONLY.
-    # NO score (prevents the model reasoning "low score → guess", PROMPT.md Q3).
-    # NO derived_from (RAG serves raw docs/ Sources; frontmatter chains are a
-    # wiki-layer concept — issue #120 spec). The distance stays a gate-only signal
-    # and never enters sources.
-    sources = [
-        {
+    # RAG source shape: citation id + heading + content, plus an OPTIONAL
+    # docs/-relative ``path`` for the clickable citation (#307, parity with wiki
+    # #266 — the gateway forwards ``path`` generically and the browser UI links a
+    # source iff it carries one). NO score (prevents the model reasoning "low
+    # score → guess", PROMPT.md Q3). NO derived_from (RAG serves raw docs/
+    # Sources; frontmatter chains are a wiki-layer concept — issue #120 spec). The
+    # distance stays a gate-only signal and never enters sources. ``path`` is
+    # emitted only when the chunk carries a non-empty ``file`` (omitted entirely
+    # otherwise — never ``path: None``), so an older persisted index whose chunks
+    # lack the metadata degrades to a non-clickable citation.
+    sources = []
+    for chunk in chunks:
+        source: dict = {
             "source": chunk.source,
             "heading": " > ".join(chunk.heading_path),
             "content": chunk.content[:240],
         }
-        for chunk in chunks
-    ]
+        if chunk.file:
+            source["path"] = chunk.file
+        sources.append(source)
 
     # Pre-LLM distance-relevance gate (#257). FAISS k-NN always returns k
     # neighbours, so "retrieved something" does NOT mean "relevant" — without this
