@@ -64,6 +64,24 @@ from .statistics import (
 _PKG_ROOT = Path(__file__).resolve().parent
 REPORT_PATH = _PKG_ROOT / "report.md"
 
+# ---------------------------------------------------------------------------
+# Offline-tracer trust-level artifacts (CODING_STANDARD §6.6, issue #328)
+# ---------------------------------------------------------------------------
+# A ``--fake-embeddings`` run must write to THESE paths, never to REPORT_PATH /
+# its sibling ``charts/``.  Keeping all three here as module constants lets the
+# CLI entry point (``run_comparison.main``) read them at call time — so
+# monkeypatching in tests redirects both the CLI routing AND the runner.
+OFFLINE_TRACER_REPORT_PATH = _PKG_ROOT / "report.offline-tracer.md"
+OFFLINE_CHARTS_DIR = _PKG_ROOT / "charts-offline"
+
+# Loud placeholder header prepended to every offline-tracer artifact (AC#4).
+# Referenced by the assertion in test_trust_split — do NOT inline the literal.
+OFFLINE_TRACER_HEADER = (
+    "⚠️ PLACEHOLDER — FAKE EMBEDDINGS, NOT REAL DATA. "
+    "Dense arms (RAG, Hybrid) are deterministic stand-ins, not real embeddings. "
+    "Do not interpret these numbers."
+)
+
 # A Retrieval Stack's retrieval entry point.
 StackRetrieval = Callable[[str, int], list[RetrievedItem]]
 
@@ -437,6 +455,7 @@ def render_report(
     stack_c: StackScores | None = None,
     sweep: tuple[SweepScores, SweepScores, SweepScores] | None = None,
     three_arm: ThreeArmStats | None = None,
+    header: str | None = None,
 ) -> str:
     """Render the full ``report.md`` deliverable for the retrieval comparison.
 
@@ -460,6 +479,11 @@ def render_report(
     when all three are present the report renders the Hybrid arm columns, the
     cutoff-sweep table, and the Cochran's Q omnibus + post-hoc section. When they
     are ``None`` the report falls back to the two-arm shape (a legacy caller).
+
+    ``header`` — when provided (non-None) it is written as the VERY FIRST line of
+    the rendered artifact, above the report title. Used by offline-tracer runs to
+    stamp ``OFFLINE_TRACER_HEADER`` at the top so a reader opening the file sees the
+    warning before any content (CODING_STANDARD §6.6, issue #328).
     """
     metadata = metadata or {}
     chart_files = chart_files or []
@@ -469,6 +493,7 @@ def render_report(
     three_arms = stack_c is not None
 
     parts = [
+        header,
         _render_header(offline, three_arms),
         _render_tldr(stack_a, stack_b, k, offline, stack_c),
         _render_setup(embedding_mode, metadata, k, spotcheck, three_arms),
@@ -920,9 +945,13 @@ def _embed_family_charts(section_title: str, chart_files: list[Path]) -> str:
     relevant = [p for p in chart_files if p.name.startswith(f"{family}_")]
     if not relevant:
         return ""
+    # Derive the link prefix from the actual chart directory so both the
+    # canonical (charts/) and the tracer (charts-offline/) reports have working
+    # relative image links regardless of which dir was written (issue #328).
+    charts_dir_name = relevant[0].parent.name
     md = ["### Charts", ""]
     for path in relevant:
-        md.append(f"![{path.stem}](charts/{path.name})")
+        md.append(f"![{path.stem}]({charts_dir_name}/{path.name})")
     return "\n".join(md)
 
 
@@ -1134,6 +1163,7 @@ def run_comparison(
     embedding_mode: str = "real",
     charts_dir: Path | None = None,
     judge: JudgeConfig | None = None,
+    header: str | None = None,
 ) -> tuple[StackScores, StackScores]:
     """Index both Stacks over the eval fixtures, score them, render charts + report.md.
 
@@ -1141,14 +1171,19 @@ def run_comparison(
     docstring). Requires OPENAI_API_KEY for Stack B's real embeddings; offline
     callers swap ``vector_rag.app.indexer._build_faiss`` first and pass
     ``embedding_mode="fake"`` so the report records it. ``charts_dir`` defaults to
-    a ``charts/`` sibling of ``report_path`` so the report's relative
-    ``charts/<file>.png`` links resolve.
+    a ``charts/`` sibling of ``report_path`` so the report's relative image links
+    resolve correctly for whichever trust-level output path is chosen (issue #328).
 
     ``judge`` is the opt-in L2 Spot-check config (``None`` = skipped; the report
     then notes how to enable it). When present, the cross-family Claude judge runs
     over the ambiguous subset built from the SAME in-process retrieval callables,
     inside the same production-isolation context. ``run_spotcheck`` fail-fasts if
     ``ANTHROPIC_API_KEY`` is absent.
+
+    ``header`` — forwarded to ``render_report``; when non-None it is stamped as the
+    very first line of the artifact (above the report title). Offline-tracer callers
+    pass ``OFFLINE_TRACER_HEADER`` so a reader opening the file sees the warning
+    immediately (CODING_STANDARD §6.6, issue #328).
     """
     charts_dir = charts_dir or (report_path.parent / "charts")
     paraphrases = load_paraphrases()
@@ -1171,6 +1206,7 @@ def run_comparison(
             stack_c=stack_c,
             sweep=scoring.sweep,
             three_arm=scoring.three_arm,
+            header=header,
         ),
     )
     return stack_a, stack_b
