@@ -29,6 +29,7 @@ import sys
 
 from dotenv import find_dotenv, load_dotenv
 
+from . import runner as _runner
 from .runner import JudgeConfig, run_comparison
 from .spotcheck import (
     DEFAULT_CONTROL_SAMPLE_SIZE,
@@ -217,13 +218,29 @@ def main(argv: list[str] | None = None) -> int:
     mode = "fake" if fake else "real"
     if fake:
         _install_fake_embeddings()
+        # Route offline runs to the trust-marked tracer artifact so they cannot
+        # overwrite the canonical report.md / charts/ (CODING_STANDARD §6.6, #328).
+        report_path = _runner.OFFLINE_TRACER_REPORT_PATH
+        charts_dir = _runner.OFFLINE_CHARTS_DIR
+        header: str | None = _runner.OFFLINE_TRACER_HEADER
+    else:
+        report_path = _runner.REPORT_PATH
+        charts_dir = _runner.REPORT_PATH.parent / "charts"
+        header = None
 
     # Never write the production .kb/ or wiki/log.md from the standalone CLI.
     _isolate_production_paths()
 
     judge = _judge_config(args)
     try:
-        stack_a, stack_b = run_comparison(k=args.k, embedding_mode=mode, judge=judge)
+        stack_a, stack_b = run_comparison(
+            k=args.k,
+            embedding_mode=mode,
+            judge=judge,
+            report_path=report_path,
+            charts_dir=charts_dir,
+            header=header,
+        )
     except JudgeUnavailableError as exc:
         # Opt-in Spot-check fail-fast: a clear one-line message + non-zero exit,
         # not a stack trace (issue #105 — flag set, key absent).
