@@ -26,6 +26,7 @@ import hybrid_kb.app.dense_index as dense_index
 import hybrid_kb.app.retrieval as retrieval
 import markdown_kb.app.indexer as bm25_indexer
 import markdown_kb.app.retrieval as bm25_gate
+import vector_rag.app.retrieval as dense_gate_module
 from markdown_kb.app.grounding import CitableContent, GroundingOutcome
 from markdown_kb.app.indexer import Section
 
@@ -309,3 +310,50 @@ def test_overfetch_candidate_depth_is_decoupled_from_top_k(wired_corpus):
     assert len(deep["sections"]) > len(shallow["sections"]), (
         "candidate_depth must control arm overfetch independently of top_k"
     )
+
+
+# ===========================================================================
+# #327 — _dense_arm_clears None-ceiling gate parity with vector_rag
+#
+# vector_rag treats None ceiling as "gate disabled → proceed" (its refuse
+# condition is  min_dist > _max_rag_distance(), so None disables the gate).
+# hybrid_kb must match that semantics exactly (ADR-0018 §4.3 gate-parity).
+# Monkeypatching dense_gate_module._max_rag_distance patches the SAME object
+# that hybrid_kb.app.retrieval binds to its module-level _dense_gate alias —
+# same Python object, so the patch is seen at call time.
+# ===========================================================================
+
+
+def test_dense_arm_clears_none_ceiling_gate_disabled(monkeypatch):
+    """None ceiling → gate disabled → a present dense hit clears.
+
+    Parity with vector_rag: when _max_rag_distance() returns None the dense
+    gate is disabled, meaning any hit that is present (best_distance is not
+    None) should be treated as clearing. The pre-#327 code returned False here,
+    the opposite of vector_rag's semantics (#327).
+    """
+    monkeypatch.setattr(dense_gate_module, "_max_rag_distance", lambda: None)
+    assert retrieval._dense_arm_clears(0.5) is True
+
+
+def test_dense_arm_no_hit_never_clears_regardless_of_ceiling(monkeypatch):
+    """No dense hit (best_distance=None) never clears, even with gate disabled.
+
+    This is orthogonal to the ceiling: a missing dense hit means the arm
+    produced nothing, which cannot constitute a clearance regardless of whether
+    the distance gate is disabled or not.
+    """
+    monkeypatch.setattr(dense_gate_module, "_max_rag_distance", lambda: None)
+    assert retrieval._dense_arm_clears(None) is False
+
+
+def test_dense_arm_clears_hit_within_ceiling(monkeypatch):
+    """A hit within the non-None ceiling clears (non-None ceiling, distance ≤ ceiling)."""
+    monkeypatch.setattr(dense_gate_module, "_max_rag_distance", lambda: 1.1)
+    assert retrieval._dense_arm_clears(0.5) is True
+
+
+def test_dense_arm_clears_hit_exceeds_ceiling(monkeypatch):
+    """A hit beyond the non-None ceiling does not clear (distance > ceiling)."""
+    monkeypatch.setattr(dense_gate_module, "_max_rag_distance", lambda: 1.1)
+    assert retrieval._dense_arm_clears(5.0) is False
