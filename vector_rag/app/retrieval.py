@@ -30,9 +30,12 @@ Public query() composes them; contract is unchanged.
 stream_query() uses the same decomposition to yield a sources-ready partial
 before any LLM call (ADR-0009 verify-then-stream / sources-first).
 
-RAG source objects carry ONLY citation id + heading + content — NO score,
-NO derived_from (issue #120 spec; RAG serves raw docs/ Sources, not the
-curated wiki layer that has frontmatter.sources chains).
+RAG source objects carry citation id + heading + content, plus an OPTIONAL
+``path`` (``docs/<relpath>``) for the clickable citation (#307, parity with wiki
+#266) — emitted only when the chunk's file resolves under a GET /read/file
+whitelist root. Still NO score, NO derived_from (issue #120 spec — those are
+ranking / wiki-layer signals; ``path`` is orthogonal UI resolution; RAG serves
+raw docs/ Sources, not the curated wiki layer with frontmatter.sources chains).
 """
 
 from __future__ import annotations
