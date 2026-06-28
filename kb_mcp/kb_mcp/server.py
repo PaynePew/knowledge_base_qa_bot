@@ -40,7 +40,7 @@ from pydantic import Field
 
 from .freshness import reload_if_stale
 from .hot_cache import read_hot, save_hot
-from .normalizer import normalize_rag_results, normalize_wiki_results
+from .normalizer import normalize_hybrid_results, normalize_rag_results, normalize_wiki_results
 
 # ---------------------------------------------------------------------------
 # Server-level instructions (~200 tokens)
@@ -75,7 +75,9 @@ _INSTRUCTIONS = (
     "Stack guidance:\n"
     "- Always start with stack='wiki' (curated BM25 index).  "
     "Only switch to stack='rag' when the user explicitly asks to use the "
-    "Vector RAG arm for comparison.\n\n"
+    "Vector RAG arm for comparison.  "
+    "Use stack='hybrid' when the user wants fused BM25 + dense retrieval "
+    "(RRF over the curated wiki, grounded answer with citations).\n\n"
     "Cannot-Confirm guidance:\n"
     "- When kb_ask returns grounding.passed=false, the KB cannot support the "
     "answer.  Surface grounding.reason to the user and do NOT retry.  "
@@ -113,12 +115,15 @@ mcp = FastMCP(name="kb_mcp", instructions=_INSTRUCTIONS)
         "tool for user questions.\n\n"
         "Parameters:\n"
         "  query  — the user's question (required)\n"
-        "  stack  — 'wiki' (curated BM25, default) or 'rag' (Vector RAG)\n\n"
+        "  stack  — 'wiki' (curated BM25, default), 'rag' (Vector RAG), or\n"
+        "           'hybrid' (BM25 + dense RRF over the curated wiki — grounded\n"
+        "           answer with citations, same safety gates as wiki/rag)\n\n"
         "Returns on success: {stack, answer, citations, grounding}\n"
         "  answer      — grounded text, or the Cannot-Confirm phrase when the\n"
         "                KB cannot support the answer\n"
-        "  citations   — list of {source, heading, score, content} dicts from\n"
-        "                BM25 retrieval (the sections the LLM reasoned over)\n"
+        "  citations   — list of {source, heading, score, content} dicts\n"
+        "                (score is null for hybrid — the RRF fused score is not\n"
+        "                a calibrated relevance magnitude, ADR-0018)\n"
         "  grounding   — {passed: bool, reason: str}\n"
         "                passed=false means Cannot Confirm (a success result,\n"
         "                NOT isError — it is a valid KB boundary per ADR-0016)\n\n"
@@ -130,17 +135,24 @@ mcp = FastMCP(name="kb_mcp", instructions=_INSTRUCTIONS)
 def kb_ask_v1(
     query: Annotated[str, Field(description="The question to answer.")],
     stack: Annotated[
-        Literal["wiki", "rag"],
-        Field(description="Retrieval stack: 'wiki' (BM25, default) or 'rag' (Vector RAG)."),
+        Literal["wiki", "rag", "hybrid"],
+        Field(
+            description=(
+                "Retrieval stack: 'wiki' (curated BM25, default), "
+                "'rag' (Vector RAG), or 'hybrid' (BM25 + dense RRF over the "
+                "curated wiki — grounded answer with citations, ADR-0018)."
+            )
+        ),
     ] = "wiki",
 ) -> Any:
     """Answer a question with LLM synthesis and a post-LLM Grounding Check.
 
-    Routes to ``markdown_kb.app.retrieval.query()`` (wiki stack) or the
-    vector_rag equivalent.  Returns a normalised dict on success.  On
-    ``LLMError`` (ADR-0015), returns a ``CallToolResult`` with ``isError=True``
-    so the MCP host receives a structured error payload instead of a raw
-    exception.
+    Routes to ``markdown_kb.app.retrieval.query()`` (wiki stack),
+    ``vector_rag.app.retrieval.query()`` (rag stack), or
+    ``hybrid_kb.app.query.query()`` (hybrid stack — BM25 + dense RRF fusion,
+    S3 #313).  Returns a normalised dict on success.  On ``LLMError``
+    (ADR-0015), returns a ``CallToolResult`` with ``isError=True`` so the MCP
+    host receives a structured error payload instead of a raw exception.
 
     Cannot Confirm (``grounding.passed=False``) is ALWAYS a success result
     (not ``isError``).  The host must treat it as a KB boundary, not a failure.
@@ -160,10 +172,14 @@ def kb_ask_v1(
             from markdown_kb.app.retrieval import query as wiki_query
 
             result = wiki_query(query)
-        else:
+        elif stack == "rag":
             from vector_rag.app.retrieval import query as rag_query  # type: ignore[import-untyped]
 
             result = rag_query(query)
+        else:  # stack == "hybrid"
+            from hybrid_kb.app.query import query as hybrid_query  # type: ignore[import-untyped]
+
+            result = hybrid_query(query)
 
     except LLMError as exc:
         # ADR-0015 / ADR-0016: LLMError → structured MCP isError payload.
@@ -178,14 +194,16 @@ def kb_ask_v1(
 
     # Map retrieval result to the MCP neutral shape.
     # result keys: answer, sources, grounding_outcome
-    # sources: list of {source, heading, score, content, derived_from}
+    # sources: list of {source, heading, content, [score], [derived_from], ...}
     # grounding_outcome: GroundingOutcome(passed, reason, ...)
+    # Note: score may be absent for rag and hybrid stacks (no calibrated score
+    # exposed); use .get() so all three stacks share this normalization.
     grounding_outcome = result["grounding_outcome"]
     citations = [
         {
             "source": src["source"],
             "heading": src["heading"],
-            "score": src["score"],
+            "score": src.get("score"),
             "content": src["content"],
         }
         for src in result.get("sources", [])
@@ -212,17 +230,26 @@ def kb_ask_v1(
         "over yourself, or when the user asks to see the raw KB content.\n\n"
         "Parameters:\n"
         "  query  — the search string (required)\n"
-        "  stack  — 'wiki' (curated BM25, default) or 'rag' (Vector RAG)\n"
+        "  stack  — 'wiki' (curated BM25, default), 'rag' (Vector RAG), or\n"
+        "           'hybrid' (BM25 + dense RRF over the curated wiki — returns\n"
+        "           fused wiki Sections with no LLM synthesis, ADR-0018)\n"
         "  k      — number of results to return (1–10, default 3)\n\n"
         "Returns: {stack, results: [{id, content, score|null}]}\n"
-        "  score is a BM25 float for wiki; null for rag (no score exposed)."
+        "  score is a BM25 float for wiki; null for rag and hybrid (no score\n"
+        "  exposed — the RRF fused score is not a calibrated magnitude)."
     ),
 )
 def kb_search_v1(
     query: Annotated[str, Field(description="The search query string.")],
     stack: Annotated[
-        Literal["wiki", "rag"],
-        Field(description="Retrieval stack: 'wiki' (BM25, default) or 'rag' (Vector RAG)."),
+        Literal["wiki", "rag", "hybrid"],
+        Field(
+            description=(
+                "Retrieval stack: 'wiki' (curated BM25, default), "
+                "'rag' (Vector RAG), or 'hybrid' (BM25 + dense RRF over the "
+                "curated wiki — fused Sections, no LLM synthesis, ADR-0018)."
+            )
+        ),
     ] = "wiki",
     k: Annotated[
         int,
@@ -235,6 +262,11 @@ def kb_search_v1(
     ] = 3,
 ) -> dict:
     """Search the knowledge base index, returning normalized results.
+
+    Routes to ``markdown_kb.app.indexer.search`` (wiki stack),
+    ``vector_rag.app.indexer.search`` (rag stack), or
+    ``hybrid_kb.app.retrieval.retrieve_and_gate`` (hybrid stack — fused wiki
+    Sections via RRF, S2 #312).  No LLM call on any path.
 
     Defaults are enforced server-side — the MCP host MUST NOT rely on the model
     supplying default values (ADR-0016 strict schema).
@@ -252,11 +284,21 @@ def kb_search_v1(
 
         hits = wiki_search(query, k=k)
         results = normalize_wiki_results(hits)
-    else:
+    elif stack == "rag":
         from vector_rag.app.indexer import search as rag_search
 
         chunks = rag_search(query, k=k)
         results = normalize_rag_results(chunks)
+    else:  # stack == "hybrid"
+        # Lazy-load both arms' indexes before calling the retrieval core.
+        # ``_ensure_indexes_loaded`` checks each arm independently and is a
+        # no-op when both are already warm (the common path).
+        from hybrid_kb.app.query import _ensure_indexes_loaded  # type: ignore[import-untyped]
+        from hybrid_kb.app.retrieval import retrieve_and_gate  # type: ignore[import-untyped]
+
+        _ensure_indexes_loaded()
+        gate = retrieve_and_gate(query, top_k=k)
+        results = normalize_hybrid_results(gate["sections"])
 
     return {"stack": stack, "results": results}
 
@@ -477,8 +519,8 @@ async def kb_ingest_v1(
     checking whether pages_overwritten is non-empty.
     """
     from markdown_kb.app.errors import LLMError
-    from markdown_kb.app.ingest import _should_route_async, aingest_sources
     from markdown_kb.app.indexer import split_frontmatter
+    from markdown_kb.app.ingest import _should_route_async, aingest_sources
 
     async def _progress(n: float, total: float, message: str) -> None:
         """Emit a progress notification, silently no-op when no request context.
