@@ -33,7 +33,6 @@ from typing import Any
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers (shared with other kb_mcp test files)
 # ---------------------------------------------------------------------------
@@ -141,9 +140,7 @@ def wiki_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture(autouse=True)
-def _patch_ingest_paths(
-    monkeypatch: pytest.MonkeyPatch, docs_dir: Path, wiki_dir: Path
-) -> None:
+def _patch_ingest_paths(monkeypatch: pytest.MonkeyPatch, docs_dir: Path, wiki_dir: Path) -> None:
     """Redirect ingest deep module paths to tmp dirs (mirrors test_kb_ingest.py)."""
     import markdown_kb.app._paths as paths_mod
     import markdown_kb.app.indexer as indexer_mod
@@ -275,9 +272,7 @@ def test_status_unknown_job_id(
     from kb_mcp.server import mcp
 
     async def _run():
-        raw = await mcp.call_tool(
-            "kb_ingest_status_v1", {"job_id": "does-not-exist-00000000"}
-        )
+        raw = await mcp.call_tool("kb_ingest_status_v1", {"job_id": "does-not-exist-00000000"})
         # Must not be an exception — just a not-found shape
         result = _parse_result(raw)
         assert result.get("status") == "unknown", (
@@ -384,8 +379,7 @@ def test_start_status_strict_schema(
         tool = mcp._tool_manager.get_tool(tool_name)
         assert tool is not None, f"{tool_name} not registered in server"
         assert tool.parameters.get("additionalProperties") is False, (
-            f"{tool_name}: expected additionalProperties:false, "
-            f"got: {tool.parameters}"
+            f"{tool_name}: expected additionalProperties:false, got: {tool.parameters}"
         )
 
 

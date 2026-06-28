@@ -27,7 +27,6 @@ import asyncio
 from dataclasses import dataclass, field
 from uuid import uuid4
 
-
 # ---------------------------------------------------------------------------
 # Job dataclass
 # ---------------------------------------------------------------------------
@@ -163,7 +162,7 @@ def submit(source: str) -> Job:
     return job
 
 
-def status(job_id: str) -> "Job | None":
+def status(job_id: str) -> Job | None:
     """Return the Job for job_id, or None when not found."""
     return _JOBS.get(job_id)
 

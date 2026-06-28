@@ -23,8 +23,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import app.ingest as ingest_module
 import app.indexer as indexer_module
+import app.ingest as ingest_module
 import app.templates as templates_module
 
 # ---------------------------------------------------------------------------
@@ -101,9 +101,7 @@ def test_aingest_produces_same_pages_as_sync(tmp_path, monkeypatch):
     monkeypatch.setattr(indexer_module, "WIKI_DIR", wiki_dir_async)
 
     async_result = asyncio.run(
-        ingest_module.aingest_sources(
-            ["multi.md"], docs_dir=docs_dir, wiki_dir=wiki_dir_async
-        )
+        ingest_module.aingest_sources(["multi.md"], docs_dir=docs_dir, wiki_dir=wiki_dir_async)
     )
 
     assert sync_result.failed_sources == [], f"Sync failures: {sync_result.failed_sources}"
@@ -112,9 +110,7 @@ def test_aingest_produces_same_pages_as_sync(tmp_path, monkeypatch):
     sync_pages = sorted(p for r in sync_result.results for p in r.pages_written)
     async_pages = sorted(p for r in async_result.results for p in r.pages_written)
 
-    assert sync_pages == async_pages, (
-        f"Slug mismatch: sync={sync_pages} async={async_pages}"
-    )
+    assert sync_pages == async_pages, f"Slug mismatch: sync={sync_pages} async={async_pages}"
 
 
 # ---------------------------------------------------------------------------
@@ -151,9 +147,7 @@ def test_aingest_slug_determinism_matches_sync(tmp_path, monkeypatch):
     monkeypatch.setattr(indexer_module, "WIKI_DIR", wiki_dir_async)
 
     async_result = asyncio.run(
-        ingest_module.aingest_sources(
-            ["overview.md"], docs_dir=docs_dir, wiki_dir=wiki_dir_async
-        )
+        ingest_module.aingest_sources(["overview.md"], docs_dir=docs_dir, wiki_dir=wiki_dir_async)
     )
 
     assert sync_result.failed_sources == []
@@ -163,9 +157,7 @@ def test_aingest_slug_determinism_matches_sync(tmp_path, monkeypatch):
     async_pages = sorted(p for r in async_result.results for p in r.pages_written)
 
     # Both must produce exactly overview, overview-2, overview-3
-    expected = sorted(
-        ["concepts/overview.md", "concepts/overview-2.md", "concepts/overview-3.md"]
-    )
+    expected = sorted(["concepts/overview.md", "concepts/overview-2.md", "concepts/overview-3.md"])
     assert sync_pages == expected, f"Sync produced unexpected slugs: {sync_pages}"
     assert async_pages == expected, f"Async produced unexpected slugs: {async_pages}"
 
@@ -186,9 +178,7 @@ def test_aingest_respects_semaphore(tmp_path, monkeypatch):
     wiki_dir = tmp_path / "wiki"
 
     # 6 sections to give the semaphore room to prove itself
-    content = "".join(
-        f"## Section {i}\n\nContent {i}.\n\n" for i in range(1, 7)
-    )
+    content = "".join(f"## Section {i}\n\nContent {i}.\n\n" for i in range(1, 7))
     (docs_dir / "source.md").write_text(content, encoding="utf-8")
 
     monkeypatch.setenv("KB_INGEST_CONCURRENCY", "2")
@@ -217,13 +207,10 @@ def test_aingest_respects_semaphore(tmp_path, monkeypatch):
     monkeypatch.setattr(templates_module, "get_ingest_llm", lambda: fake_llm)
     monkeypatch.setattr(ingest_module, "generate_page", _tracked_generate_page)
 
-    asyncio.run(
-        ingest_module.aingest_sources(["source.md"], docs_dir=docs_dir, wiki_dir=wiki_dir)
-    )
+    asyncio.run(ingest_module.aingest_sources(["source.md"], docs_dir=docs_dir, wiki_dir=wiki_dir))
 
     assert peak_concurrent[0] <= 2, (
-        f"Expected peak concurrency <= 2 (KB_INGEST_CONCURRENCY=2), "
-        f"got peak={peak_concurrent[0]}"
+        f"Expected peak concurrency <= 2 (KB_INGEST_CONCURRENCY=2), got peak={peak_concurrent[0]}"
     )
 
 
@@ -242,9 +229,7 @@ def test_aingest_runs_sections_concurrently(tmp_path, monkeypatch):
     docs_dir.mkdir()
     wiki_dir = tmp_path / "wiki"
 
-    content = "".join(
-        f"## Section {i}\n\nContent {i}.\n\n" for i in range(1, 9)
-    )
+    content = "".join(f"## Section {i}\n\nContent {i}.\n\n" for i in range(1, 9))
     (docs_dir / "concurrent.md").write_text(content, encoding="utf-8")
 
     monkeypatch.setenv("KB_INGEST_CONCURRENCY", "8")
@@ -297,16 +282,16 @@ def test_aingest_grounding_failure_surfaced(tmp_path, monkeypatch):
 
     from app.grounding import GroundingOutcome
 
-    failed_outcome = GroundingOutcome(
-        passed=False, reason="claim_unsupported", result=None
-    )
+    failed_outcome = GroundingOutcome(passed=False, reason="claim_unsupported", result=None)
     monkeypatch.setattr(ingest_module, "verify", lambda *_a, **_kw: failed_outcome)
 
     result = asyncio.run(
         ingest_module.aingest_sources(["fail.md"], docs_dir=docs_dir, wiki_dir=wiki_dir)
     )
 
-    assert result.failed_sources == [], f"Source should not be in failed_sources: {result.failed_sources}"
+    assert result.failed_sources == [], (
+        f"Source should not be in failed_sources: {result.failed_sources}"
+    )
     assert result.pages_with_failed_grounding, (
         f"Expected pages_with_failed_grounding to be non-empty: {result}"
     )

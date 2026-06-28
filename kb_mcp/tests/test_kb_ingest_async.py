@@ -23,7 +23,6 @@ from typing import Any
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers (shared from test_kb_ingest.py pattern)
 # ---------------------------------------------------------------------------
@@ -105,9 +104,7 @@ def wiki_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture(autouse=True)
-def _patch_ingest_paths(
-    monkeypatch: pytest.MonkeyPatch, docs_dir: Path, wiki_dir: Path
-) -> None:
+def _patch_ingest_paths(monkeypatch: pytest.MonkeyPatch, docs_dir: Path, wiki_dir: Path) -> None:
     import markdown_kb.app._paths as paths_mod
     import markdown_kb.app.indexer as indexer_mod
     import markdown_kb.app.ingest as ingest_mod
@@ -150,9 +147,7 @@ def test_kb_ingest_v1_does_not_call_sync_ingest_sources(
             "it must await aingest_sources instead."
         )
 
-    monkeypatch.setattr(
-        "markdown_kb.app.ingest.ingest_sources", _sync_must_not_be_called
-    )
+    monkeypatch.setattr("markdown_kb.app.ingest.ingest_sources", _sync_must_not_be_called)
 
     # Exercise the real aingest_sources so the test actually ingests
     raw = asyncio.run(mcp.call_tool("kb_ingest_v1", {"source": "stub_async.md"}))
