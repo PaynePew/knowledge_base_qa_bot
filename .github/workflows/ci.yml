@@ -1,12 +1,21 @@
 # Minimal pytest gate (issue #324).
 #
-# Runs the full default test suite (no -m live, no ruff gate — ruff has
-# pre-existing repo-wide failures tracked in issue #325) on every push and
+# Runs the full default test suite (no -m live, no ruff gate — ruff was a
+# pre-existing repo-wide red tracked in issue #325) on every push and
 # pull_request to main so a red suite can't merge unnoticed.
 #
-# Environment setup mirrors what the project needs:
-#   - uv for dependency management (workspace with --all-packages)
-#   - The committed .kb/FAISS seeds are in the repo (no re-bake step needed)
+# Platform: windows-latest. The project's trusted green baseline (1512 passed)
+# is established on Windows (the dev platform). The default suite is NOT fully
+# CI-hermetic: it contains a Windows-specific path-validation test
+# (test_rejects_windows_absolute_path) and several tests that *construct* an
+# OpenAI client (retry/config — no real call) and so need *a* key present.
+# Running on windows-latest with a dummy OPENAI_API_KEY reproduces the baseline
+# faithfully. NOTE: production deploys to linux/amd64 (deploy.yml); making the
+# suite Linux-portable so CI can run on the prod platform is a separate
+# follow-up, not done here.
+#
+# The dummy OPENAI_API_KEY only satisfies client construction; -m live tests are
+# skipped by default so no real API call is ever made.
 name: ci
 
 on:
@@ -17,9 +26,13 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     permissions:
       contents: read
+    env:
+      # Not a real key — only needed so the OpenAI client constructor (exercised
+      # by non-live retry/config tests) succeeds. Live tests stay skipped.
+      OPENAI_API_KEY: sk-ci-dummy-key-not-real
     steps:
       - name: Checkout
         uses: actions/checkout@v4
