@@ -123,13 +123,18 @@ def fake_vector_index(monkeypatch):
     vr_indexer.vectorstore = None
 
 
-@pytest.fixture()
+@pytest.fixture(autouse=True)
 def fake_dense_embeddings(monkeypatch):
     """Swap hybrid_kb's embeddings leaf for the deterministic offline fake.
 
     Patches ``get_embeddings`` (not ``_build_faiss``) so Stack C's whole real
     FAISS path — build, save_local, similarity search — runs offline, exactly as
     the hybrid_kb suite does (CODING_STANDARD §6.3 — mock the network leaf).
+
+    Autouse: Stack C's dense arm is now built in every ``run_comparison`` (the
+    three-arm methodology), and the whole eval suite must run hermetically with
+    no ``OPENAI_API_KEY``. A test that does not build the dense index is simply
+    unaffected by the patch; a test wanting the handle requests it by name.
     """
     fake = _FakeDenseEmbeddings()
     monkeypatch.setattr(hk_dense, "get_embeddings", lambda: fake)

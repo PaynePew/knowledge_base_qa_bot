@@ -812,19 +812,18 @@ def _render_family_section(
         core_b = _macro_average(stack_b.by_type, types)
         mrr_core_a = _macro_average(stack_a.mrr_by_type, types)
         mrr_core_b = _macro_average(stack_b.mrr_by_type, types)
-        arm_c_macro = ""
+        hit_c_clause = mrr_c_clause = ""
         if three_arms:
             core_c = _macro_average(stack_c.by_type, types)
             mrr_core_c = _macro_average(stack_c.mrr_by_type, types)
-            arm_c_macro = (
-                f" vs Stack C **{core_c:.3f}**; MRR Stack C **{mrr_core_c:.3f}**"
-            )
+            hit_c_clause = f" vs Stack C **{core_c:.3f}**"
+            mrr_c_clause = f" vs Stack C **{mrr_core_c:.3f}**"
         lines += [
             "",
             f"**Core macro-average** (unweighted mean across the {len(types)} Core "
             f"types): hit_rate@{k} Stack A **{core_a:.3f}** vs Stack B "
-            f"**{core_b:.3f}**{arm_c_macro}; MRR Stack A **{mrr_core_a:.3f}** vs "
-            f"Stack B **{mrr_core_b:.3f}**.",
+            f"**{core_b:.3f}**{hit_c_clause}; MRR Stack A **{mrr_core_a:.3f}** vs "
+            f"Stack B **{mrr_core_b:.3f}**{mrr_c_clause}.",
             "",
             "> **Caveat (PRD #100).** This macro-average is reported ONLY as an "
             "unweighted mean over a researcher-chosen set of Core types. It is NOT a "
@@ -1154,10 +1153,15 @@ def _render_limitations(offline: bool, judged: bool = False) -> str:
         "8. **The committed numbers are OFFLINE tracer data.** With no "
         "`OPENAI_API_KEY` in the generation environment, the Core Paraphrases are "
         "hand-authored stand-ins for gpt-4o-mini output (faithfully mirroring the "
-        "deterministic sha256 section sampling and per-type rules) and Stack B's "
-        "retrieval uses a deterministic token-overlap stand-in, NOT real "
-        "`text-embedding-3-small` embeddings. Readers must NOT mistake these tracer "
-        "numbers for the real experiment — a real run requires `OPENAI_API_KEY` and a "
+        "deterministic sha256 section sampling and per-type rules) and BOTH dense "
+        "arms use deterministic stand-ins — Stack B a token-overlap ranker and Stack "
+        "C's dense-over-wiki arm a hash-based vector — NOT real "
+        "`text-embedding-3-small` embeddings. **Stack C (Hybrid) is hit hardest by "
+        "this:** with a random hash-vector dense arm, RRF fuses BM25's real ranking "
+        "with noise, so the offline Hybrid numbers UNDERSTATE its true performance and "
+        "are not a basis for any Hybrid-vs-Wiki/RAG verdict. Readers must NOT mistake "
+        "these tracer numbers for the real experiment — the real run (which gates the "
+        "`README.md` / `why-wiki.md` update) requires `OPENAI_API_KEY` and a "
         "regenerated `queries.yaml`."
     )
     body = "\n".join(disclosures + ([offline_disclosure] if offline else []))
