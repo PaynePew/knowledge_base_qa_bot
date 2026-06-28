@@ -25,7 +25,15 @@ import pytest
 import conftest_support as _guard
 
 # Git-tracked invariant files that no test run may leave mutated (see #204).
-_PROTECTED: list[Path] = [Path(__file__).parent / ".kb" / "index.json"]
+# build_index() also writes wiki/index.md and log_event() writes wiki/log.md;
+# a test that hits a real wiki write path without redirecting WIKI_DIR / LOG_PATH
+# leaks those committed files too (see #303) — guard them with the same backstop.
+_ROOT = Path(__file__).parent
+_PROTECTED: list[Path] = [
+    _ROOT / ".kb" / "index.json",
+    _ROOT / "wiki" / "index.md",
+    _ROOT / "wiki" / "log.md",
+]
 
 
 @pytest.fixture(scope="session", autouse=True)
