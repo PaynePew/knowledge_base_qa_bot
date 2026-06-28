@@ -263,8 +263,6 @@ def test_large_entity_routes_to_per_section(tmp_path, monkeypatch):
     # Build a fake LLM that:
     # - first call (classify): returns entity
     # - subsequent calls (per-section synthesis): returns a valid page body
-    call_count = [0]
-
     class _ClassifierChain:
         def invoke(self, messages):
             class _Out:
