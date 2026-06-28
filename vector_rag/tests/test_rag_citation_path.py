@@ -73,7 +73,9 @@ def test_rag_source_carries_docs_relative_path(indexed_real_corpus):
     for s in _sources_for(_EN_QUERY):
         assert "path" in s, f"RAG source must carry a clickable path: {s}"
         p = s["path"]
-        assert p.startswith("docs/"), f"path must be repo-root-relative under docs/: {p!r}"
+        assert p.startswith("docs/"), (
+            f"path must be repo-root-relative under docs/: {p!r}"
+        )
         assert "\\" not in p, f"path must use forward slashes (Windows-safe): {p!r}"
         assert p.endswith(".md"), f"path must point at a markdown Source: {p!r}"
 
@@ -153,11 +155,14 @@ def test_source_with_non_whitelisted_file_emits_no_path(monkeypatch):
     """
     for bad_file in (
         "markdown_kb/tests/fixtures/docs/x.md",  # repo-relative, not a whitelist root
-        "x.md",                                   # bare basename (out-of-repo fallback)
-        "/abs/x.md",                              # absolute
+        "x.md",  # bare basename (out-of-repo fallback)
+        "/abs/x.md",  # absolute
     ):
         chunk = indexer.Chunk(
-            id="x.md#h", source="x.md#h", heading_path=["X"], content="body",
+            id="x.md#h",
+            source="x.md#h",
+            heading_path=["X"],
+            content="body",
             file=bad_file,
         )
         monkeypatch.setattr(indexer, "vectorstore", object())
@@ -166,7 +171,9 @@ def test_source_with_non_whitelisted_file_emits_no_path(monkeypatch):
         )
         gate = retrieval._retrieve_and_gate("anything")
         for s in gate["sources"]:
-            assert "path" not in s, f"non-whitelisted file {bad_file!r} must omit path: {s}"
+            assert "path" not in s, (
+                f"non-whitelisted file {bad_file!r} must omit path: {s}"
+            )
 
 
 # ---------------------------------------------------------------------------

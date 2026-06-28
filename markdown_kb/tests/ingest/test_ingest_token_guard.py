@@ -145,24 +145,30 @@ def test_classify_uses_outline_not_full_content(tmp_path, monkeypatch):
 
     class _ClassifierChain:
         """Fake chain for the _ClassifierOutput call — captures what goes in."""
+
         def invoke(self, messages):
             for m in messages:
                 content = getattr(m, "content", str(m))
                 classifier_messages.append(content)
+
             class _Out:
                 type = "concept"
+
             return _Out()
 
     class _SynthChain:
         """Fake chain for synthesis calls — not relevant to this test."""
+
         def invoke(self, messages):
             class _Out:
                 body = "Synthesised."
                 open_questions = []
+
             return _Out()
 
     def _dispatch_chain(schema):
         from app.templates import _ClassifierOutput
+
         if schema is _ClassifierOutput:
             return _ClassifierChain()
         return _SynthChain()
@@ -185,6 +191,7 @@ def test_classify_uses_outline_not_full_content(tmp_path, monkeypatch):
 def _make_grounding_pass():
     """Return a passing GroundingOutcome-like object."""
     from unittest.mock import MagicMock
+
     outcome = MagicMock()
     outcome.passed = True
     return outcome
@@ -245,10 +252,7 @@ def test_large_entity_routes_to_per_section(tmp_path, monkeypatch):
     monkeypatch.setenv("KB_INGEST_MAX_SECTION_TOKENS", "99999")  # no hard cap
 
     # Two sections, total > 300 chars
-    content = (
-        "## Section Alpha\n\n" + "a" * 200 + "\n\n"
-        "## Section Beta\n\n" + "b" * 200 + "\n"
-    )
+    content = "## Section Alpha\n\n" + "a" * 200 + "\n\n## Section Beta\n\n" + "b" * 200 + "\n"
     (docs_dir / "entity_large.md").write_text(content, encoding="utf-8")
 
     # Track whether generate_entity_page was called
@@ -267,6 +271,7 @@ def test_large_entity_routes_to_per_section(tmp_path, monkeypatch):
         def invoke(self, messages):
             class _Out:
                 type = "entity"
+
             return _Out()
 
     class _SynthChain:
@@ -274,10 +279,12 @@ def test_large_entity_routes_to_per_section(tmp_path, monkeypatch):
             class _Out:
                 body = "Synthesised body."
                 open_questions = []
+
             return _Out()
 
     def _fake_with_structured_output(schema):
         from app.templates import _ClassifierOutput
+
         if schema is _ClassifierOutput:
             return _ClassifierChain()
         return _SynthChain()
@@ -289,9 +296,7 @@ def test_large_entity_routes_to_per_section(tmp_path, monkeypatch):
     monkeypatch.setattr(indexer_module, "WIKI_DIR", wiki_dir)
     monkeypatch.setattr("app.ingest.verify", lambda body, sections: _make_grounding_pass())
 
-    result = ingest_module.ingest_sources(
-        ["entity_large.md"], docs_dir=docs_dir, wiki_dir=wiki_dir
-    )
+    result = ingest_module.ingest_sources(["entity_large.md"], docs_dir=docs_dir, wiki_dir=wiki_dir)
 
     assert not entity_page_called, "generate_entity_page must NOT be called for large entity"
     # Two sections → two pages written (one per section)
@@ -301,7 +306,9 @@ def test_large_entity_routes_to_per_section(tmp_path, monkeypatch):
     for page_rel_path in pages:
         entity_page = wiki_dir / page_rel_path
         assert entity_page.exists(), f"Expected {page_rel_path} to exist under wiki_dir"
-        assert page_rel_path.startswith("entities/"), f"Expected entity page under entities/, got {page_rel_path}"
+        assert page_rel_path.startswith("entities/"), (
+            f"Expected entity page under entities/, got {page_rel_path}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -326,6 +333,7 @@ def test_under_soft_cap_entity_still_single_page(tmp_path, monkeypatch):
         def invoke(self, messages):
             class _Out:
                 type = "entity"
+
             return _Out()
 
     class _SynthChain:
@@ -333,10 +341,12 @@ def test_under_soft_cap_entity_still_single_page(tmp_path, monkeypatch):
             class _Out:
                 body = "A nice entity summary."
                 open_questions = []
+
             return _Out()
 
     def _fake_with_structured_output(schema):
         from app.templates import _ClassifierOutput
+
         if schema is _ClassifierOutput:
             return _ClassifierChain()
         return _SynthChain()
@@ -347,9 +357,7 @@ def test_under_soft_cap_entity_still_single_page(tmp_path, monkeypatch):
     monkeypatch.setattr(indexer_module, "WIKI_DIR", wiki_dir)
     monkeypatch.setattr("app.ingest.verify", lambda body, sections: _make_grounding_pass())
 
-    result = ingest_module.ingest_sources(
-        ["my_entity.md"], docs_dir=docs_dir, wiki_dir=wiki_dir
-    )
+    result = ingest_module.ingest_sources(["my_entity.md"], docs_dir=docs_dir, wiki_dir=wiki_dir)
 
     assert result.results, f"Expected success, got failures: {result.failed_sources}"
     pages = result.results[0].pages_written
@@ -357,4 +365,6 @@ def test_under_soft_cap_entity_still_single_page(tmp_path, monkeypatch):
     # pages_written contains relative paths like "entities/my-entity.md"
     page_path = pages[0]
     assert (wiki_dir / page_path).exists(), f"Expected {page_path} to exist under wiki_dir"
-    assert page_path.startswith("entities/"), f"Expected entity page under entities/, got {page_path}"
+    assert page_path.startswith("entities/"), (
+        f"Expected entity page under entities/, got {page_path}"
+    )

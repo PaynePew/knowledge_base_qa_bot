@@ -18,9 +18,7 @@ def test_get_ingest_llm_default_max_retries(monkeypatch):
 
     llm = templates_module.get_ingest_llm()
 
-    assert llm.max_retries == 5, (
-        f"Expected max_retries=5 by default, got {llm.max_retries}"
-    )
+    assert llm.max_retries == 5, f"Expected max_retries=5 by default, got {llm.max_retries}"
 
 
 def test_get_ingest_llm_max_retries_env(monkeypatch):
