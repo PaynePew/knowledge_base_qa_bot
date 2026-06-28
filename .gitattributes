@@ -32,3 +32,7 @@
 *.tgz   binary
 *.whl   binary
 *.faiss binary
+# FAISS docstore pickle (committed retrieval seeds under .kb/). Explicit binary
+# so a misdetected text=auto never CRLF-rewrites the pickle and corrupts the
+# committed dense / FAISS seeds on a cross-OS clone.
+*.pkl   binary

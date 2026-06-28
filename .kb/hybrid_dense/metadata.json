@@ -1,0 +1,5 @@
+{
+  "sections_indexed": 161,
+  "embedding_model": "text-embedding-3-small",
+  "granularity": "section"
+}
