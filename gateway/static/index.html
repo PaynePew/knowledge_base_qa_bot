@@ -613,6 +613,27 @@ var REASON_TEXT = {
   index_missing: "The knowledge base index has not been built yet.",
 };
 
+/* ── STACK METADATA ───────────────────────────────────────────────────────────
+   Per-stack label + empty-state copy, keyed by the active stack so the greeting
+   is correct for ALL THREE stacks (a binary wiki/RAG branch would mislabel
+   Hybrid). Static UI copy only (§12.5 — no client business logic). Hybrid fuses
+   keyword + semantic retrieval over the SAME curated wiki layer (ADR-0018), so
+   its copy reflects the union, not a new corpus. */
+var STACK_META = {
+  wiki: {
+    label: "Wiki",
+    sub: "Answers are synthesised from the curated wiki layer and checked against every cited record — if the sources don’t support a claim, the bot says so instead of guessing.",
+  },
+  rag: {
+    label: "RAG",
+    sub: "Answers are retrieved from the source corpus by semantic similarity and checked against every cited record — if the sources don’t support a claim, the bot says so instead of guessing.",
+  },
+  hybrid: {
+    label: "Hybrid",
+    sub: "Answers fuse keyword and semantic retrieval over the curated wiki layer and are checked against every cited record — if the sources don’t support a claim, the bot says so instead of guessing.",
+  },
+};
+
 /* ── PRESET QUESTIONS ────────────────────────────────────────────────────────
    Suggested first questions shown in the empty state, per language (#289, PRD
    #284). These are static UI copy (not server-derived), grounded in the bilingual
@@ -648,7 +669,7 @@ var currentQuery = "";
 /* Phase 11 Slice 4: session id captured from done.session; echoed on next request.
    Never cleared — stack toggle preserves history across Wiki↔RAG switches. */
 var sessionId = null;
-var stream, segWiki, segRag, input;
+var stream, segWiki, segRag, segHybrid, input;
 /* In-flight request tracking. Each request gets a monotonically increasing
    sequence; only the latest renders. A new request aborts the previous fetch
    (stops the server stream too) so two overlapping streams can never interleave
@@ -662,8 +683,9 @@ var currentController = null;
 function build() {
   stream = el("div", { class: "stream" });
   input = el("input", { type: "text", placeholder: "Ask the knowledge base…" });
-  segWiki = el("button", { type: "button", text: "Wiki", onclick: function() { setStack("wiki"); } });
-  segRag  = el("button", { type: "button", text: "RAG",  onclick: function() { setStack("rag"); } });
+  segWiki   = el("button", { type: "button", text: "Wiki",   onclick: function() { setStack("wiki"); } });
+  segRag    = el("button", { type: "button", text: "RAG",    onclick: function() { setStack("rag"); } });
+  segHybrid = el("button", { type: "button", text: "Hybrid", onclick: function() { setStack("hybrid"); } });
   var send = el("button", { class: "send", type: "button", text: "Ask", onclick: submit });
   input.addEventListener("keydown", function(e) { if (e.key === "Enter") submit(); });
 
@@ -683,7 +705,7 @@ function build() {
       el("span", { class: "amp" }, "&"),
       "RAG",
     ),
-    el("div", { class: "mast-toggle", role: "tablist" }, segWiki, segRag),
+    el("div", { class: "mast-toggle", role: "tablist" }, segWiki, segRag, segHybrid),
     consoleBtn,
   );
 
@@ -700,6 +722,7 @@ function build() {
 function syncSeg() {
   segWiki.setAttribute("aria-pressed", String(stack === "wiki"));
   segRag.setAttribute("aria-pressed", String(stack === "rag"));
+  segHybrid.setAttribute("aria-pressed", String(stack === "hybrid"));
 }
 
 /* ── HELPERS ─────────────────────────────────────────────────────────────── */
@@ -811,15 +834,12 @@ function ask(query) {
 
 function renderEmptyState() {
   resetStreamState();
-  var isWiki = stack === "wiki";
+  var meta = STACK_META[stack] || STACK_META.wiki;
 
   var eyebrow = el("div", { class: "empty-eyebrow",
-    text: "Grounded Q&A · " + (isWiki ? "Wiki" : "RAG") });
+    text: "Grounded Q&A · " + meta.label });
   var title = el("h1", { class: "empty-title", text: "What would you like to know?" });
-  var sub = el("p", { class: "empty-sub", text: isWiki
-    ? "Answers are synthesised from the curated wiki layer and checked against every cited record — if the sources don’t support a claim, the bot says so instead of guessing."
-    : "Answers are retrieved from the source corpus by semantic similarity and checked against every cited record — if the sources don’t support a claim, the bot says so instead of guessing."
-  });
+  var sub = el("p", { class: "empty-sub", text: meta.sub });
 
   /* Render a per-language preset group: a small label + its clickable questions.
      Each click routes through the existing ask() helper (fill composer + submit)
