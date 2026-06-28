@@ -178,7 +178,7 @@ If no — refactor the boundary before merging.
 
 - Up to ~500 lines per module is acceptable.
 - Beyond ~500, split **only when a clear sub-responsibility falls out**. Do not split prophylactically (the PRD lists the prompt-builder module as a deliberate extraction so its output can be asserted in isolation without mocking the LLM — that's the bar).
-- Per **ADR-0002**: do NOT extract a pluggable `Retriever` protocol until BOTH `markdown_kb` and `vector_rag` are end-to-end working.
+- Per **ADR-0002**: do NOT extract a pluggable `Retriever` protocol until BOTH `markdown_kb` and `vector_rag` are end-to-end working. **Both now work, yet the protocol stays deferred to #107** ([ADR-0018](adr/0018-hybrid-retrieval-third-stack-rrf-over-wiki.md)): Phase 13's Hybrid stack is added via the existing string→callable dispatch, NOT a protocol, because extracting one would be a cross-cutting refactor touching the two existing apps. #107 lands later as its own refactor with Hybrid as the third implementation.
 
 ### 2.3 Module depth
 
@@ -473,7 +473,7 @@ For quick recognition during code review. Code-site anchors for each pattern liv
 
 Notable patterns **rejected** (do not introduce):
 
-- A `Retriever` protocol / plugin architecture (ADR-0002 — premature today).
+- A `Retriever` protocol / plugin architecture (ADR-0002 / [ADR-0018](adr/0018-hybrid-retrieval-third-stack-rrf-over-wiki.md) — deferred to #107). Both stacks now work, so ADR-0002's "premature" bar is lifted, but the protocol is still not extracted inside a feature slice; a third stack (Hybrid) is added via the existing dispatch.
 - Writing into *another* package's log channel, or using `print` / `logging.getLogger` / `stderr` instead of `log_event` (§ 5.1 — each package owns one `<package>/log.md` channel; cross-package writes are the violation).
 - A `Document` or `Chunk` class **in `markdown_kb`** (§ 3.1). `vector_rag`'s `Chunk` is the blessed exception — its distinct retrieval unit (a char-bounded slice within a Section), defined in [`CONTEXT.md`](../CONTEXT.md) § Phase 8 vocabulary. LangChain's `Document` stays inside vector_rag's LLM-facing modules and never leaks (§ 2.4).
 - A DI container / app-state object (§ 2.7 — only when single-process breaks).
@@ -506,7 +506,7 @@ Each signal has a **severity** that determines the reviewer's action:
 - [ ] **FAIL** — Business / conditional logic appears in a module whose docstring declares it `Shallow module per Ousterhout` (§2.3). Should be in a deep module.
 - [ ] **FAIL** — A code change breaks any `**Invariant**`-tagged line in `project-docs/adr/*.md` (or a PRD-encoded invariant) without a paired new ADR superseding it. See §2.5.
 - [ ] **FAIL** — Pre-LLM Cannot Confirm gate is bypassed when retrieval score is "just barely below threshold" (violates ADR-0001 + §4.3).
-- [ ] **FAIL** — A `Retriever` protocol / plugin layer is extracted before both `markdown_kb` and `vector_rag` are end-to-end working (premature per ADR-0002 + §2.2).
+- [ ] **FAIL** — A `Retriever` protocol / plugin layer is extracted **as part of a feature slice** instead of the dedicated #107 refactor. Both stacks now work (ADR-0002's "premature" bar is lifted), but [ADR-0018](adr/0018-hybrid-retrieval-third-stack-rrf-over-wiki.md) adds the third stack (Hybrid) via the existing string→callable dispatch; extracting the protocol would touch the two existing apps, which is out of Phase 13 scope.
 
 ### Error handling drift (§4)
 
