@@ -16,10 +16,14 @@ test can pollute production ``.kb/`` / ``wiki/``.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 
 import pytest
+from langchain_core.embeddings import Embeddings
 
+import hybrid_kb.app.dense_index as hk_dense
+import hybrid_kb.app.logger as hk_logger
 import markdown_kb.app.indexer as mk_indexer
 import markdown_kb.app.logger as mk_logger
 import vector_rag.app.indexer as vr_indexer
@@ -87,6 +91,28 @@ class _FakeVectorStore:
         return None
 
 
+class _FakeDenseEmbeddings(Embeddings):
+    """Deterministic, offline stand-in for OpenAIEmbeddings (Stack C dense arm).
+
+    Maps text to a fixed-length SHA-256-derived vector so the REAL FAISS build /
+    persist / similarity-search path of ``hybrid_kb.dense_index`` runs without any
+    network call (mirrors the hybrid_kb test conftest's ``_FakeEmbeddings``).
+    Stable across processes so a save→load roundtrip returns the same neighbours.
+    """
+
+    _DIM = 16
+
+    def _vec(self, text: str) -> list[float]:
+        digest = hashlib.sha256(text.encode("utf-8")).digest()
+        return [b / 255.0 for b in digest[: self._DIM]]
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [self._vec(t) for t in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return self._vec(text)
+
+
 @pytest.fixture()
 def fake_vector_index(monkeypatch):
     """Swap vector_rag's FAISS factory for the deterministic fake (offline)."""
@@ -95,6 +121,21 @@ def fake_vector_index(monkeypatch):
     )
     yield
     vr_indexer.vectorstore = None
+
+
+@pytest.fixture()
+def fake_dense_embeddings(monkeypatch):
+    """Swap hybrid_kb's embeddings leaf for the deterministic offline fake.
+
+    Patches ``get_embeddings`` (not ``_build_faiss``) so Stack C's whole real
+    FAISS path — build, save_local, similarity search — runs offline, exactly as
+    the hybrid_kb suite does (CODING_STANDARD §6.3 — mock the network leaf).
+    """
+    fake = _FakeDenseEmbeddings()
+    monkeypatch.setattr(hk_dense, "get_embeddings", lambda: fake)
+    yield fake
+    hk_dense.vectorstore = None
+    hk_dense.sections_indexed = 0
 
 
 @pytest.fixture(autouse=True)
@@ -114,6 +155,11 @@ def _redirect_markdown_kb_paths(tmp_path, monkeypatch):
     # test never writes to production .kb/ / vector_rag/log.md.
     monkeypatch.setattr(vr_indexer, "FAISS_INDEX_DIR", tmp_path / ".kb" / "faiss_index")
     monkeypatch.setattr(vr_logger, "LOG_PATH", tmp_path / "vector_rag" / "log.md")
+    # Stack C's dense-over-wiki index persists to its own committed seed dir
+    # (.kb/hybrid_dense/); redirect it (and hybrid_kb's log) to tmp so an
+    # index_stack_c() call in a test never writes the production seed (#316 / #307).
+    monkeypatch.setattr(hk_dense, "DENSE_INDEX_DIR", tmp_path / ".kb" / "hybrid_dense")
+    monkeypatch.setattr(hk_logger, "LOG_PATH", tmp_path / "hybrid_kb" / "log.md")
     source_dirs_snapshot = mk_indexer.SOURCE_DIRS
     docs_dir_snapshot = vr_indexer.DOCS_DIR
     yield
@@ -121,3 +167,5 @@ def _redirect_markdown_kb_paths(tmp_path, monkeypatch):
     vr_indexer.DOCS_DIR = docs_dir_snapshot
     mk_indexer.sections.clear()
     vr_indexer.vectorstore = None
+    hk_dense.vectorstore = None
+    hk_dense.sections_indexed = 0
