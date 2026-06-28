@@ -1031,6 +1031,7 @@ dependencies = [
     { name = "langchain-openai" },
     { name = "markdown-kb" },
     { name = "python-dotenv" },
+    { name = "vector-rag" },
 ]
 
 [package.metadata]
@@ -1042,6 +1043,7 @@ requires-dist = [
     { name = "langchain-openai", specifier = "==1.2.2" },
     { name = "markdown-kb", virtual = "markdown_kb" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
+    { name = "vector-rag", virtual = "vector_rag" },
 ]
 
 [[package]]
