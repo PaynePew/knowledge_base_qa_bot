@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``query``, ``stream_query``, ``get_llm``, ``CANNOT_CONFIRM_PHRASE``.
+"""Deep module per Ousterhout. Public surface: ``query``, ``stream_query``, ``get_llm``, ``CANNOT_CONFIRM_PHRASE``, ``ensure_indexes_loaded``.
 
 Hybrid Retrieval (Stack C) query path — slice S3 (ADR-0018 / #313) + the
 streaming variant ``stream_query`` (slice S4 / #314) the Gateway dispatches to
@@ -63,7 +63,13 @@ from . import dense_index
 from . import retrieval as hybrid_retrieval
 from .logger import log_event
 
-__all__ = ["query", "stream_query", "get_llm", "CANNOT_CONFIRM_PHRASE"]
+__all__ = [
+    "query",
+    "stream_query",
+    "get_llm",
+    "CANNOT_CONFIRM_PHRASE",
+    "ensure_indexes_loaded",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -96,15 +102,20 @@ def get_llm() -> ChatOpenAI:
 # ---------------------------------------------------------------------------
 # Index lazy-load (both arms — cold-start parity with the other stacks)
 # ---------------------------------------------------------------------------
-def _ensure_indexes_loaded() -> None:
-    """Lazy-load both arms' persisted indexes when the process is cold.
+def ensure_indexes_loaded() -> None:
+    """Public cold-start warmup seam for the Hybrid (Stack C) two-arm index.
 
-    Mirrors ``markdown_kb.query`` (``load_index_json``) and ``vector_rag``'s
-    ``query`` (``load_vector_index``): a fresh CLI / MCP / Gateway process can
-    answer ``stack=hybrid`` straight from the committed seeds without an explicit
-    build call. Both seeds are committed (``.kb/index.json`` BM25,
-    ``.kb/hybrid_dense/`` dense), so the common path is a pure load. No-op when
-    both arms are already warm.
+    The two-arm equivalent of ``markdown_kb.load_index_json`` (BM25 arm) and
+    ``vector_rag``'s ``load_vector_index`` (dense arm): a fresh CLI / MCP /
+    Gateway process can answer ``stack=hybrid`` straight from the committed
+    seeds without an explicit build call.  Both seeds are committed
+    (``.kb/index.json`` BM25, ``.kb/hybrid_dense/`` dense), so the common
+    path is a pure load.  No-op (idempotent) when both arms are already warm.
+
+    This is the PUBLIC seam external callers (e.g. ``kb_mcp``) MUST use to
+    trigger a cold-start warmup — never import the old private name
+    ``_ensure_indexes_loaded`` (CODING_STANDARD §2.4: recurring cross-package
+    ``_private`` imports must be escalated to the owner's public API).
     """
     if not bm25_indexer.sections:
         bm25_indexer.load_index_json()
@@ -258,7 +269,7 @@ def _retrieve_and_gate(question: str) -> dict:
     The ``chat_fallback`` log entry is written HERE on the pre-LLM gate (once),
     so both the streaming and non-streaming paths log the refusal identically.
     """
-    _ensure_indexes_loaded()
+    ensure_indexes_loaded()
 
     gate = hybrid_retrieval.retrieve_and_gate(question)
     sections = gate["sections"]

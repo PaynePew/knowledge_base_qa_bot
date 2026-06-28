@@ -290,13 +290,14 @@ def kb_search_v1(
         chunks = rag_search(query, k=k)
         results = normalize_rag_results(chunks)
     else:  # stack == "hybrid"
-        # Lazy-load both arms' indexes before calling the retrieval core.
-        # ``_ensure_indexes_loaded`` checks each arm independently and is a
-        # no-op when both are already warm (the common path).
-        from hybrid_kb.app.query import _ensure_indexes_loaded  # type: ignore[import-untyped]
+        # Lazy-load both arms' indexes before calling the retrieval core via
+        # the public warmup seam (CODING_STANDARD §2.4 — no cross-package
+        # private import). ``ensure_indexes_loaded`` checks each arm
+        # independently and is a no-op when both are already warm (common path).
+        from hybrid_kb.app.query import ensure_indexes_loaded  # type: ignore[import-untyped]
         from hybrid_kb.app.retrieval import retrieve_and_gate  # type: ignore[import-untyped]
 
-        _ensure_indexes_loaded()
+        ensure_indexes_loaded()
         gate = retrieve_and_gate(query, top_k=k)
         results = normalize_hybrid_results(gate["sections"])
 
