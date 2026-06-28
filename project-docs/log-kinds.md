@@ -217,6 +217,23 @@ Authorized by GitHub issue #311 (Phase 13 Slice S1) and [ADR-0018](adr/0018-hybr
 | `dense_index_built` | `hybrid_kb.dense_index.build_index()` completed (including the empty-corpus no-op) | `sections=N` |
 | `dense_index_loaded` | Persisted dense-over-wiki seed rehydrated from `.kb/hybrid_dense/` on startup | `sections=N` |
 
+Slice S3 (GitHub issue #313 / [ADR-0018](adr/0018-hybrid-retrieval-third-stack-rrf-over-wiki.md)) adds the `hybrid_kb.query()` answer-synthesis surface, which reuses the Wiki/RAG `chat*` kinds verbatim on Stack C's own channel (same templates as the `/chat` route, just a `hybrid_kb/log.md` file). Page expansion, prompt building, and `grounding.verify` are imported from `markdown_kb`; only the answer LLM call and these log lines are owned here.
+
+| Kind | When fired | Summary template |
+|---|---|---|
+| `chat` | Successful `hybrid_kb.query()` response written | `"<truncated query>" top=<top section id> count=N` |
+| `chat_fallback` | Pre-LLM Cannot Confirm fires — the per-arm OR-gate refused before any LLM call | `"<truncated query>" reason=<below_threshold>` |
+| `chat_grounding_fallback` | Post-LLM verifier returned not-passed (or the model self-refused); reply replaced with Cannot Confirm | `"<truncated query>" reason=<outcome.reason> cited=<comma_separated_section_ids>` |
+| `chat_error` | OpenAI exception during synthesis; mapped per [`CODING_STANDARD.md`](CODING_STANDARD.md) § 4.2 | `"<truncated query>" kind=<openai_transient\|openai_auth\|openai_api> exc=<ExcClass>` |
+
+#### `chat_error` `kind=` sub-tags
+
+| Sub-kind | Exception class | LLMError.retryable | Authorized by |
+|---|---|---|---|
+| `openai_transient` | `APITimeoutError`, `RateLimitError` | `True` | issue #313 (Stack C synthesis, mirrors the Phase 1 mapping) |
+| `openai_auth` | `AuthenticationError` | `False` | issue #313 |
+| `openai_api` | Other `APIError` subclasses | `False` | issue #313 |
+
 ---
 
 ## Gateway
