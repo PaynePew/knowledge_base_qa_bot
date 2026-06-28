@@ -1,18 +1,18 @@
 metadata:
   generator_model: gpt-4o
   critic_model: gpt-4o-mini
-  generated_at: '2026-05-29T10:52:40Z'
+  generated_at: '2026-06-28T16:38:54Z'
   seed: 42
   temperature: 0.7
   prompt_template_version: v1
-  corpus_snapshot_git_sha: c999f15
+  corpus_snapshot_git_sha: c4f789f
   total: 260
   cost_usd: see run log
 paraphrases:
 - paraphrase_id: synonym--001
   paraphrase_type: synonym_swap
-  text: How can I escalate my order issue to get faster help from Acme Shop's specialist
-    team?
+  text: What's the difference between how Acme Shop handles technical issues and safety
+    concerns?
   gold_docs_section_id: customer_support.md#escalation-process
   key_tokens_docs:
   - escalation
@@ -38,8 +38,8 @@ paraphrases:
   - document
 - paraphrase_id: synonym--002
   paraphrase_type: synonym_swap
-  text: How do I update my password and set up two-factor authentication after getting
-    a security alert?
+  text: How do I change my password if I got a warning about suspicious activity on
+    my account?
   gold_docs_section_id: account_security.md#suspicious-activity
   key_tokens_docs:
   - detects
@@ -91,7 +91,7 @@ paraphrases:
   - tax
 - paraphrase_id: synonym--004
   paraphrase_type: synonym_swap
-  text: How can I get notified when an item is back in stock at Acme Shop?
+  text: How can I set up restock alerts for items that are currently out of stock?
   gold_docs_section_id: product_information.md#stock-availability
   key_tokens_docs:
   - title
@@ -117,8 +117,7 @@ paraphrases:
   - popular
 - paraphrase_id: synonym--005
   paraphrase_type: synonym_swap
-  text: How can I qualify for expedited delivery at Acme Shop, and are there any extra
-    fees?
+  text: What do I need to know about extra costs for faster shipping at Acme Shop?
   gold_docs_section_id: shipping_options.md#expedited-delivery
   key_tokens_docs:
   - getting
@@ -144,8 +143,7 @@ paraphrases:
   - guarantees
 - paraphrase_id: synonym--006
   paraphrase_type: synonym_swap
-  text: Can you tell me if Acme Shop ships to my country and what the customs fees
-    might be?
+  text: How will my order be affected if there's a natural disaster impacting shipping?
   gold_docs_section_id: international_shipping.md#supported-countries
   key_tokens_docs:
   - continually
@@ -197,8 +195,7 @@ paraphrases:
   - accepted
 - paraphrase_id: synonym--008
   paraphrase_type: synonym_swap
-  text: How do I set up two-factor authentication on my Acme Shop account to ensure
-    it's secure?
+  text: How do I set up two-factor authentication on my Acme Shop account?
   gold_docs_section_id: account_security.md#two-factor-authentication
   key_tokens_docs:
   - adds
@@ -224,7 +221,7 @@ paraphrases:
   - setup
 - paraphrase_id: synonym--009
   paraphrase_type: synonym_swap
-  text: How can I pause my Acme Shop subscription for up to three months?
+  text: How can I pause my Acme Shop subscription for a few months?
   gold_docs_section_id: subscription_orders.md#managing-a-subscription
   key_tokens_docs:
   - skip
@@ -250,8 +247,8 @@ paraphrases:
   - reactivating
 - paraphrase_id: synonym--010
   paraphrase_type: synonym_swap
-  text: How can I change the pickup location for my order after I've already bought
-    it?
+  text: How do I change my pickup location after I've already placed an in-store pickup
+    order?
   gold_docs_section_id: store_pickup.md#buy-online-pick-up-in-store
   key_tokens_docs:
   - browsing
@@ -277,7 +274,8 @@ paraphrases:
   - adding
 - paraphrase_id: synonym--011
   paraphrase_type: synonym_swap
-  text: How do I quickly close my Acme Shop account?
+  text: How do I permanently close my Acme Shop account and what happens to my orders
+    and gift cards?
   gold_docs_section_id: account_management.md#close-account
   key_tokens_docs:
   - decided
@@ -303,7 +301,7 @@ paraphrases:
   - outstanding
 - paraphrase_id: synonym--012
   paraphrase_type: synonym_swap
-  text: How do I update my email address on my Acme Shop account?
+  text: How do I change my email address on my Acme Shop account?
   gold_docs_section_id: account_management.md#update-email-address
   key_tokens_docs:
   - profile
@@ -329,8 +327,8 @@ paraphrases:
   - top
 - paraphrase_id: synonym--013
   paraphrase_type: synonym_swap
-  text: What do I need to spend to reach the Gold tier at Acme Shop, and what perks
-    come with it?
+  text: Can you explain the benefits and spending requirements for Gold and Platinum
+    tiers at Acme Shop?
   gold_docs_section_id: loyalty_program.md#membership-tiers
   key_tokens_docs:
   - distinct
@@ -356,8 +354,8 @@ paraphrases:
   - joining
 - paraphrase_id: synonym--014
   paraphrase_type: synonym_swap
-  text: How do I get a refund if I find a lower price elsewhere after buying from
-    Acme Shop?
+  text: How do I request a price match at Acme Shop, and what are the eligibility
+    requirements?
   gold_docs_section_id: price_matching.md#requesting-a-price-match
   key_tokens_docs:
   - qualifying
@@ -383,8 +381,7 @@ paraphrases:
   - valued
 - paraphrase_id: synonym--015
   paraphrase_type: synonym_swap
-  text: How can I check my order status at Acme Shop, and are there any virtual assistant
-    options available?
+  text: How can I track my order and get help from Acme Shop if I need it?
   gold_docs_section_id: customer_support.md#self-service-resources
   key_tokens_docs:
   - self
@@ -437,7 +434,7 @@ paraphrases:
   - recipient
 - paraphrase_id: synonym--017
   paraphrase_type: synonym_swap
-  text: How can I update my shipping address for an order that's already being processed?
+  text: Can I change the delivery address for my order before it gets shipped?
   gold_docs_section_id: order_management.md#change-shipping-address
   key_tokens_docs:
   - transitions
@@ -463,8 +460,7 @@ paraphrases:
   - update
 - paraphrase_id: synonym--018
   paraphrase_type: synonym_swap
-  text: If Acme Shop doubled the point value, how would that change how I can redeem
-    my points?
+  text: How do I convert my loyalty points into account credits at Acme Shop?
   gold_docs_section_id: loyalty_program.md#redeeming-points
   key_tokens_docs:
   - redeeming
@@ -490,8 +486,8 @@ paraphrases:
   - encountering
 - paraphrase_id: synonym--019
   paraphrase_type: synonym_swap
-  text: How long does it take for my product review to appear on your site after I
-    submit it?
+  text: How long does it take for my review to appear on your site after I submit
+    it?
   gold_docs_section_id: product_information.md#product-reviews
   key_tokens_docs:
   - opinions
@@ -517,7 +513,8 @@ paraphrases:
   - moderation
 - paraphrase_id: synonym--020
   paraphrase_type: synonym_swap
-  text: Will my delivery be delayed if there's a sudden increase in orders?
+  text: What's the difference in delivery time and cost between domestic and international
+    shipping at Acme Shop?
   gold_docs_section_id: shipping_options.md#standard-delivery
   key_tokens_docs:
   - doorstep
@@ -543,8 +540,7 @@ paraphrases:
   - domestic
 - paraphrase_id: synonym--021
   paraphrase_type: synonym_swap
-  text: Will I be charged a restocking fee if I return a defective item from Acme
-    Shop?
+  text: Can I get a waiver for the 15% restocking fee on my return?
   gold_docs_section_id: returns_policy.md#restocking-fee
   key_tokens_docs:
   - large
@@ -570,7 +566,7 @@ paraphrases:
   - complications
 - paraphrase_id: synonym--022
   paraphrase_type: synonym_swap
-  text: How do I securely reset my password for my Acme Shop account?
+  text: How can I regain access to my Acme Shop account if it's locked?
   gold_docs_section_id: account_management.md#password-reset
   key_tokens_docs:
   - forgotten
@@ -596,7 +592,8 @@ paraphrases:
   - numbers
 - paraphrase_id: synonym--023
   paraphrase_type: synonym_swap
-  text: When will my backordered item be restocked, and how can I check its status?
+  text: How does Acme Shop handle backordered items, and what should I expect with
+    my order?
   gold_docs_section_id: order_management.md#backordered-items
   key_tokens_docs:
   - backordered
@@ -622,8 +619,7 @@ paraphrases:
   - gesture
 - paraphrase_id: synonym--024
   paraphrase_type: synonym_swap
-  text: Can I combine orders if they include perishable or backordered items at Acme
-    Shop?
+  text: Can I combine two orders from Acme Shop if I placed them within 12 hours?
   gold_docs_section_id: order_management.md#combine-orders
   key_tokens_docs:
   - combine
@@ -675,7 +671,7 @@ paraphrases:
   - registering
 - paraphrase_id: synonym--026
   paraphrase_type: synonym_swap
-  text: How do I quickly file a damage claim with Acme Shop?
+  text: How do I report a damaged item I received from Acme Shop?
   gold_docs_section_id: damaged_items.md#reporting-damage
   key_tokens_docs:
   - frustrating
@@ -701,7 +697,7 @@ paraphrases:
   - navigating
 - paraphrase_id: synonym--027
   paraphrase_type: synonym_swap
-  text: How will changes in subscription prices affect my current and prepaid plans?
+  text: How will the new subscription pricing affect my current plan with Acme Shop?
   gold_docs_section_id: subscription_orders.md#subscription-pricing-changes
   key_tokens_docs:
   - ways
@@ -727,7 +723,7 @@ paraphrases:
   - reduced
 - paraphrase_id: synonym--028
   paraphrase_type: synonym_swap
-  text: How do I request a price match at Acme Shop within 14 days of purchase?
+  text: How do I request a price match for an item I found cheaper elsewhere?
   gold_docs_section_id: price_matching.md#price-match-eligibility
   key_tokens_docs:
   - guarantee
@@ -753,7 +749,8 @@ paraphrases:
   - bundle
 - paraphrase_id: synonym--029
   paraphrase_type: synonym_swap
-  text: Can I use multiple promo codes at once to save more on my Acme Shop order?
+  text: Can I use a 10% electronics discount along with a free shipping code at Acme
+    Shop?
   gold_docs_section_id: promo_codes.md#stacking-rules
   key_tokens_docs:
   - deals
@@ -779,8 +776,7 @@ paraphrases:
   - rules
 - paraphrase_id: synonym--030
   paraphrase_type: synonym_swap
-  text: How can I make sure my Acme Shop order arrives on time and without extra customs
-    fees?
+  text: How do I handle customs fees and avoid delays when ordering from Acme Shop?
   gold_docs_section_id: international_shipping.md#customs-and-duties
   key_tokens_docs:
   - handled
@@ -806,7 +802,7 @@ paraphrases:
   - frame
 - paraphrase_id: synonym--031
   paraphrase_type: synonym_swap
-  text: How do I keep my warranty valid at Acme Shop?
+  text: How can I make sure my Acme Shop product warranty stays valid?
   gold_docs_section_id: product_care.md#warranty-implications
   key_tokens_docs:
   - stand
@@ -832,7 +828,7 @@ paraphrases:
   - temperatures
 - paraphrase_id: synonym--032
   paraphrase_type: synonym_swap
-  text: How can I quickly contact Acme Shop for urgent issues with my order?
+  text: How can I quickly get help with a problem on my Acme Shop order?
   gold_docs_section_id: customer_support.md#contact-channels
   key_tokens_docs:
   - suit
@@ -858,8 +854,7 @@ paraphrases:
   - hotline
 - paraphrase_id: synonym--033
   paraphrase_type: synonym_swap
-  text: What's the difference between returning regular items and perishable goods
-    at Acme Shop?
+  text: How do I return an item to Acme Shop if it's not a final sale?
   gold_docs_section_id: returns_policy.md#return-window
   key_tokens_docs:
   - sometimes
@@ -885,7 +880,8 @@ paraphrases:
   - pleasant
 - paraphrase_id: synonym--034
   paraphrase_type: synonym_swap
-  text: What might cause delays in the delivery of my international order?
+  text: What affects how long it takes for my international order to arrive from Acme
+    Shop?
   gold_docs_section_id: international_shipping.md#international-delivery-times
   key_tokens_docs:
   - estimates
@@ -911,8 +907,8 @@ paraphrases:
   - transit
 - paraphrase_id: synonym--035
   paraphrase_type: synonym_swap
-  text: What happens to the leftover balance on my gift card if it's more than my
-    order total?
+  text: How do I redeem my gift card at Acme Shop, and are there any restrictions
+    I should know about?
   gold_docs_section_id: gift_cards.md#redeeming-a-gift-card
   key_tokens_docs:
   - finished
@@ -938,8 +934,8 @@ paraphrases:
   - errors
 - paraphrase_id: synonym--036
   paraphrase_type: synonym_swap
-  text: How do I cancel an order that's already processed compared to one that isn't
-    at Acme Shop?
+  text: How can I stop a shipment of personalized items from Acme Shop before it gets
+    delivered?
   gold_docs_section_id: order_management.md#cancel-an-order
   key_tokens_docs:
   - cancelled
@@ -965,8 +961,7 @@ paraphrases:
   - arrives
 - paraphrase_id: synonym--037
   paraphrase_type: synonym_swap
-  text: How does tracking my order differ for domestic versus international shipments
-    at Acme Shop?
+  text: How do I track my Acme Shop order if it's being shipped internationally?
   gold_docs_section_id: shipping_options.md#order-tracking
   key_tokens_docs:
   - knowing
@@ -992,7 +987,7 @@ paraphrases:
   - updates
 - paraphrase_id: synonym--038
   paraphrase_type: synonym_swap
-  text: How do I remove a device from my trusted list on Acme Shop?
+  text: How can I remove a device from my account to improve security at Acme Shop?
   gold_docs_section_id: account_security.md#managing-trusted-devices
   key_tokens_docs:
   - trust
@@ -1018,8 +1013,8 @@ paraphrases:
   - prioritize
 - paraphrase_id: synonym--039
   paraphrase_type: synonym_swap
-  text: How long does it take for Acme Shop to process and deliver bulk orders domestically
-    and internationally?
+  text: How will my bulk order delivery be affected if there's a sudden increase in
+    demand?
   gold_docs_section_id: bulk_orders.md#fulfilment-and-lead-times
   key_tokens_docs:
   - fulfilment
@@ -1045,7 +1040,7 @@ paraphrases:
   - placement
 - paraphrase_id: synonym--040
   paraphrase_type: synonym_swap
-  text: Do you accept Visa and MasterCard at Acme Shop?
+  text: Can I use my American Express card securely at Acme Shop?
   gold_docs_section_id: payment_methods.md#accepted-cards
   key_tokens_docs:
   - accept
@@ -1071,7 +1066,7 @@ paraphrases:
   - limit
 - paraphrase_id: synonym--041
   paraphrase_type: synonym_swap
-  text: How do I qualify for volume discounts at Acme Shop, and are sale items included?
+  text: How can I qualify for the best volume discounts at Acme Shop?
   gold_docs_section_id: bulk_orders.md#volume-discounts
   key_tokens_docs:
   - volume
@@ -1097,7 +1092,7 @@ paraphrases:
   - revised
 - paraphrase_id: synonym--042
   paraphrase_type: synonym_swap
-  text: What's the best way to figure out my size using your charts and instructions?
+  text: How do I find the right size for clothes and shoes using your size charts?
   gold_docs_section_id: product_information.md#size-guide
   key_tokens_docs:
   - fit
@@ -1123,7 +1118,7 @@ paraphrases:
   - chest
 - paraphrase_id: synonym--043
   paraphrase_type: synonym_swap
-  text: How do I set up an auto-replenishment subscription on Acme Shop?
+  text: How do I set up auto-replenishment for seasonal items at Acme Shop?
   gold_docs_section_id: subscription_orders.md#setting-up-a-subscription
   key_tokens_docs:
   - enroll
@@ -1149,8 +1144,7 @@ paraphrases:
   - lives
 - paraphrase_id: synonym--044
   paraphrase_type: synonym_swap
-  text: How do triple-point days work, and how can I maximize my points during these
-    events?
+  text: How can I earn more Acme Rewards points through promotions and referrals?
   gold_docs_section_id: loyalty_program.md#earning-points
   key_tokens_docs:
   - rewards
@@ -1176,8 +1170,7 @@ paraphrases:
   - participating
 - paraphrase_id: synonym--045
   paraphrase_type: synonym_swap
-  text: How long does it take to get a refund during busy times, and does my payment
-    method change that?
+  text: Will a sudden increase in returns delay my refund from Acme Shop?
   gold_docs_section_id: returns_policy.md#refund-processing-time
   key_tokens_docs:
   - volumes
@@ -1203,8 +1196,8 @@ paraphrases:
   - increased
 - paraphrase_id: synonym--046
   paraphrase_type: synonym_swap
-  text: How does choosing expedited shipping affect the delivery time for a replacement
-    item?
+  text: Can I get my replacement item shipped faster through Acme Shop's customer
+    service?
   gold_docs_section_id: damaged_items.md#replacement-process
   key_tokens_docs:
   - initiated
@@ -1230,7 +1223,8 @@ paraphrases:
   - dispatch
 - paraphrase_id: synonym--047
   paraphrase_type: synonym_swap
-  text: How long does it take for my payment to be released after I cancel an order?
+  text: When my order is canceled, how long will it take for the payment hold to be
+    released?
   gold_docs_section_id: payment_methods.md#payment-authorization
   key_tokens_docs:
   - authorization
@@ -1256,7 +1250,7 @@ paraphrases:
   - transferring
 - paraphrase_id: synonym--048
   paraphrase_type: synonym_swap
-  text: What do I need to give someone else to pick up my order for me?
+  text: How can I authorize someone else to pick up my order for me?
   gold_docs_section_id: store_pickup.md#pickup-identification
   key_tokens_docs:
   - identification
@@ -1282,7 +1276,7 @@ paraphrases:
   - handed
 - paraphrase_id: synonym--049
   paraphrase_type: synonym_swap
-  text: Can you tell me who can use promo codes on Acme Shop orders?
+  text: How do I use a promo code on Acme Shop, and what should I know about eligibility?
   gold_docs_section_id: promo_codes.md#applying-a-code
   key_tokens_docs:
   - applying
@@ -1308,7 +1302,7 @@ paraphrases:
   - added
 - paraphrase_id: synonym--050
   paraphrase_type: synonym_swap
-  text: What's the best way to clean my Acme device after it's been in a dust storm?
+  text: How do I safely clean my electronic devices from Acme Shop?
   gold_docs_section_id: product_care.md#cleaning-instructions
   key_tokens_docs:
   - aesthetic
@@ -1334,8 +1328,8 @@ paraphrases:
   - mesh
 - paraphrase_id: word-reo-001
   paraphrase_type: word_reorder
-  text: How can I track my Acme Shop order, especially if there are delays or it's
-    being shipped internationally?
+  text: How do I track my Acme Shop order if there are shipping delays or international
+    issues?
   gold_docs_section_id: shipping_options.md#order-tracking
   key_tokens_docs:
   - knowing
@@ -1361,8 +1355,8 @@ paraphrases:
   - updates
 - paraphrase_id: word-reo-002
   paraphrase_type: word_reorder
-  text: How long does it usually take for international orders to arrive with your
-    Standard Delivery service?
+  text: What's the difference in delivery times and costs for domestic versus international
+    orders at Acme Shop?
   gold_docs_section_id: shipping_options.md#standard-delivery
   key_tokens_docs:
   - doorstep
@@ -1388,7 +1382,7 @@ paraphrases:
   - domestic
 - paraphrase_id: word-reo-003
   paraphrase_type: word_reorder
-  text: How do I safely update my email address on my Acme Shop account?
+  text: How do I change my email address on my Acme Shop account?
   gold_docs_section_id: account_management.md#update-email-address
   key_tokens_docs:
   - profile
@@ -1441,7 +1435,7 @@ paraphrases:
   - outstanding
 - paraphrase_id: word-reo-005
   paraphrase_type: word_reorder
-  text: What's the difference between your expedited and next-day delivery options?
+  text: How can I qualify for Acme Shop's same-day delivery service?
   gold_docs_section_id: shipping_options.md#expedited-delivery
   key_tokens_docs:
   - getting
@@ -1467,8 +1461,7 @@ paraphrases:
   - guarantees
 - paraphrase_id: word-reo-006
   paraphrase_type: word_reorder
-  text: How long does it take for a payment hold to be released after I cancel my
-    order?
+  text: How long does it take for my payment to be released after I cancel an order?
   gold_docs_section_id: payment_methods.md#payment-authorization
   key_tokens_docs:
   - authorization
@@ -1494,7 +1487,7 @@ paraphrases:
   - transferring
 - paraphrase_id: word-reo-007
   paraphrase_type: word_reorder
-  text: How do I get help from a specialist if my issue isn't resolved?
+  text: How does Acme Shop handle unresolved safety issues with customer orders?
   gold_docs_section_id: customer_support.md#escalation-process
   key_tokens_docs:
   - escalation
@@ -1520,7 +1513,7 @@ paraphrases:
   - document
 - paraphrase_id: word-reo-008
   paraphrase_type: word_reorder
-  text: Can I use multiple promo codes at once to save more on my Acme Shop order?
+  text: Can I use more than one promo code on my order at Acme Shop?
   gold_docs_section_id: promo_codes.md#stacking-rules
   key_tokens_docs:
   - deals
@@ -1546,7 +1539,7 @@ paraphrases:
   - rules
 - paraphrase_id: word-reo-009
   paraphrase_type: word_reorder
-  text: How do I cancel my order with Acme Shop before it's processed?
+  text: How do I cancel my order with Acme Shop before it's too late?
   gold_docs_section_id: order_management.md#cancel-an-order
   key_tokens_docs:
   - cancelled
@@ -1598,7 +1591,7 @@ paraphrases:
   - adding
 - paraphrase_id: word-reo-011
   paraphrase_type: word_reorder
-  text: How can I authorize someone else to pick up my order for me?
+  text: How can someone else pick up my order from Acme Shop for me?
   gold_docs_section_id: store_pickup.md#pickup-identification
   key_tokens_docs:
   - identification
@@ -1624,7 +1617,7 @@ paraphrases:
   - handed
 - paraphrase_id: word-reo-012
   paraphrase_type: word_reorder
-  text: How do I start a product subscription on Acme Shop?
+  text: How do I set up auto-replenishment for a product I bought from Acme Shop?
   gold_docs_section_id: subscription_orders.md#setting-up-a-subscription
   key_tokens_docs:
   - enroll
@@ -1651,7 +1644,7 @@ paraphrases:
 - paraphrase_id: word-reo-013
   paraphrase_type: word_reorder
   text: How long does it take to receive a digital gift card during busy times, and
-    are there any extra charges?
+    is there a delivery fee?
   gold_docs_section_id: gift_cards.md#purchase-and-delivery
   key_tokens_docs:
   - convenience
@@ -1677,7 +1670,7 @@ paraphrases:
   - recipient
 - paraphrase_id: word-reo-014
   paraphrase_type: word_reorder
-  text: How can I get expedited shipping for a replacement item from Acme Shop?
+  text: How do I get faster shipping for my replacement item from Acme Shop?
   gold_docs_section_id: damaged_items.md#replacement-process
   key_tokens_docs:
   - initiated
@@ -1703,7 +1696,8 @@ paraphrases:
   - dispatch
 - paraphrase_id: word-reo-015
   paraphrase_type: word_reorder
-  text: How do I remove a device from my trusted list in Acme Shop's security settings?
+  text: How do I remove a device from my trusted list on Acme Shop, and what happens
+    after?
   gold_docs_section_id: account_security.md#managing-trusted-devices
   key_tokens_docs:
   - trust
@@ -1729,7 +1723,7 @@ paraphrases:
   - prioritize
 - paraphrase_id: word-reo-016
   paraphrase_type: word_reorder
-  text: How do I securely reset my password for my Acme Shop account?
+  text: How do I reset my Acme Shop password if I forgot it?
   gold_docs_section_id: account_management.md#password-reset
   key_tokens_docs:
   - forgotten
@@ -1755,7 +1749,8 @@ paraphrases:
   - numbers
 - paraphrase_id: word-reo-017
   paraphrase_type: word_reorder
-  text: How do I return an item I bought at Acme Shop within 30 days?
+  text: What happens if I need to return something after the 15-day window at Acme
+    Shop?
   gold_docs_section_id: returns_policy.md#return-window
   key_tokens_docs:
   - sometimes
@@ -1781,8 +1776,7 @@ paraphrases:
   - pleasant
 - paraphrase_id: word-reo-018
   paraphrase_type: word_reorder
-  text: How would doubling the discount rates at Acme Shop impact my bulk purchase
-    plans?
+  text: How many items do I need to buy to qualify for a volume discount at Acme Shop?
   gold_docs_section_id: bulk_orders.md#volume-discounts
   key_tokens_docs:
   - volume
@@ -1808,7 +1802,7 @@ paraphrases:
   - revised
 - paraphrase_id: word-reo-019
   paraphrase_type: word_reorder
-  text: What happens if my order is delayed for a long time due to backorder issues?
+  text: When will my backordered item be restocked and how can I check its status?
   gold_docs_section_id: order_management.md#backordered-items
   key_tokens_docs:
   - backordered
@@ -1860,7 +1854,8 @@ paraphrases:
   - valued
 - paraphrase_id: word-reo-021
   paraphrase_type: word_reorder
-  text: How can I check the status of my order on my own?
+  text: What's the best way to track my order using Acme Shop's Help Centre or Virtual
+    Assistant?
   gold_docs_section_id: customer_support.md#self-service-resources
   key_tokens_docs:
   - self
@@ -1886,7 +1881,7 @@ paraphrases:
   - articles
 - paraphrase_id: word-reo-022
   paraphrase_type: word_reorder
-  text: How long does it take for my review to show up after it's been checked?
+  text: How long does it take for my review to appear after I submit it?
   gold_docs_section_id: product_information.md#product-reviews
   key_tokens_docs:
   - opinions
@@ -1912,7 +1907,7 @@ paraphrases:
   - moderation
 - paraphrase_id: word-reo-023
   paraphrase_type: word_reorder
-  text: How do I change my password if I got a suspicious activity alert on my account?
+  text: What should I do if I get a suspicious login alert on my account?
   gold_docs_section_id: account_security.md#suspicious-activity
   key_tokens_docs:
   - detects
@@ -1938,7 +1933,7 @@ paraphrases:
   - unrecognized
 - paraphrase_id: word-reo-024
   paraphrase_type: word_reorder
-  text: What other ways can I contact Acme Shop if the live chat isn't working?
+  text: What's the best way to get help with my order if the live chat isn't working?
   gold_docs_section_id: customer_support.md#contact-channels
   key_tokens_docs:
   - suit
@@ -1964,8 +1959,8 @@ paraphrases:
   - hotline
 - paraphrase_id: word-reo-025
   paraphrase_type: word_reorder
-  text: How do I redeem my loyalty points at Acme Shop, and is it different from other
-    stores?
+  text: How does redeeming points in increments of 50 change my shopping benefits
+    at Acme Shop?
   gold_docs_section_id: loyalty_program.md#redeeming-points
   key_tokens_docs:
   - redeeming
@@ -1991,7 +1986,8 @@ paraphrases:
   - encountering
 - paraphrase_id: word-reo-026
   paraphrase_type: word_reorder
-  text: What credit cards can I use at Acme Shop without worrying about extra fees?
+  text: Do you accept American Express at Acme Shop, and are there any extra fees
+    I should know about?
   gold_docs_section_id: payment_methods.md#accepted-cards
   key_tokens_docs:
   - accept
@@ -2017,7 +2013,8 @@ paraphrases:
   - limit
 - paraphrase_id: word-reo-027
   paraphrase_type: word_reorder
-  text: How can I change my shipping address before my order is sent out?
+  text: How can I change the shipping address for an order that's still processing
+    at Acme Shop?
   gold_docs_section_id: order_management.md#change-shipping-address
   key_tokens_docs:
   - transitions
@@ -2043,7 +2040,7 @@ paraphrases:
   - update
 - paraphrase_id: word-reo-028
   paraphrase_type: word_reorder
-  text: What's the best way to clean my Acme device after it's been in a dust storm?
+  text: How can I safely clean my Acme device after it was exposed to a dust storm?
   gold_docs_section_id: product_care.md#cleaning-instructions
   key_tokens_docs:
   - aesthetic
@@ -2069,7 +2066,7 @@ paraphrases:
   - mesh
 - paraphrase_id: word-reo-029
   paraphrase_type: word_reorder
-  text: What should I do if my payment is declined during a limited-stock sale?
+  text: Why was my payment declined at Acme Shop, and how can I fix it?
   gold_docs_section_id: payment_methods.md#failed-payments
   key_tokens_docs:
   - rejected
@@ -2095,8 +2092,7 @@ paraphrases:
   - accepted
 - paraphrase_id: word-reo-030
   paraphrase_type: word_reorder
-  text: What do I need to spend to reach Gold tier at Acme Shop, and what perks come
-    with it?
+  text: What do I need to do to qualify for Acme Shop's Platinum membership?
   gold_docs_section_id: loyalty_program.md#membership-tiers
   key_tokens_docs:
   - distinct
@@ -2122,7 +2118,8 @@ paraphrases:
   - joining
 - paraphrase_id: word-reo-031
   paraphrase_type: word_reorder
-  text: What should I do to keep my Acme Shop warranty valid by following care instructions?
+  text: How do I keep my warranty valid for clothes and electronics bought at Acme
+    Shop?
   gold_docs_section_id: product_care.md#warranty-implications
   key_tokens_docs:
   - stand
@@ -2148,7 +2145,8 @@ paraphrases:
   - temperatures
 - paraphrase_id: word-reo-032
   paraphrase_type: word_reorder
-  text: How can I get notified when an item is back in stock at Acme Shop?
+  text: How can I set up a restock alert for items that are currently unavailable
+    at Acme Shop?
   gold_docs_section_id: product_information.md#stock-availability
   key_tokens_docs:
   - title
@@ -2201,7 +2199,7 @@ paraphrases:
   - transit
 - paraphrase_id: word-reo-034
   paraphrase_type: word_reorder
-  text: How can I earn more Acme Rewards points through referrals and special promotions?
+  text: How can I earn more Acme Rewards points through promotions or referrals?
   gold_docs_section_id: loyalty_program.md#earning-points
   key_tokens_docs:
   - rewards
@@ -2227,8 +2225,7 @@ paraphrases:
   - participating
 - paraphrase_id: word-reo-035
   paraphrase_type: word_reorder
-  text: How will the new indefinite pause feature affect my subscription management
-    at Acme Shop?
+  text: How can I pause my Acme Shop subscription for a few months?
   gold_docs_section_id: subscription_orders.md#managing-a-subscription
   key_tokens_docs:
   - skip
@@ -2254,8 +2251,7 @@ paraphrases:
   - reactivating
 - paraphrase_id: word-reo-036
   paraphrase_type: word_reorder
-  text: What should I expect in terms of customs fees and delivery times for international
-    orders with Acme Shop?
+  text: How can I avoid customs fees and delays when ordering from Acme Shop?
   gold_docs_section_id: international_shipping.md#customs-and-duties
   key_tokens_docs:
   - handled
@@ -2281,7 +2277,7 @@ paraphrases:
   - frame
 - paraphrase_id: word-reo-037
   paraphrase_type: word_reorder
-  text: How can I replace my lost Acme Shop gift card, and are there any fees involved?
+  text: How can I replace my lost Acme Shop gift card?
   gold_docs_section_id: gift_cards.md#lost-gift-cards
   key_tokens_docs:
   - misplaced
@@ -2307,7 +2303,8 @@ paraphrases:
   - registering
 - paraphrase_id: word-reo-038
   paraphrase_type: word_reorder
-  text: How can I check if Acme Shop ships to my address?
+  text: How would Acme Shop's shipping costs change if you started delivering to every
+    country?
   gold_docs_section_id: international_shipping.md#supported-countries
   key_tokens_docs:
   - continually
@@ -2333,7 +2330,8 @@ paraphrases:
   - disasters
 - paraphrase_id: word-reo-039
   paraphrase_type: word_reorder
-  text: How do I redeem a gift card at Acme Shop, and what issues might I face?
+  text: How do I use my gift card at Acme Shop, and are there any conditions I should
+    know about?
   gold_docs_section_id: gift_cards.md#redeeming-a-gift-card
   key_tokens_docs:
   - finished
@@ -2359,8 +2357,8 @@ paraphrases:
   - errors
 - paraphrase_id: word-reo-040
   paraphrase_type: word_reorder
-  text: How does combining perishable items with other products affect the shipping
-    process at Acme Shop?
+  text: Can I combine orders if they include perishable or backordered items at Acme
+    Shop?
   gold_docs_section_id: order_management.md#combine-orders
   key_tokens_docs:
   - combine
@@ -2386,7 +2384,7 @@ paraphrases:
   - valued
 - paraphrase_id: word-reo-041
   paraphrase_type: word_reorder
-  text: How do I request a price match if I find a competitor offering a lower price?
+  text: How do I request a price match if I find a lower price at another store?
   gold_docs_section_id: price_matching.md#price-match-eligibility
   key_tokens_docs:
   - guarantee
@@ -2412,8 +2410,7 @@ paraphrases:
   - bundle
 - paraphrase_id: word-reo-042
   paraphrase_type: word_reorder
-  text: When does Acme Shop waive restocking fees, and how does that compare to your
-    usual return policy?
+  text: Will I be charged a restocking fee if Acme Shop sent me the wrong item?
   gold_docs_section_id: returns_policy.md#restocking-fee
   key_tokens_docs:
   - large
@@ -2439,7 +2436,7 @@ paraphrases:
   - complications
 - paraphrase_id: word-reo-043
   paraphrase_type: word_reorder
-  text: What's the best way to figure out my size using your sizing charts?
+  text: How can I make sure I pick the right size using your sizing charts?
   gold_docs_section_id: product_information.md#size-guide
   key_tokens_docs:
   - fit
@@ -2465,8 +2462,7 @@ paraphrases:
   - chest
 - paraphrase_id: word-reo-044
   paraphrase_type: word_reorder
-  text: How do domestic and international bulk order delivery times compare, and what
-    factors might affect them?
+  text: How long will my bulk order take to arrive, especially during busy seasons?
   gold_docs_section_id: bulk_orders.md#fulfilment-and-lead-times
   key_tokens_docs:
   - fulfilment
@@ -2492,8 +2488,8 @@ paraphrases:
   - placement
 - paraphrase_id: word-reo-045
   paraphrase_type: word_reorder
-  text: How do I set up two-factor authentication on my Acme Shop account for international
-    use?
+  text: What's the difference between using SMS and an authenticator app for two-factor
+    authentication on my Acme Shop account?
   gold_docs_section_id: account_security.md#two-factor-authentication
   key_tokens_docs:
   - adds
@@ -2519,7 +2515,7 @@ paraphrases:
   - setup
 - paraphrase_id: word-reo-046
   paraphrase_type: word_reorder
-  text: How do I use a promo code when checking out on Acme Shop?
+  text: How do I apply a promo code at checkout on your website?
   gold_docs_section_id: promo_codes.md#applying-a-code
   key_tokens_docs:
   - applying
@@ -2545,8 +2541,7 @@ paraphrases:
   - added
 - paraphrase_id: word-reo-047
   paraphrase_type: word_reorder
-  text: How long does it usually take to get a refund from Acme Shop, especially during
-    busy times?
+  text: Will a sudden increase in returns delay my refund from Acme Shop?
   gold_docs_section_id: returns_policy.md#refund-processing-time
   key_tokens_docs:
   - volumes
@@ -2572,7 +2567,8 @@ paraphrases:
   - increased
 - paraphrase_id: word-reo-048
   paraphrase_type: word_reorder
-  text: What happens to my current subscription if Acme Shop changes its pricing?
+  text: How will the new subscription pricing affect my current billing cycle with
+    Acme Shop?
   gold_docs_section_id: subscription_orders.md#subscription-pricing-changes
   key_tokens_docs:
   - ways
@@ -2598,7 +2594,8 @@ paraphrases:
   - reduced
 - paraphrase_id: word-reo-049
   paraphrase_type: word_reorder
-  text: How can I make sure my electronics last longer and work well?
+  text: How should I store my electronic devices to make sure they last as long as
+    possible?
   gold_docs_section_id: product_care.md#storage-guidelines
   key_tokens_docs:
   - storage
@@ -2624,7 +2621,7 @@ paraphrases:
   - internal
 - paraphrase_id: word-reo-050
   paraphrase_type: word_reorder
-  text: What do I need to show to qualify for bulk purchasing at Acme Shop?
+  text: What do I need to show to qualify for bulk buying at Acme Shop?
   gold_docs_section_id: bulk_orders.md#eligibility-and-minimum-order
   key_tokens_docs:
   - businesses
@@ -2650,7 +2647,7 @@ paraphrases:
   - tax
 - paraphrase_id: verbosit-001
   paraphrase_type: verbosity_expansion
-  text: How do I safely clean my electronic devices from Acme Shop?
+  text: How should I clean my electronic and fabric items from Acme Shop safely?
   gold_docs_section_id: product_care.md#cleaning-instructions
   key_tokens_docs:
   - aesthetic
@@ -2676,7 +2673,8 @@ paraphrases:
   - mesh
 - paraphrase_id: verbosit-002
   paraphrase_type: verbosity_expansion
-  text: How long will it take for my bulk order to arrive during peak season?
+  text: What affects how long it takes for my bulk order to be delivered from Acme
+    Shop?
   gold_docs_section_id: bulk_orders.md#fulfilment-and-lead-times
   key_tokens_docs:
   - fulfilment
@@ -2702,7 +2700,7 @@ paraphrases:
   - placement
 - paraphrase_id: verbosit-003
   paraphrase_type: verbosity_expansion
-  text: What's the difference between stock notifications and restock alerts at Acme
+  text: How can I get notified when an out-of-stock item is available again at Acme
     Shop?
   gold_docs_section_id: product_information.md#stock-availability
   key_tokens_docs:
@@ -2729,7 +2727,8 @@ paraphrases:
   - popular
 - paraphrase_id: verbosit-004
   paraphrase_type: verbosity_expansion
-  text: If I order at 2 PM on Friday, when will my expedited delivery arrive?
+  text: What do I need to qualify for Acme's expedited delivery, and how much does
+    it cost?
   gold_docs_section_id: shipping_options.md#expedited-delivery
   key_tokens_docs:
   - getting
@@ -2755,7 +2754,7 @@ paraphrases:
   - guarantees
 - paraphrase_id: verbosit-005
   paraphrase_type: verbosity_expansion
-  text: How can I make sure I pick the right size using your sizing charts?
+  text: How do I use Acme Shop's sizing charts to make sure I get the right fit?
   gold_docs_section_id: product_information.md#size-guide
   key_tokens_docs:
   - fit
@@ -2781,8 +2780,8 @@ paraphrases:
   - chest
 - paraphrase_id: verbosit-006
   paraphrase_type: verbosity_expansion
-  text: How does tracking my order differ for domestic versus international shipments
-    at Acme Shop?
+  text: How do I track my Acme Shop order if there are shipping delays or international
+    issues?
   gold_docs_section_id: shipping_options.md#order-tracking
   key_tokens_docs:
   - knowing
@@ -2808,7 +2807,7 @@ paraphrases:
   - updates
 - paraphrase_id: verbosit-007
   paraphrase_type: verbosity_expansion
-  text: How do I use a promo code when checking out at Acme Shop?
+  text: How do I apply promo codes and check if they're eligible on Acme Shop?
   gold_docs_section_id: promo_codes.md#applying-a-code
   key_tokens_docs:
   - applying
@@ -2834,8 +2833,7 @@ paraphrases:
   - added
 - paraphrase_id: verbosit-008
   paraphrase_type: verbosity_expansion
-  text: What happens to the leftover balance on my gift card if it's more than my
-    order total?
+  text: How do I redeem my gift card and apply the balance at checkout on your site?
   gold_docs_section_id: gift_cards.md#redeeming-a-gift-card
   key_tokens_docs:
   - finished
@@ -2861,7 +2859,7 @@ paraphrases:
   - errors
 - paraphrase_id: verbosit-009
   paraphrase_type: verbosity_expansion
-  text: How does Acme Shop ensure the integrity of its review system?
+  text: How long does it take for my product review to be approved on Acme Shop?
   gold_docs_section_id: product_information.md#product-reviews
   key_tokens_docs:
   - opinions
@@ -2887,7 +2885,8 @@ paraphrases:
   - moderation
 - paraphrase_id: verbosit-010
   paraphrase_type: verbosity_expansion
-  text: How do I remove a device from my account if I suspect unauthorized access?
+  text: How do I remove a device from my trusted list to keep my Acme Shop account
+    secure?
   gold_docs_section_id: account_security.md#managing-trusted-devices
   key_tokens_docs:
   - trust
@@ -2913,7 +2912,8 @@ paraphrases:
   - prioritize
 - paraphrase_id: verbosit-011
   paraphrase_type: verbosity_expansion
-  text: What can I expect if my backordered item takes more than 30 days to arrive?
+  text: How can I make sure my backordered items from Acme Shop are updated and resolved
+    quickly?
   gold_docs_section_id: order_management.md#backordered-items
   key_tokens_docs:
   - backordered
@@ -2939,7 +2939,7 @@ paraphrases:
   - gesture
 - paraphrase_id: verbosit-012
   paraphrase_type: verbosity_expansion
-  text: How much do I need to spend to move up in Acme Shop's membership levels?
+  text: What do I need to spend to reach Gold tier, and what perks come with it?
   gold_docs_section_id: loyalty_program.md#membership-tiers
   key_tokens_docs:
   - distinct
@@ -2965,7 +2965,7 @@ paraphrases:
   - joining
 - paraphrase_id: verbosit-013
   paraphrase_type: verbosity_expansion
-  text: How can someone else pick up my order for me at the store?
+  text: Can someone else pick up my order from Acme Shop, and how do I authorize them?
   gold_docs_section_id: store_pickup.md#pickup-identification
   key_tokens_docs:
   - identification
@@ -2991,7 +2991,7 @@ paraphrases:
   - handed
 - paraphrase_id: verbosit-014
   paraphrase_type: verbosity_expansion
-  text: What do I need to know about placing a bulk order at Acme Shop?
+  text: What do I need to provide to qualify for bulk orders at Acme Shop?
   gold_docs_section_id: bulk_orders.md#eligibility-and-minimum-order
   key_tokens_docs:
   - businesses
@@ -3017,8 +3017,8 @@ paraphrases:
   - tax
 - paraphrase_id: verbosit-015
   paraphrase_type: verbosity_expansion
-  text: How long will my international order take with express shipping, considering
-    customs delays?
+  text: How long does expedited shipping take for international orders during busy
+    shopping times?
   gold_docs_section_id: international_shipping.md#international-delivery-times
   key_tokens_docs:
   - estimates
@@ -3044,7 +3044,7 @@ paraphrases:
   - transit
 - paraphrase_id: verbosit-016
   paraphrase_type: verbosity_expansion
-  text: How do I use my loyalty points to get credits on my Acme Shop account?
+  text: How do I convert my loyalty points into account credits at Acme Shop?
   gold_docs_section_id: loyalty_program.md#redeeming-points
   key_tokens_docs:
   - redeeming
@@ -3070,8 +3070,7 @@ paraphrases:
   - encountering
 - paraphrase_id: verbosit-017
   paraphrase_type: verbosity_expansion
-  text: Will I be charged a restocking fee if I return a defective item from Acme
-    Shop?
+  text: How can I return electronics to Acme Shop without paying a restocking fee?
   gold_docs_section_id: returns_policy.md#restocking-fee
   key_tokens_docs:
   - large
@@ -3097,8 +3096,8 @@ paraphrases:
   - complications
 - paraphrase_id: verbosit-018
   paraphrase_type: verbosity_expansion
-  text: How do I set up two-factor authentication on my Acme Shop account to ensure
-    it's secure?
+  text: How do I set up two-factor authentication on my Acme Shop account, especially
+    for international use?
   gold_docs_section_id: account_security.md#two-factor-authentication
   key_tokens_docs:
   - adds
@@ -3124,8 +3123,7 @@ paraphrases:
   - setup
 - paraphrase_id: verbosit-019
   paraphrase_type: verbosity_expansion
-  text: How will changes in subscription pricing affect my current prepaid service
-    plan?
+  text: What happens to my current subscription if Acme Shop raises their prices?
   gold_docs_section_id: subscription_orders.md#subscription-pricing-changes
   key_tokens_docs:
   - ways
@@ -3151,8 +3149,7 @@ paraphrases:
   - reduced
 - paraphrase_id: verbosit-020
   paraphrase_type: verbosity_expansion
-  text: Are there any delays in getting refunds during busy shopping times at Acme
-    Shop?
+  text: How long does it take to get a refund from Acme Shop during busy times?
   gold_docs_section_id: returns_policy.md#refund-processing-time
   key_tokens_docs:
   - volumes
@@ -3178,7 +3175,8 @@ paraphrases:
   - increased
 - paraphrase_id: verbosit-021
   paraphrase_type: verbosity_expansion
-  text: Why is there still a hold on my card after I canceled my order?
+  text: How long will the hold on my card last if my order is canceled, and will I
+    be charged any fees?
   gold_docs_section_id: payment_methods.md#payment-authorization
   key_tokens_docs:
   - authorization
@@ -3204,7 +3202,8 @@ paraphrases:
   - transferring
 - paraphrase_id: verbosit-022
   paraphrase_type: verbosity_expansion
-  text: Can you tell me how I can request a price match at Acme Shop?
+  text: What are the exclusions and requirements for a price match request at Acme
+    Shop?
   gold_docs_section_id: price_matching.md#requesting-a-price-match
   key_tokens_docs:
   - qualifying
@@ -3230,7 +3229,8 @@ paraphrases:
   - valued
 - paraphrase_id: verbosit-023
   paraphrase_type: verbosity_expansion
-  text: How do I change the store where I want to pick up my order?
+  text: How can I change the store location for picking up my order after I've already
+    bought it?
   gold_docs_section_id: store_pickup.md#buy-online-pick-up-in-store
   key_tokens_docs:
   - browsing
@@ -3256,7 +3256,8 @@ paraphrases:
   - adding
 - paraphrase_id: verbosit-024
   paraphrase_type: verbosity_expansion
-  text: Can I use more than one promo code on a single order at Acme Shop?
+  text: Can I use multiple promo codes at once, and do different discounts have different
+    rules?
   gold_docs_section_id: promo_codes.md#stacking-rules
   key_tokens_docs:
   - deals
@@ -3282,7 +3283,8 @@ paraphrases:
   - rules
 - paraphrase_id: verbosit-025
   paraphrase_type: verbosity_expansion
-  text: How do I change my shipping address for an order that's already being processed?
+  text: Can I change my shipping address after placing an order, and are there any
+    restrictions?
   gold_docs_section_id: order_management.md#change-shipping-address
   key_tokens_docs:
   - transitions
@@ -3308,8 +3310,8 @@ paraphrases:
   - update
 - paraphrase_id: verbosit-026
   paraphrase_type: verbosity_expansion
-  text: Can I use my AmEx card for international purchases at Acme Shop without any
-    extra fees?
+  text: What are the payment options for American Express at Acme Shop compared to
+    other credit cards?
   gold_docs_section_id: payment_methods.md#accepted-cards
   key_tokens_docs:
   - accept
@@ -3335,7 +3337,7 @@ paraphrases:
   - limit
 - paraphrase_id: verbosit-027
   paraphrase_type: verbosity_expansion
-  text: How can I earn more Acme Rewards points with my purchases and referrals?
+  text: How can I earn more Acme Rewards points through referrals and special promotions?
   gold_docs_section_id: loyalty_program.md#earning-points
   key_tokens_docs:
   - rewards
@@ -3361,7 +3363,8 @@ paraphrases:
   - participating
 - paraphrase_id: verbosit-028
   paraphrase_type: verbosity_expansion
-  text: How do I update my email address on my Acme Shop account?
+  text: How do I update my email address on my Acme Shop account and make sure it's
+    verified?
   gold_docs_section_id: account_management.md#update-email-address
   key_tokens_docs:
   - profile
@@ -3387,8 +3390,7 @@ paraphrases:
   - top
 - paraphrase_id: verbosit-029
   paraphrase_type: verbosity_expansion
-  text: How do I permanently close my Acme Shop account and handle any ongoing transactions
-    or subscriptions?
+  text: How do I permanently close my Acme Shop account?
   gold_docs_section_id: account_management.md#close-account
   key_tokens_docs:
   - decided
@@ -3414,7 +3416,7 @@ paraphrases:
   - outstanding
 - paraphrase_id: verbosit-030
   paraphrase_type: verbosity_expansion
-  text: Will my delivery take longer if there's a big increase in orders?
+  text: How long does it usually take for standard delivery during busy shopping times?
   gold_docs_section_id: shipping_options.md#standard-delivery
   key_tokens_docs:
   - doorstep
@@ -3466,7 +3468,7 @@ paraphrases:
   - accepted
 - paraphrase_id: verbosit-032
   paraphrase_type: verbosity_expansion
-  text: What can I do to cancel my order if I've missed the cancellation window?
+  text: How can I cancel my Acme Shop order before it gets processed for shipping?
   gold_docs_section_id: order_management.md#cancel-an-order
   key_tokens_docs:
   - cancelled
@@ -3518,8 +3520,8 @@ paraphrases:
   - registering
 - paraphrase_id: verbosit-034
   paraphrase_type: verbosity_expansion
-  text: How long does it usually take to receive a digital gift card from Acme Shop
-    after buying it?
+  text: Are there any delays I should expect when ordering a digital gift card during
+    busy times?
   gold_docs_section_id: gift_cards.md#purchase-and-delivery
   key_tokens_docs:
   - convenience
@@ -3545,7 +3547,8 @@ paraphrases:
   - recipient
 - paraphrase_id: verbosit-035
   paraphrase_type: verbosity_expansion
-  text: How can I pause my Acme Shop subscription for up to three months?
+  text: How will the new indefinite pause feature affect my subscription management
+    at Acme Shop?
   gold_docs_section_id: subscription_orders.md#managing-a-subscription
   key_tokens_docs:
   - skip
@@ -3571,7 +3574,7 @@ paraphrases:
   - reactivating
 - paraphrase_id: verbosit-036
   paraphrase_type: verbosity_expansion
-  text: Are there any special rules for returning certain items at Acme Shop?
+  text: How does the new 60-day return policy work for returning items at Acme Shop?
   gold_docs_section_id: returns_policy.md#return-window
   key_tokens_docs:
   - sometimes
@@ -3597,8 +3600,7 @@ paraphrases:
   - pleasant
 - paraphrase_id: verbosit-037
   paraphrase_type: verbosity_expansion
-  text: What steps should I follow to keep my warranty valid with Acme Shop's care
-    guidelines?
+  text: What should I do to make sure I don't void my product warranty with Acme Shop?
   gold_docs_section_id: product_care.md#warranty-implications
   key_tokens_docs:
   - stand
@@ -3624,7 +3626,8 @@ paraphrases:
   - temperatures
 - paraphrase_id: verbosit-038
   paraphrase_type: verbosity_expansion
-  text: Will storing electronics in a humid attic affect their performance or lifespan?
+  text: What are the storage guidelines for electronics compared to cosmetics and
+    textiles at your store?
   gold_docs_section_id: product_care.md#storage-guidelines
   key_tokens_docs:
   - storage
@@ -3650,7 +3653,7 @@ paraphrases:
   - internal
 - paraphrase_id: verbosit-039
   paraphrase_type: verbosity_expansion
-  text: How do I set up automatic restocking for items I buy from Acme Shop?
+  text: How do I set up an auto-replenishment subscription on Acme Shop?
   gold_docs_section_id: subscription_orders.md#setting-up-a-subscription
   key_tokens_docs:
   - enroll
@@ -3676,7 +3679,8 @@ paraphrases:
   - lives
 - paraphrase_id: verbosit-040
   paraphrase_type: verbosity_expansion
-  text: How do I get a price match refund at Acme Shop?
+  text: How do I request a price match at Acme Shop if it's been less than 14 days
+    since my purchase?
   gold_docs_section_id: price_matching.md#price-match-eligibility
   key_tokens_docs:
   - guarantee
@@ -3702,7 +3706,7 @@ paraphrases:
   - bundle
 - paraphrase_id: verbosit-041
   paraphrase_type: verbosity_expansion
-  text: Can I combine two orders at Acme Shop, and are there any restrictions?
+  text: Can I combine my orders at Acme Shop, and are there any restrictions?
   gold_docs_section_id: order_management.md#combine-orders
   key_tokens_docs:
   - combine
@@ -3728,7 +3732,8 @@ paraphrases:
   - valued
 - paraphrase_id: verbosit-042
   paraphrase_type: verbosity_expansion
-  text: What are the requirements and discounts for buying in bulk at Acme Shop?
+  text: How do volume discounts work at Acme Shop, and what happens if I return or
+    cancel items?
   gold_docs_section_id: bulk_orders.md#volume-discounts
   key_tokens_docs:
   - volume
@@ -3754,7 +3759,8 @@ paraphrases:
   - revised
 - paraphrase_id: verbosit-043
   paraphrase_type: verbosity_expansion
-  text: What's the fastest way to fix an issue with my order from Acme Shop?
+  text: How can I get immediate help with my order at Acme Shop, especially outside
+    regular hours?
   gold_docs_section_id: customer_support.md#contact-channels
   key_tokens_docs:
   - suit
@@ -3780,7 +3786,8 @@ paraphrases:
   - hotline
 - paraphrase_id: verbosit-044
   paraphrase_type: verbosity_expansion
-  text: Can you tell me if Acme Shop ships to my country?
+  text: Can you tell me if Acme Shop ships to my country and what the customs fees
+    might be?
   gold_docs_section_id: international_shipping.md#supported-countries
   key_tokens_docs:
   - continually
@@ -3806,7 +3813,7 @@ paraphrases:
   - disasters
 - paraphrase_id: verbosit-045
   paraphrase_type: verbosity_expansion
-  text: How do I reset my Acme Shop password if I forgot it?
+  text: How do I reset my Acme Shop password if I've forgotten it?
   gold_docs_section_id: account_management.md#password-reset
   key_tokens_docs:
   - forgotten
@@ -3832,7 +3839,8 @@ paraphrases:
   - numbers
 - paraphrase_id: verbosit-046
   paraphrase_type: verbosity_expansion
-  text: How do I report a damaged item I received from Acme Shop within 14 days?
+  text: How do I report a damaged item I received from Acme Shop, and how long does
+    it take?
   gold_docs_section_id: damaged_items.md#reporting-damage
   key_tokens_docs:
   - frustrating
@@ -3858,7 +3866,7 @@ paraphrases:
   - navigating
 - paraphrase_id: verbosit-047
   paraphrase_type: verbosity_expansion
-  text: What should I do if my issue isn't resolved after contacting Acme Shop support?
+  text: How can I get help from a specialist if my order issue isn't resolved?
   gold_docs_section_id: customer_support.md#escalation-process
   key_tokens_docs:
   - escalation
@@ -3884,8 +3892,7 @@ paraphrases:
   - document
 - paraphrase_id: verbosit-048
   paraphrase_type: verbosity_expansion
-  text: What should I know about customs fees when ordering internationally from Acme
-    Shop?
+  text: How do I handle import duties for my international order with Acme Shop?
   gold_docs_section_id: international_shipping.md#customs-and-duties
   key_tokens_docs:
   - handled
@@ -3911,8 +3918,7 @@ paraphrases:
   - frame
 - paraphrase_id: verbosit-049
   paraphrase_type: verbosity_expansion
-  text: How can I improve my Acme Shop account security after receiving a suspicious
-    login alert?
+  text: What should I do if I get a suspicious activity alert on my Acme Shop account?
   gold_docs_section_id: account_security.md#suspicious-activity
   key_tokens_docs:
   - detects
@@ -3938,7 +3944,7 @@ paraphrases:
   - unrecognized
 - paraphrase_id: verbosit-050
   paraphrase_type: verbosity_expansion
-  text: How can I check my order status at Acme Shop?
+  text: How can I track my order using Acme Shop's resources?
   gold_docs_section_id: customer_support.md#self-service-resources
   key_tokens_docs:
   - self
@@ -3991,7 +3997,7 @@ paraphrases:
   - lives
 - paraphrase_id: specific-002
   paraphrase_type: specificity_narrowing
-  text: How can I cancel an order that's already been processed at Acme Shop?
+  text: How do I cancel my order with Acme Shop before it's processed?
   gold_docs_section_id: order_management.md#cancel-an-order
   key_tokens_docs:
   - cancelled
@@ -4017,8 +4023,8 @@ paraphrases:
   - arrives
 - paraphrase_id: specific-003
   paraphrase_type: specificity_narrowing
-  text: How do I set up two-factor authentication on my Acme Shop account for international
-    use?
+  text: How do I set up two-factor authentication on my Acme Shop account, especially
+    for international use?
   gold_docs_section_id: account_security.md#two-factor-authentication
   key_tokens_docs:
   - adds
@@ -4044,7 +4050,7 @@ paraphrases:
   - setup
 - paraphrase_id: specific-004
   paraphrase_type: specificity_narrowing
-  text: How does Acme Shop handle unresolved safety issues with customer orders?
+  text: How do I get help from Acme Shop's specialist team if my issue isn't resolved?
   gold_docs_section_id: customer_support.md#escalation-process
   key_tokens_docs:
   - escalation
@@ -4070,7 +4076,7 @@ paraphrases:
   - document
 - paraphrase_id: specific-005
   paraphrase_type: specificity_narrowing
-  text: What can I expect if my backordered item is delayed for more than 30 days?
+  text: What happens if my order is delayed for a long time due to backorder issues?
   gold_docs_section_id: order_management.md#backordered-items
   key_tokens_docs:
   - backordered
@@ -4096,8 +4102,8 @@ paraphrases:
   - gesture
 - paraphrase_id: specific-006
   paraphrase_type: specificity_narrowing
-  text: What should I expect in terms of customs fees and delivery times for international
-    orders with Acme Shop?
+  text: What affects the customs fees and delivery times for my international order
+    from Acme Shop?
   gold_docs_section_id: international_shipping.md#customs-and-duties
   key_tokens_docs:
   - handled
@@ -4123,7 +4129,8 @@ paraphrases:
   - frame
 - paraphrase_id: specific-007
   paraphrase_type: specificity_narrowing
-  text: What should I do if I get a suspicious activity alert from Acme Shop?
+  text: How do I change my password if I got a warning about suspicious activity on
+    my account?
   gold_docs_section_id: account_security.md#suspicious-activity
   key_tokens_docs:
   - detects
@@ -4149,7 +4156,7 @@ paraphrases:
   - unrecognized
 - paraphrase_id: specific-008
   paraphrase_type: specificity_narrowing
-  text: What do I need to know about placing a bulk order at Acme Shop?
+  text: What do I need to show to qualify for bulk purchasing at Acme Shop?
   gold_docs_section_id: bulk_orders.md#eligibility-and-minimum-order
   key_tokens_docs:
   - businesses
@@ -4175,7 +4182,7 @@ paraphrases:
   - tax
 - paraphrase_id: specific-009
   paraphrase_type: specificity_narrowing
-  text: How can I get notified when an out-of-stock item is available again?
+  text: How can I set up a restock alert for items that are out of stock at Acme Shop?
   gold_docs_section_id: product_information.md#stock-availability
   key_tokens_docs:
   - title
@@ -4201,8 +4208,8 @@ paraphrases:
   - popular
 - paraphrase_id: specific-010
   paraphrase_type: specificity_narrowing
-  text: How long does Acme Shop hold funds on my debit card, and will it affect my
-    balance?
+  text: What happens to my account balance if I cancel a pre-order and there's an
+    authorization hold?
   gold_docs_section_id: payment_methods.md#payment-authorization
   key_tokens_docs:
   - authorization
@@ -4228,7 +4235,8 @@ paraphrases:
   - transferring
 - paraphrase_id: specific-011
   paraphrase_type: specificity_narrowing
-  text: Can you tell me how to qualify for volume discounts at Acme Shop?
+  text: How do volume discounts work at Acme Shop, and what happens if I return or
+    cancel items?
   gold_docs_section_id: bulk_orders.md#volume-discounts
   key_tokens_docs:
   - volume
@@ -4254,7 +4262,8 @@ paraphrases:
   - revised
 - paraphrase_id: specific-012
   paraphrase_type: specificity_narrowing
-  text: What should I do if I haven't received my password reset email from Acme Shop?
+  text: How does Acme Shop's password reset process compare to other online services
+    in terms of security?
   gold_docs_section_id: account_management.md#password-reset
   key_tokens_docs:
   - forgotten
@@ -4280,7 +4289,8 @@ paraphrases:
   - numbers
 - paraphrase_id: specific-013
   paraphrase_type: specificity_narrowing
-  text: What should I do if my payment gets declined at Acme Shop?
+  text: How do I fix a declined payment at Acme Shop, and are there other payment
+    options available?
   gold_docs_section_id: payment_methods.md#failed-payments
   key_tokens_docs:
   - rejected
@@ -4333,8 +4343,7 @@ paraphrases:
   - increased
 - paraphrase_id: specific-015
   paraphrase_type: specificity_narrowing
-  text: How long will it take for my large order to be delivered, including processing
-    and shipping?
+  text: What affects how long it takes for my bulk order to arrive from Acme Shop?
   gold_docs_section_id: bulk_orders.md#fulfilment-and-lead-times
   key_tokens_docs:
   - fulfilment
@@ -4360,8 +4369,7 @@ paraphrases:
   - placement
 - paraphrase_id: specific-016
   paraphrase_type: specificity_narrowing
-  text: If I receive a defective item from Acme Shop, will I still have to pay a restocking
-    fee?
+  text: How can I return electronics to Acme Shop without paying a restocking fee?
   gold_docs_section_id: returns_policy.md#restocking-fee
   key_tokens_docs:
   - large
@@ -4387,7 +4395,7 @@ paraphrases:
   - complications
 - paraphrase_id: specific-017
   paraphrase_type: specificity_narrowing
-  text: What's the fastest way to reach Acme Shop for urgent help with my order?
+  text: What's the best way to get help with my order if the live chat isn't working?
   gold_docs_section_id: customer_support.md#contact-channels
   key_tokens_docs:
   - suit
@@ -4413,7 +4421,7 @@ paraphrases:
   - hotline
 - paraphrase_id: specific-018
   paraphrase_type: specificity_narrowing
-  text: How long does it usually take for my order to arrive with your standard shipping?
+  text: How long does it usually take for a standard delivery order to arrive?
   gold_docs_section_id: shipping_options.md#standard-delivery
   key_tokens_docs:
   - doorstep
@@ -4439,7 +4447,8 @@ paraphrases:
   - domestic
 - paraphrase_id: specific-019
   paraphrase_type: specificity_narrowing
-  text: Does Acme Shop ship to my country, and how can I check if they do?
+  text: Can you tell me if Acme Shop ships to my country and if there are any customs
+    fees?
   gold_docs_section_id: international_shipping.md#supported-countries
   key_tokens_docs:
   - continually
@@ -4465,7 +4474,7 @@ paraphrases:
   - disasters
 - paraphrase_id: specific-020
   paraphrase_type: specificity_narrowing
-  text: How do I quickly file a damage claim with Acme Shop?
+  text: What can I do if I missed the 14-day window to report damage to my order?
   gold_docs_section_id: damaged_items.md#reporting-damage
   key_tokens_docs:
   - frustrating
@@ -4491,8 +4500,7 @@ paraphrases:
   - navigating
 - paraphrase_id: specific-021
   paraphrase_type: specificity_narrowing
-  text: Can I use a 10% electronics discount along with a free shipping code at Acme
-    Shop?
+  text: Can I use more than one promo code on my Acme Shop order?
   gold_docs_section_id: promo_codes.md#stacking-rules
   key_tokens_docs:
   - deals
@@ -4518,8 +4526,8 @@ paraphrases:
   - rules
 - paraphrase_id: specific-022
   paraphrase_type: specificity_narrowing
-  text: What are my options for getting a damaged product repaired under warranty
-    at Acme Shop?
+  text: How do I keep my warranty valid at Acme Shop, and what care steps should I
+    follow?
   gold_docs_section_id: product_care.md#warranty-implications
   key_tokens_docs:
   - stand
@@ -4545,7 +4553,7 @@ paraphrases:
   - temperatures
 - paraphrase_id: specific-023
   paraphrase_type: specificity_narrowing
-  text: What should I do if my promo code isn't working at checkout on Acme Shop?
+  text: How do I make sure my promo code works and the discount shows up at checkout?
   gold_docs_section_id: promo_codes.md#applying-a-code
   key_tokens_docs:
   - applying
@@ -4571,7 +4579,7 @@ paraphrases:
   - added
 - paraphrase_id: specific-024
   paraphrase_type: specificity_narrowing
-  text: What's the best way to figure out my size using your sizing charts?
+  text: How can I make sure the new product line fits me using your size guide?
   gold_docs_section_id: product_information.md#size-guide
   key_tokens_docs:
   - fit
@@ -4623,7 +4631,8 @@ paraphrases:
   - recipient
 - paraphrase_id: specific-026
   paraphrase_type: specificity_narrowing
-  text: How can someone else pick up my Acme Shop order for me?
+  text: What are the differences between self-pickup and authorized pickup at Acme
+    Shop?
   gold_docs_section_id: store_pickup.md#pickup-identification
   key_tokens_docs:
   - identification
@@ -4649,7 +4658,8 @@ paraphrases:
   - handed
 - paraphrase_id: specific-027
   paraphrase_type: specificity_narrowing
-  text: What happens if my gift card balance is more than my purchase at Acme Shop?
+  text: How do I use a gift card at Acme Shop, and are there any conditions I should
+    know about?
   gold_docs_section_id: gift_cards.md#redeeming-a-gift-card
   key_tokens_docs:
   - finished
@@ -4675,7 +4685,8 @@ paraphrases:
   - errors
 - paraphrase_id: specific-028
   paraphrase_type: specificity_narrowing
-  text: How do I permanently close my Acme Shop account?
+  text: How do I close my Acme Shop account, and what should I know about managing
+    my subscriptions?
   gold_docs_section_id: account_management.md#close-account
   key_tokens_docs:
   - decided
@@ -4701,7 +4712,7 @@ paraphrases:
   - outstanding
 - paraphrase_id: specific-029
   paraphrase_type: specificity_narrowing
-  text: Can I combine two orders from Acme Shop, and if so, how do I do it?
+  text: Can I combine an order with perishable items with another order at Acme Shop?
   gold_docs_section_id: order_management.md#combine-orders
   key_tokens_docs:
   - combine
@@ -4727,7 +4738,7 @@ paraphrases:
   - valued
 - paraphrase_id: specific-030
   paraphrase_type: specificity_narrowing
-  text: Can you tell me how I can request a price match at Acme Shop?
+  text: How do I request a price match at Acme Shop?
   gold_docs_section_id: price_matching.md#requesting-a-price-match
   key_tokens_docs:
   - qualifying
@@ -4753,8 +4764,8 @@ paraphrases:
   - valued
 - paraphrase_id: specific-031
   paraphrase_type: specificity_narrowing
-  text: How long does expedited shipping take for international orders during busy
-    shopping times?
+  text: How long will it take for my international order to arrive, considering shipping
+    and customs?
   gold_docs_section_id: international_shipping.md#international-delivery-times
   key_tokens_docs:
   - estimates
@@ -4780,8 +4791,7 @@ paraphrases:
   - transit
 - paraphrase_id: specific-032
   paraphrase_type: specificity_narrowing
-  text: How can I clean my Acme electronic device safely without causing moisture
-    damage?
+  text: What's the best way to clean Acme Shop electronics compared to fabric items?
   gold_docs_section_id: product_care.md#cleaning-instructions
   key_tokens_docs:
   - aesthetic
@@ -4807,7 +4817,7 @@ paraphrases:
   - mesh
 - paraphrase_id: specific-033
   paraphrase_type: specificity_narrowing
-  text: How long does it take for my review to show up on your site after I submit
+  text: How long does it take for my review to appear on your site after I submit
     it?
   gold_docs_section_id: product_information.md#product-reviews
   key_tokens_docs:
@@ -4834,7 +4844,8 @@ paraphrases:
   - moderation
 - paraphrase_id: specific-034
   paraphrase_type: specificity_narrowing
-  text: How do I get faster shipping for my replacement item from Acme Shop?
+  text: Can I get faster shipping for a replacement item, and will there be extra
+    charges?
   gold_docs_section_id: damaged_items.md#replacement-process
   key_tokens_docs:
   - initiated
@@ -4860,7 +4871,7 @@ paraphrases:
   - dispatch
 - paraphrase_id: specific-035
   paraphrase_type: specificity_narrowing
-  text: How can I pause my Acme Shop subscription for three months?
+  text: How can I pause my Acme Shop subscription for a few months?
   gold_docs_section_id: subscription_orders.md#managing-a-subscription
   key_tokens_docs:
   - skip
@@ -4886,8 +4897,7 @@ paraphrases:
   - reactivating
 - paraphrase_id: specific-036
   paraphrase_type: specificity_narrowing
-  text: Can you explain the benefits and spending requirements for each membership
-    tier at Acme Shop?
+  text: If I start spending more, will my loyalty program tier at Acme Shop change?
   gold_docs_section_id: loyalty_program.md#membership-tiers
   key_tokens_docs:
   - distinct
@@ -4913,8 +4923,7 @@ paraphrases:
   - joining
 - paraphrase_id: specific-037
   paraphrase_type: specificity_narrowing
-  text: How do I change my shipping address, and are there any restrictions compared
-    to contacting the carrier directly?
+  text: How can I change the shipping address for an order I haven't received yet?
   gold_docs_section_id: order_management.md#change-shipping-address
   key_tokens_docs:
   - transitions
@@ -4940,8 +4949,7 @@ paraphrases:
   - update
 - paraphrase_id: specific-038
   paraphrase_type: specificity_narrowing
-  text: What should I do if I get a notice about a subscription price increase at
-    Acme Shop?
+  text: Will the new subscription prices affect my prepaid plan and future bills?
   gold_docs_section_id: subscription_orders.md#subscription-pricing-changes
   key_tokens_docs:
   - ways
@@ -4967,7 +4975,7 @@ paraphrases:
   - reduced
 - paraphrase_id: specific-039
   paraphrase_type: specificity_narrowing
-  text: How do I update my email address on my Acme Shop account?
+  text: How do I safely update my email address on my Acme Shop account?
   gold_docs_section_id: account_management.md#update-email-address
   key_tokens_docs:
   - profile
@@ -4993,7 +5001,8 @@ paraphrases:
   - top
 - paraphrase_id: specific-040
   paraphrase_type: specificity_narrowing
-  text: How can I track my Acme Shop order using the resources you provide?
+  text: How can I track my Acme Shop order, including international and expedited
+    shipping options?
   gold_docs_section_id: shipping_options.md#order-tracking
   key_tokens_docs:
   - knowing
@@ -5019,7 +5028,7 @@ paraphrases:
   - updates
 - paraphrase_id: specific-041
   paraphrase_type: specificity_narrowing
-  text: How can I earn more Acme Rewards points through promotions and referrals?
+  text: How can I earn more Acme Rewards points through referrals and special promotions?
   gold_docs_section_id: loyalty_program.md#earning-points
   key_tokens_docs:
   - rewards
@@ -5045,7 +5054,8 @@ paraphrases:
   - participating
 - paraphrase_id: specific-042
   paraphrase_type: specificity_narrowing
-  text: How can I make sure my electronic devices last longer in different environments?
+  text: What are the storage guidelines for electronics compared to cosmetics and
+    textiles at your store?
   gold_docs_section_id: product_care.md#storage-guidelines
   key_tokens_docs:
   - storage
@@ -5071,7 +5081,7 @@ paraphrases:
   - internal
 - paraphrase_id: specific-043
   paraphrase_type: specificity_narrowing
-  text: How do I convert my loyalty points into account credits at Acme Shop?
+  text: If Acme Shop doubles the point value, how should I adjust my redemption strategy?
   gold_docs_section_id: loyalty_program.md#redeeming-points
   key_tokens_docs:
   - redeeming
@@ -5123,7 +5133,7 @@ paraphrases:
   - guarantees
 - paraphrase_id: specific-045
   paraphrase_type: specificity_narrowing
-  text: How can I track my order at Acme Shop using the help center or virtual assistant?
+  text: How can I check the status of my order on my own with Acme Shop?
   gold_docs_section_id: customer_support.md#self-service-resources
   key_tokens_docs:
   - self
@@ -5149,8 +5159,7 @@ paraphrases:
   - articles
 - paraphrase_id: specific-046
   paraphrase_type: specificity_narrowing
-  text: What are the differences between using Visa, MasterCard, American Express,
-    and Discover at Acme Shop?
+  text: Can I use my American Express card to pay for my order at Acme Shop?
   gold_docs_section_id: payment_methods.md#accepted-cards
   key_tokens_docs:
   - accept
@@ -5203,7 +5212,7 @@ paraphrases:
   - pleasant
 - paraphrase_id: specific-048
   paraphrase_type: specificity_narrowing
-  text: How can I change the pickup location for my order after I've already bought
+  text: How can I change the store where I pick up my order after I've already bought
     it?
   gold_docs_section_id: store_pickup.md#buy-online-pick-up-in-store
   key_tokens_docs:
@@ -5230,7 +5239,7 @@ paraphrases:
   - adding
 - paraphrase_id: specific-049
   paraphrase_type: specificity_narrowing
-  text: How do I request a price match at Acme Shop, and what are the conditions?
+  text: How do I start a price match claim for something I just bought at Acme Shop?
   gold_docs_section_id: price_matching.md#price-match-eligibility
   key_tokens_docs:
   - guarantee
@@ -5283,7 +5292,7 @@ paraphrases:
   - registering
 - paraphrase_id: implicit-001
   paraphrase_type: implicit_reference
-  text: How do I request a price match at Acme Shop within 14 days of purchase?
+  text: How do I start a price match claim for something I just bought at Acme Shop?
   gold_docs_section_id: price_matching.md#price-match-eligibility
   key_tokens_docs:
   - guarantee
@@ -5309,7 +5318,7 @@ paraphrases:
   - bundle
 - paraphrase_id: implicit-002
   paraphrase_type: implicit_reference
-  text: How do I request a price match at Acme Shop, and what are the conditions?
+  text: How do I request a price match for something I bought at Acme Shop?
   gold_docs_section_id: price_matching.md#requesting-a-price-match
   key_tokens_docs:
   - qualifying
@@ -5335,7 +5344,8 @@ paraphrases:
   - valued
 - paraphrase_id: implicit-003
   paraphrase_type: implicit_reference
-  text: What's the fastest way to get in touch with Acme Shop for urgent help?
+  text: How can I get immediate help with my order at Acme Shop, especially outside
+    regular hours?
   gold_docs_section_id: customer_support.md#contact-channels
   key_tokens_docs:
   - suit
@@ -5361,8 +5371,7 @@ paraphrases:
   - hotline
 - paraphrase_id: implicit-004
   paraphrase_type: implicit_reference
-  text: What's the process for using a gift card at Acme Shop compared to other payment
-    options?
+  text: How do I use my gift card when checking out at Acme Shop?
   gold_docs_section_id: gift_cards.md#redeeming-a-gift-card
   key_tokens_docs:
   - finished
@@ -5388,7 +5397,8 @@ paraphrases:
   - errors
 - paraphrase_id: implicit-005
   paraphrase_type: implicit_reference
-  text: Can I use multiple promo codes at once to save more on my Acme Shop order?
+  text: Can I use more than one promo code, like free shipping and 10% off, at Acme
+    Shop?
   gold_docs_section_id: promo_codes.md#stacking-rules
   key_tokens_docs:
   - deals
@@ -5414,8 +5424,8 @@ paraphrases:
   - rules
 - paraphrase_id: implicit-006
   paraphrase_type: implicit_reference
-  text: How do I permanently close my Acme Shop account and handle any ongoing transactions
-    or subscriptions?
+  text: How do I permanently close my Acme Shop account and make sure everything is
+    done correctly?
   gold_docs_section_id: account_management.md#close-account
   key_tokens_docs:
   - decided
@@ -5441,8 +5451,7 @@ paraphrases:
   - outstanding
 - paraphrase_id: implicit-007
   paraphrase_type: implicit_reference
-  text: Will my refund take longer to process if I return an item during the holiday
-    season?
+  text: Are there any delays in getting a refund from Acme Shop during busy times?
   gold_docs_section_id: returns_policy.md#refund-processing-time
   key_tokens_docs:
   - volumes
@@ -5468,8 +5477,7 @@ paraphrases:
   - increased
 - paraphrase_id: implicit-008
   paraphrase_type: implicit_reference
-  text: Can you tell me if Acme Shop ships to my country and if there are any extra
-    fees?
+  text: Can you tell me if Acme Shop ships to my country?
   gold_docs_section_id: international_shipping.md#supported-countries
   key_tokens_docs:
   - continually
@@ -5495,8 +5503,7 @@ paraphrases:
   - disasters
 - paraphrase_id: implicit-009
   paraphrase_type: implicit_reference
-  text: What's the difference between returning regular items and perishable goods
-    at Acme Shop?
+  text: Are there any special rules for returning certain items at Acme Shop?
   gold_docs_section_id: returns_policy.md#return-window
   key_tokens_docs:
   - sometimes
@@ -5522,8 +5529,7 @@ paraphrases:
   - pleasant
 - paraphrase_id: implicit-010
   paraphrase_type: implicit_reference
-  text: What are Acme Shop's policies on backorders, and how do they handle supply
-    chain issues?
+  text: How can I check the status of my backordered item from Acme Shop?
   gold_docs_section_id: order_management.md#backordered-items
   key_tokens_docs:
   - backordered
@@ -5549,7 +5555,7 @@ paraphrases:
   - gesture
 - paraphrase_id: implicit-011
   paraphrase_type: implicit_reference
-  text: When does Acme Shop waive the restocking fee for returns?
+  text: Will I be charged a restocking fee if Acme Shop sent me the wrong item?
   gold_docs_section_id: returns_policy.md#restocking-fee
   key_tokens_docs:
   - large
@@ -5575,7 +5581,7 @@ paraphrases:
   - complications
 - paraphrase_id: implicit-012
   paraphrase_type: implicit_reference
-  text: How do I make sure my Acme Shop product warranty stays valid?
+  text: What do I need to do to keep my warranty valid at Acme Shop?
   gold_docs_section_id: product_care.md#warranty-implications
   key_tokens_docs:
   - stand
@@ -5601,7 +5607,8 @@ paraphrases:
   - temperatures
 - paraphrase_id: implicit-013
   paraphrase_type: implicit_reference
-  text: How long does it usually take to receive a digital gift card after purchase?
+  text: What's the difference in delivery time between digital and physical gift cards
+    at Acme Shop?
   gold_docs_section_id: gift_cards.md#purchase-and-delivery
   key_tokens_docs:
   - convenience
@@ -5627,8 +5634,8 @@ paraphrases:
   - recipient
 - paraphrase_id: implicit-014
   paraphrase_type: implicit_reference
-  text: How should I store my electronics to keep them in good condition for a long
-    time?
+  text: What are the storage guidelines for electronics compared to cosmetics and
+    textiles at your store?
   gold_docs_section_id: product_care.md#storage-guidelines
   key_tokens_docs:
   - storage
@@ -5654,7 +5661,7 @@ paraphrases:
   - internal
 - paraphrase_id: implicit-015
   paraphrase_type: implicit_reference
-  text: Can I combine two orders I placed within 12 hours at Acme Shop?
+  text: Can I combine an order with perishable items with another order at Acme Shop?
   gold_docs_section_id: order_management.md#combine-orders
   key_tokens_docs:
   - combine
@@ -5680,8 +5687,7 @@ paraphrases:
   - valued
 - paraphrase_id: implicit-016
   paraphrase_type: implicit_reference
-  text: How long does it take for payment holds to be released on canceled orders
-    compared to shipped ones?
+  text: Why is there still a hold on my card after I canceled my order?
   gold_docs_section_id: payment_methods.md#payment-authorization
   key_tokens_docs:
   - authorization
@@ -5707,8 +5713,8 @@ paraphrases:
   - transferring
 - paraphrase_id: implicit-017
   paraphrase_type: implicit_reference
-  text: What affects how long it takes for my bulk order to be delivered from Acme
-    Shop?
+  text: How long does it take for Acme Shop to process and deliver bulk orders domestically
+    and internationally?
   gold_docs_section_id: bulk_orders.md#fulfilment-and-lead-times
   key_tokens_docs:
   - fulfilment
@@ -5734,7 +5740,7 @@ paraphrases:
   - placement
 - paraphrase_id: implicit-018
   paraphrase_type: implicit_reference
-  text: How do I remove a device from my trusted list on Acme Shop?
+  text: How do I manage or remove trusted devices from my Acme Shop account?
   gold_docs_section_id: account_security.md#managing-trusted-devices
   key_tokens_docs:
   - trust
@@ -5760,7 +5766,7 @@ paraphrases:
   - prioritize
 - paraphrase_id: implicit-019
   paraphrase_type: implicit_reference
-  text: How do I update my email on my Acme Shop account securely?
+  text: How do I update my email address on my Acme Shop account?
   gold_docs_section_id: account_management.md#update-email-address
   key_tokens_docs:
   - profile
@@ -5786,7 +5792,7 @@ paraphrases:
   - top
 - paraphrase_id: implicit-020
   paraphrase_type: implicit_reference
-  text: What should I do if my password reset email hasn't arrived yet?
+  text: How can I get back into my Acme Shop account if it's locked?
   gold_docs_section_id: account_management.md#password-reset
   key_tokens_docs:
   - forgotten
@@ -5812,8 +5818,7 @@ paraphrases:
   - numbers
 - paraphrase_id: implicit-021
   paraphrase_type: implicit_reference
-  text: How do I use a promo code on your site, and are there any conditions I should
-    know about?
+  text: How do I apply promo codes and check if they're eligible on Acme Shop?
   gold_docs_section_id: promo_codes.md#applying-a-code
   key_tokens_docs:
   - applying
@@ -5839,7 +5844,8 @@ paraphrases:
   - added
 - paraphrase_id: implicit-022
   paraphrase_type: implicit_reference
-  text: What's the best way to clean Acme Shop electronics compared to fabric items?
+  text: How should I clean my Acme electronic device safely, especially around the
+    ports?
   gold_docs_section_id: product_care.md#cleaning-instructions
   key_tokens_docs:
   - aesthetic
@@ -5865,7 +5871,7 @@ paraphrases:
   - mesh
 - paraphrase_id: implicit-023
   paraphrase_type: implicit_reference
-  text: What can I do if I can't cancel my Acme Shop order?
+  text: How can I cancel my Acme Shop order before it gets processed for shipping?
   gold_docs_section_id: order_management.md#cancel-an-order
   key_tokens_docs:
   - cancelled
@@ -5891,7 +5897,8 @@ paraphrases:
   - arrives
 - paraphrase_id: implicit-024
   paraphrase_type: implicit_reference
-  text: How can someone else pick up my order for me securely?
+  text: How can I authorize someone else to pick up my Acme Shop order if I've lost
+    my ID?
   gold_docs_section_id: store_pickup.md#pickup-identification
   key_tokens_docs:
   - identification
@@ -5917,8 +5924,7 @@ paraphrases:
   - handed
 - paraphrase_id: implicit-025
   paraphrase_type: implicit_reference
-  text: How can I earn bonus points with Acme Rewards, like through referrals or special
-    promotions?
+  text: How can I earn more Acme Rewards points through referrals and special promotions?
   gold_docs_section_id: loyalty_program.md#earning-points
   key_tokens_docs:
   - rewards
@@ -5944,7 +5950,7 @@ paraphrases:
   - participating
 - paraphrase_id: implicit-026
   paraphrase_type: implicit_reference
-  text: How can I redeem my points in increments of 50 at Acme Shop?
+  text: How do I convert my loyalty points into account credits at Acme Shop?
   gold_docs_section_id: loyalty_program.md#redeeming-points
   key_tokens_docs:
   - redeeming
@@ -5970,7 +5976,7 @@ paraphrases:
   - encountering
 - paraphrase_id: implicit-027
   paraphrase_type: implicit_reference
-  text: How do I pause my Acme Shop subscription, and how long does it take?
+  text: How can I pause my Acme Shop subscription for three months?
   gold_docs_section_id: subscription_orders.md#managing-a-subscription
   key_tokens_docs:
   - skip
@@ -5996,7 +6002,7 @@ paraphrases:
   - reactivating
 - paraphrase_id: implicit-028
   paraphrase_type: implicit_reference
-  text: Can I use my American Express card to pay securely at Acme Shop?
+  text: Do you accept Visa or MasterCard at Acme Shop?
   gold_docs_section_id: payment_methods.md#accepted-cards
   key_tokens_docs:
   - accept
@@ -6022,7 +6028,8 @@ paraphrases:
   - limit
 - paraphrase_id: implicit-029
   paraphrase_type: implicit_reference
-  text: How do I set up auto-replenishment for seasonal items at Acme Shop?
+  text: What are the advantages of subscribing instead of making one-time purchases
+    at Acme Shop?
   gold_docs_section_id: subscription_orders.md#setting-up-a-subscription
   key_tokens_docs:
   - enroll
@@ -6048,8 +6055,7 @@ paraphrases:
   - lives
 - paraphrase_id: implicit-030
   paraphrase_type: implicit_reference
-  text: What's the difference between reporting damage and dealing with misuse-related
-    issues at Acme Shop?
+  text: How do I report a damaged item to get a refund or replacement from Acme Shop?
   gold_docs_section_id: damaged_items.md#reporting-damage
   key_tokens_docs:
   - frustrating
@@ -6075,7 +6081,8 @@ paraphrases:
   - navigating
 - paraphrase_id: implicit-031
   paraphrase_type: implicit_reference
-  text: How long does it take for my review to appear after I submit it?
+  text: How long does it take for my review to show up on Acme Shop after I submit
+    it?
   gold_docs_section_id: product_information.md#product-reviews
   key_tokens_docs:
   - opinions
@@ -6101,7 +6108,7 @@ paraphrases:
   - moderation
 - paraphrase_id: implicit-032
   paraphrase_type: implicit_reference
-  text: What do I need to provide to qualify for bulk orders at Acme Shop?
+  text: What do I need to show to qualify for bulk orders at Acme Shop?
   gold_docs_section_id: bulk_orders.md#eligibility-and-minimum-order
   key_tokens_docs:
   - businesses
@@ -6127,8 +6134,7 @@ paraphrases:
   - tax
 - paraphrase_id: implicit-033
   paraphrase_type: implicit_reference
-  text: What affects the customs fees and delivery times for my international order
-    from Acme Shop?
+  text: How will my order be affected if customs fees suddenly increase?
   gold_docs_section_id: international_shipping.md#customs-and-duties
   key_tokens_docs:
   - handled
@@ -6154,7 +6160,7 @@ paraphrases:
   - frame
 - paraphrase_id: implicit-034
   paraphrase_type: implicit_reference
-  text: How do I use Acme Shop's sizing charts to make sure I get the right fit?
+  text: Can you explain the differences between your clothing and shoe size charts?
   gold_docs_section_id: product_information.md#size-guide
   key_tokens_docs:
   - fit
@@ -6180,8 +6186,8 @@ paraphrases:
   - chest
 - paraphrase_id: implicit-035
   paraphrase_type: implicit_reference
-  text: What are the differences in delivery times and costs for domestic versus international
-    orders at Acme Shop?
+  text: How long does standard shipping usually take for domestic orders during busy
+    shopping times?
   gold_docs_section_id: shipping_options.md#standard-delivery
   key_tokens_docs:
   - doorstep
@@ -6207,8 +6213,7 @@ paraphrases:
   - domestic
 - paraphrase_id: implicit-036
   paraphrase_type: implicit_reference
-  text: Why are my payments being flagged as suspicious when I try to order from Acme
-    Shop?
+  text: Why was my payment declined at Acme Shop, and how can I fix it quickly?
   gold_docs_section_id: payment_methods.md#failed-payments
   key_tokens_docs:
   - rejected
@@ -6234,7 +6239,7 @@ paraphrases:
   - accepted
 - paraphrase_id: implicit-037
   paraphrase_type: implicit_reference
-  text: What should I do to change my pickup location if the store suddenly closes?
+  text: How can I change my pickup location after placing an order with Acme Shop?
   gold_docs_section_id: store_pickup.md#buy-online-pick-up-in-store
   key_tokens_docs:
   - browsing
@@ -6260,7 +6265,7 @@ paraphrases:
   - adding
 - paraphrase_id: implicit-038
   paraphrase_type: implicit_reference
-  text: How can I recover my lost Acme Shop gift card?
+  text: What should I do if I lose an unregistered Acme gift card?
   gold_docs_section_id: gift_cards.md#lost-gift-cards
   key_tokens_docs:
   - misplaced
@@ -6286,8 +6291,7 @@ paraphrases:
   - registering
 - paraphrase_id: implicit-039
   paraphrase_type: implicit_reference
-  text: What's the easiest way to check my order status, through the Help Centre or
-    the Virtual Assistant?
+  text: How can I track my order and get help from Acme Shop if I need it?
   gold_docs_section_id: customer_support.md#self-service-resources
   key_tokens_docs:
   - self
@@ -6313,7 +6317,7 @@ paraphrases:
   - articles
 - paraphrase_id: implicit-040
   paraphrase_type: implicit_reference
-  text: What should I do if I get a suspicious login alert for my Acme Shop account?
+  text: What should I do to secure my account if I get a suspicious activity alert?
   gold_docs_section_id: account_security.md#suspicious-activity
   key_tokens_docs:
   - detects
@@ -6339,7 +6343,8 @@ paraphrases:
   - unrecognized
 - paraphrase_id: implicit-041
   paraphrase_type: implicit_reference
-  text: How can I get expedited shipping for a replacement item from Acme Shop?
+  text: Can I get faster shipping for my replacement item, and will there be extra
+    charges?
   gold_docs_section_id: damaged_items.md#replacement-process
   key_tokens_docs:
   - initiated
@@ -6365,7 +6370,7 @@ paraphrases:
   - dispatch
 - paraphrase_id: implicit-042
   paraphrase_type: implicit_reference
-  text: How can I get notified when an out-of-stock item is available again?
+  text: How do I set up a restock alert for items that are out of stock at Acme Shop?
   gold_docs_section_id: product_information.md#stock-availability
   key_tokens_docs:
   - title
@@ -6391,7 +6396,7 @@ paraphrases:
   - popular
 - paraphrase_id: implicit-043
   paraphrase_type: implicit_reference
-  text: How can I get help from a specialist if my order issue isn't resolved?
+  text: How does Acme Shop handle technical issues compared to safety concerns?
   gold_docs_section_id: customer_support.md#escalation-process
   key_tokens_docs:
   - escalation
@@ -6417,8 +6422,8 @@ paraphrases:
   - document
 - paraphrase_id: implicit-044
   paraphrase_type: implicit_reference
-  text: Can you explain the benefits and spending requirements for each membership
-    tier at Acme Shop?
+  text: Can you explain the benefits and spending requirements for Gold versus Platinum
+    memberships?
   gold_docs_section_id: loyalty_program.md#membership-tiers
   key_tokens_docs:
   - distinct
@@ -6444,8 +6449,8 @@ paraphrases:
   - joining
 - paraphrase_id: implicit-045
   paraphrase_type: implicit_reference
-  text: How can I change my shipping address for an order that's already processing
-    without any extra fees?
+  text: How can I change the shipping address for an order that's still processing
+    at Acme Shop?
   gold_docs_section_id: order_management.md#change-shipping-address
   key_tokens_docs:
   - transitions
@@ -6471,8 +6476,8 @@ paraphrases:
   - update
 - paraphrase_id: implicit-046
   paraphrase_type: implicit_reference
-  text: What's the best way to set up 2FA on Acme Shop, using SMS or an authenticator
-    app?
+  text: What's the difference between using SMS and an authenticator app for 2FA on
+    my Acme Shop account?
   gold_docs_section_id: account_security.md#two-factor-authentication
   key_tokens_docs:
   - adds
@@ -6498,7 +6503,8 @@ paraphrases:
   - setup
 - paraphrase_id: implicit-047
   paraphrase_type: implicit_reference
-  text: How can I qualify for Acme Shop's premium same-day delivery service?
+  text: How much does it cost for faster shipping options at Acme Shop, and what are
+    the requirements?
   gold_docs_section_id: shipping_options.md#expedited-delivery
   key_tokens_docs:
   - getting
@@ -6524,8 +6530,7 @@ paraphrases:
   - guarantees
 - paraphrase_id: implicit-048
   paraphrase_type: implicit_reference
-  text: How does tracking my order differ for domestic versus international shipments
-    at Acme Shop?
+  text: How does Acme Shop use AI to improve the accuracy of my order tracking updates?
   gold_docs_section_id: shipping_options.md#order-tracking
   key_tokens_docs:
   - knowing
@@ -6551,8 +6556,7 @@ paraphrases:
   - updates
 - paraphrase_id: implicit-049
   paraphrase_type: implicit_reference
-  text: How long does expedited shipping take for international orders during busy
-    shopping times?
+  text: What affects the delivery time for international orders from Acme Shop?
   gold_docs_section_id: international_shipping.md#international-delivery-times
   key_tokens_docs:
   - estimates
@@ -6578,7 +6582,7 @@ paraphrases:
   - transit
 - paraphrase_id: implicit-050
   paraphrase_type: implicit_reference
-  text: If supplier costs go up, will my Acme Shop subscription price change?
+  text: How will changes in subscription rates affect my current prepaid service plan?
   gold_docs_section_id: subscription_orders.md#subscription-pricing-changes
   key_tokens_docs:
   - ways
