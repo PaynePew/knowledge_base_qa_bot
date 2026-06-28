@@ -8,7 +8,7 @@ Neutral shape per ADR-0016 / PRD #198:
 
     kb_search_v1:
         {
-            "stack": "wiki" | "rag",
+            "stack": "wiki" | "rag" | "hybrid",
             "results": [
                 {"id": str, "content": str, "score": float | null}
             ]
@@ -20,6 +20,9 @@ Stack-specific notes:
   forwarded as ``score``.
 - ``rag`` stack: :func:`vector_rag.app.indexer.search` returns
   ``list[Chunk]`` (no score exposed) — ``score`` is ``null``.
+- ``hybrid`` stack: :func:`hybrid_kb.app.retrieval.retrieve_and_gate` returns
+  fused wiki ``Section`` objects.  The RRF fused score is NOT exposed
+  (ADR-0018: not a calibrated relevance magnitude) — ``score`` is ``null``.
 """
 
 from __future__ import annotations
@@ -72,4 +75,31 @@ def normalize_rag_results(
             "score": None,
         }
         for chunk in chunks
+    ]
+
+
+def normalize_hybrid_results(
+    sections: list[Any],
+) -> list[dict[str, Any]]:
+    """Map fused hybrid wiki ``Section`` objects to the MCP neutral shape.
+
+    Args:
+        sections: Fused ``Section`` objects from
+                  ``hybrid_kb.app.retrieval.retrieve_and_gate``
+                  (the ``sections`` key of its return dict).
+
+    Returns:
+        List of ``{"id": str, "content": str, "score": None}`` dicts.
+        ``score`` is always ``null`` — the RRF fused score is not a calibrated
+        relevance magnitude (ADR-0018) and must not be surfaced to callers
+        (prevents the model reasoning "low score → guess", PROMPT.md Q3).
+        Never raises; an empty input produces an empty list.
+    """
+    return [
+        {
+            "id": section.id,
+            "content": section.content,
+            "score": None,
+        }
+        for section in sections
     ]

@@ -108,8 +108,8 @@ def test_tool_schema_shape():
     # Only query is required.
     assert schema.get("required") == ["query"]
 
-    # stack has enum + default.
-    assert props["stack"]["enum"] == ["wiki", "rag"]
+    # stack has enum + default (includes hybrid since S5/#315).
+    assert props["stack"]["enum"] == ["wiki", "rag", "hybrid"]
     assert props["stack"]["default"] == "wiki"
 
     # k has min/max.
