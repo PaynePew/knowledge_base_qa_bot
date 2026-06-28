@@ -1,0 +1,27 @@
+[project]
+name = "hybrid-kb"
+version = "0.1.0"
+description = "Hybrid Retrieval (Stack C): BM25 + dense vectors over the curated wiki/ Section corpus, fused by RRF (ADR-0018). Slice S1 ships only the dense-over-wiki Section index + committed seed."
+requires-python = ">=3.11"
+dependencies = [
+    "langchain==1.3.1",
+    "langchain-community==0.4.2",
+    "langchain-openai==1.2.2",
+    "langchain-core==1.4.0",
+    "faiss-cpu==1.9.0.post1",
+    "markdown-kb",
+    "python-dotenv>=1.2.2",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+markdown-kb = { workspace = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers"
+markers = [
+    "live: Opt-in live tests that make real OpenAI/embedding API calls; skipped by default.",
+]

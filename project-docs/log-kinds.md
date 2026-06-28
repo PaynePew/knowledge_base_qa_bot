@@ -208,6 +208,17 @@ already enumerated under the Grounding Check section above and not re-listed her
 
 ---
 
+## Hybrid Retrieval (Stack C)
+
+Authorized by GitHub issue #311 (Phase 13 Slice S1) and [ADR-0018](adr/0018-hybrid-retrieval-third-stack-rrf-over-wiki.md). Stack C is additive and stays decoupled from `markdown_kb` (Stack A) and `vector_rag` (Stack B), so it owns its own append-only log channel at `hybrid_kb/log.md` (written via `hybrid_kb/app/logger.py::log_event`) — the same `## [<ISO-8601 UTC>] <kind> | <summary>` format and the same single-channel discipline (CODING_STANDARD §5.1), just a separate file. Slice S1 introduces the two dense-index lifecycle kinds below; the kinds reuse the existing `index_*` naming convention with a `dense_` prefix so a log reader can tell the dense-over-wiki seed apart from the BM25 (`index_built`) and docs FAISS (`index_built`) channels.
+
+| Kind | When fired | Summary template |
+|---|---|---|
+| `dense_index_built` | `hybrid_kb.dense_index.build_index()` completed (including the empty-corpus no-op) | `sections=N` |
+| `dense_index_loaded` | Persisted dense-over-wiki seed rehydrated from `.kb/hybrid_dense/` on startup | `sections=N` |
+
+---
+
 ## Gateway
 
 Authorized by GitHub issue #158 (Phase 11 PRD — Conversation Memory) and
