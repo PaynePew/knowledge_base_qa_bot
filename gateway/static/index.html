@@ -155,43 +155,68 @@
     display: inline-block; font-size: 9px;
     transition: transform .25s cubic-bezier(.22,.61,.36,1);
   }
+  /* A record is a single condensed row — num · citation-id · meta(heading ·
+     provenance). NO inline content snippet: the full source opens on demand in the
+     #266 viewer (the single content surface), so the same body text is never
+     printed twice. When the server supplied a resolvable path the row is a real
+     <button> (native focus + Enter/Space); the whole row is the click target. */
   .rec {
     display: grid;
-    grid-template-columns: 24px 1fr auto;
+    grid-template-columns: 22px 1fr auto;
     column-gap: 12px;
-    padding: 14px 0;
+    align-items: baseline;
+    width: 100%;
+    padding: 13px 8px 13px 4px;
+    border: 0;
     border-top: 1px solid var(--rule);
+    background: transparent;
+    text-align: left;
+    font: inherit;
+    color: inherit;
+    border-radius: 5px;
   }
   .rec:last-child { border-bottom: 1px solid var(--rule); }
+  button.rec { cursor: pointer; transition: background-color .15s ease; }
+  button.rec:hover, button.rec:focus-visible {
+    background: var(--selection); outline: none;
+  }
   .rec .num {
     font-family: "IBM Plex Mono", monospace;
     font-size: 11px; color: var(--ink-3);
     font-variant-numeric: tabular-nums;
-    padding-top: 3px;
   }
   .rec .body { min-width: 0; }
   .rec .id {
+    display: block;
     font-family: "IBM Plex Mono", monospace;
     font-size: 12.5px; color: var(--ink); font-weight: 500;
+    letter-spacing: -.005em;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .rec .crumb {
-    font-size: 12px; color: var(--ink-3); margin-top: 2px;
+  button.rec:hover .id, button.rec:focus-visible .id {
+    text-decoration: underline;
+    text-decoration-color: var(--ink-3);
+    text-underline-offset: 3px; text-decoration-thickness: 1px;
   }
-  .rec .snip {
-    font-size: 14px; line-height: 1.55; color: var(--ink-2);
-    margin-top: 8px;
+  .rec .meta {
+    display: block; margin-top: 3px;
+    font-size: 12px; line-height: 1.4; color: var(--ink-3);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .rec .prov {
-    margin-top: 8px;
-    font-family: "IBM Plex Mono", monospace;
-    font-size: 10.5px; color: var(--ink-3);
-  }
-  .rec .prov b { color: var(--ink-2); font-weight: 500; }
-  .rec .score {
+  .rec .meta .from,
+  .rec .meta .score-inline {
     font-family: "IBM Plex Mono", monospace;
     font-size: 10.5px; color: var(--ink-4);
     font-variant-numeric: tabular-nums;
-    padding-top: 3px;
+  }
+  .rec .open {
+    align-self: center;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 13px; color: var(--ink-4);
+    transition: transform .2s cubic-bezier(.22,.61,.36,1), color .15s ease;
+  }
+  button.rec:hover .open, button.rec:focus-visible .open {
+    color: var(--ink-2); transform: translate(2px, -2px);
   }
 
   .recs-empty {
@@ -436,18 +461,10 @@
      /read/file returns JSON, so the viewer fetches + strips + renders here
      (never navigates away). Desktop: an inline card in the reading column.
      Mobile (≤540px): a bottom sheet (see the @media block below).            */
-  .cite-link {
-    background: none; border: 0;
-    display: inline-block; text-align: left; cursor: pointer;
-    padding: 4px 4px; margin: -4px -4px; border-radius: 3px;
-    text-decoration: underline; text-decoration-color: var(--rule-2);
-    text-underline-offset: 3px; text-decoration-thickness: 1px;
-    transition: background-color .15s ease, text-decoration-color .15s ease;
-  }
-  .cite-link:hover, .cite-link:focus-visible {
-    text-decoration-color: var(--ink-3);
-    background: var(--selection); outline: none;
-  }
+  /* .cite-link is the marker class the citation contract keys on (#266). The
+     clickable affordance now lives on the whole record row (button.rec, in the
+     RECORDS block above) rather than an inline underlined id, so no extra
+     inline-link styling is needed here. */
   .cite-viewer {
     margin: 14px 0 4px;
     border: 1px solid var(--rule);
@@ -517,7 +534,6 @@
     }
     .cite-content { max-height: none; flex: 1; font-size: 12.5px; }
     .cite-viewer-close { min-height: 40px; padding: 6px 14px; }
-    .cite-link { padding: 8px 6px; margin: -8px -6px; }
   }
   @keyframes cite-slide { from { transform: translateY(100%); } to { transform: translateY(0); } }
   @keyframes cite-fade  { from { opacity: 0; } to { opacity: 1; } }
@@ -976,39 +992,42 @@ function onSources(sources) {
 
   var recsBody = el("div", { class: "recs-body" });
   sources.forEach(function(s, i) {
-    var rec = el("div", { class: "rec" });
-    rec.append(el("div", { class: "num", text: String(i + 1).padStart(2, "0") }));
-    var body = el("div", { class: "body" });
-    /* §12.4: all server-derived content via textContent. Issue #266: when the
-       server supplies a resolvable path, the citation id becomes a button that
-       opens the grounding source in-page (§12.5 — the path is a server decision,
-       not built on the client). Without a path it stays plain text. */
-    var idNode;
-    if (s.path) {
-      idNode = el("button", { class: "id cite-link", type: "button", text: s.source });
-      idNode.addEventListener("click", function() { openCitation(s.path, s.source, idNode); });
-    } else {
-      idNode = el("div", { class: "id", text: s.source });
-    }
-    body.append(
-      idNode,
-      el("div", { class: "crumb", text: s.heading }),
-      el("div", { class: "snip", text: s.content }),
-    );
+    /* Condensed record (#266 follow-up): a single compact reference row —
+       num · citation-id · meta(heading · provenance). The retrieved section body
+       is deliberately NOT rendered here; the full source opens on demand in the
+       in-page citation viewer (openCitation), which is the single content surface
+       — so the same text is never shown twice (before the answer AND on click).
+       §12.4: every server-derived string via textContent. */
+    var num = el("span", { class: "num", text: String(i + 1).padStart(2, "0") });
+    var idNode = el("span", { class: "id", text: s.source });
+
+    var meta = el("span", { class: "meta" });
+    if (s.heading) meta.append(document.createTextNode(s.heading));
     if (s.derived_from && s.derived_from.length) {
-      var provEl = el("div", { class: "prov" });
-      provEl.append(el("b", {}, "Derived from "));
       /* derived_from is an array of {source, heading} objects — join source ids */
-      var provText = s.derived_from.map(function(x) { return x.source; }).join(", ");
-      provEl.append(document.createTextNode(provText));
-      body.append(provEl);
+      var fromText = s.derived_from.map(function(x) { return x.source; }).join(", ");
+      meta.append(el("span", { class: "from", text: (s.heading ? "  ·  " : "") + "from " + fromText }));
     }
-    rec.append(body);
-    /* §12.3: score hidden by default (dev-only), and only for Wiki; RAG: never */
+    /* §12.3: BM25 score hidden by default (dev-only) and Wiki-only; RAG: never. */
     if (DEV && stack === "wiki" && typeof s.score === "number") {
-      rec.append(el("div", { class: "score", text: s.score.toFixed(2) }));
+      meta.append(el("span", { class: "score-inline", text: "  ·  " + s.score.toFixed(2) }));
+    }
+    var body = el("span", { class: "body" }, idNode, meta);
+
+    /* Issue #266 + this follow-up: when the server supplies a resolvable path the
+       WHOLE ROW is the click target (a native <button> for focus + Enter/Space)
+       that opens the grounding source in-page (§12.5 — the path is a server
+       decision, not built on the client). Without a path (RAG sources) it stays a
+       static row. .cite-link is kept as the affordance marker the contract keys on. */
+    var rec;
+    if (s.path) {
+      rec = el("button", {
+        class: "rec cite-link", type: "button",
+        "aria-label": "Open cited source: " + s.source,
+      }, num, body, el("span", { class: "open", "aria-hidden": "true", text: "↗" }));
+      rec.addEventListener("click", function() { openCitation(s.path, s.source, rec); });
     } else {
-      rec.append(el("div", {}));
+      rec = el("div", { class: "rec" }, num, body, el("span", {}));
     }
     recsBody.append(rec);
   });
