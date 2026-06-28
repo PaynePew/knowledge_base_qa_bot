@@ -25,6 +25,8 @@ actually live under the real ``docs/`` whitelist root.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from langchain_core.documents import Document
 
@@ -35,6 +37,7 @@ from markdown_kb.app import read as kb_read
 from .conftest import REAL_DOCS
 
 _EN_QUERY = "How long do refunds take?"
+_COMMITTED_FAISS_DIR = Path(__file__).resolve().parents[2] / ".kb" / "faiss_index"
 
 
 @pytest.fixture()
@@ -181,3 +184,38 @@ def test_chunk_from_document_defaults_file_when_absent():
     """A Document without 'file' metadata reconstructs a Chunk with file=''."""
     doc = Document(page_content="body", metadata={"source": "x.md#h"})
     assert indexer._chunk_from_document(doc).file == ""
+
+
+# ---------------------------------------------------------------------------
+# Committed-seed guard — the REAL artifact must stay re-baked (#307)
+# ---------------------------------------------------------------------------
+@pytest.mark.skipif(
+    not (_COMMITTED_FAISS_DIR / "index.faiss").exists(),
+    reason="committed FAISS seed not present in this checkout",
+)
+def test_committed_faiss_seed_carries_docs_prefixed_file_metadata(fake_embeddings):
+    """The COMMITTED RAG seed must carry ``docs/<relpath>`` file metadata.
+
+    This is the artifact the running app loads. A seed baked before the #307
+    file-metadata change stores a bare basename (``returns_policy.md``); the path
+    gate then suppresses the citation path → RAG citations silently go
+    non-clickable in production even though every unit test (which builds a FRESH
+    index) passes. This guard reads the committed seed directly so a stale seed
+    fails CI and forces a re-bake. Read-only load via the explicit committed dir
+    (bypasses the autouse tmp redirect); ``fake_embeddings`` keeps it offline —
+    inspecting docstore metadata needs no real vectors.
+    """
+    indexer.load_vector_index(_COMMITTED_FAISS_DIR)
+    docs = list(indexer.vectorstore.docstore._dict.values())
+    assert docs, "committed FAISS seed must not be empty"
+    non_docs = sorted(
+        {
+            d.metadata.get("file", "")
+            for d in docs
+            if not d.metadata.get("file", "").startswith("docs/")
+        }
+    )
+    assert not non_docs, (
+        "committed FAISS seed has chunks whose file metadata is not docs/-prefixed "
+        f"— the seed needs re-baking (see #307): {non_docs[:5]}"
+    )
