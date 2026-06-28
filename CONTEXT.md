@@ -143,9 +143,9 @@ _Avoid_: Import (Import converts an existing raw file; Capture authors new conte
 
 ### Phase 13 — Hybrid Retrieval vocabulary
 
-> Scoped in the 2026-05-28 and 2026-06-28 grills; **reserved until implemented** (per CODING_STANDARD §3.2, not yet usable as class/variable names). Hybrid is the third Retrieval Stack alongside Wiki (Stack A) and Vector RAG (Stack B) — see [[retrieval-stack]].
+> Scoped in the 2026-05-28 and 2026-06-28 grills. Promoted from Reserved to **active Language** in Slice S2 (#312) — per CODING_STANDARD §3.2, Reserved terms are off-limits as names, so `hybrid_kb`, `Hybrid Retrieval`, and the retrieval-core identifiers (RRF fusion, the OR-gate) are now legal in code. Hybrid is the third Retrieval Stack alongside Wiki (Stack A) and Vector RAG (Stack B) — see [[retrieval-stack]].
 
-**Hybrid Retrieval** _(future, Phase 13)_:
+**Hybrid Retrieval**:
 A third [[retrieval-stack]] that retrieves over the **same `wiki/` Section corpus as the Wiki stack** (not `docs/`), combining two search methods — BM25 (keyword / sparse) and dense-vector (semantic) — and fusing their two ranked lists with **Reciprocal Rank Fusion (RRF)**. The "RAG" in the informal name "wiki + RAG hybrid" denotes the *dense-vector technique applied to wiki Sections*, **not** the Vector RAG stack's `docs/` [[chunk]] index. Because both arms return wiki [[section]]s, their ids align 1:1, so RRF is true same-corpus fusion and everything downstream ([[grounding-check]], [[citation]], expand-to-pages, [[cannot-confirm]]) is reused unchanged. RRF is a **recall-union** step (rescues relevant items one method ranked low), **not** a precision filter; an optional cross-encoder reranker for precision (the FM2 semantic-false-positive case) is a deferred follow-on.
 _Avoid_: "fusing the Wiki and RAG **stacks**" (it fuses two **methods over one corpus**, not two stacks over two corpora — the cross-corpus reading was explicitly rejected), Hybrid Search (acceptable informally, but "Retrieval" matches [[retrieval-stack]]), Reranking (a distinct, deferred precision stage — not what Hybrid v1 does).
 
