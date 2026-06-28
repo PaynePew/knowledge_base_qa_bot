@@ -168,17 +168,27 @@ def _dense_arm_clears(best_distance: float | None) -> bool:
     """True when the dense arm's closest hit clears its calibrated distance gate.
 
     Mirrors ``vector_rag``'s gate semantics exactly: lower FAISS distance = closer,
-    so the arm clears when its BEST (minimum) distance ``<= ceiling``. The ceiling
+    so the arm clears when its BEST (minimum) distance ``<= ceiling``.  The ceiling
     is read through ``vector_rag.app.retrieval._max_rag_distance()`` — the same
     accessor Stack B's own gate uses, returning the calibrated
     ``_KB_RAG_DISTANCE_THRESHOLD_DEFAULT`` (1.1) and honouring the
-    ``KB_RAG_DISTANCE_THRESHOLD`` override (``None`` disables the gate, in which
-    case the arm cannot clear on distance).
+    ``KB_RAG_DISTANCE_THRESHOLD`` override.
+
+    ``None`` ceiling semantics (ADR-0018 §4.3 gate-parity, #327):
+    ``_max_rag_distance()`` returns ``None`` when the gate is *disabled*.
+    ``vector_rag``'s own gate disables on ``None`` (proceeds rather than refuses);
+    hybrid must match — a *present* dense hit clears when the gate is disabled.
+    The ``best_distance is None`` branch is orthogonal: no hit at all never clears
+    regardless of whether the ceiling gate is enabled.
     """
     if best_distance is None:
         return False
     ceiling = _dense_gate._max_rag_distance()
-    return ceiling is not None and best_distance <= ceiling
+    if ceiling is None:
+        # Gate disabled → parity with vector_rag's None semantics: a present
+        # dense hit clears (ADR-0018 §4.3, #327).
+        return True
+    return best_distance <= ceiling
 
 
 def evaluate_or_gate(
