@@ -53,6 +53,13 @@ from collections.abc import Callable, Iterator
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
+
+# Hybrid Retrieval (Stack C) — Phase 13 S4 (issue #314). Additive third stack;
+# ``hybrid_kb.query.stream_query`` is the same two-dict generator contract the
+# Wiki/RAG stream functions expose, so the generator body below is unchanged
+# (ADR-0010: the gateway is the composition layer; adding a stack is one map
+# entry). ADR-0018: Hybrid fuses BM25 + dense over the wiki Section corpus.
+from hybrid_kb.app.query import stream_query as _hybrid_stream_query
 from markdown_kb.app.errors import LLMError
 from markdown_kb.app.read import FileNotFound as _ReadFileNotFound
 from markdown_kb.app.read import NotAFile as _ReadNotAFile
@@ -99,6 +106,7 @@ class UploadBatchResultSchema(BaseModel):
 _STACK_STREAM_FN: dict[str, Callable[[str], Iterator[dict]]] = {
     "wiki": _wiki_stream_query,
     "rag": _rag_stream_query,
+    "hybrid": _hybrid_stream_query,
 }
 
 
@@ -158,8 +166,11 @@ def chat_stream(
     Args:
         req: ChatRequest body with ``query`` field.
         stack: Query param selecting the Retrieval Stack (default ``wiki``).
-            ``wiki`` — Wiki BM25 stack (markdown_kb).
-            ``rag``  — Vector RAG stack (vector_rag).
+            ``wiki``   — Wiki BM25 stack (markdown_kb).
+            ``rag``    — Vector RAG stack (vector_rag).
+            ``hybrid`` — Hybrid stack: BM25 + dense fused over the wiki Section
+                corpus (hybrid_kb, ADR-0018). Never files (``done.filed`` null,
+                like rag); citations carry a resolvable wiki-page ``path``.
         session: Optional session id.  Absent → Gateway mints a new UUID.
             Present → Gateway continues the existing conversation.
 
@@ -171,7 +182,8 @@ def chat_stream(
     """
     if stack not in _STACK_STREAM_FN:
         raise HTTPException(
-            status_code=400, detail=f"Unknown stack={stack!r}. Use 'wiki' or 'rag'."
+            status_code=400,
+            detail=f"Unknown stack={stack!r}. Use 'wiki', 'rag', or 'hybrid'.",
         )
 
     # Sweep idle sessions at request entry (CODING_STANDARD §2.6: the TTL sweep
