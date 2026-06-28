@@ -14,8 +14,9 @@ warm-index pattern.
 ``LLMError`` (ADR-0015) renders as a non-zero exit code plus a human-readable
 message to stderr — no traceback.
 
-``--stack rag`` routes to the vector_rag retrieval arm (ADR-0002: stacks stay
-independent, called directly).
+``--stack rag`` routes to the vector_rag retrieval arm and ``--stack hybrid`` to
+the Phase 13 Hybrid arm (``hybrid_kb``, BM25 + dense over wiki/ fused by RRF —
+ADR-0018); both are called directly, stacks stay independent (ADR-0002).
 
 Human-readable output: the ``ask`` path and the REPL render the full
 ``markdown_kb.app.retrieval.query`` result shape (``answer`` + ``sources`` +
@@ -63,8 +64,9 @@ app = typer.Typer(
 )
 
 # Typer stack literal — kept as a plain string enum rather than Literal so
-# the help text renders clearly.
-_VALID_STACKS = ("wiki", "rag")
+# the help text renders clearly. ``hybrid`` is the Phase 13 Stack C (ADR-0018:
+# BM25 + dense over wiki/, fused by RRF), dispatched alongside wiki / rag.
+_VALID_STACKS = ("wiki", "rag", "hybrid")
 
 
 # ---------------------------------------------------------------------------
@@ -102,6 +104,15 @@ def _do_query(question: str, stack: str) -> dict:
 
         reload_if_stale()
         return wiki_query(question)
+    elif stack == "hybrid":
+        # ADR-0018 Stack C: BM25 + dense over wiki/, fused by RRF. reload_if_stale
+        # warms the shared BM25 arm (same .kb/index.json as the wiki stack); the
+        # dense arm is lazy-loaded inside hybrid query() on first use.
+        from hybrid_kb.app.query import query as hybrid_query
+        from kb_mcp.freshness import reload_if_stale
+
+        reload_if_stale()
+        return hybrid_query(question)
     else:
         from vector_rag.app.retrieval import query as rag_query  # type: ignore[import-untyped]
 
@@ -159,7 +170,10 @@ def ask(
     stack: str = typer.Option(
         "wiki",
         "--stack",
-        help="Retrieval stack: 'wiki' (BM25, default) or 'rag' (Vector RAG).",
+        help=(
+            "Retrieval stack: 'wiki' (BM25, default), 'rag' (Vector RAG), "
+            "or 'hybrid' (BM25 + dense over wiki, fused by RRF)."
+        ),
     ),
 ) -> None:
     """Ask the knowledge base a question and print a grounded answer.
@@ -472,8 +486,8 @@ def _run_repl(stack: str = "wiki") -> None:
 
     Prompt: ``kb>``
     Commands:
-        :stack <wiki|rag>   — toggle the retrieval stack
-        quit / exit / :q    — exit the REPL
+        :stack <wiki|rag|hybrid>  — toggle the retrieval stack
+        quit / exit / :q          — exit the REPL
         <anything else>     — treated as a query
 
     The index is loaded once on REPL start via ``reload_if_stale()`` so the
@@ -489,7 +503,9 @@ def _run_repl(stack: str = "wiki") -> None:
     # Warm the index once at REPL start.
     reload_if_stale()
 
-    typer.echo("Knowledge base REPL.  Type a question, ':stack <wiki|rag>' to toggle, or 'quit'.")
+    typer.echo(
+        "Knowledge base REPL.  Type a question, ':stack <wiki|rag|hybrid>' to toggle, or 'quit'."
+    )
 
     current_stack = stack
 

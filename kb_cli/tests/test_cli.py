@@ -153,6 +153,74 @@ def test_kb_ask_stack_rag_flag(monkeypatch):
     assert result.exit_code == 0, f"Expected exit 0 for rag stack, got:\n{result.output}"
 
 
+def _hybrid_result() -> dict:
+    """Canned hybrid query() result (grounded answer + citation)."""
+    from markdown_kb.app.grounding import GroundingOutcome
+
+    return {
+        "answer": "Refunds take about a week. [Source: refund-policy#refund-policy]",
+        "sources": [
+            {
+                "source": "refund-policy#refund-policy",
+                "heading": "Refund Policy",
+                "content": "Refunds are processed within seven business days.",
+            }
+        ],
+        "grounding_outcome": GroundingOutcome(passed=True, reason="claim_supported"),
+    }
+
+
+def test_kb_ask_stack_hybrid_dispatches_to_hybrid(monkeypatch):
+    """``kb ask "Q" --stack hybrid`` dispatches to hybrid_kb.query and exits 0."""
+    import hybrid_kb.app.query as hybrid_query_mod
+    import kb_mcp.freshness as freshness_mod
+
+    from kb_cli.main import app
+
+    calls: list[str] = []
+
+    def _fake_hybrid_query(q: str) -> dict:
+        calls.append(q)
+        return _hybrid_result()
+
+    monkeypatch.setattr(freshness_mod, "reload_if_stale", lambda *_a, **_kw: False)
+    monkeypatch.setattr(hybrid_query_mod, "query", _fake_hybrid_query)
+
+    result = runner.invoke(app, ["ask", "How long do refunds take?", "--stack", "hybrid"])
+
+    assert result.exit_code == 0, f"Expected exit 0 for hybrid stack, got:\n{result.output}"
+    assert calls == ["How long do refunds take?"], "hybrid stack must dispatch to hybrid_kb.query"
+    assert "refund-policy" in result.output, f"Expected hybrid citation, got:\n{result.output}"
+
+
+def test_kb_ask_invalid_stack_rejected(monkeypatch):
+    """An unknown --stack value is rejected with a non-zero exit (usage error)."""
+    from kb_cli.main import app
+
+    result = runner.invoke(app, ["ask", "Q", "--stack", "bogus"])
+    assert result.exit_code != 0, "an unknown stack must be rejected"
+
+
+def test_repl_stack_toggle_hybrid(monkeypatch):
+    """REPL ``:stack hybrid`` switches to the hybrid stack without error."""
+    import hybrid_kb.app.query as hybrid_query_mod
+
+    from kb_cli.main import app
+
+    _patch_retrieval(monkeypatch)
+    monkeypatch.setattr(hybrid_query_mod, "query", lambda q: _hybrid_result())
+
+    result = runner.invoke(
+        app,
+        [],
+        input=":stack hybrid\nHow long do refunds take?\nquit\n",
+    )
+    assert result.exit_code == 0, f"REPL :stack hybrid failed: {result.exit_code}\n{result.output}"
+    assert "hybrid" in result.output.lower(), (
+        f"Expected the stack switch to be acknowledged, got:\n{result.output}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # AC-1: kb index (re)builds the Section Index
 # ---------------------------------------------------------------------------
