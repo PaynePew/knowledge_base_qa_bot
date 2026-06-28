@@ -18,11 +18,16 @@ on the languages of the retrieved Sections over the real seed, never on internal
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 import app.indexer as _idx
 from app._paths import DOCS_DIR
 from app.indexer import LANG_METADATA_KEY
+
+# The force-committed BM25 seed whose bilingual invariants this test locks in.
+_COMMITTED_INDEX = Path(__file__).resolve().parents[2] / ".kb" / "index.json"
 
 # (topic, zh query, en query): single-intent, well-covered queries spanning the original 8 ZH
 # Sources and the 12 added in #288 — including the about/contact cluster the parity audit
@@ -42,12 +47,25 @@ _TOPICS = [
 
 
 @pytest.fixture(scope="module")
-def baked_index():
+def baked_index(tmp_path_factory):
     """Load the real, force-committed ``.kb/index.json`` — the shipped bilingual seed.
+
+    ``load_index_json`` emits an ``index_loaded`` entry via ``app.logger.log_event``.
+    This fixture is module-scoped, so it sets up *before* the function-scoped
+    ``_redirect_paths_to_tmp`` autouse redirect — and would otherwise append that
+    entry to the committed ``wiki/log.md`` (a §6.5 isolation leak the repo-root guard
+    now flags — #303). Redirect ``LOG_PATH`` to a tmp file for the load, and read the
+    seed from the explicit committed path so the probe is independent of redirect
+    ordering and writes nothing under ``wiki/``.
 
     Resets the module-global index on teardown so fixture-based tests elsewhere are unaffected.
     """
-    _idx.load_index_json()
+    import app.logger as _logger
+
+    log_tmp = tmp_path_factory.mktemp("baked_seed") / "log.md"
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(_logger, "LOG_PATH", log_tmp)
+        _idx.load_index_json(_COMMITTED_INDEX)
     try:
         yield
     finally:

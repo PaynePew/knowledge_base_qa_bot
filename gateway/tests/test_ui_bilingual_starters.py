@@ -32,6 +32,13 @@ from pathlib import Path
 
 _STATIC_INDEX = Path(__file__).resolve().parents[2] / "gateway" / "static" / "index.html"
 
+# The committed baked BM25 seed. The gateway conftest autouse fixture redirects
+# indexer.INDEX_PATH to tmp for write-isolation (#303); this file's BM25 probe is
+# a READ-ONLY check of the committed seed, so it loads this path explicitly rather
+# than the (redirected) module global. load_index_json's index_loaded log entry
+# still goes to the redirected tmp LOG_PATH, so the probe writes nothing.
+_COMMITTED_INDEX = Path(__file__).resolve().parents[2] / ".kb" / "index.json"
+
 
 # The exact preset strings the UI must offer, per language. Each was validated
 # OFFLINE against the baked BM25 index (see test_starter_presets_clear_pre_llm_gate):
@@ -110,7 +117,7 @@ def test_starter_presets_clear_pre_llm_gate():
         _KB_SCORE_THRESHOLD_ZH_DEFAULT,
     )
 
-    files, sections = ix.load_index_json()
+    files, sections = ix.load_index_json(_COMMITTED_INDEX)
     assert sections > 0, "baked .kb/index.json must be present and non-empty for the probe"
 
     for q in EXPECTED_EN_PRESETS:
