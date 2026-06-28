@@ -1,6 +1,8 @@
-"""Deep module per Ousterhout. Public surface: ``query``, ``get_llm``, ``CANNOT_CONFIRM_PHRASE``.
+"""Deep module per Ousterhout. Public surface: ``query``, ``stream_query``, ``get_llm``, ``CANNOT_CONFIRM_PHRASE``.
 
-Hybrid Retrieval (Stack C) query path — slice S3 (ADR-0018 / #313).
+Hybrid Retrieval (Stack C) query path — slice S3 (ADR-0018 / #313) + the
+streaming variant ``stream_query`` (slice S4 / #314) the Gateway dispatches to
+for ``stack=hybrid``.
 
 This is the LLM-facing surface of the Phase 13 Hybrid stack. It wraps S2's
 retrieval core (``hybrid_kb.app.retrieval.retrieve_and_gate``) with the SAME
@@ -39,6 +41,7 @@ is a Gateway/route concern (parity with ``markdown_kb.query`` / ``vector_rag``'s
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 
 import openai
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -46,6 +49,7 @@ from langchain_openai import ChatOpenAI
 
 from markdown_kb.app import grounding as grounding_module
 from markdown_kb.app import indexer as bm25_indexer
+from markdown_kb.app import retrieval as bm25_retrieval
 from markdown_kb.app.errors import LLMError
 from markdown_kb.app.grounding import GroundingOutcome
 from markdown_kb.app.indexer import Section
@@ -59,7 +63,7 @@ from . import dense_index
 from . import retrieval as hybrid_retrieval
 from .logger import log_event
 
-__all__ = ["query", "get_llm", "CANNOT_CONFIRM_PHRASE"]
+__all__ = ["query", "stream_query", "get_llm", "CANNOT_CONFIRM_PHRASE"]
 
 
 # ---------------------------------------------------------------------------
@@ -115,21 +119,38 @@ def _build_sources(sections: list[Section]) -> list[dict]:
     """Build the response ``sources`` list from the fused wiki Sections.
 
     The common citation shape across stacks — ``source`` id + ``heading``
-    breadcrumb + a content excerpt. The RRF fused score is deliberately NOT
-    exposed: ADR-0018 fixes that it is not a calibrated relevance magnitude, so
-    surfacing it as a citation "score" would mislead (and prevents the model
-    reasoning "low score → guess", PROMPT.md Q3). ``sources`` is populated even on
-    a Cannot Confirm verdict (the weak candidates), exactly as the existing stacks
-    return their below-threshold sources.
+    breadcrumb + a content excerpt — plus an OPTIONAL resolvable wiki-page
+    ``path`` so the reader UI renders a CLICKABLE citation that opens the source
+    in-page (S4 / #314 AC3, parity with the Wiki stack's #266 viewer and the RAG
+    stack's #307 docs path). Because Hybrid retrieves wiki ``Section`` objects,
+    the page path is resolved by REFERENCE through the Wiki stack's own
+    ``_wiki_page_path_for_section`` (ADR-0018 blessed cross-app reuse — the same
+    pattern S2 uses for the calibrated thresholds): a pure ``metadata['type']`` →
+    ``wiki/<subdir>/<file>.md`` mapping, no filesystem read. ``path`` is emitted
+    only when it resolves (the Section carries a known wiki page ``type``), so a
+    type-less test corpus degrades to a non-clickable citation rather than a
+    clickable-but-404 one — keeping "a citation is clickable iff the viewer can
+    open it" true at the source.
+
+    The RRF fused score is deliberately NOT exposed: ADR-0018 fixes that it is not
+    a calibrated relevance magnitude, so surfacing it as a citation "score" would
+    mislead (and prevents the model reasoning "low score → guess", PROMPT.md Q3).
+    ``sources`` is populated even on a Cannot Confirm verdict (the weak
+    candidates), exactly as the existing stacks return their below-threshold
+    sources.
     """
-    return [
-        {
+    result: list[dict] = []
+    for sec in sections:
+        entry: dict = {
             "source": sec.id,
             "heading": " > ".join(sec.heading_path),
             "content": sec.content[:240],
         }
-        for sec in sections
-    ]
+        path = bm25_retrieval._wiki_page_path_for_section(sec)
+        if path is not None:
+            entry["path"] = path
+        result.append(entry)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +172,91 @@ def query(question: str) -> dict:
 
     Post-LLM gate (ADR-0004 layer 3): ``grounding.verify`` validates every claim
     against the cited Sections; any unsupported claim → Cannot Confirm.
+
+    Phase 13 S4 (#314): composes ``_retrieve_and_gate`` + ``_draft_and_verify``,
+    the SAME two helpers ``stream_query`` composes, so the streaming and
+    non-streaming paths can never diverge. Public contract unchanged.
+    """
+    gate = _retrieve_and_gate(question)
+    if gate["early_exit"]:
+        return {
+            "answer": gate["answer"],
+            "sources": gate["sources"],
+            "grounding_outcome": gate["grounding_outcome"],
+        }
+    return _draft_and_verify(question, gate["sections"], gate["sources"])
+
+
+def stream_query(question: str) -> Iterator[dict]:
+    """Generator yielding the two dicts the SSE streaming endpoint consumes.
+
+    Phase 13 S4 (#314) — the streaming variant of ``query``, mirroring
+    ``markdown_kb.app.retrieval.stream_query`` and
+    ``vector_rag.app.retrieval.stream_query`` so the Gateway reuses the shared
+    serializer ``markdown_kb.app.sse.events_for_result`` for all three stacks
+    (ADR-0009 verify-then-stream / sources-first; ADR-0010 the Gateway is the
+    composition layer). The SSE machinery is NOT reimplemented here — this only
+    surfaces the sources-then-answer split.
+
+    Yields:
+        1. A *partial* result dict immediately after retrieval (before any LLM
+           call), so the Gateway can emit the ``sources`` SSE event right away.
+           Shape: ``{_phase: "sources_ready", sources, grounding_outcome,
+           early_exit, answer, sections}``. ``grounding_outcome`` here is the
+           provisional pre-LLM OR-gate verdict.
+        2. A *full* result dict after draft + Grounding Check.
+           Shape: ``{answer, sources, grounding_outcome}`` — identical to what
+           ``query()`` returns.
+
+    ADR-0009: only verified text is ever emitted as tokens; on the pre-LLM gate
+    the second yield IS the partial — the exact Cannot Confirm sentinel
+    (imported, not paraphrased — trap #2) with NO LLM call (AC3).
+    """
+    gate = _retrieve_and_gate(question)
+
+    # Yield the sources-ready partial so the Gateway can emit the sources event
+    # before any LLM call (ADR-0009 sources-first invariant).
+    yield {
+        "_phase": "sources_ready",
+        "sources": gate["sources"],
+        "grounding_outcome": gate["grounding_outcome"],
+        "early_exit": gate["early_exit"],
+        "answer": gate.get("answer", ""),
+        "sections": gate.get("sections", []),
+    }
+
+    if gate["early_exit"]:
+        # Pre-LLM OR-gate refused — the partial IS the full result. Stream the
+        # exact Cannot Confirm sentinel so the token stream is identical to the
+        # other stacks' CC paths (SSE uniformity, ADR-0009 / §12.3). No LLM call.
+        yield {
+            "answer": CANNOT_CONFIRM_PHRASE,
+            "sources": gate["sources"],
+            "grounding_outcome": gate["grounding_outcome"],
+        }
+        return
+
+    # LLM phase — draft + post-LLM Grounding Check (reuses query()'s composition).
+    yield _draft_and_verify(question, gate["sections"], gate["sources"])
+
+
+def _retrieve_and_gate(question: str) -> dict:
+    """Lazy-load both arms, run S2 retrieve+gate, and build the citation sources.
+
+    The single composition point shared by ``query`` and ``stream_query`` so the
+    two paths can never drift (mirrors ``vector_rag``/``markdown_kb``, whose
+    ``query``/``stream_query`` both compose a ``_retrieve_and_gate`` +
+    ``_draft_and_verify`` pair). Returns a dict with:
+
+        sources           — citation dicts (always populated, even on early_exit)
+        grounding_outcome — the S2 pre-LLM OR-gate verdict
+        early_exit        — True when the gate refused (callers skip the LLM)
+        answer            — the Cannot Confirm sentinel on early_exit, else ""
+        sections          — fused Sections for ``_draft_and_verify`` (empty on
+                            early_exit — no synthesis is run)
+
+    The ``chat_fallback`` log entry is written HERE on the pre-LLM gate (once),
+    so both the streaming and non-streaming paths log the refusal identically.
     """
     _ensure_indexes_loaded()
 
@@ -166,12 +272,20 @@ def query(question: str) -> dict:
             f'"{truncated}" reason={gate["grounding_outcome"].reason}',
         )
         return {
-            "answer": CANNOT_CONFIRM_PHRASE,
             "sources": sources,
             "grounding_outcome": gate["grounding_outcome"],
+            "early_exit": True,
+            "answer": CANNOT_CONFIRM_PHRASE,
+            "sections": [],
         }
 
-    return _draft_and_verify(question, sections, sources)
+    return {
+        "sources": sources,
+        "grounding_outcome": gate["grounding_outcome"],
+        "early_exit": False,
+        "answer": "",
+        "sections": sections,
+    }
 
 
 def _draft_and_verify(
