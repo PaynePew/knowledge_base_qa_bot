@@ -23,8 +23,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import app.ingest as ingest_module
 import app.indexer as indexer_module
+import app.ingest as ingest_module
 import app.templates as templates_module
 
 # ---------------------------------------------------------------------------

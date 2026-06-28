@@ -20,7 +20,6 @@ import app.indexer as indexer_module
 import app.ingest as ingest_module
 import app.templates as templates_module
 
-
 # ---------------------------------------------------------------------------
 # Tests 1-3: estimate_tokens + caps
 # ---------------------------------------------------------------------------
