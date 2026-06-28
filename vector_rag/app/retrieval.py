@@ -30,9 +30,12 @@ Public query() composes them; contract is unchanged.
 stream_query() uses the same decomposition to yield a sources-ready partial
 before any LLM call (ADR-0009 verify-then-stream / sources-first).
 
-RAG source objects carry ONLY citation id + heading + content — NO score,
-NO derived_from (issue #120 spec; RAG serves raw docs/ Sources, not the
-curated wiki layer that has frontmatter.sources chains).
+RAG source objects carry citation id + heading + content, plus an OPTIONAL
+``path`` (``docs/<relpath>``) for the clickable citation (#307, parity with wiki
+#266) — emitted only when the chunk's file resolves under a GET /read/file
+whitelist root. Still NO score, NO derived_from (issue #120 spec — those are
+ranking / wiki-layer signals; ``path`` is orthogonal UI resolution; RAG serves
+raw docs/ Sources, not the curated wiki layer with frontmatter.sources chains).
 """
 
 from __future__ import annotations
@@ -66,6 +69,14 @@ CANNOT_CONFIRM_PHRASE = "I cannot confirm from the knowledge base."
 NOT_INDEXED_MESSAGE = (
     "The knowledge base has not been indexed yet. Call POST /index first."
 )
+
+# Whitelist roots a clickable citation ``path`` may live under — must mirror the
+# keys of ``markdown_kb.app.read._WHITELIST_ROOTS`` (the gate GET /read/file uses).
+# A RAG source only ever resolves to ``docs/`` in practice; ``raw/``/``wiki/`` are
+# included for parity/future-proofing. Emitting ``path`` only when it begins with
+# one of these keeps "a citation is clickable iff the viewer can open it" true at
+# the source, so no clickable-but-404 citation can reach the UI (#307).
+_CITATION_PATH_ROOTS = ("docs/", "raw/", "wiki/")
 
 # ---------------------------------------------------------------------------
 # System prompt — Stack B's own literal of the ADR-0001 strict-grounded contract
@@ -318,19 +329,30 @@ def _retrieve_and_gate(question: str) -> dict:
 
     chunks = [chunk for chunk, _distance in results]
 
-    # RAG source shape: citation id + heading + content ONLY.
-    # NO score (prevents the model reasoning "low score → guess", PROMPT.md Q3).
-    # NO derived_from (RAG serves raw docs/ Sources; frontmatter chains are a
-    # wiki-layer concept — issue #120 spec). The distance stays a gate-only signal
-    # and never enters sources.
-    sources = [
-        {
+    # RAG source shape: citation id + heading + content, plus an OPTIONAL
+    # docs/-relative ``path`` for the clickable citation (#307, parity with wiki
+    # #266 — the gateway forwards ``path`` generically and the browser UI links a
+    # source iff it carries one). NO score (prevents the model reasoning "low
+    # score → guess", PROMPT.md Q3). NO derived_from (RAG serves raw docs/
+    # Sources; frontmatter chains are a wiki-layer concept — issue #120 spec). The
+    # distance stays a gate-only signal and never enters sources. ``path`` is
+    # emitted only when the chunk's ``file`` resolves under a GET /read/file
+    # whitelist root (``docs/`` in practice; ``raw/``/``wiki/`` future-proof —
+    # mirrors markdown_kb.app.read._WHITELIST_ROOTS). Gating on the root keeps the
+    # invariant honest at the boundary: a citation is clickable iff the viewer can
+    # actually open it, so a corpus indexed outside those roots (or an older
+    # persisted index whose chunks lack the metadata) degrades to a non-clickable
+    # citation instead of a clickable-but-404 one — never ``path: None``.
+    sources = []
+    for chunk in chunks:
+        source: dict = {
             "source": chunk.source,
             "heading": " > ".join(chunk.heading_path),
             "content": chunk.content[:240],
         }
-        for chunk in chunks
-    ]
+        if chunk.file.startswith(_CITATION_PATH_ROOTS):
+            source["path"] = chunk.file
+        sources.append(source)
 
     # Pre-LLM distance-relevance gate (#257). FAISS k-NN always returns k
     # neighbours, so "retrieved something" does NOT mean "relevant" — without this

@@ -108,6 +108,12 @@ class Chunk:
     source: str
     heading_path: list[str]
     content: str
+    # Repo-root-relative source path (``docs/<relpath>``, forward slashes) so the
+    # browser UI can open the cited Source through the same docs/ whitelist root
+    # that GET /read/file uses (#307, parity with wiki #266). Defaults to "" so a
+    # Chunk reconstructed from a FAISS index persisted before this metadata
+    # existed still satisfies the dataclass — an empty file means "not clickable".
+    file: str = ""
     lang: str = _DEFAULT_LANG
 
 
@@ -402,6 +408,18 @@ def _load_documents(docs_dir: Path) -> list[Document]:
     """
     documents: list[Document] = []
     for md_file in sorted(docs_dir.glob("**/*.md")):
+        # Browser-resolvable citation path (#307): repo-root-relative so it opens
+        # through the SAME docs/ whitelist root that GET /read/file delegates to
+        # (markdown_kb.app.read._WHITELIST_ROOTS), parity with wiki citations
+        # (#266). DOCS_DIR is absolute (Path(...).resolve()), so
+        # relative_to(DOCS_DIR.parent) yields "docs/<relpath>"; forward slashes
+        # keep the citation stable on Windows. A corpus built OUTSIDE the repo
+        # root (e.g. a tmp test corpus) is never browser-cited, so fall back to
+        # the bare filename rather than crash the build.
+        try:
+            file_path = str(md_file.relative_to(DOCS_DIR.parent)).replace("\\", "/")
+        except ValueError:
+            file_path = md_file.name
         for section in parse_markdown(md_file):
             if not section.content.strip():
                 continue
@@ -412,7 +430,7 @@ def _load_documents(docs_dir: Path) -> list[Document]:
                         metadata={
                             "source": section.id,
                             "heading_path": list(section.heading_path),
-                            "file": section.file,
+                            "file": file_path,
                             LANG_METADATA_KEY: detect_lang(piece),
                         },
                     )
@@ -433,6 +451,10 @@ def _chunk_from_document(doc: Document) -> Chunk:
         source=source,
         heading_path=list(doc.metadata.get("heading_path", [])),
         content=doc.page_content,
+        # Repo-root-relative source path for the clickable citation (#307). Falls
+        # back to "" for any chunk persisted before the metadata existed, so an
+        # older on-disk index still loads (the source simply omits ``path``).
+        file=doc.metadata.get("file", ""),
         # Reconstruct the content language tag (issue #285). Fall back to the
         # default for any chunk persisted before the tag existed so an older
         # on-disk index still loads.
