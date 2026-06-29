@@ -110,6 +110,10 @@ def _redirect_paths_to_tmp(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(hk_logger, "LOG_PATH", tmp_path / "hybrid_kb" / "log.md")
     monkeypatch.setattr(mk_logger, "LOG_PATH", tmp_path / "wiki" / "log.md")
+    # Keep the reranker (ADR-0019) OFF by default so the suite is deterministic
+    # even if a dev's .env sets KB_HYBRID_RERANK — tests that exercise it opt in
+    # by monkeypatching rerank.is_enabled / get_cross_encoder, never the real model.
+    monkeypatch.delenv("KB_HYBRID_RERANK", raising=False)
     yield
     dense_index.vectorstore = None
     dense_index.sections_indexed = 0

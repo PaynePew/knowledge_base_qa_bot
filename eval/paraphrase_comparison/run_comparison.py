@@ -42,19 +42,23 @@ from .spotcheck import (
 
 
 def _install_fake_embeddings() -> None:
-    """Install deterministic offline stand-ins for BOTH dense arms (B and C).
+    """Install deterministic offline stand-ins for the dense arms AND the reranker.
 
     Stack B (vector_rag): swap its FAISS factory for a token-overlap ranker.
     Stack C (hybrid_kb dense-over-wiki): swap its ``get_embeddings`` leaf for a
     deterministic hash-based ``Embeddings`` so the REAL FAISS build/search path
     runs offline (mirrors the eval test conftest's ``fake_dense_embeddings`` and
-    the hybrid_kb suite). Neither touches the network, so the whole three-arm
-    comparison is reproducible without ``OPENAI_API_KEY``.
+    the hybrid_kb suite). Stack C+rerank (ADR-0019): swap ``hk_rerank.get_cross_encoder``
+    for a deterministic token-overlap cross-encoder so the offline tracer exercises
+    the 4th arm without downloading the ~2.3 GB ``bge-reranker-v2-m3`` model. None
+    touch the network, so the whole four-arm comparison is reproducible without
+    ``OPENAI_API_KEY`` (and without the optional ``rerank`` dependency).
     """
     import hashlib
     from dataclasses import dataclass
 
     import hybrid_kb.app.dense_index as hk_dense
+    import hybrid_kb.app.rerank as hk_rerank
     import vector_rag.app.indexer as vr_indexer
     from langchain_core.embeddings import Embeddings
     from markdown_kb.app.indexer import tokenize
@@ -114,6 +118,24 @@ def _install_fake_embeddings() -> None:
 
     _fake_dense = _FakeDenseEmbeddings()
     hk_dense.get_embeddings = lambda: _fake_dense
+
+    class _FakeCrossEncoder:
+        """Deterministic token-overlap stand-in for the rerank cross-encoder.
+
+        Scores each (query, passage) pair by shared-token count via the same
+        language-aware ``tokenize`` the offline dense fakes use (Latin words + CJK
+        bigrams), so the offline 4th arm reorders bilingually without any model.
+        """
+
+        def predict(self, pairs):
+            scores = []
+            for query, passage in pairs:
+                overlap = len(set(tokenize(query)) & set(tokenize(passage)))
+                scores.append(float(overlap))
+            return scores
+
+    _fake_cross_encoder = _FakeCrossEncoder()
+    hk_rerank.get_cross_encoder = lambda: _fake_cross_encoder
 
 
 def _isolate_production_paths() -> None:
@@ -209,6 +231,15 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_CONTROL_SAMPLE_SIZE,
         help="Clear-hit/clear-miss count for the Control zone (default 5).",
     )
+    parser.add_argument(
+        "--no-rerank",
+        action="store_true",
+        help=(
+            "Skip the 4th arm (Stack C + cross-encoder reranker, ADR-0019). The "
+            "reranker runs by default; a REAL run needs the optional dependency "
+            "(`uv sync --group rerank`), an offline run uses a deterministic fake."
+        ),
+    )
     args = parser.parse_args(argv)
     load_dotenv(
         find_dotenv(usecwd=True)
@@ -240,6 +271,7 @@ def main(argv: list[str] | None = None) -> int:
             report_path=report_path,
             charts_dir=charts_dir,
             header=header,
+            with_rerank=not args.no_rerank,
         )
     except JudgeUnavailableError as exc:
         # Opt-in Spot-check fail-fast: a clear one-line message + non-zero exit,

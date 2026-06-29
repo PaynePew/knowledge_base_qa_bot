@@ -357,3 +357,86 @@ def test_dense_arm_clears_hit_exceeds_ceiling(monkeypatch):
     """A hit beyond the non-None ceiling does not clear (distance > ceiling)."""
     monkeypatch.setattr(dense_gate_module, "_max_rag_distance", lambda: 1.1)
     assert retrieval._dense_arm_clears(5.0) is False
+
+
+# ===========================================================================
+# #310 / ADR-0019 — the optional cross-encoder reranker, wired behind the flag
+#
+# The reranker is a precision step layered AFTER fusion. These tests exercise the
+# wiring in retrieve_and_gate with a deterministic fake cross-encoder (no torch,
+# no model): flag-off must be byte-identical to plain RRF; flag-on must reorder
+# the DEEP fused pool then truncate to top_k; and the OR-gate must be unaffected.
+# ===========================================================================
+class _PinEncoder:
+    """Fake cross-encoder pinning any passage containing ``pin`` to the top."""
+
+    def __init__(self, pin: str) -> None:
+        self.pin = pin
+
+    def predict(self, pairs):
+        return [1.0 if self.pin in passage else 0.0 for _query, passage in pairs]
+
+
+class _CountingEncoder:
+    """Fake cross-encoder that records how many candidates it was asked to score."""
+
+    def __init__(self) -> None:
+        self.n_pairs = 0
+
+    def predict(self, pairs):
+        pairs = list(pairs)
+        self.n_pairs = len(pairs)
+        return [0.0] * len(pairs)
+
+
+def test_rerank_off_by_default_is_plain_fusion(wired_corpus, monkeypatch):
+    """Flag off (the default) → the reranker is never invoked; result == plain RRF."""
+    invoked = []
+    monkeypatch.setattr(retrieval.rerank, "is_enabled", lambda: False)
+    monkeypatch.setattr(
+        retrieval.rerank, "rerank", lambda *a, **k: invoked.append(1) or []
+    )
+    result = retrieval.retrieve_and_gate("how long do refunds take")
+    assert invoked == [], "reranker must not run when the flag is off"
+    assert result["sections"], "plain fusion still returns Sections"
+
+
+def test_rerank_on_reorders_fused_pool_without_touching_gate(wired_corpus, monkeypatch):
+    """Flag on → the cross-encoder reorders the pool; the OR-gate verdict is unchanged.
+
+    The fake pins the off-topic Privacy Section to the front, so a pass proves the
+    reranker (not RRF) decided the final order — and the grounding_outcome is
+    identical to the flag-off run, proving rerank never feeds the gate (ADR-0019).
+    """
+    query = "how long do refunds take"
+    off = retrieval.retrieve_and_gate(query)
+    assert off["sections"][0].id != "privacy-policy#privacy-policy"
+
+    monkeypatch.setattr(retrieval.rerank, "is_enabled", lambda: True)
+    monkeypatch.setattr(
+        retrieval.rerank, "get_cross_encoder", lambda: _PinEncoder("Privacy")
+    )
+    on = retrieval.retrieve_and_gate(query)
+
+    assert on["sections"][0].id == "privacy-policy#privacy-policy", "rerank reordered"
+    assert len(on["sections"]) <= retrieval.DEFAULT_TOP_K
+    assert on["grounding_outcome"] == off["grounding_outcome"], (
+        "gate unaffected by rerank"
+    )
+
+
+def test_rerank_scores_deep_pool_before_the_top_k_cut(wired_corpus, monkeypatch):
+    """The reranker re-scores MORE than top_k candidates (placement before the cut).
+
+    'policy' matches all four corpus Sections, so the deep fused pool exceeds
+    top_k=2; the reranker must be handed that deep pool (ADR-0019 placement:
+    rerank the fused pool, THEN truncate), not just the final two.
+    """
+    enc = _CountingEncoder()
+    monkeypatch.setattr(retrieval.rerank, "is_enabled", lambda: True)
+    monkeypatch.setattr(retrieval.rerank, "get_cross_encoder", lambda: enc)
+
+    result = retrieval.retrieve_and_gate("policy", top_k=2, rerank_depth=20)
+
+    assert enc.n_pairs > 2, "reranker must score the deep pool, not just top_k"
+    assert len(result["sections"]) == 2, "result is still truncated to top_k"

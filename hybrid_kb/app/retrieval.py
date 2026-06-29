@@ -69,6 +69,7 @@ from markdown_kb.app.grounding import GroundingOutcome
 from markdown_kb.app.indexer import Section, detect_lang
 
 from . import dense_index
+from . import rerank
 
 __all__ = [
     "retrieve_and_gate",
@@ -225,6 +226,7 @@ def retrieve_and_gate(
     *,
     candidate_depth: int = DEFAULT_CANDIDATE_DEPTH,
     top_k: int = DEFAULT_TOP_K,
+    rerank_depth: int = rerank.DEFAULT_RERANK_DEPTH,
 ) -> dict:
     """Hybrid retrieval core: overfetch both arms, apply the OR-gate, fuse.
 
@@ -240,6 +242,12 @@ def retrieve_and_gate(
       3. Apply the pre-LLM OR-gate on each arm's NATIVE top score BEFORE fusion
          (BM25 top score / dense minimum distance).
       4. Fuse the two ranked lists with RRF (K=60) and truncate to ``top_k``.
+      4b. OPTIONAL precision step (ADR-0019, ``KB_HYBRID_RERANK``, default off):
+         when the reranker is enabled, RRF instead emits a DEEP fused pool
+         (``rerank_depth``, default 20), a cross-encoder reorders that pool, and
+         the result is truncated to ``top_k``. The OR-gate in step 3 is UNCHANGED
+         — it ran on each arm's native pre-fusion score and never sees the
+         reranker; RRF still builds the pool, the reranker only reorders it.
 
     Returns a dict (mirroring the ``_retrieve_and_gate`` shape the Wiki/RAG
     stacks expose, so the S3 ``query()`` can compose it the same way):
@@ -268,13 +276,23 @@ def retrieve_and_gate(
 
     outcome = evaluate_or_gate(bm25_top_score, dense_best_distance, lang)
 
-    fused = reciprocal_rank_fusion(
-        [section for section, _ in bm25_ranked],
-        [section for section, _ in dense_ranked],
-        k=RRF_K,
-        top_k=top_k,
-    )
-    sections = [section for section, _ in fused]
+    bm25_pool = [section for section, _ in bm25_ranked]
+    dense_pool = [section for section, _ in dense_ranked]
+
+    if rerank.is_enabled():
+        # Precision step (ADR-0019): fuse to a DEEP pool, rerank it with the
+        # cross-encoder, then truncate to the final top_k. RRF still builds the
+        # candidate pool (recall-union); the reranker only reorders it. The gate
+        # above is unaffected — it ran on each arm's native pre-fusion score.
+        deep_fused = reciprocal_rank_fusion(
+            bm25_pool, dense_pool, k=RRF_K, top_k=rerank_depth
+        )
+        sections = rerank.rerank(
+            question, [section for section, _ in deep_fused], top_n=top_k
+        )
+    else:
+        fused = reciprocal_rank_fusion(bm25_pool, dense_pool, k=RRF_K, top_k=top_k)
+        sections = [section for section, _ in fused]
 
     return {
         "sections": sections,

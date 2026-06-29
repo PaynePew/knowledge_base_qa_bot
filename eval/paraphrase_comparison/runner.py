@@ -22,6 +22,7 @@ never read or written.
 from __future__ import annotations
 
 import tempfile
+import time
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -223,6 +224,35 @@ class ThreeArmScoring:
     sweep: tuple[SweepScores, SweepScores, SweepScores]
     core_stats: CoreStats
     three_arm: ThreeArmStats
+
+
+@dataclass(frozen=True)
+class RerankComparison:
+    """Focused within-Hybrid paired comparison: Stack C vs Stack C + rerank (ADR-0019).
+
+    The 4th arm is NOT folded into the three-arm Cochran's Q omnibus (which stays
+    A/B/C); the reranker question is a paired *within-Hybrid* contrast, so it is
+    reported as Stack C and Stack C+rerank side by side plus a single paired
+    McNemar (#310 / ADR-0019 methodology choice).
+
+    ``primary_c`` / ``primary_d`` — StackScores at the primary cutoff (per-type
+    table). ``sweep_c`` / ``sweep_d`` — the cutoff sweep for each. ``paired_*`` —
+    the paired exact McNemar over the pooled Core set at ``paired_cutoff``
+    (``paired_b`` = C-hit/D-miss, ``paired_c`` = C-miss/D-hit). ``mean_added_latency_ms``
+    — mean per-query cross-encoder time (model load excluded), measured on the dev
+    box, NOT the bulkheaded VPS tenant. ``n_queries`` — Paraphrases scored.
+    """
+
+    primary_c: StackScores
+    primary_d: StackScores
+    sweep_c: SweepScores
+    sweep_d: SweepScores
+    paired_cutoff: int
+    paired_b: int
+    paired_c: int
+    paired_mcnemar_p: float
+    mean_added_latency_ms: float
+    n_queries: int
 
 
 # ---------------------------------------------------------------------------
@@ -442,6 +472,115 @@ def _compute_three_arm_stats(
 
 
 # ---------------------------------------------------------------------------
+# Reranker arm (Stack C vs Stack C + rerank) — focused paired scoring (ADR-0019)
+# ---------------------------------------------------------------------------
+def score_rerank_comparison(
+    paraphrases: list[Paraphrase],
+    retrieve_c: StackRetrieval,
+    retrieve_d: StackRetrieval,
+    *,
+    cutoffs: tuple[int, ...] = SWEEP_CUTOFFS,
+    primary_cutoff: int = PRIMARY_CUTOFF,
+    deep_pool: int = DEEP_POOL,
+) -> RerankComparison:
+    """Score Stack C and Stack C+rerank over one aligned pass and time the rerank.
+
+    The two arms are scored on the SAME Paraphrases in lockstep so the paired
+    McNemar (C vs C+rerank) at ``primary_cutoff`` is genuinely paired. The
+    cross-encoder is warmed once before the timed loop so ``mean_added_latency_ms``
+    reflects steady-state per-query inference, not the one-off model load. The
+    added latency is ``time(D.retrieve) - time(C.retrieve)`` per query — i.e. the
+    rerank step's marginal cost over plain fusion (ADR-0019).
+    """
+    if paraphrases:
+        retrieve_d(paraphrases[0].text, deep_pool)  # warm the model (untimed)
+
+    hit_c = {c: defaultdict(list) for c in cutoffs}
+    rr_c = {c: defaultdict(list) for c in cutoffs}
+    hit_d = {c: defaultdict(list) for c in cutoffs}
+    rr_d = {c: defaultdict(list) for c in cutoffs}
+    n_by_type: dict[str, int] = defaultdict(int)
+    paired_c: dict[str, list[int]] = defaultdict(list)
+    paired_d: dict[str, list[int]] = defaultdict(list)
+    added_latencies: list[float] = []
+
+    for para in paraphrases:
+        ptype = para.paraphrase_type
+        gold = para.gold_docs_section_id
+        key_tokens = sorted(para.key_tokens)
+        n_by_type[ptype] += 1
+
+        t0 = time.perf_counter()
+        items_c = retrieve_c(para.text, deep_pool)
+        t1 = time.perf_counter()
+        items_d = retrieve_d(para.text, deep_pool)
+        t2 = time.perf_counter()
+        added_latencies.append(max(0.0, (t2 - t1) - (t1 - t0)))
+
+        for cutoff in cutoffs:
+            hit_c[cutoff][ptype].append(hit_at_k(items_c, gold, key_tokens, k=cutoff))
+            rr_c[cutoff][ptype].append(
+                reciprocal_rank_at_k(items_c, gold, key_tokens, k=cutoff)
+            )
+            hit_d[cutoff][ptype].append(hit_at_k(items_d, gold, key_tokens, k=cutoff))
+            rr_d[cutoff][ptype].append(
+                reciprocal_rank_at_k(items_d, gold, key_tokens, k=cutoff)
+            )
+        if ptype in CORE_PARAPHRASE_TYPES:
+            paired_c[ptype].append(
+                int(hit_at_k(items_c, gold, key_tokens, k=primary_cutoff))
+            )
+            paired_d[ptype].append(
+                int(hit_at_k(items_d, gold, key_tokens, k=primary_cutoff))
+            )
+
+    def _primary(name, hit_acc, rr_acc) -> StackScores:
+        return StackScores(
+            stack=name,
+            k=primary_cutoff,
+            by_type={t: _mean(v) for t, v in hit_acc[primary_cutoff].items()},
+            mrr_by_type={t: _mean(v) for t, v in rr_acc[primary_cutoff].items()},
+            n_by_type=dict(n_by_type),
+        )
+
+    def _sweep(name, hit_acc, rr_acc) -> SweepScores:
+        return SweepScores(
+            stack=name,
+            cutoffs=cutoffs,
+            hit_by_cutoff={
+                c: {t: _mean(v) for t, v in hit_acc[c].items()} for c in cutoffs
+            },
+            mrr_by_cutoff={
+                c: {t: _mean(v) for t, v in rr_acc[c].items()} for c in cutoffs
+            },
+            n_by_type=dict(n_by_type),
+        )
+
+    core_types = [t for t in CORE_PARAPHRASE_TYPES if t in paired_c]
+    c_pool = [hit for t in core_types for hit in paired_c[t]]
+    d_pool = [hit for t in core_types for hit in paired_d[t]]
+    b = sum(1 for x, y in zip(c_pool, d_pool) if x == 1 and y == 0)
+    c = sum(1 for x, y in zip(c_pool, d_pool) if x == 0 and y == 1)
+
+    return RerankComparison(
+        primary_c=_primary("Stack C", hit_c, rr_c),
+        primary_d=_primary("Stack C + rerank", hit_d, rr_d),
+        sweep_c=_sweep("Stack C", hit_c, rr_c),
+        sweep_d=_sweep("Stack C + rerank", hit_d, rr_d),
+        paired_cutoff=primary_cutoff,
+        paired_b=b,
+        paired_c=c,
+        paired_mcnemar_p=mcnemar_exact_p(b, c),
+        mean_added_latency_ms=(
+            1000.0 * sum(added_latencies) / len(added_latencies)
+            if added_latencies
+            else 0.0
+        ),
+        n_queries=sum(n_by_type.values()),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Report rendering
 # ---------------------------------------------------------------------------
 def render_report(
@@ -455,6 +594,7 @@ def render_report(
     stack_c: StackScores | None = None,
     sweep: tuple[SweepScores, SweepScores, SweepScores] | None = None,
     three_arm: ThreeArmStats | None = None,
+    rerank_comparison: RerankComparison | None = None,
     header: str | None = None,
 ) -> str:
     """Render the full ``report.md`` deliverable for the retrieval comparison.
@@ -465,8 +605,9 @@ def render_report(
     MRR + Δ + expected + n, then the three-arm Cochran's Q omnibus + post-hoc
     pairwise McNemar, then the legacy A-vs-B McNemar / Wilson CI / Holm, then a
     Core macro-average WITH a caveat) → Structural Probes (separate table) →
-    Spot-check Validation (only when ``--judge`` was run) → Limitations → Interview
-    Talking Points appendix.
+    Reranker Evaluation (only when ``rerank_comparison`` is supplied — the focused
+    Stack C vs Stack C+rerank paired comparison, ADR-0019) → Spot-check Validation
+    (only when ``--judge`` was run) → Limitations → Interview Talking Points appendix.
 
     ``embedding_mode`` annotates how the dense vectors were produced ("real"
     OpenAI embeddings vs a "fake" deterministic offline stand-in) so a reader
@@ -520,6 +661,7 @@ def render_report(
             with_macro_average=False,
             stack_c=stack_c,
         ),
+        _render_rerank_section(rerank_comparison, offline),
         _render_spotcheck(spotcheck),
         _render_limitations(offline, judged),
         _render_talking_points(),
@@ -956,6 +1098,133 @@ def _embed_family_charts(section_title: str, chart_files: list[Path]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Reranker section (Stack C vs Stack C + rerank) — ADR-0019 / #310
+# ---------------------------------------------------------------------------
+def _render_rerank_section(
+    comparison: RerankComparison | None, offline: bool = False
+) -> str:
+    """Render the focused Stack C vs Stack C + rerank section (ADR-0019, #310).
+
+    A self-contained within-Hybrid paired comparison appended after the Structural
+    Probes: the cutoff sweep and per-type tables put Stack C and Stack C+rerank
+    side by side, then one paired McNemar (C vs C+rerank), the measured per-query
+    added latency, and an auto gate check (a probe lift AND no Core hit@k
+    regression). The three-arm Cochran's Q omnibus above is intentionally left as
+    A/B/C — the reranker is a within-Hybrid contrast, not a 4th symmetric arm.
+    Returns "" when no rerank arm was scored (the default 3-arm report).
+    """
+    if comparison is None:
+        return ""
+    c, d = comparison.primary_c, comparison.primary_d
+    k = comparison.paired_cutoff
+    offline_note = (
+        " ⚠️ OFFLINE: the cross-encoder is a deterministic stand-in here, NOT the "
+        "real `bge-reranker-v2-m3`, so these reranker numbers are tracer-only."
+        if offline
+        else ""
+    )
+
+    lines = [
+        "## Reranker Evaluation (Stack C → Stack C + rerank)",
+        "",
+        "The optional cross-encoder **reranker** (ADR-0019, `KB_HYBRID_RERANK`, "
+        "default-off, eval-only) re-scores Stack C's RRF-fused pool and reorders it "
+        "before the final top-k cut — the FM2 precision step RRF (a recall-union "
+        "step) cannot do. This is a **focused within-Hybrid paired comparison** "
+        "(Stack C vs Stack C + rerank on the SAME Paraphrases); the three-arm "
+        f"Cochran's Q omnibus above stays A/B/C. Ship gate (ADR-0019): a "
+        f"Structural-probe lift **AND** no Core hit@{k} regression." + offline_note,
+        "",
+        "### Cutoff Sweep (Core macro-average)",
+        "",
+        "| Cutoff | hit (C) | hit (C+rerank) | MRR (C) | MRR (C+rerank) |",
+        "|---|---|---|---|---|",
+    ]
+    for cutoff in comparison.sweep_c.cutoffs:
+        hc = _macro_average(
+            comparison.sweep_c.hit_by_cutoff[cutoff], CORE_PARAPHRASE_TYPES
+        )
+        hd = _macro_average(
+            comparison.sweep_d.hit_by_cutoff[cutoff], CORE_PARAPHRASE_TYPES
+        )
+        mc = _macro_average(
+            comparison.sweep_c.mrr_by_cutoff[cutoff], CORE_PARAPHRASE_TYPES
+        )
+        md = _macro_average(
+            comparison.sweep_d.mrr_by_cutoff[cutoff], CORE_PARAPHRASE_TYPES
+        )
+        lines.append(f"| hit@{cutoff} | {hc:.3f} | {hd:.3f} | {mc:.3f} | {md:.3f} |")
+
+    lines += [
+        "",
+        f"### Core Comparison (per type, hit@{k})",
+        "",
+        f"| Paraphrase Type | hit@{k} (C) | hit@{k} (C+rerank) | Δ (rerank) | "
+        "MRR (C) | MRR (C+rerank) | n |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for ptype in CORE_PARAPHRASE_TYPES:
+        if ptype not in c.by_type and ptype not in d.by_type:
+            continue
+        hc, hd = c.by_type.get(ptype, 0.0), d.by_type.get(ptype, 0.0)
+        mc, md = c.mrr_by_type.get(ptype, 0.0), d.mrr_by_type.get(ptype, 0.0)
+        n = c.n_by_type.get(ptype, d.n_by_type.get(ptype, 0))
+        lines.append(
+            f"| {ptype} | {hc:.3f} | {hd:.3f} | {hd - hc:+.3f} | "
+            f"{mc:.3f} | {md:.3f} | {n} |"
+        )
+    core_c = _macro_average(c.by_type, CORE_PARAPHRASE_TYPES)
+    core_d = _macro_average(d.by_type, CORE_PARAPHRASE_TYPES)
+    lines += [
+        "",
+        f"**Core macro-average** hit@{k}: Stack C **{core_c:.3f}** → "
+        f"Stack C+rerank **{core_d:.3f}** (Δ {core_d - core_c:+.3f}).",
+        "",
+        f"### Structural Probes (per type, hit@{k})",
+        "",
+        f"| Paraphrase Type | hit@{k} (C) | hit@{k} (C+rerank) | Δ (rerank) |",
+        "|---|---|---|---|",
+    ]
+    probe_deltas: list[float] = []
+    for ptype in PROBE_PARAPHRASE_TYPES:
+        if ptype not in c.by_type and ptype not in d.by_type:
+            continue
+        hc, hd = c.by_type.get(ptype, 0.0), d.by_type.get(ptype, 0.0)
+        probe_deltas.append(hd - hc)
+        lines.append(f"| {ptype} | {hc:.3f} | {hd:.3f} | {hd - hc:+.3f} |")
+
+    lines += [
+        "",
+        "### Paired test + cost",
+        "",
+        f"Paired exact McNemar on the pooled Core set at hit@{k} (Stack C vs "
+        f"Stack C+rerank, the SAME Paraphrases): b (C-hit, rerank-miss) = "
+        f"{comparison.paired_b}, c (C-miss, rerank-hit) = {comparison.paired_c}, "
+        f"p = **{comparison.paired_mcnemar_p:.4f}**.",
+        "",
+        f"Mean added latency: **{comparison.mean_added_latency_ms:.1f} ms/query** "
+        "(cross-encoder inference over the fused pool; one-off model load excluded; "
+        "measured on the dev box — NOT the 512m VPS tenant, where the reranker is "
+        "never loaded, ADR-0019).",
+    ]
+
+    any_probe_up = any(x > 0 for x in probe_deltas)
+    no_probe_down = all(x >= 0 for x in probe_deltas)
+    core_ok = core_d >= core_c
+    verdict = "MET" if (any_probe_up and no_probe_down and core_ok) else "NOT MET"
+    deltas_str = ", ".join(f"{x:+.3f}" for x in probe_deltas) or "n/a"
+    lines += [
+        "",
+        f"> **Gate check (ADR-0019): {verdict}.** Probe lift: "
+        f"{'yes' if (any_probe_up and no_probe_down) else 'no'} (Δ {deltas_str}); "
+        f"Core hit@{k} regression: {'none' if core_ok else 'YES'} "
+        f"(Δ {core_d - core_c:+.3f}). The flip-on / README decision is the owner's "
+        "call against these numbers — the reranker ships off in v1 regardless.",
+    ]
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # Spot-check (L2) section
 # ---------------------------------------------------------------------------
 def _render_spotcheck(spotcheck: SpotcheckResult | None) -> str:
@@ -1164,6 +1433,7 @@ def run_comparison(
     charts_dir: Path | None = None,
     judge: JudgeConfig | None = None,
     header: str | None = None,
+    with_rerank: bool = False,
 ) -> tuple[StackScores, StackScores]:
     """Index both Stacks over the eval fixtures, score them, render charts + report.md.
 
@@ -1188,7 +1458,9 @@ def run_comparison(
     charts_dir = charts_dir or (report_path.parent / "charts")
     paraphrases = load_paraphrases()
     metadata = load_metadata()
-    scoring, spotcheck = _run_scored(paraphrases, k, judge)
+    scoring, spotcheck, rerank_comparison = _run_scored(
+        paraphrases, k, judge, with_rerank
+    )
     stack_a, stack_b, stack_c = scoring.primary
     chart_files = charts.render_charts(
         stack_a, stack_b, charts_dir=charts_dir, stack_c=stack_c
@@ -1206,6 +1478,7 @@ def run_comparison(
             stack_c=stack_c,
             sweep=scoring.sweep,
             three_arm=scoring.three_arm,
+            rerank_comparison=rerank_comparison,
             header=header,
         ),
     )
@@ -1213,8 +1486,11 @@ def run_comparison(
 
 
 def _run_scored(
-    paraphrases: list[Paraphrase], k: int, judge: JudgeConfig | None = None
-) -> tuple[ThreeArmScoring, SpotcheckResult | None]:
+    paraphrases: list[Paraphrase],
+    k: int,
+    judge: JudgeConfig | None = None,
+    with_rerank: bool = False,
+) -> tuple[ThreeArmScoring, SpotcheckResult | None, RerankComparison | None]:
     """Build all three indexes under production isolation, then score every arm.
 
     Uses ``score_three_arms`` so the cutoff-sweep, the per-type table, the
@@ -1224,6 +1500,13 @@ def _run_scored(
     after ``index_stack_a``) so dense ids align 1:1 with BM25 ids. When ``judge``
     is set, the opt-in L2 Spot-check (A vs B) runs here too — inside the same
     isolation context and against the same in-process callables.
+
+    When ``with_rerank`` is set, the focused 4th-arm comparison (Stack C vs Stack
+    C+rerank, ADR-0019) is scored INSIDE the same isolation context — it reuses
+    the already-built BM25 + dense indexes, so it must run before they are torn
+    down. The reranker uses the real ``bge-reranker-v2-m3`` on a real run (requires
+    the optional ``rerank`` dependency); an offline run installs a fake
+    cross-encoder first (CLI ``_install_fake_embeddings``).
     """
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
@@ -1237,6 +1520,13 @@ def _run_scored(
             stacks.stack_b_retrieval,
             stacks.stack_c_retrieval,
         )
+        rerank_comparison = None
+        if with_rerank:
+            rerank_comparison = score_rerank_comparison(
+                paraphrases,
+                stacks.stack_c_retrieval,
+                stacks.stack_c_rerank_retrieval,
+            )
         spotcheck = None
         if judge is not None:
             spotcheck = run_spotcheck(
@@ -1249,7 +1539,7 @@ def _run_scored(
                 marginal_threshold=judge.marginal_threshold,
                 control_sample_size=judge.control_sample_size,
             )
-    return scoring, spotcheck
+    return scoring, spotcheck, rerank_comparison
 
 
 def _isolate_production_paths(tmp_path: Path) -> None:

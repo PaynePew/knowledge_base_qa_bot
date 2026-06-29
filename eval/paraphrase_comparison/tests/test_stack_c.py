@@ -80,3 +80,53 @@ def test_stack_c_dense_arm_built_from_bm25_section_list(fake_dense_embeddings):
     # One dense embedding per BM25 wiki Section — same-corpus invariant (ADR-0018).
     assert n == len(mk_indexer.sections)
     assert hk_dense.sections_indexed == n
+
+
+# ---------------------------------------------------------------------------
+# Stack C + rerank (the 4th arm) — ADR-0019 / #310
+# ---------------------------------------------------------------------------
+def test_stack_c_rerank_returns_docs_id_items(
+    fake_dense_embeddings, fake_cross_encoder
+):
+    """The reranked arm returns RetrievedItems resolved to docs Gold Section ids."""
+    _index_both_arms()
+    para = next(p for p in load_paraphrases() if p.paraphrase_type == "synonym_swap")
+    items = stacks.stack_c_rerank_retrieval(para.text, k=3)
+
+    assert items, "an in-scope query must rerank to at least one Section"
+    for item in items:
+        assert isinstance(item, RetrievedItem)
+        assert item.source_section_id.split("#")[0].endswith(".md")
+
+
+def test_stack_c_rerank_truncates_to_cutoff_k(
+    fake_dense_embeddings, fake_cross_encoder
+):
+    """The reranked output is truncated to the final cutoff ``k`` (not rerank_depth)."""
+    _index_both_arms()
+    para = next(p for p in load_paraphrases() if p.paraphrase_type == "synonym_swap")
+    assert len(stacks.stack_c_rerank_retrieval(para.text, k=3)) <= 3
+    assert len(stacks.stack_c_rerank_retrieval(para.text, k=1)) <= 1
+
+
+def test_stack_c_rerank_introduces_no_ids_beyond_the_fused_pool(
+    fake_dense_embeddings, fake_cross_encoder
+):
+    """Rerank only reorders + truncates — every reranked id is in the fused pool.
+
+    The rerank arm fuses to a deep pool then reorders; it must never surface an id
+    the plain fusion could not (1:1 id alignment, ADR-0018/0019). Asserting the
+    reranked id set ⊆ a deeper plain-C fusion encodes that invariant.
+    """
+    _index_both_arms()
+    para = next(p for p in load_paraphrases() if p.paraphrase_type == "synonym_swap")
+    deep_plain = {
+        it.source_section_id
+        for it in stacks.stack_c_retrieval(para.text, k=20, candidate_depth=50)
+    }
+    reranked = {
+        it.source_section_id
+        for it in stacks.stack_c_rerank_retrieval(para.text, k=3, candidate_depth=50)
+    }
+    assert reranked, "rerank arm returns Sections"
+    assert reranked <= deep_plain, "rerank must not invent ids outside the fused pool"

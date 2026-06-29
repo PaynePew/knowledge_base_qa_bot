@@ -24,6 +24,7 @@ from langchain_core.embeddings import Embeddings
 
 import hybrid_kb.app.dense_index as hk_dense
 import hybrid_kb.app.logger as hk_logger
+import hybrid_kb.app.rerank as hk_rerank
 import markdown_kb.app.indexer as mk_indexer
 import markdown_kb.app.logger as mk_logger
 import vector_rag.app.indexer as vr_indexer
@@ -121,6 +122,27 @@ def fake_vector_index(monkeypatch):
     )
     yield
     vr_indexer.vectorstore = None
+
+
+@pytest.fixture()
+def fake_cross_encoder(monkeypatch):
+    """Swap hybrid_kb's rerank cross-encoder for a deterministic token-overlap fake.
+
+    Mirrors ``fake_dense_embeddings``: the heavy model leaf (``get_cross_encoder``)
+    is faked so the 4th-arm (Stack C + rerank, ADR-0019) reorder logic runs offline
+    with no torch and no ~2.3 GB model download. Scores each (query, passage) pair
+    by shared-token count via the language-aware ``tokenize`` (Latin words + CJK
+    bigrams), the same signal the offline dense fakes use. NOT autouse — only the
+    rerank-arm tests opt in; other tests never touch the reranker.
+    """
+
+    class _FakeCrossEncoder:
+        def predict(self, pairs):
+            return [float(len(set(tokenize(q)) & set(tokenize(p)))) for q, p in pairs]
+
+    enc = _FakeCrossEncoder()
+    monkeypatch.setattr(hk_rerank, "get_cross_encoder", lambda: enc)
+    return enc
 
 
 @pytest.fixture(autouse=True)
