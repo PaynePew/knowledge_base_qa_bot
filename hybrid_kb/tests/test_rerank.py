@@ -165,8 +165,9 @@ def test_rerank_real_model_promotes_relevant_passage_en_and_zh():
     """The real ``bge-reranker-v2-m3`` ranks a relevant passage above an irrelevant one.
 
     Exercises the actual model load + scoring bilingually (the corpus is EN+ZH),
-    the one live smoke a new model-backed surface earns (CODING_STANDARD §6.4).
-    Opt-in: skipped unless ``-m live`` AND the optional ``rerank`` dep is synced.
+    the one live smoke a new model-backed surface earns (CODING_STANDARD §6.4;
+    the eval-only reranker surface is authorized by ADR-0019). Opt-in: skipped
+    unless ``-m live`` AND the optional ``rerank`` dependency group is synced.
     """
     pytest.importorskip("sentence_transformers")
     rerank._cross_encoder = None

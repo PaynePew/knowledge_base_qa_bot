@@ -284,8 +284,11 @@ def retrieve_and_gate(
         # cross-encoder, then truncate to the final top_k. RRF still builds the
         # candidate pool (recall-union); the reranker only reorders it. The gate
         # above is unaffected — it ran on each arm's native pre-fusion score.
+        # ``max(rerank_depth, top_k)`` keeps the pool at least as deep as the final
+        # cut, so the reranked result can always fill top_k even if a caller passes
+        # rerank_depth < top_k (the flag-off path's cardinality contract).
         deep_fused = reciprocal_rank_fusion(
-            bm25_pool, dense_pool, k=RRF_K, top_k=rerank_depth
+            bm25_pool, dense_pool, k=RRF_K, top_k=max(rerank_depth, top_k)
         )
         sections = rerank.rerank(
             question, [section for section, _ in deep_fused], top_n=top_k

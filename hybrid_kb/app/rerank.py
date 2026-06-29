@@ -34,8 +34,14 @@ from __future__ import annotations
 
 import os
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 from markdown_kb.app.indexer import Section
+
+from . import dense_index
+
+if TYPE_CHECKING:  # import only for the type-checker — never at runtime (optional dep)
+    from sentence_transformers import CrossEncoder
 
 __all__ = [
     "rerank",
@@ -86,7 +92,7 @@ def is_enabled() -> bool:
     return os.getenv(RERANK_ENABLED_ENV, "").strip().lower() in _TRUTHY
 
 
-def get_cross_encoder():
+def get_cross_encoder() -> CrossEncoder:
     """Return the lazily-constructed cross-encoder (the single mockable seam).
 
     Imports ``sentence-transformers`` only HERE — never at module import — so the
@@ -114,26 +120,6 @@ def get_cross_encoder():
 
 
 # ---------------------------------------------------------------------------
-# Passage text (mirrors the dense arm's embed text for scoring consistency)
-# ---------------------------------------------------------------------------
-def _passage_text(section: Section) -> str:
-    """Return the text scored for one Section — its heading-path breadcrumb + body.
-
-    Mirrors ``dense_index._embed_text``: composing the breadcrumb with the body
-    gives a short/heading-only Section a non-empty, meaningful passage and keeps
-    the reranker scoring the SAME signal the dense arm embeds. Never empty —
-    every wiki Section carries at least a heading.
-    """
-    breadcrumb = (
-        " > ".join(section.heading_path) if section.heading_path else section.heading
-    )
-    body = section.content.strip()
-    if body and breadcrumb:
-        return f"{breadcrumb}\n{body}"
-    return body or breadcrumb or section.id
-
-
-# ---------------------------------------------------------------------------
 # Rerank — re-score (query, Section) pairs with the cross-encoder, reorder, cut
 # ---------------------------------------------------------------------------
 def rerank(query: str, candidates: Sequence[Section], top_n: int) -> list[Section]:
@@ -153,7 +139,10 @@ def rerank(query: str, candidates: Sequence[Section], top_n: int) -> list[Sectio
     if not candidates:
         return []
     encoder = get_cross_encoder()
-    pairs = [[query, _passage_text(section)] for section in candidates]
+    # Score the SAME passage text the dense arm embeds (``dense_index._embed_text``,
+    # reused — NOT re-implemented) so the reranker re-scores exactly the signal RRF
+    # fused: heading-path breadcrumb + body, never empty (ADR-0019).
+    pairs = [[query, dense_index._embed_text(section)] for section in candidates]
     scores = encoder.predict(pairs)
     ranked = sorted(
         zip(candidates, scores),

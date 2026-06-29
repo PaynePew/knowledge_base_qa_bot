@@ -215,12 +215,27 @@ def stack_c_retrieval(
     indexed (``index_stack_a`` + ``index_stack_c``).
     """
     file_to_gold = _wiki_slug_to_gold_section()
+    fused = _fused_wiki_sections(query, candidate_depth=candidate_depth, top_k=k)
+    return [_wiki_section_to_item(section, file_to_gold) for section in fused]
+
+
+def _fused_wiki_sections(
+    query: str, *, candidate_depth: int, top_k: int
+) -> list[Section]:
+    """Overfetch both arms and RRF-fuse to ``top_k`` wiki Sections — Stack C's pool.
+
+    The fusion prefix shared by :func:`stack_c_retrieval` and
+    :func:`stack_c_rerank_retrieval` so the two arms can never de-align on
+    ``candidate_depth`` / ``RRF_K`` / overfetch: the paired comparison must
+    measure *+rerank* as the single variable (ADR-0019). Returns the fused
+    ``Section`` list (RRF order), top_k-truncated.
+    """
     bm25_ranked: list[Section] = [
         section for section, _score in mk_indexer.search(query, k=candidate_depth)
     ]
     dense_ranked: list[Section] = hk_dense.search(query, k=candidate_depth)
-    fused = reciprocal_rank_fusion(bm25_ranked, dense_ranked, k=RRF_K, top_k=k)
-    return [_wiki_section_to_item(section, file_to_gold) for section, _score in fused]
+    fused = reciprocal_rank_fusion(bm25_ranked, dense_ranked, k=RRF_K, top_k=top_k)
+    return [section for section, _score in fused]
 
 
 def stack_c_rerank_retrieval(
@@ -247,13 +262,8 @@ def stack_c_rerank_retrieval(
     Gold Section id exactly like Stack A / Stack C.
     """
     file_to_gold = _wiki_slug_to_gold_section()
-    bm25_ranked: list[Section] = [
-        section for section, _score in mk_indexer.search(query, k=candidate_depth)
-    ]
-    dense_ranked: list[Section] = hk_dense.search(query, k=candidate_depth)
-    fused = reciprocal_rank_fusion(
-        bm25_ranked, dense_ranked, k=RRF_K, top_k=rerank_depth
+    pool = _fused_wiki_sections(
+        query, candidate_depth=candidate_depth, top_k=rerank_depth
     )
-    pool = [section for section, _score in fused]
     reranked = hk_rerank.rerank(query, pool, top_n=k)
     return [_wiki_section_to_item(section, file_to_gold) for section in reranked]

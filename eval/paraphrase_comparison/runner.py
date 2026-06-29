@@ -344,6 +344,19 @@ def _mean(values: list[float]) -> float:
     return sum(values) / len(values) if values else 0.0
 
 
+def _discordant_bc(left: list[int], right: list[int]) -> tuple[int, int]:
+    """McNemar discordant pair counts over two aligned 0/1 hit vectors.
+
+    ``b`` = left-hit / right-miss, ``c`` = left-miss / right-hit — the only two
+    cells McNemar's exact test consumes. Shared by the three-arm post-hoc pairs
+    and the focused Stack C vs Stack C+rerank comparison so the b/c convention
+    can never drift between the two tables.
+    """
+    b = sum(1 for x, y in zip(left, right) if x == 1 and y == 0)
+    c = sum(1 for x, y in zip(left, right) if x == 0 and y == 1)
+    return b, c
+
+
 def score_three_arms(
     paraphrases: list[Paraphrase],
     retrieve_a: StackRetrieval,
@@ -452,9 +465,7 @@ def _compute_three_arm_stats(
     pair_bc: list[tuple[int, int]] = []
     pair_raw_p: list[float] = []
     for label, left, right in _POSTHOC_PAIRS:
-        x, y = hits[left], hits[right]
-        b = sum(1 for xi, yi in zip(x, y) if xi == 1 and yi == 0)
-        c = sum(1 for xi, yi in zip(x, y) if xi == 0 and yi == 1)
+        b, c = _discordant_bc(hits[left], hits[right])
         pair_labels.append(label)
         pair_bc.append((b, c))
         pair_raw_p.append(mcnemar_exact_p(b, c))
@@ -510,12 +521,20 @@ def score_rerank_comparison(
         key_tokens = sorted(para.key_tokens)
         n_by_type[ptype] += 1
 
+        # Run C and D adjacently per query: the paired McNemar needs C and D
+        # outcomes aligned on the SAME Paraphrase, and the added-latency baseline
+        # needs t(C) measured next to t(D). C is deterministic, so re-running it
+        # here reproduces score_three_arms' Stack C numbers exactly (the only real
+        # cost on a live run is a trivial extra query-embedding per Paraphrase).
         t0 = time.perf_counter()
         items_c = retrieve_c(para.text, deep_pool)
         t1 = time.perf_counter()
         items_d = retrieve_d(para.text, deep_pool)
         t2 = time.perf_counter()
-        added_latencies.append(max(0.0, (t2 - t1) - (t1 - t0)))
+        # Keep the raw (possibly negative) per-query delta — flooring each sample
+        # at 0 would convert symmetric scheduling/GC noise into a one-sided upward
+        # bias. Negative samples cancel positives; only the final MEAN is floored.
+        added_latencies.append((t2 - t1) - (t1 - t0))
 
         for cutoff in cutoffs:
             hit_c[cutoff][ptype].append(hit_at_k(items_c, gold, key_tokens, k=cutoff))
@@ -559,8 +578,7 @@ def score_rerank_comparison(
     core_types = [t for t in CORE_PARAPHRASE_TYPES if t in paired_c]
     c_pool = [hit for t in core_types for hit in paired_c[t]]
     d_pool = [hit for t in core_types for hit in paired_d[t]]
-    b = sum(1 for x, y in zip(c_pool, d_pool) if x == 1 and y == 0)
-    c = sum(1 for x, y in zip(c_pool, d_pool) if x == 0 and y == 1)
+    b, c = _discordant_bc(c_pool, d_pool)
 
     return RerankComparison(
         primary_c=_primary("Stack C", hit_c, rr_c),
@@ -572,7 +590,7 @@ def score_rerank_comparison(
         paired_c=c,
         paired_mcnemar_p=mcnemar_exact_p(b, c),
         mean_added_latency_ms=(
-            1000.0 * sum(added_latencies) / len(added_latencies)
+            max(0.0, 1000.0 * sum(added_latencies) / len(added_latencies))
             if added_latencies
             else 0.0
         ),
