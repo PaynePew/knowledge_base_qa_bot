@@ -22,9 +22,9 @@ flowchart TB
     CLI -. "single-turn, direct" .-> SEL
     MCP -. "single-turn, direct" .-> SEL
 
-    WIKI["<b>Wiki — Stack A</b><br/>BM25 over curated<br/>wiki/ Sections<br/>index: .kb/index.json"]:::wiki
-    HYB["<b>Hybrid — Stack C</b><br/>BM25 + dense over wiki/<br/>fused by RRF, K=60<br/>per-arm OR-gate<br/>index: .kb/hybrid_dense"]:::hybrid
-    RAG["<b>RAG — Stack B</b><br/>dense FAISS over<br/>docs/ Chunks<br/>index: .kb/faiss_index"]:::rag
+    WIKI["<b>Wiki — Stack A</b><br/>BM25 keyword search<br/>over curated wiki/ Sections<br/>index: .kb/index.json"]:::wiki
+    HYB["<b>Hybrid — Stack C</b><br/>two methods, one corpus (wiki/ Sections):<br/>BM25 keyword + dense vectors<br/>(the RAG technique, not the RAG stack)<br/>fused by RRF, K=60 · per-arm OR-gate<br/>index: .kb/hybrid_dense"]:::hybrid
+    RAG["<b>RAG — Stack B</b><br/>dense vector search (semantic)<br/>over docs/ Chunks, FAISS<br/>index: .kb/faiss_index"]:::rag
 
     SEL --> WIKI
     SEL --> HYB
