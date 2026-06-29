@@ -1,0 +1,43 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Segoe UI, Helvetica, Arial","fontSize":"15px"}, "flowchart":{"nodeSpacing":55,"rankSpacing":60}}}%%
+flowchart TB
+    classDef iface fill:#e7eefb,stroke:#3b5b8c,stroke-width:1.2px,color:#14233d;
+    classDef gw fill:#ece4f7,stroke:#6a3fb0,stroke-width:1.2px,color:#211043;
+    classDef sel fill:#f3f0fa,stroke:#6a3fb0,stroke-width:1.4px,color:#211043;
+    classDef wiki fill:#d7e6f5,stroke:#2f6fb0,stroke-width:1.6px,color:#0f2a44;
+    classDef hybrid fill:#d9efdd,stroke:#3a8c4f,stroke-width:1.6px,color:#123a1d;
+    classDef rag fill:#fbe4d4,stroke:#cf6a2c,stroke-width:1.6px,color:#46260f;
+    classDef shared fill:#fff3c9,stroke:#c4941a,stroke-width:1.6px,color:#3a2c05;
+    classDef ext fill:#f7dada,stroke:#b23b3b,stroke-width:1.2px,color:#3d1010;
+    classDef ans fill:#dcefe6,stroke:#1f9a63,stroke-width:1.8px,color:#0c3a26;
+
+    CLI["CLI — kb<br/>ask · index · ingest · lint"]:::iface
+    BR["Browser<br/>Reader and Operator Console"]:::iface
+    MCP["MCP server — kb_mcp<br/>11 kb_*_v1 tools"]:::iface
+
+    GW["FastAPI Gateway<br/>multi-turn query rewriting · session store<br/>prod guard: daily budget + concurrency caps"]:::gw
+    SEL{"Stack selector<br/>wiki · rag · hybrid"}:::sel
+
+    BR --> GW
+    GW --> SEL
+    CLI -. "single-turn, direct" .-> SEL
+    MCP -. "single-turn, direct" .-> SEL
+
+    WIKI["<b>Wiki — Stack A</b><br/>BM25 over curated<br/>wiki/ Sections<br/>index: .kb/index.json"]:::wiki
+    HYB["<b>Hybrid — Stack C</b><br/>BM25 + dense over wiki/<br/>fused by RRF, K=60<br/>per-arm OR-gate<br/>index: .kb/hybrid_dense"]:::hybrid
+    RAG["<b>RAG — Stack B</b><br/>dense FAISS over<br/>docs/ Chunks<br/>index: .kb/faiss_index"]:::rag
+
+    SEL --> WIKI
+    SEL --> HYB
+    SEL --> RAG
+
+    PIPE["<b>Shared grounded-answer pipeline</b> — one CitableContent contract, reused by all three stacks<br/>1 · pre-LLM Cannot-Confirm gate (per-stack thresholds)　　2 · LLM synthesis from cited Sections only<br/>3 · claim-level Grounding Check (second-pass verifier)　　4 · block &amp; replace · cite filename#heading"]:::shared
+
+    WIKI --> PIPE
+    HYB --> PIPE
+    RAG --> PIPE
+
+    OAI["OpenAI<br/>answer · verifier · embeddings"]:::ext
+    ANS["Grounded answer + clickable citations<br/>or “I cannot confirm from the knowledge base”"]:::ans
+
+    PIPE <-->|"draft · verify · embed"| OAI
+    PIPE --> ANS
