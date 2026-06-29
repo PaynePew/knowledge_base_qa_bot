@@ -102,6 +102,46 @@ The two hand-written probe types, each rigged to exercise a known architectural 
 ![probes_delta_hit_rate_at_3](charts/probes_delta_hit_rate_at_3.png)
 ![probes_mrr_at_3](charts/probes_mrr_at_3.png)
 
+## Reranker Evaluation (Stack C → Stack C + rerank)
+
+The optional cross-encoder **reranker** (ADR-0019, `KB_HYBRID_RERANK`, default-off, eval-only) re-scores Stack C's RRF-fused pool and reorders it before the final top-k cut — the FM2 precision step RRF (a recall-union step) cannot do. This is a **focused within-Hybrid paired comparison** (Stack C vs Stack C + rerank on the SAME Paraphrases); the three-arm Cochran's Q omnibus above stays A/B/C. Ship gate (ADR-0019): a Structural-probe lift **AND** no Core hit@3 regression.
+
+### Cutoff Sweep (Core macro-average)
+
+| Cutoff | hit (C) | hit (C+rerank) | MRR (C) | MRR (C+rerank) |
+|---|---|---|---|---|
+| hit@1 | 0.784 | 0.844 | 0.784 | 0.844 |
+| hit@3 | 0.924 | 0.960 | 0.849 | 0.899 |
+| hit@5 | 0.944 | 0.960 | 0.854 | 0.899 |
+| hit@10 | 0.952 | 0.960 | 0.855 | 0.899 |
+
+### Core Comparison (per type, hit@3)
+
+| Paraphrase Type | hit@3 (C) | hit@3 (C+rerank) | Δ (rerank) | MRR (C) | MRR (C+rerank) | n |
+|---|---|---|---|---|---|---|
+| synonym_swap | 0.880 | 0.960 | +0.080 | 0.803 | 0.907 | 50 |
+| word_reorder | 0.940 | 0.960 | +0.020 | 0.833 | 0.897 | 50 |
+| verbosity_expansion | 0.960 | 0.960 | +0.000 | 0.907 | 0.897 | 50 |
+| specificity_narrowing | 0.940 | 0.960 | +0.020 | 0.857 | 0.890 | 50 |
+| implicit_reference | 0.900 | 0.960 | +0.060 | 0.847 | 0.907 | 50 |
+
+**Core macro-average** hit@3: Stack C **0.924** → Stack C+rerank **0.960** (Δ +0.036).
+
+### Structural Probes (per type, hit@3)
+
+| Paraphrase Type | hit@3 (C) | hit@3 (C+rerank) | Δ (rerank) |
+|---|---|---|---|
+| typo_fatfinger | 0.400 | 1.000 | +0.600 |
+| industry_jargon | 0.600 | 0.800 | +0.200 |
+
+### Paired test + cost
+
+Paired exact McNemar on the pooled Core set at hit@3 (Stack C vs Stack C+rerank, the SAME Paraphrases): b (C-hit, rerank-miss) = 0, c (C-miss, rerank-hit) = 9, p = **0.0039**.
+
+Mean added latency: **5754.3 ms/query** (cross-encoder inference over the fused pool; one-off model load excluded; measured on the dev box — NOT the 512m VPS tenant, where the reranker is never loaded, ADR-0019).
+
+> **Gate check (ADR-0019): MET.** Probe lift: yes (Δ +0.600, +0.200); Core hit@3 regression: none (Δ +0.036). The flip-on / README decision is the owner's call against these numbers — the reranker ships off in v1 regardless.
+
 ## Spot-check Validation (L2, cross-family)
 
 Not run. The deterministic L1 (C5c) metric above is the source of every headline number; the optional L2 **Spot-check** is a cross-family second opinion that re-judges L1's edge-case verdicts with a Claude judge (a different model family from the OpenAI embedding powering Stack B). Enable it with:

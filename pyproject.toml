@@ -18,6 +18,15 @@ dev = [
     "pytest>=9.0",
     "httpx>=0.28",
 ]
+# Optional, eval-only: the Hybrid cross-encoder reranker (ADR-0019 / #310). Brings
+# in sentence-transformers + torch + the ~2.3 GB bge-reranker-v2-m3 model at use
+# time. Installed ONLY via `uv sync --group rerank` for the paraphrase-comparison
+# eval / a dev box; the production image (`uv sync --no-dev --all-packages`, no
+# --group) and default CI never install it, and hybrid_kb imports it lazily so the
+# default-off code path needs no torch. NEVER loaded on the 512m VPS tenant.
+rerank = [
+    "sentence-transformers>=3.0,<6",
+]
 
 # Root-level pytest config so `uv run pytest` from the repo root collects every
 # workspace member's suite in one run (the eval comparison needs both Stacks

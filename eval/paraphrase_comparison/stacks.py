@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``stack_a_retrieval``, ``stack_b_retrieval``, ``stack_c_retrieval``, ``FIXTURES``.
+"""Deep module per Ousterhout. Public surface: ``stack_a_retrieval``, ``stack_b_retrieval``, ``stack_c_retrieval``, ``stack_c_rerank_retrieval``, ``FIXTURES``.
 
 In-process Retrieval Stack adapters for the Phase 8 comparison (CONTEXT.md
 § Phase 8 > Retrieval Stack, PRD #100) extended to a third arm in Phase 13
@@ -41,8 +41,10 @@ import re
 from pathlib import Path
 
 import hybrid_kb.app.dense_index as hk_dense
+import hybrid_kb.app.rerank as hk_rerank
 import markdown_kb.app.indexer as mk_indexer
 import vector_rag.app.indexer as vr_indexer
+from hybrid_kb.app.rerank import DEFAULT_RERANK_DEPTH
 from hybrid_kb.app.retrieval import (
     DEFAULT_CANDIDATE_DEPTH,
     RRF_K,
@@ -213,9 +215,55 @@ def stack_c_retrieval(
     indexed (``index_stack_a`` + ``index_stack_c``).
     """
     file_to_gold = _wiki_slug_to_gold_section()
+    fused = _fused_wiki_sections(query, candidate_depth=candidate_depth, top_k=k)
+    return [_wiki_section_to_item(section, file_to_gold) for section in fused]
+
+
+def _fused_wiki_sections(
+    query: str, *, candidate_depth: int, top_k: int
+) -> list[Section]:
+    """Overfetch both arms and RRF-fuse to ``top_k`` wiki Sections — Stack C's pool.
+
+    The fusion prefix shared by :func:`stack_c_retrieval` and
+    :func:`stack_c_rerank_retrieval` so the two arms can never de-align on
+    ``candidate_depth`` / ``RRF_K`` / overfetch: the paired comparison must
+    measure *+rerank* as the single variable (ADR-0019). Returns the fused
+    ``Section`` list (RRF order), top_k-truncated.
+    """
     bm25_ranked: list[Section] = [
         section for section, _score in mk_indexer.search(query, k=candidate_depth)
     ]
     dense_ranked: list[Section] = hk_dense.search(query, k=candidate_depth)
-    fused = reciprocal_rank_fusion(bm25_ranked, dense_ranked, k=RRF_K, top_k=k)
-    return [_wiki_section_to_item(section, file_to_gold) for section, _score in fused]
+    fused = reciprocal_rank_fusion(bm25_ranked, dense_ranked, k=RRF_K, top_k=top_k)
+    return [section for section, _score in fused]
+
+
+def stack_c_rerank_retrieval(
+    query: str,
+    k: int = 3,
+    *,
+    candidate_depth: int = DEFAULT_CANDIDATE_DEPTH,
+    rerank_depth: int = DEFAULT_RERANK_DEPTH,
+) -> list[RetrievedItem]:
+    """The 4th comparison arm: Stack C **+ the cross-encoder reranker** (ADR-0019).
+
+    Identical to :func:`stack_c_retrieval` up to fusion, then the precision step:
+    RRF emits a DEEP fused pool (``rerank_depth``, default 20), the cross-encoder
+    (``hybrid_kb.app.rerank.rerank`` — NOT reimplemented here) re-scores and
+    reorders that pool, and the result is truncated to the final cutoff ``k``.
+    This isolates the single variable the eval measures — *+rerank on Stack C* —
+    so a paired comparison against :func:`stack_c_retrieval` reads the reranker's
+    effect directly (ADR-0019 focused-paired methodology).
+
+    The reranker scores the real ``bge-reranker-v2-m3`` model on a real run
+    (requires ``uv sync --group rerank``); an offline run swaps
+    ``hk_rerank.get_cross_encoder`` for a deterministic fake, exactly as the dense
+    arm swaps ``get_embeddings``. Each reranked wiki Section resolves to its docs
+    Gold Section id exactly like Stack A / Stack C.
+    """
+    file_to_gold = _wiki_slug_to_gold_section()
+    pool = _fused_wiki_sections(
+        query, candidate_depth=candidate_depth, top_k=rerank_depth
+    )
+    reranked = hk_rerank.rerank(query, pool, top_n=k)
+    return [_wiki_section_to_item(section, file_to_gold) for section in reranked]
