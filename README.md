@@ -18,7 +18,15 @@ toggle:
 | --- | --- | --- |
 | **Wiki** (A) | BM25 keyword search over a curated `wiki/` layer ([Karpathy's LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) pattern) | `wiki/` Sections |
 | **RAG** (B) | Dense vector search (FAISS) over raw chunks | `docs/` Chunks |
-| **Hybrid** (C) | BM25 **and** dense over the same `wiki/` layer, fused by Reciprocal Rank Fusion | `wiki/` Sections |
+| **Hybrid** (C) | BM25 keyword **and** dense vectors (the same technique RAG uses), both over the curated `wiki/` layer, fused by Reciprocal Rank Fusion | `wiki/` Sections |
+
+> **"Hybrid" fuses two retrieval _methods_, not the two other _stacks_.** Its dense
+> arm is the same vector-search technique the RAG stack uses
+> (`text-embedding-3-small` + similarity), pointed at the curated `wiki/` Sections
+> instead of `docs/` chunks. Both Hybrid arms return wiki Sections with aligned ids,
+> so the fusion stays clean and the wiki citation is kept. Merging the Wiki and RAG
+> stacks directly (different corpora, different units) was the cross-corpus reading
+> explicitly rejected in [ADR-0018](project-docs/adr/0018-hybrid-retrieval-third-stack-rrf-over-wiki.md).
 
 **Live demo: <https://ask-wiki-rag.paynepew.dev>.** Reader at `/`, Operator
 Console at `/console`.
@@ -312,7 +320,13 @@ knowledge base"_,而不是亂猜。
 | --- | --- | --- |
 | **Wiki**(A) | 在精選的 `wiki/` 層上做 BM25 關鍵詞檢索([Karpathy LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) 模式) | `wiki/` Sections |
 | **RAG**(B) | 在原始 chunk 上做密集向量檢索(FAISS) | `docs/` Chunks |
-| **Hybrid**(C) | 在**同一個** `wiki/` 層上同時跑 BM25 與密集向量,再以 Reciprocal Rank Fusion 融合 | `wiki/` Sections |
+| **Hybrid**(C) | 在**同一個** `wiki/` 層上同時跑 BM25 關鍵詞與密集向量(和 RAG 用的是同一種技術),再以 Reciprocal Rank Fusion 融合 | `wiki/` Sections |
+
+> **「Hybrid」融合的是兩種檢索「方法」,不是另外那兩套「引擎」。** 它的密集臂就是
+> RAG 引擎用的那套向量檢索技術(`text-embedding-3-small` + 相似度),只是指向精選的
+> `wiki/` Sections,而不是 `docs/` chunk。兩條臂都回傳 wiki Section、id 對齊,所以融合
+> 乾淨、wiki 引用也保得住。把 Wiki 與 RAG 兩套引擎直接合併(不同語料、不同單位)是被
+> [ADR-0018](project-docs/adr/0018-hybrid-retrieval-third-stack-rrf-over-wiki.md) 明確否決的跨語料讀法。
 
 **線上 Demo:<https://ask-wiki-rag.paynepew.dev>。** Reader 在 `/`,
 Operator Console 在 `/console`。
