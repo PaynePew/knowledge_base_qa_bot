@@ -22,6 +22,7 @@ No DOM, no fetch, no browser, no OPENAI_API_KEY — fully hermetic (§6.3 / §12
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -69,15 +70,20 @@ def test_console_reset_banner_not_hidden_by_default():
     element itself and no 'visible' class toggle needed to show it.
     """
     text = _console_text()
-    # The banner element should exist in the static HTML body — confirm the
-    # element is there without a show/hide mechanism (it has no display:none
-    # in its own style or CSS, only the optional role attribute for a11y).
-    # We check that the banner class is not exclusively paired with display:none
-    # (the staleness guard uses 'display: none' in its own CSS block for the
-    # .staleness-banner class). A simpler proxy: the class must appear in the
-    # HTML body outside of a 'display: none' inline style.
-    assert 'class="demo-reset-banner"' in text or "demo-reset-banner" in text, (
-        "demo-reset-banner element must be in the static HTML body"
+    # The banner must be present as static HTML markup in the body (not injected
+    # or toggled by JS the way the staleness guard is).
+    assert 'class="demo-reset-banner"' in text, (
+        "demo-reset-banner must be a static HTML element in the body (AC1)"
+    )
+    # Its OWN base CSS rule must not hide it by default. Extract the
+    # `.demo-reset-banner { ... }` block (not the descendant icon/text rules) and
+    # assert it contains no `display: none` — unlike `.staleness-banner`, which
+    # defaults to `display: none` in its own block and is revealed later by JS.
+    match = re.search(r"\.demo-reset-banner\s*\{([^}]*)\}", text)
+    assert match is not None, ".demo-reset-banner CSS rule must exist (AC1)"
+    banner_css = match.group(1)
+    assert "display: none" not in banner_css and "display:none" not in banner_css, (
+        "reset banner base CSS must not set display:none — it is always-visible (AC1)"
     )
 
 
