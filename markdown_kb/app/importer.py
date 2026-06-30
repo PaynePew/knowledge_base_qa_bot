@@ -64,7 +64,7 @@ import re
 import time
 import unicodedata
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Literal
 
 import yaml
@@ -445,9 +445,13 @@ def _validate_source_path(source_filter: str) -> ImportFailure | None:
     Additionally resolves ``RAW_DIR / source_filter`` and verifies the result
     does not escape ``RAW_DIR`` (symlink traversal defence).
     """
-    # Rule 1: reject absolute paths
+    # Rule 1: reject absolute paths. Check under BOTH the host flavour and the
+    # Windows flavour so a drive-letter / UNC path (e.g. ``C:\...``) is rejected
+    # even on a POSIX host — prod is linux/amd64, where ``PosixPath('C:\\x')`` is
+    # NOT absolute, which would otherwise let the docstring's cross-platform
+    # contract (and #332's CI) silently lapse on Linux.
     p = Path(source_filter)
-    if p.is_absolute():
+    if p.is_absolute() or PureWindowsPath(source_filter).is_absolute():
         return ImportFailure(
             raw_path=source_filter,
             error_type="InvalidSourcePath",
