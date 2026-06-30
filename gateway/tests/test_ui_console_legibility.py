@@ -189,6 +189,33 @@ def test_console_rag_rebuild_has_description():
     )
 
 
+def test_console_hybrid_dense_rebuild_action_present():
+    """Hybrid dense rebuild action is present in console.html (issue #348 AC4)."""
+    text = _console_text()
+    assert "hybrid" in text.lower() or "Hybrid" in text, (
+        "Hybrid dense rebuild action must be present in console.html (issue #348 AC4)"
+    )
+    assert "/hybrid/index" in text, (
+        "console.html must wire the Hybrid dense rebuild button to POST /hybrid/index (AC4)"
+    )
+
+
+def test_console_hybrid_dense_rebuild_says_dense_arm_only():
+    """Hybrid dense rebuild description must state it refreshes only the dense arm (AC4).
+
+    ADR-0022: 'copy must say it refreshes only the dense arm (the BM25 arm already
+    updates on promote)'.
+    """
+    text = _console_text()
+    assert "dense arm" in text.lower(), (
+        "Hybrid dense rebuild description must mention 'dense arm' (ADR-0022 / AC4)"
+    )
+    # The copy must explain that BM25 already updates on promote (the asymmetry)
+    assert "bm25" in text.lower() or "promote" in text.lower(), (
+        "Hybrid dense rebuild description must reference BM25 or promote (ADR-0022 AC4)"
+    )
+
+
 # ---------------------------------------------------------------------------
 # AC3: no new innerHTML or EventSource (CODING_STANDARD §12.4 / §12.2)
 # ---------------------------------------------------------------------------
