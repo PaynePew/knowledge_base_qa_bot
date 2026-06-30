@@ -350,6 +350,7 @@ If you want a debug-only signal inside a package, either:
 
 - The LLM is the **only** thing that should be replaced with a stub. Use `monkeypatch` on the LLM getter functions (see §2.7 on lazy singleton getters).
 - The indexer always runs against real fixture files under `tmp_docs`. Mocking a deep-module entry point masks integration drift — fail any PR that does this.
+- **The LLM getter is not the only live network seam.** The RAG and Hybrid stacks embed the query *at retrieval time*, reached through a lazily-loaded committed index seed (`vector_rag`'s `.kb/faiss_index` via `load_vector_index`, `hybrid_kb`'s `.kb/hybrid_dense` via `load_dense_index`) — **not** through the mocked LLM getter. A test that touches `stack=rag` / `stack=hybrid` (or otherwise reaches those load paths) MUST also redirect that index directory to an empty `tmp_path` so retrieval takes the `index_missing` early-exit (or mock the embeddings getter). Mocking only the LLM getter leaves this seam live: the test 401s on a dummy key and **bills real tokens on a live one**, while still looking hermetic. (Incident #332: the gateway `stack=rag` test mocked the wiki LLM yet lazy-loaded the committed FAISS seed and embedded the query.)
 
 ### 6.4 Live smoke discipline
 
