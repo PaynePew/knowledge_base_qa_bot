@@ -66,6 +66,7 @@ ADMIN_PATHS: frozenset[str] = frozenset(
         "/wiki/lint",
         "/wiki/import",
         "/upload",
+        "/hybrid/index",  # ADR-0022: operator-triggered dense re-embed (issue #348)
     }
 )
 
