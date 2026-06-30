@@ -655,6 +655,14 @@
     font-style: italic;
   }
 
+  /* Per-section what-it-does one-liner (ADR-0021 legibility) */
+  .queue-section-desc {
+    font-size: 12px;
+    color: var(--ink-3);
+    margin: 0 0 10px;
+    line-height: 1.45;
+  }
+
   /* Draft card: bordered, full-width, body preview */
   .draft-card {
     border: 1px solid var(--rule);
@@ -808,6 +816,33 @@
   @media (max-width: 540px) {
     .page { padding: 0 20px 48px; }
   }
+
+  /* ── Demo environment reset banner (ADR-0021) ───────── */
+  /* Always visible — no display:none, no JS .visible toggle.
+     Explains that the public demo is ephemeral and resets to
+     the seeded KB periodically, so writes are not permanent. */
+  .demo-reset-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 16px;
+    background: #f0f4ff;
+    border: 1px solid #93b3e6;
+    border-radius: 6px;
+    margin-top: 20px;
+    margin-bottom: 4px;
+    font-size: 12.5px;
+    color: #2a4080;
+    line-height: 1.45;
+  }
+  .demo-reset-banner .demo-reset-icon {
+    font-size: 14px;
+    flex-shrink: 0;
+    margin-top: 1px;
+    color: #3b5daa;
+  }
+  .demo-reset-banner .demo-reset-text { flex: 1; }
+  .demo-reset-banner strong { font-weight: 600; }
 </style>
 </head>
 <body>
@@ -821,6 +856,14 @@
       <span class="mast-page">console</span>
       <a class="mast-reader" href="/">reader</a>
     </header>
+
+    <!-- Demo environment reset banner (ADR-0021) — always visible, static HTML, no JS toggle.
+         Changes made here are real (the endpoints are live) but ephemeral: the console
+         resets to the committed seed on every deploy and on the ~2-day cron reset. -->
+    <div class="demo-reset-banner" role="status" aria-label="Demo environment notice">
+      <span class="demo-reset-icon">&#9432;</span>
+      <span class="demo-reset-text"><strong>Demo environment</strong> — changes are real but ephemeral. This console resets to the seeded knowledge base periodically (~2 days) and on each deploy.</span>
+    </div>
 
     <!-- Staleness guard: warns when Ingest ran but Index hasn't been rebuilt (#173) -->
     <div id="staleness-banner" class="staleness-banner" role="alert" aria-live="polite">
@@ -1587,11 +1630,16 @@ var lastImportedDocFilenames = null;
 /* §12.8 / §12.5: No fake progress percentages. Use indeterminate spinner only.
    Index/Lint (#173) run-functions will be wired in their slice. */
 
+/* ── Per-step what-it-does one-liners (ADR-0021 §12 legibility) ───────────
+   Always-visible text beside each action: what it does + its principle.
+   Rendered via textContent (el() helper, §12.4); strings are static literals
+   so the test_ui_console_legibility suite can assert them via plain text search. */
+
 var STEP_DEFS = [
   {
     id: "upload",
     label: "Upload",
-    desc: "Stage .html / .txt / .md files into raw/ or docs/",
+    desc: "Upload: stage source files for processing — entry point; .md goes to docs/, HTML/TXT needs Import.",
     buildBody: function(resultEl) {
       return buildUploadBody(resultEl);
     },
@@ -1601,7 +1649,7 @@ var STEP_DEFS = [
   {
     id: "import",
     label: "Import",
-    desc: "Convert raw/ sources to Markdown docs/",
+    desc: "Import: convert HTML/TXT to Markdown — normalises raw sources before LLM synthesis.",
     buildBody: null,
     run: function(resultEl, setStepBusy) {
       setStepBusy(true);
@@ -1633,7 +1681,7 @@ var STEP_DEFS = [
   {
     id: "ingest",
     label: "Ingest",
-    desc: "Synthesise wiki pages from docs/ (LLM call)",
+    desc: "Ingest: an LLM synthesises a curated wiki page from a Source, grounding-checked — builds the knowledge layer.",
     buildBody: null,
     run: function(resultEl, setStepBusy) {
       /* Phase 15 S3 (#172): single-batch-call rule (§12.8 / ADR-0011).
@@ -1659,7 +1707,7 @@ var STEP_DEFS = [
   {
     id: "index",
     label: "Index",
-    desc: "Rebuild BM25 search index from wiki/",
+    desc: "Index: rebuild the BM25 search index from wiki pages — makes curated knowledge retrievable.",
     buildBody: null,
     run: function(resultEl, setStepBusy) {
       /* Phase 15 S4 (#173): real IndexResponse card + staleness guard clear */
@@ -1682,7 +1730,7 @@ var STEP_DEFS = [
   {
     id: "lint",
     label: "Lint",
-    desc: "Audit wiki for orphans, red links, contradictions",
+    desc: "Lint: audit the wiki for orphans, red links, and contradictions — keeps the knowledge base coherent.",
     buildBody: null,
     run: function(resultEl, setStepBusy) {
       /* Phase 15 S4 (#173): real LintResponse card with per-check grouped findings */
@@ -1836,11 +1884,16 @@ function renderCurationQueue(rootEl, lintData) {
 
   /* ── C8: Promotion candidates ───────────────────────────── */
   if (candidates.length > 0) {
+    /* ADR-0021 per-action one-liner for Promote and Discard (§12.4: textContent only).
+       Promote: the human gate of ADR-0020's validated write-back loop.
+       Discard: inert-only server decision; refused for live answers. */
     var c8Section = el("div", { class: "queue-section" },
       el("div", { class: "queue-section-head" },
         el("span", { text: "Promotion Candidates (C8)" }),
         el("span", { class: "label label-created", text: String(candidates.length) })
-      )
+      ),
+      el("p", { class: "queue-section-desc",
+        text: "Promote: a curator approves a draft Filed Answer so it becomes retrievable — the human gate of ADR-0020's validated write-back. Discard: remove an inert (draft) entry from the queue — refused for live answers (server decides eligibility)." })
     );
     candidates.forEach(function(f) {
       c8Section.append(buildDraftCard(f));
@@ -2267,7 +2320,7 @@ function buildRagTrack(rootEl) {
 
   var headLeft = el("div", { style: "display:flex; align-items:center; gap:12px; min-width:0; flex:1;" },
     el("span", { class: "step-panel-title", text: "RAG Index" }),
-    el("span", { class: "step-panel-desc",  text: "Rebuild vector embeddings from docs/ (runs in parallel)" })
+    el("span", { class: "step-panel-desc",  text: "RAG rebuild: re-embed docs/ into the vector index — makes raw sources retrievable via semantic search; runs in parallel." })
   );
   var headEl = el("div", { class: "step-panel-head" }, headLeft, ragRunBtn);
   var panel  = el("div", { class: "step-panel" }, headEl, ragResultEl);
