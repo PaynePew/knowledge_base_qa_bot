@@ -100,6 +100,7 @@ Authorised by PRD #65 (Phase 5), GitHub issue #66 (Slice 5-1), GitHub issue #67 
 from __future__ import annotations
 
 import datetime
+import hashlib
 import os
 import re
 import string
@@ -512,24 +513,29 @@ def _check_c6_stale(
     wiki_dir: Path,
     docs_dir: Path,
 ) -> list[StalePageFinding]:
-    """Return stale findings for every wiki page whose Source file is newer.
+    """Return stale findings for every wiki page whose Source content has changed.
 
     A wiki page is *stale* when:
-    - ``frontmatter.sources[0]`` references a Source file that EXISTS under ``docs_dir``
-    - The Source file's filesystem mtime is later than the page's ``frontmatter.updated``
-      timestamp
+    - ``frontmatter.source_hashes`` contains an entry for the Source file, AND
+    - The stored ``docs_body`` SHA-256 hash differs from the current file content's hash.
 
-    Pages whose Source file does NOT exist are handled by C11 (orphan check).
-    C6 explicitly skips them to avoid double-reporting.
+    Pages with no ``source_hashes`` frontmatter (legacy Phase 6 pages, drift state unknown)
+    are skipped rather than generating false positives. Pages whose Source file does NOT
+    exist are handled by C11 (orphan check). C6 explicitly skips them.
+
+    Hash comparison is stable across ``git clone``/checkout — unlike mtime, the
+    SHA-256 of file content does not change when the working tree is reconstructed from
+    the same commit. ``source_mtime`` and ``page_updated`` are still read for display
+    purposes in the emitted finding.
 
     Algorithm:
     1. For each wiki page in ``entities/`` and ``concepts/``:
-       a. Parse frontmatter; skip if no sources.
+       a. Parse frontmatter; skip if no sources or no source_hashes.
        b. Take ``sources[0]``; strip ``#anchor`` to get the Source filename.
-       c. Resolve ``docs_dir / <filename>``; if the file does not exist, skip (C11's job).
-       d. Read the Source file's mtime as a UTC datetime.
-       e. Parse ``frontmatter.updated`` as a UTC datetime.
-       f. If ``source_mtime > page_updated``, emit ``StalePageFinding``.
+       c. Look up ``source_hashes[<filename>]["docs_body"]``; skip if absent/None.
+       d. Resolve ``docs_dir / <filename>``; if the file does not exist, skip (C11's job).
+       e. Compute ``SHA-256(source_path.read_text("utf-8").encode())``.
+       f. If current hash != stored hash, emit ``StalePageFinding``.
     2. Return findings sorted by ``drift_days`` descending.
     """
     findings: list[StalePageFinding] = []
@@ -560,6 +566,19 @@ def _check_c6_stale(
                 continue
             source_filename = Path(file_part).name
 
+            # Check for stored content hash.  Missing or empty source_hashes means
+            # drift state is unknown (legacy page never ingested with hash tracking):
+            # skip to avoid false positives.
+            source_hashes = fm.get("source_hashes")
+            if not source_hashes or not isinstance(source_hashes, dict):
+                continue
+            hash_entry = source_hashes.get(source_filename)
+            if not isinstance(hash_entry, dict):
+                continue
+            stored_hash = hash_entry.get("docs_body")
+            if stored_hash is None:
+                continue
+
             # Resolve Source file; skip if missing (C11's job)
             source_path = docs_dir / source_filename
             if not source_path.exists():
@@ -569,7 +588,17 @@ def _check_c6_stale(
                     continue
                 source_path = matches[0]
 
-            # Get Source mtime as UTC datetime
+            # Compute current content hash (same algorithm as ingest._compute_docs_body_hash)
+            current_hash = hashlib.sha256(
+                source_path.read_text(encoding="utf-8").encode()
+            ).hexdigest()
+
+            if current_hash == stored_hash:
+                # Content unchanged — not stale (git clone / mtime drift is invisible here)
+                continue
+
+            # Content has changed: emit finding.  source_mtime and page_updated are
+            # informational — the detection gate is the hash, not the mtime.
             source_mtime_ts = source_path.stat().st_mtime
             source_mtime = datetime.datetime.fromtimestamp(source_mtime_ts, tz=datetime.UTC)
 
@@ -583,28 +612,25 @@ def _check_c6_stale(
                 )
             except ValueError:
                 continue
-
-            # Ensure both are timezone-aware UTC for comparison
             if page_updated.tzinfo is None:
                 page_updated = page_updated.replace(tzinfo=datetime.UTC)
 
-            if source_mtime > page_updated:
-                drift_seconds = (source_mtime - page_updated).total_seconds()
-                drift_days = drift_seconds / 86400.0
-                findings.append(
-                    StalePageFinding(
-                        page_slug=slug,
-                        source=source_filename,
-                        source_mtime=source_mtime,
-                        page_updated=page_updated,
-                        drift_days=drift_days,
-                        suggested_action=(
-                            f"Source '{source_filename}' was modified {drift_days:.1f} day(s) after "
-                            f"wiki page '{slug}' was last updated. Re-ingest the Source to "
-                            f'synchronise the wiki page: POST /ingest {{"source": "{source_filename}"}}.'
-                        ),
-                    )
+            drift_seconds = max(0.0, (source_mtime - page_updated).total_seconds())
+            drift_days = drift_seconds / 86400.0
+            findings.append(
+                StalePageFinding(
+                    page_slug=slug,
+                    source=source_filename,
+                    source_mtime=source_mtime,
+                    page_updated=page_updated,
+                    drift_days=drift_days,
+                    suggested_action=(
+                        f"Source '{source_filename}' content has changed since wiki page "
+                        f"'{slug}' was last ingested. Re-ingest the Source to synchronise "
+                        f'the wiki page: POST /ingest {{"source": "{source_filename}"}}.'
+                    ),
                 )
+            )
 
     # Sort by drift_days descending
     findings.sort(key=lambda f: f.drift_days, reverse=True)
@@ -1491,11 +1517,18 @@ def _check_c8_promotion_candidates(
 def _check_c9_qa_staleness(
     wiki_dir: Path,
 ) -> list[QaStalenessFinding]:
-    """Flag live Filed Answers whose cited entity pages have a newer mtime.
+    """Flag live Filed Answers whose cited entity pages have been re-ingested more recently.
 
     PRD #78 Phase 5 amendment §"C9 — qa-staleness". Read-only — surfaced to
     ``lint-report.md`` §``## Stale Filed Answers``. Closes Q6b "entity
     re-ingested, qa stranded" failure mode.
+
+    Staleness is detected by comparing the entity page's ``frontmatter.updated``
+    timestamp against the qa page's ``frontmatter.updated`` timestamp.  This is
+    stable across ``git clone``/checkout because both timestamps come from file
+    *content*, not filesystem metadata.  When an entity is re-ingested, ``/ingest``
+    writes a new ``updated`` value into the entity frontmatter, which advances the
+    timestamp and triggers this check.
 
     Algorithm:
     1. For each ``wiki/qa/*.md`` with ``frontmatter.status == "live"``:
@@ -1503,8 +1536,8 @@ def _check_c9_qa_staleness(
           ``"<entity-slug>#<heading-slug>"`` extract the bare entity slug.
        b. For each entity slug, locate the entity file: try
           ``wiki/entities/<slug>.md`` first, then ``wiki/concepts/<slug>.md``.
-       c. Compare the entity file mtime against ``qa.frontmatter.updated``.
-          If entity mtime > qa updated, the citation is "stale".
+       c. Parse the entity page's ``frontmatter.updated`` as a UTC datetime.
+          If entity_updated > qa.frontmatter.updated, the citation is "stale".
        d. If at least one citation is stale, emit a QaStalenessFinding with
           all stale citations and the max drift in days.
     2. Return findings sorted by ``max_drift_days`` desc, then slug asc.
@@ -1564,18 +1597,30 @@ def _check_c9_qa_staleness(
                 continue
             entity_path = entity_lookup.get(entity_slug)
             if entity_path is None or not entity_path.exists():
-                # Missing entity file — not C9's concern; C9 only flags newer-mtime
+                # Missing entity file — not C9's concern; C9 only flags re-ingest
                 # drift. (No C-check currently flags qa→missing-entity; that's a
                 # potential future C9.b or new check.)
                 continue
-            try:
-                entity_mtime_ts = entity_path.stat().st_mtime
-            except OSError:
+
+            # Parse the entity page's frontmatter.updated for content-stable comparison.
+            entity_fm = _parse_frontmatter(entity_path)
+            if entity_fm is None:
                 continue
-            entity_mtime = datetime.datetime.fromtimestamp(entity_mtime_ts, tz=datetime.UTC)
-            if entity_mtime > qa_updated:
+            entity_updated_str = entity_fm.get("updated", "")
+            if not entity_updated_str:
+                continue
+            try:
+                entity_updated = datetime.datetime.fromisoformat(
+                    str(entity_updated_str).replace("Z", "+00:00")
+                )
+            except ValueError:
+                continue
+            if entity_updated.tzinfo is None:
+                entity_updated = entity_updated.replace(tzinfo=datetime.UTC)
+
+            if entity_updated > qa_updated:
                 stale_citations.append(citation_str)
-                drift_seconds = (entity_mtime - qa_updated).total_seconds()
+                drift_seconds = (entity_updated - qa_updated).total_seconds()
                 if drift_seconds > max_drift_seconds:
                     max_drift_seconds = drift_seconds
 

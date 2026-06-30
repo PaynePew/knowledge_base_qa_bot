@@ -5,6 +5,9 @@ created: "2026-01-01T00:00:00Z"
 updated: "2026-01-01T00:00:00Z"
 sources:
   - aged_policy.md#vip-membership-fee
+source_hashes:
+  aged_policy.md:
+    docs_body: 0000000000000000000000000000000000000000000000000000000000000000
 status: live
 open_questions: []
 ---

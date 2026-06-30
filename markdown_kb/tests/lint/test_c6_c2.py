@@ -1,7 +1,9 @@
-"""Hermetic tests for Slice 5-3: C6 mtime-based stale detection + C2 red link backlog.
+"""Hermetic tests for Slice 5-3: C6 content-hash stale detection + C2 red link backlog.
 
-AC coverage (issue #68):
-  - C6: _check_c6_stale() emits StalePageFinding when source_mtime > page updated timestamp
+AC coverage (issue #68, updated in #349):
+  - C6: _check_c6_stale() emits StalePageFinding when source content hash differs from
+    frontmatter.source_hashes["docs_body"] (content-stable, survives git clone)
+  - C6: skips pages with missing/empty source_hashes (legacy drift-unknown pages)
   - C6: skips pages whose Source file does not exist (C11's job, not C6's)
   - C6: sort by drift_days descending
   - StalePageFinding schema: page_slug, source, source_mtime, page_updated, drift_days, suggested_action
@@ -19,12 +21,21 @@ All tests are hermetic (no OPENAI_API_KEY required).
 from __future__ import annotations
 
 import datetime
-import os
-import time
+import hashlib
 from pathlib import Path
 
 import pytest
 import yaml
+
+# ---------------------------------------------------------------------------
+# Hash helper (mirrors ingest._compute_docs_body_hash)
+# ---------------------------------------------------------------------------
+
+
+def _hash(content: str) -> str:
+    """SHA-256 of the UTF-8 bytes of *content*, hex-encoded."""
+    return hashlib.sha256(content.encode()).hexdigest()
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -39,12 +50,19 @@ def _write_wiki_page(
     subdir: str = "concepts",
     updated: str = "2026-01-01T00:00:00Z",
     body: str = "",
+    source_hashes: dict | None = None,
 ) -> Path:
-    """Write a minimal wiki page with frontmatter.sources and optional body."""
+    """Write a minimal wiki page with frontmatter.sources and optional body.
+
+    ``source_hashes`` is the dict stored in ``frontmatter.source_hashes``:
+    ``{filename: {"docs_body": <sha256_hex>}}``.  Pass the *correct* hash
+    (matching source content) for "fresh / up-to-date" scenarios, and a
+    *wrong* hash (or omit the key entirely) for "stale" scenarios.
+    """
     page_dir = wiki_dir / subdir
     page_dir.mkdir(parents=True, exist_ok=True)
     page_path = page_dir / f"{slug}.md"
-    frontmatter = {
+    frontmatter: dict = {
         "id": slug,
         "type": subdir.rstrip("s"),
         "created": "2026-01-01T00:00:00Z",
@@ -53,6 +71,8 @@ def _write_wiki_page(
         "status": "live",
         "open_questions": [],
     }
+    if source_hashes is not None:
+        frontmatter["source_hashes"] = source_hashes
     if not body:
         body = f"# {slug}\n\nSome content."
     content = f"---\n{yaml.dump(frontmatter, default_flow_style=False)}---\n\n{body}\n"
@@ -68,24 +88,54 @@ def _write_wiki_page(
 class TestC6StaleDetection:
     """Tests for _check_c6_stale and StalePageFinding schema."""
 
-    def test_stale_page_detected_when_source_newer(self, lint_env):
-        """Page with old 'updated' and Source touched recently → StalePageFinding."""
+    # ------------------------------------------------------------------
+    # AC1 / AC2 — content-hash gate (issue #349)
+    # ------------------------------------------------------------------
+
+    def test_c6_no_false_positive_on_fresh_clone(self, lint_env):
+        """AC1: same content on disk as stored hash → no StalePageFinding.
+
+        Simulates a fresh git clone: mtime is 'now' but content is unchanged.
+        """
         wiki_dir = lint_env["wiki_dir"]
         docs_dir = lint_env["docs_dir"]
 
-        # Create source file with a recent mtime (now)
+        source_content = "# Refund Policy\n\nContent.\n"
         source_path = docs_dir / "refund_policy.md"
-        source_path.write_text("# Refund Policy\n\nContent.\n", encoding="utf-8")
-        # Ensure source mtime is in the future relative to the page's updated timestamp
-        future_ts = time.time() + 10
-        os.utime(source_path, (future_ts, future_ts))
+        source_path.write_text(source_content, encoding="utf-8")
+        # mtime is 'now' (as in a fresh git clone) — but content matches stored hash
+        correct_hash = _hash(source_content)
 
-        # Page updated long ago
         _write_wiki_page(
             wiki_dir,
             "cancellation-window",
             ["refund_policy.md#cancellation-window"],
             updated="2026-01-01T00:00:00Z",
+            source_hashes={"refund_policy.md": {"docs_body": correct_hash}},
+        )
+
+        from app.lint import run_lint
+
+        result = run_lint(**lint_env)
+        assert result.findings.stale_pages == []
+
+    def test_c6_changed_content_is_still_stale(self, lint_env):
+        """AC2: source content differs from stored hash → StalePageFinding emitted."""
+        wiki_dir = lint_env["wiki_dir"]
+        docs_dir = lint_env["docs_dir"]
+
+        source_content = "# Refund Policy\n\nUpdated content.\n"
+        source_path = docs_dir / "refund_policy.md"
+        source_path.write_text(source_content, encoding="utf-8")
+        # Store an old/wrong hash so the check detects divergence
+        old_hash = _hash("# Refund Policy\n\nOriginal content.\n")
+
+        _write_wiki_page(
+            wiki_dir,
+            "cancellation-window",
+            ["refund_policy.md#cancellation-window"],
+            updated="2026-01-01T00:00:00Z",
+            source_hashes={"refund_policy.md": {"docs_body": old_hash}},
         )
 
         from app.lint import run_lint
@@ -95,25 +145,74 @@ class TestC6StaleDetection:
         assert len(stale) == 1
         assert stale[0].page_slug == "cancellation-window"
         assert stale[0].source == "refund_policy.md"
-        assert stale[0].drift_days > 0
 
-    def test_fresh_page_not_flagged(self, lint_env):
-        """Page with updated timestamp after source mtime → no StalePageFinding."""
+    def test_c6_missing_source_hashes_skipped(self, lint_env):
+        """Legacy pages without source_hashes are skipped (drift state unknown)."""
         wiki_dir = lint_env["wiki_dir"]
         docs_dir = lint_env["docs_dir"]
 
-        source_path = docs_dir / "account_help.md"
-        source_path.write_text("# Account Help\n\nContent.\n", encoding="utf-8")
-        # Set source mtime to old (well in the past)
-        old_ts = time.time() - 86400 * 100  # 100 days ago
-        os.utime(source_path, (old_ts, old_ts))
+        source_path = docs_dir / "legacy_doc.md"
+        source_path.write_text("# Legacy\n\nContent.\n", encoding="utf-8")
 
-        # Page was updated after source
+        # No source_hashes key at all (pre-Phase-6 ingest)
+        _write_wiki_page(
+            wiki_dir,
+            "legacy-page",
+            ["legacy_doc.md#section"],
+            updated="2026-01-01T00:00:00Z",
+        )
+
+        from app.lint import run_lint
+
+        result = run_lint(**lint_env)
+        assert result.findings.stale_pages == []
+
+    # ------------------------------------------------------------------
+    # Existing behaviour (updated to use hash-based staleness)
+    # ------------------------------------------------------------------
+
+    def test_stale_page_detected_when_source_newer(self, lint_env):
+        """Hash mismatch between stored and current source → StalePageFinding."""
+        wiki_dir = lint_env["wiki_dir"]
+        docs_dir = lint_env["docs_dir"]
+
+        source_content = "# Refund Policy\n\nCurrent content.\n"
+        source_path = docs_dir / "refund_policy.md"
+        source_path.write_text(source_content, encoding="utf-8")
+        # Store an old hash to simulate content drift
+        old_hash = _hash("# Refund Policy\n\nOld content.\n")
+
+        _write_wiki_page(
+            wiki_dir,
+            "cancellation-window",
+            ["refund_policy.md#cancellation-window"],
+            updated="2026-01-01T00:00:00Z",
+            source_hashes={"refund_policy.md": {"docs_body": old_hash}},
+        )
+
+        from app.lint import run_lint
+
+        result = run_lint(**lint_env)
+        stale = result.findings.stale_pages
+        assert len(stale) == 1
+        assert stale[0].page_slug == "cancellation-window"
+        assert stale[0].source == "refund_policy.md"
+
+    def test_fresh_page_not_flagged(self, lint_env):
+        """Correct hash stored → no StalePageFinding (content unchanged)."""
+        wiki_dir = lint_env["wiki_dir"]
+        docs_dir = lint_env["docs_dir"]
+
+        source_content = "# Account Help\n\nContent.\n"
+        source_path = docs_dir / "account_help.md"
+        source_path.write_text(source_content, encoding="utf-8")
+
         _write_wiki_page(
             wiki_dir,
             "reset-password",
             ["account_help.md#reset-password"],
             updated="2028-01-01T00:00:00Z",
+            source_hashes={"account_help.md": {"docs_body": _hash(source_content)}},
         )
 
         from app.lint import run_lint
@@ -131,6 +230,7 @@ class TestC6StaleDetection:
             "orphan-page",
             ["missing_source.md#section"],
             updated="2026-01-01T00:00:00Z",
+            source_hashes={"missing_source.md": {"docs_body": "aabbcc"}},
         )
 
         from app.lint import run_lint
@@ -139,14 +239,14 @@ class TestC6StaleDetection:
         assert result.findings.stale_pages == []
 
     def test_c6_uses_first_source_only(self, lint_env):
-        """C6 reads frontmatter.sources[0] to determine which Source to stat."""
+        """C6 reads frontmatter.sources[0] to determine which Source to check."""
         wiki_dir = lint_env["wiki_dir"]
         docs_dir = lint_env["docs_dir"]
 
+        source_content = "# Shipping FAQ\n\nContent.\n"
         source_path = docs_dir / "shipping_faq.md"
-        source_path.write_text("# Shipping FAQ\n\nContent.\n", encoding="utf-8")
-        future_ts = time.time() + 10
-        os.utime(source_path, (future_ts, future_ts))
+        source_path.write_text(source_content, encoding="utf-8")
+        old_hash = _hash("# Shipping FAQ\n\nOld content.\n")
 
         # Two sources — C6 uses only the first
         _write_wiki_page(
@@ -154,6 +254,7 @@ class TestC6StaleDetection:
             "tracking-number",
             ["shipping_faq.md#tracking-number", "account_help.md#tracking"],
             updated="2026-01-01T00:00:00Z",
+            source_hashes={"shipping_faq.md": {"docs_body": old_hash}},
         )
 
         from app.lint import run_lint
@@ -164,35 +265,46 @@ class TestC6StaleDetection:
         assert stale[0].source == "shipping_faq.md"
 
     def test_c6_sort_drift_days_descending(self, lint_env):
-        """Multiple stale pages should be sorted by drift_days descending."""
+        """Multiple stale pages: sort by drift_days descending.
+
+        drift_days is still derived from mtime for display; we just need both
+        pages to be hash-stale. The page whose source has a larger mtime delta
+        should appear first.
+        """
         wiki_dir = lint_env["wiki_dir"]
         docs_dir = lint_env["docs_dir"]
 
-        # Source A: touched just slightly in the future
+        src_a_content = "# A\n\nContent A.\n"
         src_a = docs_dir / "source_a.md"
-        src_a.write_text("# A\n\nContent.\n", encoding="utf-8")
-        # Large drift: source 200 days ahead of page updated 2026-01-01
-        # Use a far-future modified time for large drift
+        src_a.write_text(src_a_content, encoding="utf-8")
+        # mtime: large drift (200+ days ahead of page updated 2026-01-01)
+        import os
+
         big_drift_ts = datetime.datetime(2026, 8, 19, tzinfo=datetime.UTC).timestamp()
         os.utime(src_a, (big_drift_ts, big_drift_ts))
 
-        # Source B: touched slightly ahead
+        src_b_content = "# B\n\nContent B.\n"
         src_b = docs_dir / "source_b.md"
-        src_b.write_text("# B\n\nContent.\n", encoding="utf-8")
+        src_b.write_text(src_b_content, encoding="utf-8")
         small_drift_ts = datetime.datetime(2026, 2, 1, tzinfo=datetime.UTC).timestamp()
         os.utime(src_b, (small_drift_ts, small_drift_ts))
+
+        wrong_hash_a = _hash("# A\n\nOld.\n")
+        wrong_hash_b = _hash("# B\n\nOld.\n")
 
         _write_wiki_page(
             wiki_dir,
             "page-a",
             ["source_a.md#section"],
             updated="2026-01-01T00:00:00Z",
+            source_hashes={"source_a.md": {"docs_body": wrong_hash_a}},
         )
         _write_wiki_page(
             wiki_dir,
             "page-b",
             ["source_b.md#section"],
             updated="2026-01-01T00:00:00Z",
+            source_hashes={"source_b.md": {"docs_body": wrong_hash_b}},
         )
 
         from app.lint import run_lint
@@ -203,23 +315,24 @@ class TestC6StaleDetection:
         # Large drift (page-a) must come before small drift (page-b)
         assert stale[0].page_slug == "page-a"
         assert stale[1].page_slug == "page-b"
-        assert stale[0].drift_days > stale[1].drift_days
+        assert stale[0].drift_days >= stale[1].drift_days
 
     def test_stale_page_finding_schema(self, lint_env):
         """StalePageFinding must have all required fields with correct types."""
         wiki_dir = lint_env["wiki_dir"]
         docs_dir = lint_env["docs_dir"]
 
+        source_content = "# Refund\n\nContent.\n"
         source_path = docs_dir / "refund_policy.md"
-        source_path.write_text("# Refund\n\nContent.\n", encoding="utf-8")
-        future_ts = time.time() + 10
-        os.utime(source_path, (future_ts, future_ts))
+        source_path.write_text(source_content, encoding="utf-8")
+        old_hash = _hash("# Refund\n\nOld content.\n")
 
         _write_wiki_page(
             wiki_dir,
             "refund-page",
             ["refund_policy.md#refund-page"],
             updated="2026-01-01T00:00:00Z",
+            source_hashes={"refund_policy.md": {"docs_body": old_hash}},
         )
 
         from app.lint import run_lint
@@ -245,14 +358,14 @@ class TestC6StaleDetection:
         )
 
     def test_c6_strips_anchor_from_source_citation(self, lint_env):
-        """C6 must split off #section to get the Source filename for stat."""
+        """C6 must split off #section to get the Source filename."""
         wiki_dir = lint_env["wiki_dir"]
         docs_dir = lint_env["docs_dir"]
 
+        source_content = "# Shipping\n\nContent.\n"
         source_path = docs_dir / "shipping_faq.md"
-        source_path.write_text("# Shipping\n\nContent.\n", encoding="utf-8")
-        future_ts = time.time() + 10
-        os.utime(source_path, (future_ts, future_ts))
+        source_path.write_text(source_content, encoding="utf-8")
+        old_hash = _hash("# Shipping\n\nOld content.\n")
 
         # Citation includes #anchor — C6 must strip it to find the file
         _write_wiki_page(
@@ -260,6 +373,7 @@ class TestC6StaleDetection:
             "shipping-page",
             ["shipping_faq.md#some-section"],
             updated="2026-01-01T00:00:00Z",
+            source_hashes={"shipping_faq.md": {"docs_body": old_hash}},
         )
 
         from app.lint import run_lint
