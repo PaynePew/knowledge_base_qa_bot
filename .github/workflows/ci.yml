@@ -5,17 +5,22 @@
 # pull_request to main so a red suite can't merge unnoticed.
 #
 # Platform: windows-latest. The project's trusted green baseline (1512 passed)
-# is established on Windows (the dev platform). The default suite is NOT fully
-# CI-hermetic: it contains a Windows-specific path-validation test
-# (test_rejects_windows_absolute_path) and several tests that *construct* an
-# OpenAI client (retry/config — no real call) and so need *a* key present.
-# Running on windows-latest with a dummy OPENAI_API_KEY reproduces the baseline
-# faithfully. NOTE: production deploys to linux/amd64 (deploy.yml); making the
-# suite Linux-portable so CI can run on the prod platform is a separate
-# follow-up, not done here.
+# is established on Windows (the dev platform).
 #
-# The dummy OPENAI_API_KEY only satisfies client construction; -m live tests are
-# skipped by default so no real API call is ever made.
+# Hermeticity (#332): the two default-suite tests that previously made REAL
+# OpenAI calls now mock the LLM getter (lint C5 + the RAG-stack gateway test),
+# and the formerly Windows-only path-validation test now rejects drive-letter /
+# UNC paths under the Windows path flavour regardless of host OS — so the suite
+# no longer 401s and no longer depends on the platform. The earlier --deselect
+# workaround is therefore removed.
+#
+# The dummy OPENAI_API_KEY only satisfies OpenAI *client construction* (exercised
+# by non-live retry/config tests — #332 problem 3, left as-is per the issue);
+# -m live tests are skipped by default so no real API call is ever made.
+#
+# NOTE: production deploys to linux/amd64 (deploy.yml). With the #332 blockers
+# fixed, moving this gate to ubuntu-latest (prod parity) is the remaining
+# follow-up — it needs one confirmed full-suite run on a Linux runner first.
 name: ci
 
 on:
@@ -46,10 +51,4 @@ jobs:
         run: uv sync --all-packages
 
       - name: Run pytest (default markers — skips live tests)
-        # Two tests make REAL OpenAI calls in the default suite (not mocked, not
-        # marked live) and 401 on the dummy key — deselected here pending the
-        # hermeticity fix in #332. Remove these --deselect lines once #332 lands.
-        run: >-
-          uv run pytest
-          --deselect "markdown_kb/tests/lint/test_c3_c4a_c11.py::TestCombinedC3C4aC11::test_combined_run_all_checks_fire"
-          --deselect "gateway/tests/test_chat_stream.py::test_chat_stream_rag_stack_no_longer_returns_501"
+        run: uv run pytest

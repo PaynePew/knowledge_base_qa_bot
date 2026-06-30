@@ -21,7 +21,9 @@ All tests are hermetic (no OPENAI_API_KEY required).
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 import yaml
@@ -397,6 +399,42 @@ class TestC4aSlugCollision:
 
 class TestCombinedC3C4aC11:
     """Tests for cross-check independence when C3 + C4-a + C11 all fire."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_c5_llm(self, monkeypatch):
+        """Keep the combined-run tests hermetic by mocking C5's LLM getter (#332).
+
+        Several tests in this class write near-duplicate pages (e.g. ``pricing``
+        + ``pricing-2``) that C5's candidate filter selects as a page pair, which
+        would otherwise make a real OpenAI call (and bill tokens) on every run —
+        and 401 on a dummy key. These tests assert C3/C4-a/C11 routing, not live
+        C5 behaviour, so per CODING_STANDARD §6.3 the LLM is mocked, not marked
+        ``live``. The mock returns ``severity="none"`` so it adds no C5 findings
+        and leaves ``check_errors`` empty.
+        """
+        import app.lint as lint_module
+        from app.schemas import PagePairFinding
+
+        def _judge_none(messages):
+            slugs = re.findall(r"Page [AB] \(slug: `([^`]+)`\)", str(messages))
+            a, b = (sorted(slugs) + ["page-a", "page-b"])[:2]
+            return PagePairFinding(
+                severity="none",
+                page_a=a,
+                page_b=b,
+                page_a_claim="",
+                page_b_claim="",
+                summary="mocked (hermetic test)",
+                suggested_action="",
+            )
+
+        mock_chain = MagicMock()
+        mock_chain.invoke = _judge_none
+        monkeypatch.setattr(
+            lint_module,
+            "get_lint_llm",
+            lambda: MagicMock(with_structured_output=lambda _schema: mock_chain),
+        )
 
     def test_combined_run_all_checks_fire(self, lint_env):
         """C3, C4-a, and C11 all fire independently in a single run_lint() call."""

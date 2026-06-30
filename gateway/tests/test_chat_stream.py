@@ -25,6 +25,7 @@ import markdown_kb.app.indexer as _indexer
 import markdown_kb.app.logger as _logger
 import markdown_kb.app.retrieval as _retrieval
 import pytest
+import vector_rag.app.indexer as _rag_indexer
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from markdown_kb.app.grounding import GroundingClaim, GroundingOutcome, GroundingResult
@@ -69,6 +70,13 @@ def _redirect_paths_to_tmp(tmp_path, monkeypatch):
     monkeypatch.setattr(_logger, "LOG_PATH", tmp_path / "wiki" / "log.md")
     monkeypatch.setattr(_indexer, "INDEX_PATH", tmp_path / ".kb" / "index.json")
     monkeypatch.setattr(_indexer, "WIKI_DIR", tmp_path / "wiki")
+    # Keep stack=rag hermetic (#332): point vector_rag's FAISS index at an empty
+    # tmp dir and clear the in-memory vectorstore so _retrieve_and_gate hits the
+    # ``index_missing`` early-exit instead of lazy-loading the committed seed —
+    # which would embed the query via a real OpenAI call (401 on a dummy key).
+    # gateway_client only indexes the wiki corpus, so RAG is meant to be unindexed.
+    monkeypatch.setattr(_rag_indexer, "FAISS_INDEX_DIR", tmp_path / ".kb" / "faiss_index")
+    monkeypatch.setattr(_rag_indexer, "vectorstore", None)
 
 
 @pytest.fixture()
