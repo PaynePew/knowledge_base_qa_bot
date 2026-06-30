@@ -467,3 +467,127 @@ def test_dispatch_filing_still_files_real_grounded_answer(monkeypatch):
     }
     assert qa.dispatch_filing("How long do refunds take?", result) == "FILED"
     assert len(calls) == 1
+
+
+# ---------------------------------------------------------------------------
+# ADR-0020: promote auto-reindexes (AC1)
+# ---------------------------------------------------------------------------
+
+
+def test_promote_auto_reindexes_without_explicit_index_call(grounded_client, tmp_path, monkeypatch):
+    """POST /qa/{slug}/promote must trigger a BM25 rebuild so the live page enters
+    the corpus immediately — without a separate /index call (ADR-0020 AC1).
+
+    Hermetic: SOURCE_DIRS is redirected to the tmp wiki dirs so build_index()
+    picks up the qa page written by maybe_file_answer (tmp_path/wiki/qa/), not
+    any content from the production wiki tree.
+    """
+    import app.indexer as indexer_module
+
+    # Redirect SOURCE_DIRS → tmp wiki so build_index(no-args) scans tmp dirs.
+    # The autouse _redirect_paths_to_tmp fixture already monkeypatches WIKI_DIR
+    # and INDEX_PATH; SOURCE_DIRS is a module-level list built at import time
+    # so it must be redirected separately here.
+    monkeypatch.setattr(
+        indexer_module,
+        "SOURCE_DIRS",
+        [
+            tmp_path / "wiki" / "entities",
+            tmp_path / "wiki" / "concepts",
+            tmp_path / "wiki" / "qa",
+        ],
+    )
+
+    client, _ = grounded_client
+
+    # File a draft answer via /chat (grounded path).
+    chat_resp = client.post("/chat", json={"query": "How long do refunds take?"})
+    assert chat_resp.status_code == 200
+    slug = chat_resp.json()["filed"]["slug"]
+
+    # Before promote: the qa page has status=draft → filtered out by _passes_index_filter.
+    qa_sections_before = [s for s in indexer_module.sections if s.metadata.get("type") == "qa"]
+    assert not qa_sections_before, "No live qa sections expected in index before promote"
+
+    # Promote — must trigger auto-reindex (no separate /index call).
+    promote_resp = client.post(f"/qa/{slug}/promote")
+    assert promote_resp.status_code == 200
+
+    # After promote, the live qa page must appear in the in-memory index.
+    qa_sections_after = [s for s in indexer_module.sections if s.metadata.get("type") == "qa"]
+    assert qa_sections_after, (
+        "Promote must auto-reindex so the live qa page is immediately retrievable "
+        "(ADR-0020); found no qa-type sections in indexer.sections after promote"
+    )
+    qa_ids = [s.id for s in qa_sections_after]
+    assert any(slug in sid for sid in qa_ids), (
+        f"Expected a qa section with slug '{slug}' in index after promote; found: {qa_ids}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# ADR-0020: filing novelty gate (AC2 + AC3)
+# ---------------------------------------------------------------------------
+
+
+def test_dispatch_filing_skips_when_all_sources_are_qa_pages(monkeypatch):
+    """When ALL cited sources are wiki/qa/ pages, dispatch_filing must skip filing
+    (ADR-0020 novelty gate — answer fully derived from already-curated Q&A;
+    nothing new to capture).
+    """
+    from app import qa
+
+    calls: list = []
+    monkeypatch.setattr(qa, "maybe_file_answer", lambda *a, **k: calls.append(a))
+
+    qa_source_id = "how-long-do-refunds-take-abc123"
+    result = {
+        "answer": "Refunds take 5-7 business days.",
+        "grounding_outcome": _approved_outcome(qa_source_id),
+        "sources": [
+            {
+                "source": qa_source_id,
+                "path": f"wiki/qa/{qa_source_id}.md",
+            }
+        ],
+    }
+
+    returned = qa.dispatch_filing("How long do refunds take?", result)
+    assert returned is None, (
+        "dispatch_filing must return None when all cited sources are wiki/qa/ pages "
+        "(ADR-0020 novelty gate)"
+    )
+    assert calls == [], "maybe_file_answer must NOT be called for all-qa-cited answers"
+
+
+def test_dispatch_filing_still_files_when_mix_of_qa_and_non_qa_sources(monkeypatch):
+    """When cited sources include BOTH qa and non-qa pages, dispatch_filing must
+    still file (ADR-0020 gate is 'all cited are qa'; a mix means new info present).
+    """
+    from app import qa
+
+    calls: list = []
+    monkeypatch.setattr(qa, "maybe_file_answer", lambda *a, **k: (calls.append(a), "FILED")[1])
+
+    qa_source_id = "how-long-do-refunds-take-abc123"
+    result = {
+        "answer": "Refunds take 5-7 business days per our policy.",
+        "grounding_outcome": _approved_outcome(qa_source_id),
+        "sources": [
+            {
+                "source": qa_source_id,
+                "path": f"wiki/qa/{qa_source_id}.md",
+            },
+            {
+                "source": REFUND_SECTION_ID,
+                "path": None,  # non-qa source (docs/ section, no wiki page path)
+            },
+        ],
+    }
+
+    returned = qa.dispatch_filing("How long do refunds take?", result)
+    assert returned == "FILED", (
+        "dispatch_filing must still file when sources include a mix of qa + non-qa pages "
+        "(ADR-0020 gate is strictly 'all cited are qa')"
+    )
+    assert len(calls) == 1, "maybe_file_answer must be called for mixed-source answers"

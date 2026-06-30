@@ -141,18 +141,25 @@ def promote_qa(slug: str) -> FiledStatus:
     and this endpoint is the explicit promote action that admits the page into
     the BM25 corpus for ``/chat`` retrieval.
 
-    Shallow wrapper around ``qa.promote(slug)`` (CODING_STANDARD §2.3 — all
-    business logic lives in ``qa.py``). Exception mapping:
+    ADR-0020 Consequence 1: after the status flip, ``build_index`` is called
+    automatically so the promoted page enters the BM25 corpus immediately
+    without requiring a separate ``POST /index`` call. Full rebuild is
+    deliberate at the current corpus size (sub-second; guaranteed correct;
+    incremental patching deferred — see ADR-0020 Considered Options).
+
+    Exception mapping (all-or-nothing — build_index is NOT called when promote
+    itself raises):
 
     - ``QaPageNotFound`` → ``404`` (slug has never been filed)
     - ``QaPageCorrupt``  → ``500`` (orphan-visibility — surface broken state
       to the curator rather than silently rewriting it)
 
     Idempotent on already-live pages: re-promote returns the existing
-    ``FiledStatus`` with ``200 OK`` (no second log entry, no file write).
+    ``FiledStatus`` with ``200 OK`` (no second log entry, no file write);
+    build_index is still called so the corpus is guaranteed consistent.
     """
     try:
-        return qa_module.promote(slug)
+        result = qa_module.promote(slug)
     except qa_module.QaPageNotFound as exc:
         raise HTTPException(
             status_code=404,
@@ -163,6 +170,9 @@ def promote_qa(slug: str) -> FiledStatus:
             status_code=500,
             detail=f"wiki/qa/{slug}.md has corrupt frontmatter: {exc}",
         ) from exc
+    # ADR-0020: auto-reindex so the live page is retrievable immediately.
+    build_index()
+    return result
 
 
 @router.delete("/qa/{slug}", status_code=204)
