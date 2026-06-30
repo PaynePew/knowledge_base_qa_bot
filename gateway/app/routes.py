@@ -59,6 +59,7 @@ from fastapi.responses import StreamingResponse
 # Wiki/RAG stream functions expose, so the generator body below is unchanged
 # (ADR-0010: the gateway is the composition layer; adding a stack is one map
 # entry). ADR-0018: Hybrid fuses BM25 + dense over the wiki Section corpus.
+from hybrid_kb.app.dense_index import build_index as _hybrid_build_index
 from hybrid_kb.app.query import stream_query as _hybrid_stream_query
 from markdown_kb.app.errors import LLMError
 from markdown_kb.app.read import FileNotFound as _ReadFileNotFound
@@ -99,6 +100,12 @@ class UploadBatchResultSchema(BaseModel):
     """Response body for POST /upload."""
 
     results: list[UploadFileResultSchema]
+
+
+class HybridIndexResponseSchema(BaseModel):
+    """Response body for POST /hybrid/index (ADR-0022, issue #348)."""
+
+    sections_indexed: int
 
 
 # Per-stack dispatch mapping.  Adding a new stack = one entry here; the
@@ -426,6 +433,37 @@ async def upload(files: list[UploadFile]) -> UploadBatchResultSchema:
             for r in batch.results
         ]
     )
+
+
+# ---------------------------------------------------------------------------
+# POST /hybrid/index — ADR-0022 / issue #348
+# Operator-triggered full re-embed of the Hybrid stack's dense arm.
+# ---------------------------------------------------------------------------
+
+
+@router.post("/hybrid/index", response_model=HybridIndexResponseSchema)
+def hybrid_index() -> HybridIndexResponseSchema:
+    """Trigger a full re-embed of the Hybrid stack's dense arm.
+
+    Calls ``hybrid_kb.app.dense_index.build_index()`` in-process, which
+    re-embeds every wiki Section and persists the FAISS seed under
+    ``.kb/hybrid_dense/``.  ``hybrid_kb`` stays **library-only** (no
+    FastAPI app on the hybrid side) — the route lives here in the Gateway,
+    the composition layer (ADR-0010).
+
+    A full re-embed is trivially correct: it restores the ADR-0018 1:1
+    dense↔BM25 id alignment by construction and is symmetric with
+    ADR-0020's full BM25 rebuild.
+
+    Cost: ~$0.50 (whole-corpus re-embed, symmetric with ``/rag/index``).
+    Gating: ``ADMIN_PATHS`` → admin semaphore + per-UTC-day cost cap +
+    optional admin-token kill-switch (ADR-0021 / ADR-0022 Consequences).
+
+    Returns:
+        ``HybridIndexResponseSchema`` with ``sections_indexed`` count.
+    """
+    n = _hybrid_build_index()
+    return HybridIndexResponseSchema(sections_indexed=n)
 
 
 # ---------------------------------------------------------------------------
