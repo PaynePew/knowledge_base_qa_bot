@@ -487,6 +487,28 @@ class _SectionRef:
         self.content = ""
 
 
+def _all_cited_are_qa(sources: list[dict]) -> bool:
+    """Return True when every cited source is a ``wiki/qa/`` page.
+
+    ADR-0020 novelty gate: when an answer is fully derived from already-curated
+    Q&A pages, there is nothing new to capture — filing would produce a near-
+    duplicate draft that the Curation Queue surfaces immediately as a promotion
+    candidate, making Promote appear to be a no-op.
+
+    Detection: a source is a qa page when its ``path`` key starts with
+    ``"wiki/qa/"`` (set by ``retrieval._wiki_page_path_for_section``; issue
+    #266). Sources from ``docs/`` have ``path=None``; sources from
+    ``wiki/entities/`` or ``wiki/concepts/`` have ``path="wiki/entities/…"``
+    or ``path="wiki/concepts/…"``.
+
+    Empty sources list: returns ``False`` — we cannot gate when nothing was
+    cited (should not happen after grounding passes, but be conservative).
+    """
+    if not sources:
+        return False
+    return all((s.get("path") or "").startswith("wiki/qa/") for s in sources)
+
+
 def dispatch_filing(query: str, result: dict) -> FiledStatus | None:
     """Gate-and-dispatch filing for a single query result.
 
@@ -502,6 +524,9 @@ def dispatch_filing(query: str, result: dict) -> FiledStatus | None:
       emit that sentence itself; it then trivially passes grounding
       (``passed == True``, no unsupported claims) yet is a non-answer that must
       never be filed as a curatable draft.
+    - All cited sources are ``wiki/qa/`` pages (ADR-0020 novelty gate): the
+      answer is fully derived from already-curated Q&A; nothing new to capture.
+      A mix of qa + non-qa sources still files (the gate is strictly "all qa").
     - RAG paths never call this function (caller contract; enforcement is
       the caller's responsibility — this function does not inspect the stack).
 
@@ -514,7 +539,8 @@ def dispatch_filing(query: str, result: dict) -> FiledStatus | None:
 
     Returns:
         ``FiledStatus`` describing what happened, or ``None`` on any
-        fail-soft path (Cannot Confirm, IOError, orphan-status guard).
+        fail-soft path (Cannot Confirm, IOError, orphan-status guard,
+        novelty gate).
     """
     outcome = result["grounding_outcome"]
     if not outcome.passed:
@@ -530,6 +556,14 @@ def dispatch_filing(query: str, result: dict) -> FiledStatus | None:
 
     if result.get("answer", "").strip() == CANNOT_CONFIRM_PHRASE:
         return None
+
+    # ADR-0020 novelty gate: skip filing when the answer is fully derived from
+    # already-curated Q&A pages (all cited sources are wiki/qa/ pages). A re-ask
+    # whose rewritten/rephrased query misses the promoted qa page and is answered
+    # from raw Sources still files — accepted as a legitimate coverage signal.
+    if _all_cited_are_qa(result.get("sources", [])):
+        return None
+
     cited_refs = [_SectionRef(id=s["source"]) for s in result["sources"]]
     return maybe_file_answer(query, result["answer"], cited_refs)
 
