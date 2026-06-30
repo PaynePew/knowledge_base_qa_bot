@@ -4,8 +4,11 @@
 # pre-existing repo-wide red tracked in issue #325) on every push and
 # pull_request to main so a red suite can't merge unnoticed.
 #
-# Platform: windows-latest. The project's trusted green baseline (1512 passed)
-# is established on Windows (the dev platform).
+# Platforms: windows-latest + ubuntu-latest (matrix, fail-fast: false). Windows
+# is the project's trusted green baseline (the dev platform, 1552 passed);
+# ubuntu-latest matches the prod target (deploy.yml builds linux/amd64), added
+# once #332 made the default suite hermetic. fail-fast is off so a failure on
+# one OS still reports the other.
 #
 # Hermeticity (#332): the two default-suite tests that previously made REAL
 # OpenAI calls now mock the LLM getter (lint C5 + the RAG-stack gateway test),
@@ -17,10 +20,6 @@
 # The dummy OPENAI_API_KEY only satisfies OpenAI *client construction* (exercised
 # by non-live retry/config tests — #332 problem 3, left as-is per the issue);
 # -m live tests are skipped by default so no real API call is ever made.
-#
-# NOTE: production deploys to linux/amd64 (deploy.yml). With the #332 blockers
-# fixed, moving this gate to ubuntu-latest (prod parity) is the remaining
-# follow-up — it needs one confirmed full-suite run on a Linux runner first.
 name: ci
 
 on:
@@ -31,7 +30,11 @@ on:
 
 jobs:
   test:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: read
     env:
