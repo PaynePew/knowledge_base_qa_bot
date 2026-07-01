@@ -26,6 +26,7 @@ Per-endpoint estimate table (USD per request, deliberately generous):
     | /wiki/import     | 0.10     | conversion + classification LLM passes          |
     | /wiki/index      | 0.05     | Wiki re-index touches the corpus                |
     | /rag/index       | 0.50     | re-embeds the WHOLE corpus (many embed calls)   |
+    | /hybrid/index    | 0.50     | re-embeds the WHOLE wiki Section corpus         |
     | /upload          | 0.01     | staging bytes; tiny, but heavy-gated for safety |
     | (default heavy)  | 0.10     | unknown heavy path → assume a mid-range cost    |
 
@@ -53,6 +54,7 @@ _COST_ESTIMATES: dict[str, float] = {
     "/wiki/import": 0.10,
     "/wiki/index": 0.05,
     "/rag/index": 0.50,
+    "/hybrid/index": 0.50,
     "/upload": 0.01,
 }
 

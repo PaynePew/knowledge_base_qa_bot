@@ -571,6 +571,26 @@
     font-weight: 400;
   }
 
+  /* ── Hybrid dense rebuild panel (ADR-0022, issue #348) ──── */
+  .hybrid-track {
+    margin-top: 32px;
+  }
+  .hybrid-track-header {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--ink-3);
+    margin-bottom: 16px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .hybrid-track-note {
+    font-size: 12px;
+    color: var(--ink-3);
+    font-family: "IBM Plex Sans", sans-serif;
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 400;
+  }
+
   /* Lint check group heading inside result card */
   .lint-group-head {
     padding: 8px 16px 4px;
@@ -875,6 +895,9 @@
 
     <!-- RAG rebuild track: parallel to Wiki chain (#173) -->
     <div id="rag-track-root"></div>
+
+    <!-- Hybrid dense rebuild track: operator-triggered full re-embed (ADR-0022, issue #348) -->
+    <div id="hybrid-track-root"></div>
 
     <!-- Curation Queue: built by JS after Lint runs (Phase 15 S6, issue #174) -->
     <div id="curation-queue-root"></div>
@@ -2337,6 +2360,83 @@ function buildRagTrack(rootEl) {
 }
 
 buildRagTrack(document.getElementById("rag-track-root"));
+
+/* ============================================================
+   Hybrid dense rebuild track (ADR-0022, issue #348)
+   POST /hybrid/index — operator-triggered full re-embed of the
+   Hybrid stack's dense arm.
+   Always-visible action: refreshes only the dense arm; BM25 arm
+   already updates automatically on promote (ADR-0022 asymmetry).
+   No fake progress: single blocking call + indeterminate spinner (§12.8).
+   No innerHTML, no EventSource (CODING_STANDARD §12.4 / §12.2).
+   ============================================================ */
+function buildHybridTrack(rootEl) {
+  var hybridResultEl = el("div", { class: "step-result" });
+  var hybridRunBtn;
+
+  function setHybridBusy(busy) {
+    if (hybridRunBtn) hybridRunBtn.disabled = busy;
+  }
+
+  hybridRunBtn = el("button", { class: "run-btn", type: "button", text: "Rebuild",
+    onclick: function() {
+      setHybridBusy(true);
+      hybridResultEl.replaceChildren(makeBusyCard("Rebuilding Hybrid dense arm…"));
+
+      fetch("/hybrid/index", { method: "POST" })
+        .then(function(resp) {
+          if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+          return resp.json();
+        })
+        .then(function(data) {
+          /* HybridIndexResponse: sections_indexed */
+          var sectionsIdx = data.sections_indexed != null ? data.sections_indexed : "?";
+          var card = el("div", { class: "result-card" },
+            el("div", { class: "result-card-head" },
+              el("span", { text: "Hybrid Dense Index" }),
+              el("span", { text: "·" }),
+              el("span", { class: "badge badge-ok" },
+                el("span", { class: "dot" }),
+                el("span", { text: "rebuilt" })
+              )
+            ),
+            el("div", { class: "rec" },
+              el("div", { class: "num", text: "01" }),
+              el("div", { class: "body" },
+                el("div", { class: "id",   text: "Sections indexed" }),
+                el("div", { class: "crumb", text: "wiki/ Sections re-embedded into dense arm" })
+              ),
+              el("div", { class: "label label-created", text: String(sectionsIdx) })
+            )
+          );
+          hybridResultEl.replaceChildren(card);
+        })
+        .catch(function(err) {
+          hybridResultEl.replaceChildren(renderErrorCard("Hybrid Dense Index", err.message || String(err)));
+        })
+        .finally(function() { setHybridBusy(false); });
+    }
+  });
+
+  var headLeft = el("div", { style: "display:flex; align-items:center; gap:12px; min-width:0; flex:1;" },
+    el("span", { class: "step-panel-title", text: "Hybrid Dense Index" }),
+    el("span", { class: "step-panel-desc",  text: "Hybrid dense rebuild: re-embed the wiki Section corpus into the dense arm — refreshes only the dense arm; the BM25 arm already updates on promote." })
+  );
+  var headEl = el("div", { class: "step-panel-head" }, headLeft, hybridRunBtn);
+  var panel  = el("div", { class: "step-panel" }, headEl, hybridResultEl);
+
+  rootEl.append(
+    el("div", { class: "hybrid-track" },
+      el("div", { class: "hybrid-track-header" },
+        el("span", { text: "Hybrid Track" }),
+        el("span", { class: "hybrid-track-note", text: "— dense arm only; BM25 arm updates automatically on promote (ADR-0022)" })
+      ),
+      panel
+    )
+  );
+}
+
+buildHybridTrack(document.getElementById("hybrid-track-root"));
 
 /* ══════════════════════════════════════════════════════════
    Resource Browser (Phase 15 S5, issue #171)
