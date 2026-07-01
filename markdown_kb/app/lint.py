@@ -1862,12 +1862,252 @@ def group_findings_by_axis(findings: LintFindings) -> list[LintAxisGroup]:
 # ---------------------------------------------------------------------------
 
 
+def _check_heading(code: str, title: str) -> str:
+    """Build a check's H3 sub-heading: ``### <CODE> <title> — <axis-label>``.
+
+    ``title`` is each check's existing descriptive heading text (with its
+    finding count where applicable, e.g. ``"Failed grounding (2 pages)"``);
+    the taxonomy label is appended so every check is clearly identifiable by
+    its Lint Axis short name (issue #361 AC), without discarding the more
+    descriptive wording readers already know.
+    """
+    return f"### {code} {title} — {LINT_CHECK_TAXONOMY[code].label}"
+
+
+def _render_c11_orphans(findings: LintFindings) -> list[str]:
+    """C11 Orphan pages — always rendered (empty-section convention)."""
+    lines: list[str] = [_check_heading("C11", "Orphan pages"), ""]
+    if not findings.orphans:
+        lines.append("_No orphan pages found._")
+    else:
+        for orphan in findings.orphans:
+            lines.append(f"#### `{orphan.page_slug}`")
+            lines.append("")
+            lines.append(
+                f"**Missing sources:** {', '.join(f'`{s}`' for s in orphan.missing_sources)}"
+            )
+            lines.append("")
+            lines.append(f"**Suggested action:** {orphan.suggested_action}")
+            lines.append("")
+    lines.append("")
+    return lines
+
+
+def _render_c3_failed_grounding(findings: LintFindings) -> list[str]:
+    """C3 Failed grounding — always rendered (empty-section convention)."""
+    n_c3 = len(findings.failed_grounding)
+    lines: list[str] = [_check_heading("C3", f"Failed grounding ({n_c3} pages)"), ""]
+    if not findings.failed_grounding:
+        lines.append("_No failed-grounding pages found._")
+    else:
+        lines.append("| Page slug | Source | Reason | Unsupported claims |")
+        lines.append("| --- | --- | --- | --- |")
+        for fg in findings.failed_grounding:
+            claims_cell = "; ".join(fg.unsupported_claims) if fg.unsupported_claims else "—"
+            lines.append(f"| `{fg.page_slug}` | `{fg.source}` | {fg.reason} | {claims_cell} |")
+        lines.append("")
+        for fg in findings.failed_grounding:
+            lines.append(f"**`{fg.page_slug}`** — {fg.suggested_action}")
+            lines.append("")
+    lines.append("")
+    return lines
+
+
+def _render_c4_slug_collisions(findings: LintFindings) -> list[str]:
+    """C4 Slug collision groups — always rendered (empty-section convention)."""
+    n_c4 = len(findings.slug_collisions)
+    lines: list[str] = [_check_heading("C4", f"Slug collision groups ({n_c4} groups)"), ""]
+    if not findings.slug_collisions:
+        lines.append("_No slug collision groups found._")
+    else:
+        lines.append("| Base slug | Pages in group | Group size |")
+        lines.append("| --- | --- | --- |")
+        for sc in findings.slug_collisions:
+            pages_cell = ", ".join(f"`{p}`" for p in sc.pages_in_group)
+            lines.append(f"| `{sc.base_slug}` | {pages_cell} | {len(sc.pages_in_group)} |")
+        lines.append("")
+        for sc in findings.slug_collisions:
+            lines.append(f"**`{sc.base_slug}`** — {sc.suggested_action}")
+            lines.append("")
+    lines.append("")
+    return lines
+
+
+def _render_c6_stale_pages(findings: LintFindings) -> list[str]:
+    """C6 Stale pages — always rendered (empty-section convention)."""
+    n_stale = len(findings.stale_pages)
+    title = f"Stale pages ({n_stale} page{'s' if n_stale != 1 else ''})"
+    lines: list[str] = [_check_heading("C6", title), ""]
+    if not findings.stale_pages:
+        lines.append("_No stale pages found._")
+    else:
+        lines.append("| Page | Source | Source mtime | Page updated | Drift (days) | Action |")
+        lines.append("|------|--------|-------------|--------------|-------------|--------|")
+        for stale in findings.stale_pages:
+            src_mtime_str = stale.source_mtime.strftime("%Y-%m-%d")
+            pg_updated_str = stale.page_updated.strftime("%Y-%m-%d")
+            lines.append(
+                f"| `{stale.page_slug}` | `{stale.source}` | {src_mtime_str} | {pg_updated_str}"
+                f" | {stale.drift_days:.1f} | {stale.suggested_action} |"
+            )
+    lines.append("")
+    return lines
+
+
+def _render_c2_red_links(findings: LintFindings) -> list[str]:
+    """C2 Red links — always rendered (empty-section convention)."""
+    n_red = len(findings.red_links)
+    title = f"Red links ({n_red} backlog item{'s' if n_red != 1 else ''})"
+    lines: list[str] = [_check_heading("C2", title), ""]
+    if not findings.red_links:
+        lines.append("_No red links found._")
+    else:
+        lines.append("| Target slug | Mentions | Referenced by | Sample context |")
+        lines.append("|-------------|---------|---------------|----------------|")
+        for rl in findings.red_links:
+            # referenced_by rendered as comma-separated [[slug]] wikilinks
+            ref_by_str = ", ".join(f"[[{s}]]" for s in rl.referenced_by)
+            ctx_str = rl.sample_context.replace("|", "\\|") if rl.sample_context else ""
+            lines.append(f"| `{rl.slug}` | {rl.mention_count} | {ref_by_str} | {ctx_str} |")
+    lines.append("")
+    return lines
+
+
+def _render_c1_coverage_gaps(findings: LintFindings) -> list[str]:
+    """C1 Coverage gaps — always rendered (empty-section convention)."""
+    n_c1 = len(findings.coverage_gaps)
+    lines: list[str] = [_check_heading("C1", f"Coverage gaps ({n_c1} findings)"), ""]
+    if not findings.coverage_gaps:
+        lines.append("_No coverage gaps found._")
+        lines.append("")
+    else:
+        # Sub-group by reason in fixed order
+        by_reason: dict[str, list[CoverageGapFinding]] = defaultdict(list)
+        for gap in findings.coverage_gaps:
+            by_reason[gap.reason].append(gap)
+
+        for reason in ("retrieval_empty", "below_threshold", "claim_unsupported"):
+            group = by_reason.get(reason, [])
+            if not group:
+                continue
+            lines.append(f"#### Repeated {reason} ({len(group)})")
+            lines.append("")
+            for gap in group:
+                lines.append(f"- **`{gap.query_canonical}`** (×{gap.hit_count})")
+                lines.append(f"  - *{gap.suggested_action}*")
+                if gap.sample_raw_queries:
+                    samples = "; ".join(f'"{q}"' for q in gap.sample_raw_queries[:3])
+                    lines.append(f"  - Sample queries: {samples}")
+                lines.append(f"  - First seen: {gap.first_seen}  Last seen: {gap.last_seen}")
+                lines.append("")
+    lines.append("")
+    return lines
+
+
+def _render_c5_contradictions(findings: LintFindings, summary: LintSummary) -> list[str]:
+    """C5 Contradictions — always rendered (empty-section convention)."""
+    n_c5 = len(findings.page_pairs)
+    lines: list[str] = [_check_heading("C5", f"Contradictions ({n_c5} findings)"), ""]
+    # Honesty note for the similarity cap (issue #194): when candidate pairs
+    # exceed KB_LINT_C5_MAX_PAIRS, only the top-K most-similar are judged. Surface
+    # the remainder so a capped audit reads as partial-by-design, not silent.
+    if summary.c5_pairs_capped > 0:
+        lines.append(
+            f"> Judged the {summary.llm_calls} most-similar candidate page-pair(s); "
+            f"{summary.c5_pairs_capped} further pair(s) were **not judged (capped** by "
+            f"`KB_LINT_C5_MAX_PAIRS`). Raise the cap to audit more pairs."
+        )
+        lines.append("")
+    if not findings.page_pairs:
+        lines.append("_No page-pair contradictions found._")
+        lines.append("")
+    else:
+        # Sub-group by severity in fixed order: direct → tension → duplicate
+        by_sev: dict[str, list[PagePairFinding]] = defaultdict(list)
+        for ppf in findings.page_pairs:
+            by_sev[ppf.severity].append(ppf)
+
+        for sev in ("direct", "tension", "duplicate"):
+            group = by_sev.get(sev, [])
+            if not group:
+                continue
+            lines.append(f"#### {sev.capitalize()} ({len(group)})")
+            lines.append("")
+            lines.append("| Page A | Page B | Page A claim | Page B claim | Suggested action |")
+            lines.append("|--------|--------|-------------|-------------|------------------|")
+            for ppf in group:
+                claim_a = ppf.page_a_claim.replace("|", "\\|").replace("\n", " ")[:80]
+                claim_b = ppf.page_b_claim.replace("|", "\\|").replace("\n", " ")[:80]
+                action = ppf.suggested_action.replace("|", "\\|").replace("\n", " ")[:80]
+                lines.append(
+                    f"| `{ppf.page_a}` | `{ppf.page_b}` | {claim_a} | {claim_b} | {action} |"
+                )
+            lines.append("")
+            for ppf in group:
+                lines.append(f"**`{ppf.page_a}` ↔ `{ppf.page_b}`** — {ppf.summary}")
+                lines.append("")
+    return lines
+
+
+def _render_c8_promotion_candidates(findings: LintFindings) -> list[str]:
+    """C8 Promotion Candidates — omitted entirely when empty (Slice 6-5 convention:
+    keeps noise out of the report while the qa lifecycle is dormant)."""
+    if not findings.promotion_candidates:
+        return []
+    lines: list[str] = [_check_heading("C8", "Promotion Candidates"), ""]
+    lines.append("| Slug | Question | Count | Age (days) | Cited |")
+    lines.append("|------|----------|-------|------------|-------|")
+    for pc in findings.promotion_candidates:
+        q_cell = pc.question.replace("|", "\\|").replace("\n", " ")
+        lines.append(
+            f"| `{pc.slug}` | {q_cell} | {pc.count} | {pc.age_days:.1f} | {pc.cited_count} |"
+        )
+    lines.append("")
+    return lines
+
+
+def _render_c9_stale_filed_answers(findings: LintFindings) -> list[str]:
+    """C9 Stale Filed Answers — omitted entirely when empty (Slice 6-5 convention)."""
+    if not findings.stale_filed_answers:
+        return []
+    lines: list[str] = [_check_heading("C9", "Stale Filed Answers"), ""]
+    lines.append("| Slug | Stale Entity Citations | Days Drift |")
+    lines.append("|------|------------------------|------------|")
+    for sf in findings.stale_filed_answers:
+        cites_cell = ", ".join(f"`{c}`" for c in sf.stale_citations)
+        lines.append(f"| `{sf.page_slug}` | {cites_cell} | {sf.max_drift_days:.1f} |")
+    lines.append("")
+    return lines
+
+
+def _render_c10_invalid_qa_schemas(findings: LintFindings) -> list[str]:
+    """C10 Invalid qa Schema — omitted entirely when empty (Slice 6-5 convention)."""
+    if not findings.invalid_qa_schemas:
+        return []
+    lines: list[str] = [_check_heading("C10", "Invalid qa Schema"), ""]
+    lines.append("| Slug | Property | Offending Value |")
+    lines.append("|------|----------|-----------------|")
+    for inv in findings.invalid_qa_schemas:
+        val_cell = inv.offending_value.replace("|", "\\|").replace("\n", " ")
+        lines.append(f"| `{inv.page_slug}` | `{inv.property_name}` | {val_cell} |")
+    lines.append("")
+    return lines
+
+
 def _render_report_markdown(
     findings: LintFindings,
     summary: LintSummary,
     check_errors: dict[str, str],
 ) -> str:
     """Render the human-readable lint report as a markdown string.
+
+    Sections are grouped under four axis headers (issue #361 / CONTEXT.md
+    "Lint Axis"), in ``LINT_AXIS_ORDER`` (Freshness -> Coherence -> Coverage
+    -> Lifecycle); within an axis, checks appear in ``LINT_CHECK_TAXONOMY``'s
+    per-axis order via ``group_findings_by_axis``. Each check keeps its own
+    empty-section convention: C1/C2/C3/C4/C5/C6/C11 always render (with a
+    "_No … found._" placeholder when empty), while C8/C9/C10 (Slice 6-5) are
+    omitted entirely when empty.
 
     The report satisfies the following AC requirements:
     - Starts with sentinel HTML comment ``<!-- Auto-generated by POST /lint``
@@ -1891,210 +2131,26 @@ def _render_report_markdown(
     )
     lines.append("")
 
-    # C11 Orphan pages section
-    lines.append("## C11 Orphan pages")
-    lines.append("")
-    if not findings.orphans:
-        lines.append("_No orphan pages found._")
-    else:
-        for orphan in findings.orphans:
-            lines.append(f"### `{orphan.page_slug}`")
-            lines.append("")
-            lines.append(
-                f"**Missing sources:** {', '.join(f'`{s}`' for s in orphan.missing_sources)}"
-            )
-            lines.append("")
-            lines.append(f"**Suggested action:** {orphan.suggested_action}")
-            lines.append("")
+    # code -> its rendered lines (including the check's own H3 heading), built
+    # once up front so the axis loop below only decides ordering, not content.
+    check_lines_by_code: dict[str, list[str]] = {
+        "C11": _render_c11_orphans(findings),
+        "C3": _render_c3_failed_grounding(findings),
+        "C4": _render_c4_slug_collisions(findings),
+        "C6": _render_c6_stale_pages(findings),
+        "C2": _render_c2_red_links(findings),
+        "C1": _render_c1_coverage_gaps(findings),
+        "C5": _render_c5_contradictions(findings, summary),
+        "C8": _render_c8_promotion_candidates(findings),
+        "C9": _render_c9_stale_filed_answers(findings),
+        "C10": _render_c10_invalid_qa_schemas(findings),
+    }
 
-    lines.append("")
-
-    # C3 Failed grounding section
-    n_c3 = len(findings.failed_grounding)
-    lines.append(f"## C3 Failed grounding ({n_c3} pages)")
-    lines.append("")
-    if not findings.failed_grounding:
-        lines.append("_No failed-grounding pages found._")
-    else:
-        lines.append("| Page slug | Source | Reason | Unsupported claims |")
-        lines.append("| --- | --- | --- | --- |")
-        for fg in findings.failed_grounding:
-            claims_cell = "; ".join(fg.unsupported_claims) if fg.unsupported_claims else "—"
-            lines.append(f"| `{fg.page_slug}` | `{fg.source}` | {fg.reason} | {claims_cell} |")
+    for axis_group in group_findings_by_axis(findings):
+        lines.append(f"## {axis_group.axis}")
         lines.append("")
-        for fg in findings.failed_grounding:
-            lines.append(f"**`{fg.page_slug}`** — {fg.suggested_action}")
-            lines.append("")
-
-    lines.append("")
-
-    # C4 Slug collision groups section
-    n_c4 = len(findings.slug_collisions)
-    lines.append(f"## C4 Slug collision groups ({n_c4} groups)")
-    lines.append("")
-    if not findings.slug_collisions:
-        lines.append("_No slug collision groups found._")
-    else:
-        lines.append("| Base slug | Pages in group | Group size |")
-        lines.append("| --- | --- | --- |")
-        for sc in findings.slug_collisions:
-            pages_cell = ", ".join(f"`{p}`" for p in sc.pages_in_group)
-            lines.append(f"| `{sc.base_slug}` | {pages_cell} | {len(sc.pages_in_group)} |")
-        lines.append("")
-        for sc in findings.slug_collisions:
-            lines.append(f"**`{sc.base_slug}`** — {sc.suggested_action}")
-            lines.append("")
-
-    lines.append("")
-
-    # C6 Stale pages section
-    n_stale = len(findings.stale_pages)
-    lines.append(f"## C6 Stale pages ({n_stale} page{'s' if n_stale != 1 else ''})")
-    lines.append("")
-    if not findings.stale_pages:
-        lines.append("_No stale pages found._")
-    else:
-        lines.append("| Page | Source | Source mtime | Page updated | Drift (days) | Action |")
-        lines.append("|------|--------|-------------|--------------|-------------|--------|")
-        for stale in findings.stale_pages:
-            src_mtime_str = stale.source_mtime.strftime("%Y-%m-%d")
-            pg_updated_str = stale.page_updated.strftime("%Y-%m-%d")
-            lines.append(
-                f"| `{stale.page_slug}` | `{stale.source}` | {src_mtime_str} | {pg_updated_str}"
-                f" | {stale.drift_days:.1f} | {stale.suggested_action} |"
-            )
-    lines.append("")
-
-    # C2 Red links section
-    n_red = len(findings.red_links)
-    lines.append(f"## C2 Red links ({n_red} backlog item{'s' if n_red != 1 else ''})")
-    lines.append("")
-    if not findings.red_links:
-        lines.append("_No red links found._")
-    else:
-        lines.append("| Target slug | Mentions | Referenced by | Sample context |")
-        lines.append("|-------------|---------|---------------|----------------|")
-        for rl in findings.red_links:
-            # referenced_by rendered as comma-separated [[slug]] wikilinks
-            ref_by_str = ", ".join(f"[[{s}]]" for s in rl.referenced_by)
-            ctx_str = rl.sample_context.replace("|", "\\|") if rl.sample_context else ""
-            lines.append(f"| `{rl.slug}` | {rl.mention_count} | {ref_by_str} | {ctx_str} |")
-    lines.append("")
-
-    # C1 Coverage gaps section
-    n_c1 = len(findings.coverage_gaps)
-    lines.append(f"## C1 Coverage gaps ({n_c1} findings)")
-    lines.append("")
-    if not findings.coverage_gaps:
-        lines.append("_No coverage gaps found._")
-        lines.append("")
-    else:
-        # Sub-group by reason in fixed order
-        from collections import defaultdict as _dd
-
-        by_reason: dict[str, list[CoverageGapFinding]] = _dd(list)
-        for gap in findings.coverage_gaps:
-            by_reason[gap.reason].append(gap)
-
-        for reason in ("retrieval_empty", "below_threshold", "claim_unsupported"):
-            group = by_reason.get(reason, [])
-            if not group:
-                continue
-            lines.append(f"### Repeated {reason} ({len(group)})")
-            lines.append("")
-            for gap in group:
-                lines.append(f"- **`{gap.query_canonical}`** (×{gap.hit_count})")
-                lines.append(f"  - *{gap.suggested_action}*")
-                if gap.sample_raw_queries:
-                    samples = "; ".join(f'"{q}"' for q in gap.sample_raw_queries[:3])
-                    lines.append(f"  - Sample queries: {samples}")
-                lines.append(f"  - First seen: {gap.first_seen}  Last seen: {gap.last_seen}")
-                lines.append("")
-
-    # C5 Contradictions section
-    n_c5 = len(findings.page_pairs)
-    lines.append(f"## C5 Contradictions ({n_c5} findings)")
-    lines.append("")
-    # Honesty note for the similarity cap (issue #194): when candidate pairs
-    # exceed KB_LINT_C5_MAX_PAIRS, only the top-K most-similar are judged. Surface
-    # the remainder so a capped audit reads as partial-by-design, not silent.
-    if summary.c5_pairs_capped > 0:
-        lines.append(
-            f"> Judged the {summary.llm_calls} most-similar candidate page-pair(s); "
-            f"{summary.c5_pairs_capped} further pair(s) were **not judged (capped** by "
-            f"`KB_LINT_C5_MAX_PAIRS`). Raise the cap to audit more pairs."
-        )
-        lines.append("")
-    if not findings.page_pairs:
-        lines.append("_No page-pair contradictions found._")
-        lines.append("")
-    else:
-        # Sub-group by severity in fixed order: direct → tension → duplicate
-        from collections import defaultdict as _dd2
-
-        by_sev: dict[str, list[PagePairFinding]] = _dd2(list)
-        for ppf in findings.page_pairs:
-            by_sev[ppf.severity].append(ppf)
-
-        for sev in ("direct", "tension", "duplicate"):
-            group = by_sev.get(sev, [])
-            if not group:
-                continue
-            lines.append(f"### {sev.capitalize()} ({len(group)})")
-            lines.append("")
-            lines.append("| Page A | Page B | Page A claim | Page B claim | Suggested action |")
-            lines.append("|--------|--------|-------------|-------------|------------------|")
-            for ppf in group:
-                claim_a = ppf.page_a_claim.replace("|", "\\|").replace("\n", " ")[:80]
-                claim_b = ppf.page_b_claim.replace("|", "\\|").replace("\n", " ")[:80]
-                action = ppf.suggested_action.replace("|", "\\|").replace("\n", " ")[:80]
-                lines.append(
-                    f"| `{ppf.page_a}` | `{ppf.page_b}` | {claim_a} | {claim_b} | {action} |"
-                )
-            lines.append("")
-            for ppf in group:
-                lines.append(f"**`{ppf.page_a}` ↔ `{ppf.page_b}`** — {ppf.summary}")
-                lines.append("")
-
-    # ---- Phase 6 Slice 6-5 sections (PRD #78 Phase 5 amendment) ----
-    # Empty-findings → section omitted entirely, matching the existing pattern
-    # used by the Coverage Gaps / Contradictions sub-groups above. This keeps
-    # noise out of the report when the qa lifecycle is dormant.
-
-    # ## Promotion Candidates (C8)
-    if findings.promotion_candidates:
-        lines.append("## Promotion Candidates")
-        lines.append("")
-        lines.append("| Slug | Question | Count | Age (days) | Cited |")
-        lines.append("|------|----------|-------|------------|-------|")
-        for pc in findings.promotion_candidates:
-            q_cell = pc.question.replace("|", "\\|").replace("\n", " ")
-            lines.append(
-                f"| `{pc.slug}` | {q_cell} | {pc.count} | {pc.age_days:.1f} | {pc.cited_count} |"
-            )
-        lines.append("")
-
-    # ## Stale Filed Answers (C9)
-    if findings.stale_filed_answers:
-        lines.append("## Stale Filed Answers")
-        lines.append("")
-        lines.append("| Slug | Stale Entity Citations | Days Drift |")
-        lines.append("|------|------------------------|------------|")
-        for sf in findings.stale_filed_answers:
-            cites_cell = ", ".join(f"`{c}`" for c in sf.stale_citations)
-            lines.append(f"| `{sf.page_slug}` | {cites_cell} | {sf.max_drift_days:.1f} |")
-        lines.append("")
-
-    # ## Invalid qa Schema (C10)
-    if findings.invalid_qa_schemas:
-        lines.append("## Invalid qa Schema")
-        lines.append("")
-        lines.append("| Slug | Property | Offending Value |")
-        lines.append("|------|----------|-----------------|")
-        for inv in findings.invalid_qa_schemas:
-            val_cell = inv.offending_value.replace("|", "\\|").replace("\n", " ")
-            lines.append(f"| `{inv.page_slug}` | `{inv.property_name}` | {val_cell} |")
-        lines.append("")
+        for meta, _findings_list in axis_group.checks:
+            lines.extend(check_lines_by_code[meta.code])
 
     if check_errors:
         lines.append("")
