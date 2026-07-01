@@ -2,7 +2,7 @@
 
 The implementation sequence for the project, from the current prototype through the full set of stretch goals. This file is the source of truth for "what comes next and why" — every new grill or implementation session should read this before scoping work.
 
-## Current state (2026-05-31)
+## Current state (2026-07-01)
 
 | Phase | Scope | Status |
 |---|---|---|
@@ -10,7 +10,7 @@ The implementation sequence for the project, from the current prototype through 
 | Phase 1 | Grounding Check (post-LLM claim-level verification) — [ADR-0004](adr/0004-post-llm-grounding-check.md) | ✅ Done |
 | Phase 2 | Wiki Index Generation (mechanical projection of `.kb/index.json` → `wiki/index.md`) — PRD #17 | ✅ Done |
 
-**Shipped beyond the baseline (see the Phase 3-17 table for detail):** Phases 3–9, 8.5, 11, 12, 15, and 16 are all ✅ Done. **Phase 12** (CLI + MCP, with Phase 10 Hot Cache folded in) has now shipped, so the entire linear Karpathy path is complete. Phase 13 (Hybrid Retrieval) and Phase 14 (Getting-Started docs) are off the critical path; Phase 14 is partially delivered via the bilingual README rewrite. **Phase 17 (Production UI/UX) is newly opened** — last-mile reader/Console interface polish for the public-launch 定稿, off the feature axis; its first slice (condensed record cards) has shipped.
+**Shipped beyond the baseline (see the Phase 3-17 table for detail):** Phases 3–9, 8.5, 11, 12, 13, 15, and 16 are all ✅ Done. **Phase 12** (CLI + MCP, with Phase 10 Hot Cache folded in) shipped, completing the entire linear Karpathy path. **Phase 13** (Hybrid Retrieval — RRF-only; cross-encoder reranker shipped eval-only / default-off) shipped 2026-07-01 — off the critical path but complete end-to-end, with dense-arm production hardening (#348/#355, ADR-0022) as its tail. Phase 14 (Getting-Started docs) is off the critical path and partially delivered via the bilingual README rewrite. **Phase 17 (Production UI/UX) is newly opened** — last-mile reader/Console interface polish for the public-launch 定稿, off the feature axis; its first slice (condensed record cards) has shipped.
 
 ## Sequencing principle
 
