@@ -239,8 +239,14 @@ def retrieve_and_gate(
            * dense — ``hybrid_kb.dense_index.search_with_distance`` → (Section, distance)
          Neither deep module is mocked; both run over their real (possibly
          test-built) indexes.
+      2b. Serving-time dead-id guard (#355): drop any dense hit whose
+         ``Section.id`` is absent from the FULL warm live BM25 Section-id set
+         (``markdown_kb.app.indexer.sections`` — the whole corpus, not this
+         query's ``candidate_depth`` pool). Closes the between-Dense-rebuilds
+         leak where ``ingest.delete_orphans`` has unlinked a page from the
+         live wiki but the frozen dense seed still embeds it.
       3. Apply the pre-LLM OR-gate on each arm's NATIVE top score BEFORE fusion
-         (BM25 top score / dense minimum distance).
+         (BM25 top score / dense minimum distance) — the guarded dense pool.
       4. Fuse the two ranked lists with RRF (K=60) and truncate to ``top_k``.
       4b. OPTIONAL precision step (ADR-0019, ``KB_HYBRID_RERANK``, default off):
          when the reranker is enabled, RRF instead emits a DEEP fused pool
@@ -267,6 +273,26 @@ def retrieve_and_gate(
 
     bm25_ranked = _bm25_indexer.search(question, k=candidate_depth)
     dense_ranked = dense_index.search_with_distance(question, k=candidate_depth)
+
+    # Serving-time dead-id guard (#355, correcting ADR-0022's deferred item).
+    # The dense arm is a committed FAISS seed refreshed only by the manual
+    # Dense rebuild (#348); markdown_kb.app.ingest step 10's delete_orphans
+    # can unlink a page from the LIVE wiki (it drops out of BM25 on the next
+    # reindex) while the frozen dense seed still embeds it — a "dense-only
+    # dead id". Drop any dense hit whose Section.id is absent from the FULL
+    # warm live BM25 Section-id set BEFORE the OR-gate / RRF, so an orphaned
+    # id can neither pass the gate alone nor surface stale content + a 404
+    # citation. The live set MUST be the whole corpus (``_bm25_indexer.sections``),
+    # NOT ``bm25_ranked``'s per-query ``candidate_depth`` pool — a live Section
+    # BM25-ranked beyond ``candidate_depth`` must still be retained here. The
+    # edit case (same id in both arms) is already RRF-safe (BM25's Section
+    # object wins via ``section_by_id.setdefault``) and untouched by this guard.
+    live_bm25_ids = {section.id for section in _bm25_indexer.sections}
+    dense_ranked = [
+        (section, distance)
+        for section, distance in dense_ranked
+        if section.id in live_bm25_ids
+    ]
 
     # Each arm's NATIVE top score: BM25's highest score (search returns
     # score-descending), the dense arm's minimum distance (closest hit). These —
