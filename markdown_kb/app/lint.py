@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``run_lint``, ``_check_c11_orphan``, ``_check_c3_failed_grounding``, ``_check_c4a_slug_collision``, ``_check_c6_stale``, ``_check_c2_red_links``, ``_check_c1_coverage_gaps``, ``_canonicalise``, ``_candidate_pairs``, ``_judge_page_pair``, ``_check_c5_page_pair``, ``_load_wiki_pages``, ``get_lint_llm``, ``_check_c8_promotion_candidates``, ``_check_c9_qa_staleness``, ``_check_c10_qa_schema_validity``.
+"""Deep module per Ousterhout. Public surface: ``run_lint``, ``_check_c11_orphan``, ``_check_c3_failed_grounding``, ``_check_c4a_slug_collision``, ``_check_c6_stale``, ``_check_c2_red_links``, ``_check_c1_coverage_gaps``, ``_canonicalise``, ``_candidate_pairs``, ``_judge_page_pair``, ``_check_c5_page_pair``, ``_load_wiki_pages``, ``get_lint_llm``, ``_check_c8_promotion_candidates``, ``_check_c9_qa_staleness``, ``_check_c10_qa_schema_validity``, ``group_findings_by_axis``, ``LINT_CHECK_TAXONOMY``, ``LINT_AXIS_ORDER``.
 
 Lint orchestrator — POST /lint health check for the wiki.
 
@@ -47,18 +47,30 @@ Three new read-only checks scan ``wiki/qa/*.md`` and one modifier excludes
   source entities (PRD #78 Q1 + Q6).
 - **C8 promotion candidates** — surfaces ``status: draft`` Filed Answers ranked
   by ``count`` desc / ``updated`` desc to ``lint-report.md`` §
-  ``## Promotion Candidates``. Capped by ``KB_LINT_PROMOTION_TOP_N`` env var
-  (default 10). Read-only — the actual draft→live mutation is owned by
+  ``### C8 Promotion Candidates``. Capped by ``KB_LINT_PROMOTION_TOP_N`` env
+  var (default 10). Read-only — the actual draft→live mutation is owned by
   Phase 6 ``POST /qa/{slug}/promote``.
 - **C9 qa-staleness** — for each ``status: live`` Filed Answer, compares each
   cited entity file's mtime against ``frontmatter.updated``. Newer entities
-  surface to ``## Stale Filed Answers``. Closes Q6b "entity re-ingested, qa
-  stranded" failure mode.
+  surface to ``### C9 Stale Filed Answers``. Closes Q6b "entity re-ingested,
+  qa stranded" failure mode.
 - **C10 qa-schema-validity** — sweeps ``wiki/qa/`` for invalid frontmatter
   (``status`` outside ``{live, draft, stale, superseded}``, missing/empty
   ``question``, ``type != "qa"``, missing/non-positive ``count``). Surfaces to
-  ``## Invalid qa Schema``. Closes Q8d "curator-typo orphan zombie" failure
-  mode (third layer of the indexer-log + filing-refuse + lint defence stack).
+  ``### C10 Invalid qa Schema``. Closes Q8d "curator-typo orphan zombie"
+  failure mode (third layer of the indexer-log + filing-refuse + lint
+  defence stack).
+
+Slice S1 scope (Lint Remediation tier-A — issue #361, ADR-0023)
+-----------------------------------------------------------------
+No new check. ``LINT_CHECK_TAXONOMY`` maps each of the ten wired checks to a
+``{code, label, axis}`` (CONTEXT.md "Lint Axis": Freshness -> Coherence ->
+Coverage -> Lifecycle) and ``group_findings_by_axis`` turns a run's
+``LintFindings`` into that ordered structure. ``_render_report_markdown``
+groups every check section under its axis heading and labels each check
+section with its taxonomy code + label, so a later remediation slice (or the
+CLI/MCP surfaces, per ADR-0017 interface parity) can reuse the same taxonomy.
+Lint remains read-only — this is a report-layout change only.
 
 All four amendments preserve PRD #65 Q3 read-only invariant — they read
 frontmatter and write only ``lint-report.md``, never page frontmatter.
@@ -94,7 +106,7 @@ Check execution order (cheapest to most expensive)
 9. C10 qa-schema-validity (read qa frontmatter)
 10. C5 page-pair LLM (F1∪F3 filter + LLM) — most expensive last
 
-Authorised by PRD #65 (Phase 5), GitHub issue #66 (Slice 5-1), GitHub issue #67 (Slice 5-2), GitHub issue #68 (Slice 5-3), GitHub issue #69 (Slice 5-4), GitHub issue #70 (Slice 5-5), PRD #78 (Phase 6), and GitHub issue #82 (Slice 6-5 Phase 5 amendment).
+Authorised by PRD #65 (Phase 5), GitHub issue #66 (Slice 5-1), GitHub issue #67 (Slice 5-2), GitHub issue #68 (Slice 5-3), GitHub issue #69 (Slice 5-4), GitHub issue #70 (Slice 5-5), PRD #78 (Phase 6), GitHub issue #82 (Slice 6-5 Phase 5 amendment), ADR-0023 (Lint Remediation Direct vs Authored), PRD #359 (Lint Remediation tier-A), and GitHub issue #361 (Slice S1 — Lint Axis taxonomy).
 """
 
 from __future__ import annotations
@@ -107,7 +119,7 @@ import string
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import yaml
 
@@ -1757,6 +1769,92 @@ def _check_c10_qa_schema_validity(
 
     findings.sort(key=lambda f: (f.page_slug, f.property_name))
     return findings
+
+
+# ---------------------------------------------------------------------------
+# Lint Axis taxonomy (issue #361 / ADR-0023 / CONTEXT.md "Lint Axis")
+# ---------------------------------------------------------------------------
+
+
+class LintCheckMeta(NamedTuple):
+    """One taxonomy entry: a wired check's code, short label, and axis.
+
+    Labels are the CONTEXT.md "Lint Axis" short names (English only for now —
+    zh strings arrive in a later tier-A slice per issue #359).
+    """
+
+    code: str
+    label: str
+    axis: str
+
+
+# Stable axis order per CONTEXT.md "Lint Axis": Freshness -> Coherence ->
+# Coverage -> Lifecycle. The report renderer and group_findings_by_axis both
+# walk this order so a later slice can reuse it for the CLI/MCP surfaces too
+# (ADR-0017 interface parity, per ADR-0023 "one taxonomy, three interfaces").
+LINT_AXIS_ORDER: tuple[str, ...] = ("Freshness", "Coherence", "Coverage", "Lifecycle")
+
+# code -> LintCheckMeta for all ten wired checks. Entries are grouped by axis
+# in LINT_AXIS_ORDER, and ordered within each axis exactly as CONTEXT.md
+# enumerates them — group_findings_by_axis relies on this iteration order.
+LINT_CHECK_TAXONOMY: dict[str, LintCheckMeta] = {
+    "C6": LintCheckMeta("C6", "stale", "Freshness"),
+    "C3": LintCheckMeta("C3", "failed-grounding", "Freshness"),
+    "C11": LintCheckMeta("C11", "orphan", "Freshness"),
+    "C5": LintCheckMeta("C5", "contradiction", "Coherence"),
+    "C4": LintCheckMeta("C4", "collision", "Coherence"),
+    "C1": LintCheckMeta("C1", "coverage-gap", "Coverage"),
+    "C2": LintCheckMeta("C2", "red-link", "Coverage"),
+    "C8": LintCheckMeta("C8", "promotion", "Lifecycle"),
+    "C10": LintCheckMeta("C10", "invalid-schema", "Lifecycle"),
+    "C9": LintCheckMeta("C9", "stale-qa", "Lifecycle"),
+}
+
+# code -> LintFindings attribute name, so group_findings_by_axis can pull each
+# check's finding list without a check-specific if/elif chain.
+_FINDINGS_ATTR_BY_CODE: dict[str, str] = {
+    "C11": "orphans",
+    "C3": "failed_grounding",
+    "C4": "slug_collisions",
+    "C6": "stale_pages",
+    "C2": "red_links",
+    "C1": "coverage_gaps",
+    "C5": "page_pairs",
+    "C8": "promotion_candidates",
+    "C9": "stale_filed_answers",
+    "C10": "invalid_qa_schemas",
+}
+
+
+class LintAxisGroup(NamedTuple):
+    """One axis's slice of a lint run: the axis name plus its checks, each
+    paired with that check's finding list, in CONTEXT.md order."""
+
+    axis: str
+    checks: list[tuple[LintCheckMeta, list[Any]]]
+
+
+def group_findings_by_axis(findings: LintFindings) -> list[LintAxisGroup]:
+    """Group a lint run's findings into axis -> check -> findings.
+
+    Returns one ``LintAxisGroup`` per axis, in ``LINT_AXIS_ORDER``
+    (Freshness -> Coherence -> Coverage -> Lifecycle); within each axis,
+    checks appear in ``LINT_CHECK_TAXONOMY``'s per-axis order. A check with
+    zero findings still gets an entry (empty list) — this helper never drops
+    a check; the renderer applies the empty-section convention on top.
+
+    Pure data transform: does not run any check, only reshapes an already
+    computed ``LintFindings``.
+    """
+    groups: list[LintAxisGroup] = []
+    for axis in LINT_AXIS_ORDER:
+        checks: list[tuple[LintCheckMeta, list[Any]]] = [
+            (meta, getattr(findings, _FINDINGS_ATTR_BY_CODE[code]))
+            for code, meta in LINT_CHECK_TAXONOMY.items()
+            if meta.axis == axis
+        ]
+        groups.append(LintAxisGroup(axis=axis, checks=checks))
+    return groups
 
 
 # ---------------------------------------------------------------------------
