@@ -379,9 +379,45 @@ class TestLintE2EGolden:
         assert "## C1 Coverage gaps" in content
         assert "## C5 Contradictions" in content
         # Slice 6-5: Phase 5 amendment sections — non-empty findings render headers.
-        assert "## Promotion Candidates" in content
-        assert "## Stale Filed Answers" in content
-        assert "## Invalid qa Schema" in content
+        # (issue #361: these three checks now also carry their taxonomy code.)
+        assert "### C8 Promotion Candidates" in content
+        assert "### C9 Stale Filed Answers" in content
+        assert "### C10 Invalid qa Schema" in content
+
+    def test_report_groups_findings_under_four_axis_headers(self, e2e_env):
+        """issue #361: lint-report.md groups every check under its Lint Axis heading,
+        in the stable order Freshness -> Coherence -> Coverage -> Lifecycle, and each
+        check section is labelled with its taxonomy code + short label."""
+        from app.lint import LINT_AXIS_ORDER, run_lint
+
+        run_lint(**e2e_env)
+        content = (e2e_env["wiki_dir"] / "lint-report.md").read_text(encoding="utf-8")
+
+        # All four axis headers present, in the stable order.
+        axis_positions = [content.index(f"## {axis}") for axis in LINT_AXIS_ORDER]
+        assert axis_positions == sorted(axis_positions), (
+            f"Axis headers out of order: {list(zip(LINT_AXIS_ORDER, axis_positions, strict=True))}"
+        )
+
+        # Each check section is labelled with its taxonomy code + short label.
+        assert "### C6 Stale pages" in content and "— stale" in content
+        assert "### C3 Failed grounding" in content and "— failed-grounding" in content
+        assert "### C11 Orphan pages" in content and "— orphan" in content
+        assert "### C5 Contradictions" in content and "— contradiction" in content
+        assert "### C4 Slug collision groups" in content and "— collision" in content
+        assert "### C1 Coverage gaps" in content and "— coverage-gap" in content
+        assert "### C2 Red links" in content and "— red-link" in content
+        assert "### C8 Promotion Candidates" in content and "— promotion" in content
+        assert "### C10 Invalid qa Schema" in content and "— invalid-schema" in content
+        assert "### C9 Stale Filed Answers" in content and "— stale-qa" in content
+
+        # Freshness's three checks (C6, C3, C11) sit between the Freshness and
+        # Coherence axis headers — the grouping is real, not just label text.
+        freshness_pos = content.index("## Freshness")
+        coherence_pos = content.index("## Coherence")
+        assert freshness_pos < content.index("### C6 Stale pages") < coherence_pos
+        assert freshness_pos < content.index("### C3 Failed grounding") < coherence_pos
+        assert freshness_pos < content.index("### C11 Orphan pages") < coherence_pos
 
     # ---- Slice 6-5 (Phase 5 amendment) ----
 

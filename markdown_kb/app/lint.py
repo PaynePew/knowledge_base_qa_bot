@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``run_lint``, ``_check_c11_orphan``, ``_check_c3_failed_grounding``, ``_check_c4a_slug_collision``, ``_check_c6_stale``, ``_check_c2_red_links``, ``_check_c1_coverage_gaps``, ``_canonicalise``, ``_candidate_pairs``, ``_judge_page_pair``, ``_check_c5_page_pair``, ``_load_wiki_pages``, ``get_lint_llm``, ``_check_c8_promotion_candidates``, ``_check_c9_qa_staleness``, ``_check_c10_qa_schema_validity``.
+"""Deep module per Ousterhout. Public surface: ``run_lint``, ``_check_c11_orphan``, ``_check_c3_failed_grounding``, ``_check_c4a_slug_collision``, ``_check_c6_stale``, ``_check_c2_red_links``, ``_check_c1_coverage_gaps``, ``_canonicalise``, ``_candidate_pairs``, ``_judge_page_pair``, ``_check_c5_page_pair``, ``_load_wiki_pages``, ``get_lint_llm``, ``_check_c8_promotion_candidates``, ``_check_c9_qa_staleness``, ``_check_c10_qa_schema_validity``, ``group_findings_by_axis``, ``LINT_CHECK_TAXONOMY``, ``LINT_AXIS_ORDER``.
 
 Lint orchestrator — POST /lint health check for the wiki.
 
@@ -47,18 +47,30 @@ Three new read-only checks scan ``wiki/qa/*.md`` and one modifier excludes
   source entities (PRD #78 Q1 + Q6).
 - **C8 promotion candidates** — surfaces ``status: draft`` Filed Answers ranked
   by ``count`` desc / ``updated`` desc to ``lint-report.md`` §
-  ``## Promotion Candidates``. Capped by ``KB_LINT_PROMOTION_TOP_N`` env var
-  (default 10). Read-only — the actual draft→live mutation is owned by
+  ``### C8 Promotion Candidates``. Capped by ``KB_LINT_PROMOTION_TOP_N`` env
+  var (default 10). Read-only — the actual draft→live mutation is owned by
   Phase 6 ``POST /qa/{slug}/promote``.
 - **C9 qa-staleness** — for each ``status: live`` Filed Answer, compares each
   cited entity file's mtime against ``frontmatter.updated``. Newer entities
-  surface to ``## Stale Filed Answers``. Closes Q6b "entity re-ingested, qa
-  stranded" failure mode.
+  surface to ``### C9 Stale Filed Answers``. Closes Q6b "entity re-ingested,
+  qa stranded" failure mode.
 - **C10 qa-schema-validity** — sweeps ``wiki/qa/`` for invalid frontmatter
   (``status`` outside ``{live, draft, stale, superseded}``, missing/empty
   ``question``, ``type != "qa"``, missing/non-positive ``count``). Surfaces to
-  ``## Invalid qa Schema``. Closes Q8d "curator-typo orphan zombie" failure
-  mode (third layer of the indexer-log + filing-refuse + lint defence stack).
+  ``### C10 Invalid qa Schema``. Closes Q8d "curator-typo orphan zombie"
+  failure mode (third layer of the indexer-log + filing-refuse + lint
+  defence stack).
+
+Slice S1 scope (Lint Remediation tier-A — issue #361, ADR-0023)
+-----------------------------------------------------------------
+No new check. ``LINT_CHECK_TAXONOMY`` maps each of the ten wired checks to a
+``{code, label, axis}`` (CONTEXT.md "Lint Axis": Freshness -> Coherence ->
+Coverage -> Lifecycle) and ``group_findings_by_axis`` turns a run's
+``LintFindings`` into that ordered structure. ``_render_report_markdown``
+groups every check section under its axis heading and labels each check
+section with its taxonomy code + label, so a later remediation slice (or the
+CLI/MCP surfaces, per ADR-0017 interface parity) can reuse the same taxonomy.
+Lint remains read-only — this is a report-layout change only.
 
 All four amendments preserve PRD #65 Q3 read-only invariant — they read
 frontmatter and write only ``lint-report.md``, never page frontmatter.
@@ -94,7 +106,7 @@ Check execution order (cheapest to most expensive)
 9. C10 qa-schema-validity (read qa frontmatter)
 10. C5 page-pair LLM (F1∪F3 filter + LLM) — most expensive last
 
-Authorised by PRD #65 (Phase 5), GitHub issue #66 (Slice 5-1), GitHub issue #67 (Slice 5-2), GitHub issue #68 (Slice 5-3), GitHub issue #69 (Slice 5-4), GitHub issue #70 (Slice 5-5), PRD #78 (Phase 6), and GitHub issue #82 (Slice 6-5 Phase 5 amendment).
+Authorised by PRD #65 (Phase 5), GitHub issue #66 (Slice 5-1), GitHub issue #67 (Slice 5-2), GitHub issue #68 (Slice 5-3), GitHub issue #69 (Slice 5-4), GitHub issue #70 (Slice 5-5), PRD #78 (Phase 6), GitHub issue #82 (Slice 6-5 Phase 5 amendment), ADR-0023 (Lint Remediation Direct vs Authored), PRD #359 (Lint Remediation tier-A), and GitHub issue #361 (Slice S1 — Lint Axis taxonomy).
 """
 
 from __future__ import annotations
@@ -107,7 +119,7 @@ import string
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import yaml
 
@@ -1760,47 +1772,116 @@ def _check_c10_qa_schema_validity(
 
 
 # ---------------------------------------------------------------------------
+# Lint Axis taxonomy (issue #361 / ADR-0023 / CONTEXT.md "Lint Axis")
+# ---------------------------------------------------------------------------
+
+
+class LintCheckMeta(NamedTuple):
+    """One taxonomy entry: a wired check's code, short label, and axis.
+
+    Labels are the CONTEXT.md "Lint Axis" short names (English only for now —
+    zh strings arrive in a later tier-A slice per issue #359).
+    """
+
+    code: str
+    label: str
+    axis: str
+
+
+# Stable axis order per CONTEXT.md "Lint Axis": Freshness -> Coherence ->
+# Coverage -> Lifecycle. The report renderer and group_findings_by_axis both
+# walk this order so a later slice can reuse it for the CLI/MCP surfaces too
+# (ADR-0017 interface parity, per ADR-0023 "one taxonomy, three interfaces").
+LINT_AXIS_ORDER: tuple[str, ...] = ("Freshness", "Coherence", "Coverage", "Lifecycle")
+
+# code -> LintCheckMeta for all ten wired checks. Entries are grouped by axis
+# in LINT_AXIS_ORDER, and ordered within each axis exactly as CONTEXT.md
+# enumerates them — group_findings_by_axis relies on this iteration order.
+LINT_CHECK_TAXONOMY: dict[str, LintCheckMeta] = {
+    "C6": LintCheckMeta("C6", "stale", "Freshness"),
+    "C3": LintCheckMeta("C3", "failed-grounding", "Freshness"),
+    "C11": LintCheckMeta("C11", "orphan", "Freshness"),
+    "C5": LintCheckMeta("C5", "contradiction", "Coherence"),
+    "C4": LintCheckMeta("C4", "collision", "Coherence"),
+    "C1": LintCheckMeta("C1", "coverage-gap", "Coverage"),
+    "C2": LintCheckMeta("C2", "red-link", "Coverage"),
+    "C8": LintCheckMeta("C8", "promotion", "Lifecycle"),
+    "C10": LintCheckMeta("C10", "invalid-schema", "Lifecycle"),
+    "C9": LintCheckMeta("C9", "stale-qa", "Lifecycle"),
+}
+
+# code -> LintFindings attribute name, so group_findings_by_axis can pull each
+# check's finding list without a check-specific if/elif chain.
+_FINDINGS_ATTR_BY_CODE: dict[str, str] = {
+    "C11": "orphans",
+    "C3": "failed_grounding",
+    "C4": "slug_collisions",
+    "C6": "stale_pages",
+    "C2": "red_links",
+    "C1": "coverage_gaps",
+    "C5": "page_pairs",
+    "C8": "promotion_candidates",
+    "C9": "stale_filed_answers",
+    "C10": "invalid_qa_schemas",
+}
+
+
+class LintAxisGroup(NamedTuple):
+    """One axis's slice of a lint run: the axis name plus its checks, each
+    paired with that check's finding list, in CONTEXT.md order."""
+
+    axis: str
+    checks: list[tuple[LintCheckMeta, list[Any]]]
+
+
+def group_findings_by_axis(findings: LintFindings) -> list[LintAxisGroup]:
+    """Group a lint run's findings into axis -> check -> findings.
+
+    Returns one ``LintAxisGroup`` per axis, in ``LINT_AXIS_ORDER``
+    (Freshness -> Coherence -> Coverage -> Lifecycle); within each axis,
+    checks appear in ``LINT_CHECK_TAXONOMY``'s per-axis order. A check with
+    zero findings still gets an entry (empty list) — this helper never drops
+    a check; the renderer applies the empty-section convention on top.
+
+    Pure data transform: does not run any check, only reshapes an already
+    computed ``LintFindings``.
+    """
+    groups: list[LintAxisGroup] = []
+    for axis in LINT_AXIS_ORDER:
+        checks: list[tuple[LintCheckMeta, list[Any]]] = [
+            (meta, getattr(findings, _FINDINGS_ATTR_BY_CODE[code]))
+            for code, meta in LINT_CHECK_TAXONOMY.items()
+            if meta.axis == axis
+        ]
+        groups.append(LintAxisGroup(axis=axis, checks=checks))
+    return groups
+
+
+# ---------------------------------------------------------------------------
 # Report rendering
 # ---------------------------------------------------------------------------
 
 
-def _render_report_markdown(
-    findings: LintFindings,
-    summary: LintSummary,
-    check_errors: dict[str, str],
-) -> str:
-    """Render the human-readable lint report as a markdown string.
+def _check_heading(code: str, title: str) -> str:
+    """Build a check's H3 sub-heading: ``### <CODE> <title> — <axis-label>``.
 
-    The report satisfies the following AC requirements:
-    - Starts with sentinel HTML comment ``<!-- Auto-generated by POST /lint``
-    - Contains ``# Lint Report`` heading
-    - Contains a summary blockquote
-    - Contains a ``## C11 Orphan pages`` section (empty when zero findings)
-    - Contains a ``## C3 Failed grounding (<N> pages)`` section
-    - Contains a ``## C4 Slug collision groups (<N> groups)`` section
-    - Contains a ``## C6 Stale pages`` section with markdown table (Slice 5-3)
-    - Contains a ``## C2 Red links`` section with markdown table (Slice 5-3)
-    - Contains a ``## C1 Coverage gaps`` section (empty when zero findings)
+    ``title`` is each check's existing descriptive heading text (with its
+    finding count where applicable, e.g. ``"Failed grounding (2 pages)"``);
+    the taxonomy label is appended so every check is clearly identifiable by
+    its Lint Axis short name (issue #361 AC), without discarding the more
+    descriptive wording readers already know.
     """
-    lines: list[str] = []
+    return f"### {code} {title} — {LINT_CHECK_TAXONOMY[code].label}"
 
-    lines.append("<!-- Auto-generated by POST /lint — manual edits will be overwritten. -->")
-    lines.append("")
-    lines.append("# Lint Report")
-    lines.append("")
-    lines.append(
-        f"> Generated at {summary.generated_at} · total findings: {summary.total_findings}"
-    )
-    lines.append("")
 
-    # C11 Orphan pages section
-    lines.append("## C11 Orphan pages")
-    lines.append("")
+def _render_c11_orphans(findings: LintFindings) -> list[str]:
+    """C11 Orphan pages — always rendered (empty-section convention)."""
+    lines: list[str] = [_check_heading("C11", "Orphan pages"), ""]
     if not findings.orphans:
         lines.append("_No orphan pages found._")
     else:
         for orphan in findings.orphans:
-            lines.append(f"### `{orphan.page_slug}`")
+            lines.append(f"#### `{orphan.page_slug}`")
             lines.append("")
             lines.append(
                 f"**Missing sources:** {', '.join(f'`{s}`' for s in orphan.missing_sources)}"
@@ -1808,13 +1889,14 @@ def _render_report_markdown(
             lines.append("")
             lines.append(f"**Suggested action:** {orphan.suggested_action}")
             lines.append("")
-
     lines.append("")
+    return lines
 
-    # C3 Failed grounding section
+
+def _render_c3_failed_grounding(findings: LintFindings) -> list[str]:
+    """C3 Failed grounding — always rendered (empty-section convention)."""
     n_c3 = len(findings.failed_grounding)
-    lines.append(f"## C3 Failed grounding ({n_c3} pages)")
-    lines.append("")
+    lines: list[str] = [_check_heading("C3", f"Failed grounding ({n_c3} pages)"), ""]
     if not findings.failed_grounding:
         lines.append("_No failed-grounding pages found._")
     else:
@@ -1827,13 +1909,14 @@ def _render_report_markdown(
         for fg in findings.failed_grounding:
             lines.append(f"**`{fg.page_slug}`** — {fg.suggested_action}")
             lines.append("")
-
     lines.append("")
+    return lines
 
-    # C4 Slug collision groups section
+
+def _render_c4_slug_collisions(findings: LintFindings) -> list[str]:
+    """C4 Slug collision groups — always rendered (empty-section convention)."""
     n_c4 = len(findings.slug_collisions)
-    lines.append(f"## C4 Slug collision groups ({n_c4} groups)")
-    lines.append("")
+    lines: list[str] = [_check_heading("C4", f"Slug collision groups ({n_c4} groups)"), ""]
     if not findings.slug_collisions:
         lines.append("_No slug collision groups found._")
     else:
@@ -1846,13 +1929,15 @@ def _render_report_markdown(
         for sc in findings.slug_collisions:
             lines.append(f"**`{sc.base_slug}`** — {sc.suggested_action}")
             lines.append("")
-
     lines.append("")
+    return lines
 
-    # C6 Stale pages section
+
+def _render_c6_stale_pages(findings: LintFindings) -> list[str]:
+    """C6 Stale pages — always rendered (empty-section convention)."""
     n_stale = len(findings.stale_pages)
-    lines.append(f"## C6 Stale pages ({n_stale} page{'s' if n_stale != 1 else ''})")
-    lines.append("")
+    title = f"Stale pages ({n_stale} page{'s' if n_stale != 1 else ''})"
+    lines: list[str] = [_check_heading("C6", title), ""]
     if not findings.stale_pages:
         lines.append("_No stale pages found._")
     else:
@@ -1866,11 +1951,14 @@ def _render_report_markdown(
                 f" | {stale.drift_days:.1f} | {stale.suggested_action} |"
             )
     lines.append("")
+    return lines
 
-    # C2 Red links section
+
+def _render_c2_red_links(findings: LintFindings) -> list[str]:
+    """C2 Red links — always rendered (empty-section convention)."""
     n_red = len(findings.red_links)
-    lines.append(f"## C2 Red links ({n_red} backlog item{'s' if n_red != 1 else ''})")
-    lines.append("")
+    title = f"Red links ({n_red} backlog item{'s' if n_red != 1 else ''})"
+    lines: list[str] = [_check_heading("C2", title), ""]
     if not findings.red_links:
         lines.append("_No red links found._")
     else:
@@ -1882,19 +1970,19 @@ def _render_report_markdown(
             ctx_str = rl.sample_context.replace("|", "\\|") if rl.sample_context else ""
             lines.append(f"| `{rl.slug}` | {rl.mention_count} | {ref_by_str} | {ctx_str} |")
     lines.append("")
+    return lines
 
-    # C1 Coverage gaps section
+
+def _render_c1_coverage_gaps(findings: LintFindings) -> list[str]:
+    """C1 Coverage gaps — always rendered (empty-section convention)."""
     n_c1 = len(findings.coverage_gaps)
-    lines.append(f"## C1 Coverage gaps ({n_c1} findings)")
-    lines.append("")
+    lines: list[str] = [_check_heading("C1", f"Coverage gaps ({n_c1} findings)"), ""]
     if not findings.coverage_gaps:
         lines.append("_No coverage gaps found._")
         lines.append("")
     else:
         # Sub-group by reason in fixed order
-        from collections import defaultdict as _dd
-
-        by_reason: dict[str, list[CoverageGapFinding]] = _dd(list)
+        by_reason: dict[str, list[CoverageGapFinding]] = defaultdict(list)
         for gap in findings.coverage_gaps:
             by_reason[gap.reason].append(gap)
 
@@ -1902,7 +1990,7 @@ def _render_report_markdown(
             group = by_reason.get(reason, [])
             if not group:
                 continue
-            lines.append(f"### Repeated {reason} ({len(group)})")
+            lines.append(f"#### Repeated {reason} ({len(group)})")
             lines.append("")
             for gap in group:
                 lines.append(f"- **`{gap.query_canonical}`** (×{gap.hit_count})")
@@ -1912,11 +2000,13 @@ def _render_report_markdown(
                     lines.append(f"  - Sample queries: {samples}")
                 lines.append(f"  - First seen: {gap.first_seen}  Last seen: {gap.last_seen}")
                 lines.append("")
+    return lines
 
-    # C5 Contradictions section
+
+def _render_c5_contradictions(findings: LintFindings, summary: LintSummary) -> list[str]:
+    """C5 Contradictions — always rendered (empty-section convention)."""
     n_c5 = len(findings.page_pairs)
-    lines.append(f"## C5 Contradictions ({n_c5} findings)")
-    lines.append("")
+    lines: list[str] = [_check_heading("C5", f"Contradictions ({n_c5} findings)"), ""]
     # Honesty note for the similarity cap (issue #194): when candidate pairs
     # exceed KB_LINT_C5_MAX_PAIRS, only the top-K most-similar are judged. Surface
     # the remainder so a capped audit reads as partial-by-design, not silent.
@@ -1932,9 +2022,7 @@ def _render_report_markdown(
         lines.append("")
     else:
         # Sub-group by severity in fixed order: direct → tension → duplicate
-        from collections import defaultdict as _dd2
-
-        by_sev: dict[str, list[PagePairFinding]] = _dd2(list)
+        by_sev: dict[str, list[PagePairFinding]] = defaultdict(list)
         for ppf in findings.page_pairs:
             by_sev[ppf.severity].append(ppf)
 
@@ -1942,7 +2030,7 @@ def _render_report_markdown(
             group = by_sev.get(sev, [])
             if not group:
                 continue
-            lines.append(f"### {sev.capitalize()} ({len(group)})")
+            lines.append(f"#### {sev.capitalize()} ({len(group)})")
             lines.append("")
             lines.append("| Page A | Page B | Page A claim | Page B claim | Suggested action |")
             lines.append("|--------|--------|-------------|-------------|------------------|")
@@ -1957,46 +2045,116 @@ def _render_report_markdown(
             for ppf in group:
                 lines.append(f"**`{ppf.page_a}` ↔ `{ppf.page_b}`** — {ppf.summary}")
                 lines.append("")
+    return lines
 
-    # ---- Phase 6 Slice 6-5 sections (PRD #78 Phase 5 amendment) ----
-    # Empty-findings → section omitted entirely, matching the existing pattern
-    # used by the Coverage Gaps / Contradictions sub-groups above. This keeps
-    # noise out of the report when the qa lifecycle is dormant.
 
-    # ## Promotion Candidates (C8)
-    if findings.promotion_candidates:
-        lines.append("## Promotion Candidates")
-        lines.append("")
-        lines.append("| Slug | Question | Count | Age (days) | Cited |")
-        lines.append("|------|----------|-------|------------|-------|")
-        for pc in findings.promotion_candidates:
-            q_cell = pc.question.replace("|", "\\|").replace("\n", " ")
-            lines.append(
-                f"| `{pc.slug}` | {q_cell} | {pc.count} | {pc.age_days:.1f} | {pc.cited_count} |"
-            )
-        lines.append("")
+def _render_c8_promotion_candidates(findings: LintFindings) -> list[str]:
+    """C8 Promotion Candidates — omitted entirely when empty (Slice 6-5 convention:
+    keeps noise out of the report while the qa lifecycle is dormant)."""
+    if not findings.promotion_candidates:
+        return []
+    lines: list[str] = [_check_heading("C8", "Promotion Candidates"), ""]
+    lines.append("| Slug | Question | Count | Age (days) | Cited |")
+    lines.append("|------|----------|-------|------------|-------|")
+    for pc in findings.promotion_candidates:
+        q_cell = pc.question.replace("|", "\\|").replace("\n", " ")
+        lines.append(
+            f"| `{pc.slug}` | {q_cell} | {pc.count} | {pc.age_days:.1f} | {pc.cited_count} |"
+        )
+    lines.append("")
+    return lines
 
-    # ## Stale Filed Answers (C9)
-    if findings.stale_filed_answers:
-        lines.append("## Stale Filed Answers")
-        lines.append("")
-        lines.append("| Slug | Stale Entity Citations | Days Drift |")
-        lines.append("|------|------------------------|------------|")
-        for sf in findings.stale_filed_answers:
-            cites_cell = ", ".join(f"`{c}`" for c in sf.stale_citations)
-            lines.append(f"| `{sf.page_slug}` | {cites_cell} | {sf.max_drift_days:.1f} |")
-        lines.append("")
 
-    # ## Invalid qa Schema (C10)
-    if findings.invalid_qa_schemas:
-        lines.append("## Invalid qa Schema")
+def _render_c9_stale_filed_answers(findings: LintFindings) -> list[str]:
+    """C9 Stale Filed Answers — omitted entirely when empty (Slice 6-5 convention)."""
+    if not findings.stale_filed_answers:
+        return []
+    lines: list[str] = [_check_heading("C9", "Stale Filed Answers"), ""]
+    lines.append("| Slug | Stale Entity Citations | Days Drift |")
+    lines.append("|------|------------------------|------------|")
+    for sf in findings.stale_filed_answers:
+        cites_cell = ", ".join(f"`{c}`" for c in sf.stale_citations)
+        lines.append(f"| `{sf.page_slug}` | {cites_cell} | {sf.max_drift_days:.1f} |")
+    lines.append("")
+    return lines
+
+
+def _render_c10_invalid_qa_schemas(findings: LintFindings) -> list[str]:
+    """C10 Invalid qa Schema — omitted entirely when empty (Slice 6-5 convention)."""
+    if not findings.invalid_qa_schemas:
+        return []
+    lines: list[str] = [_check_heading("C10", "Invalid qa Schema"), ""]
+    lines.append("| Slug | Property | Offending Value |")
+    lines.append("|------|----------|-----------------|")
+    for inv in findings.invalid_qa_schemas:
+        val_cell = inv.offending_value.replace("|", "\\|").replace("\n", " ")
+        lines.append(f"| `{inv.page_slug}` | `{inv.property_name}` | {val_cell} |")
+    lines.append("")
+    return lines
+
+
+def _render_report_markdown(
+    findings: LintFindings,
+    summary: LintSummary,
+    check_errors: dict[str, str],
+) -> str:
+    """Render the human-readable lint report as a markdown string.
+
+    Sections are grouped under four axis ``## <Axis>`` headers (issue #361 /
+    CONTEXT.md "Lint Axis"), in ``LINT_AXIS_ORDER`` (Freshness -> Coherence ->
+    Coverage -> Lifecycle); within an axis, checks appear in
+    ``LINT_CHECK_TAXONOMY``'s per-axis order via ``group_findings_by_axis``,
+    each as its own ``### <CODE> ... — <label>`` sub-heading (built by
+    ``_check_heading``). Each check keeps its own empty-section convention:
+    C1/C2/C3/C4/C5/C6/C11 always render (with a "_No … found._" placeholder
+    when empty), while C8/C9/C10 (Slice 6-5) are omitted entirely when empty.
+
+    The report also starts with the sentinel HTML comment
+    ``<!-- Auto-generated by POST /lint``, a ``# Lint Report`` heading, and a
+    summary blockquote — all ahead of the axis sections.
+    """
+    lines: list[str] = []
+
+    lines.append("<!-- Auto-generated by POST /lint — manual edits will be overwritten. -->")
+    lines.append("")
+    lines.append("# Lint Report")
+    lines.append("")
+    lines.append(
+        f"> Generated at {summary.generated_at} · total findings: {summary.total_findings}"
+    )
+    lines.append("")
+
+    # code -> its rendered lines (including the check's own H3 heading), built
+    # once up front so the axis loop below only decides ordering, not content.
+    check_lines_by_code: dict[str, list[str]] = {
+        "C11": _render_c11_orphans(findings),
+        "C3": _render_c3_failed_grounding(findings),
+        "C4": _render_c4_slug_collisions(findings),
+        "C6": _render_c6_stale_pages(findings),
+        "C2": _render_c2_red_links(findings),
+        "C1": _render_c1_coverage_gaps(findings),
+        "C5": _render_c5_contradictions(findings, summary),
+        "C8": _render_c8_promotion_candidates(findings),
+        "C9": _render_c9_stale_filed_answers(findings),
+        "C10": _render_c10_invalid_qa_schemas(findings),
+    }
+
+    for axis_group in group_findings_by_axis(findings):
+        # Build the axis body first so an all-empty axis skips its ``## <Axis>``
+        # header entirely rather than emitting a dangling heading with nothing
+        # beneath it. Only Lifecycle is elidable in practice: its checks
+        # (C8/C9/C10) self-omit when empty, so a dormant qa lifecycle — the
+        # common case — would otherwise render a bare ``## Lifecycle``. The
+        # Freshness/Coherence/Coverage checks always render a "_No … found._"
+        # placeholder, so those axes are never empty (issue #361).
+        axis_body: list[str] = []
+        for meta, _findings_list in axis_group.checks:
+            axis_body.extend(check_lines_by_code[meta.code])
+        if not axis_body:
+            continue
+        lines.append(f"## {axis_group.axis}")
         lines.append("")
-        lines.append("| Slug | Property | Offending Value |")
-        lines.append("|------|----------|-----------------|")
-        for inv in findings.invalid_qa_schemas:
-            val_cell = inv.offending_value.replace("|", "\\|").replace("\n", " ")
-            lines.append(f"| `{inv.page_slug}` | `{inv.property_name}` | {val_cell} |")
-        lines.append("")
+        lines.extend(axis_body)
 
     if check_errors:
         lines.append("")
