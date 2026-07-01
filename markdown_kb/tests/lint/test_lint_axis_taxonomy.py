@@ -14,10 +14,16 @@ from __future__ import annotations
 
 import datetime
 
-from app.lint import LINT_AXIS_ORDER, LINT_CHECK_TAXONOMY, group_findings_by_axis
+from app.lint import (
+    LINT_AXIS_ORDER,
+    LINT_CHECK_TAXONOMY,
+    _render_report_markdown,
+    group_findings_by_axis,
+)
 from app.schemas import (
     FailedGroundingFinding,
     LintFindings,
+    LintSummary,
     OrphanPageFinding,
     StalePageFinding,
 )
@@ -139,3 +145,34 @@ class TestGroupFindingsByAxis:
         # Untouched axes stay all-empty.
         coherence = next(g for g in groups if g.axis == "Coherence")
         assert all(findings_list == [] for _meta, findings_list in coherence.checks)
+
+
+class TestRenderReportAxisElision:
+    """The report renderer elides an axis header when all its checks are empty."""
+
+    def test_empty_lifecycle_axis_header_is_omitted(self):
+        """A dormant qa lifecycle (C8/C9/C10 all empty) must NOT leave a dangling
+        ``## Lifecycle`` header with nothing beneath it — while the always-rendered
+        axes still appear with their "_No … found._" placeholders (issue #361).
+
+        This is the common-case gap the e2e golden test misses: its fixture has
+        Lifecycle findings, so it only ever exercises the header-present branch.
+        """
+        summary = LintSummary(
+            total_findings=0,
+            findings_by_check={},
+            generated_at="2026-07-01T00:00:00Z",
+        )
+        content = _render_report_markdown(LintFindings(), summary, {})
+
+        # Freshness/Coherence/Coverage always have content (their checks render a
+        # "_No … found._" placeholder), so their axis headers are present.
+        assert "## Freshness" in content
+        assert "## Coherence" in content
+        assert "## Coverage" in content
+        # Lifecycle's three checks all self-omit when empty, so with a dormant qa
+        # lifecycle the axis collapses to nothing — no bare header, no C8/C9/C10.
+        assert "## Lifecycle" not in content
+        assert "### C8" not in content
+        assert "### C9" not in content
+        assert "### C10" not in content

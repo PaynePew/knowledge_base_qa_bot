@@ -2140,10 +2140,21 @@ def _render_report_markdown(
     }
 
     for axis_group in group_findings_by_axis(findings):
+        # Build the axis body first so an all-empty axis skips its ``## <Axis>``
+        # header entirely rather than emitting a dangling heading with nothing
+        # beneath it. Only Lifecycle is elidable in practice: its checks
+        # (C8/C9/C10) self-omit when empty, so a dormant qa lifecycle — the
+        # common case — would otherwise render a bare ``## Lifecycle``. The
+        # Freshness/Coherence/Coverage checks always render a "_No … found._"
+        # placeholder, so those axes are never empty (issue #361).
+        axis_body: list[str] = []
+        for meta, _findings_list in axis_group.checks:
+            axis_body.extend(check_lines_by_code[meta.code])
+        if not axis_body:
+            continue
         lines.append(f"## {axis_group.axis}")
         lines.append("")
-        for meta, _findings_list in axis_group.checks:
-            lines.extend(check_lines_by_code[meta.code])
+        lines.extend(axis_body)
 
     if check_errors:
         lines.append("")
