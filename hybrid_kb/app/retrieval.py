@@ -268,6 +268,18 @@ def retrieve_and_gate(
     bm25_ranked = _bm25_indexer.search(question, k=candidate_depth)
     dense_ranked = dense_index.search_with_distance(question, k=candidate_depth)
 
+    # Serving-time dead-id guard (ADR-0022 / #355): drop dense-arm hits whose
+    # Section.id is absent from the live BM25 Section-id set.  A page orphaned
+    # by delete_orphans (markdown_kb.app.ingest step 10) stays embedded in the
+    # dense seed until the next Dense rebuild, but its content is stale — never
+    # serve it.  The live id set comes from the FULL warm corpus, NOT from the
+    # per-query bm25_ranked top-candidate_depth pool — a live Section BM25-ranked
+    # beyond candidate_depth must not be dropped as a false orphan.
+    _live_ids = {s.id for s in _bm25_indexer.sections}
+    dense_ranked = [
+        (sec, dist) for sec, dist in dense_ranked if sec.id in _live_ids
+    ]
+
     # Each arm's NATIVE top score: BM25's highest score (search returns
     # score-descending), the dense arm's minimum distance (closest hit). These —
     # not the fused score — drive the gate.
