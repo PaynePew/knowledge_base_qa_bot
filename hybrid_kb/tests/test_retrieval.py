@@ -313,6 +313,153 @@ def test_overfetch_candidate_depth_is_decoupled_from_top_k(wired_corpus):
 
 
 # ===========================================================================
+# #355 — serving-time dead-id guard: dense-only orphaned Section ids
+#
+# Simulates the runtime leak this issue closes: markdown_kb.app.ingest step
+# 10's delete_orphans unlinks a page from the LIVE wiki — it drops out of BM25
+# on the next reindex — but the dense arm is a committed FAISS seed refreshed
+# only by the manual Dense rebuild (#348), so it can still embed the orphaned
+# page ("dense-only dead id"). The guard must drop that id BEFORE the OR-gate
+# and BEFORE RRF, so it can neither pass the gate alone nor surface stale
+# content + a 404 citation. A still-live page must be unaffected.
+# ===========================================================================
+@pytest.fixture()
+def orphaned_dense_id_corpus(fake_embeddings):
+    """Dense seed carries a Section ABSENT from the live BM25 corpus.
+
+    ``live`` populates ``bm25_indexer.sections`` (the FULL warm live corpus the
+    guard must read) — the orphan is excluded from it, exactly as
+    ``delete_orphans`` would leave it after unlinking the page from ``wiki/``.
+    The dense index is built over ``live + orphan`` — the frozen seed's view,
+    which still carries the now-deleted page until the next Dense rebuild.
+    """
+    live = [
+        _wiki_section(
+            "refund-policy#refund-policy",
+            "Refund policy: refunds are processed within seven business days after "
+            "approval.",
+            ["Refund Policy"],
+        ),
+        _wiki_section(
+            "shipping-policy#shipping-policy",
+            "Shipping policy: standard shipping delivery takes three to five "
+            "business days within the country.",
+            ["Shipping Policy"],
+        ),
+    ]
+    orphan = _wiki_section(
+        "warranty-terms#warranty-terms",
+        "Warranty terms: exclusive orphan coverage duration lasting twelve months "
+        "from the purchase date.",
+        ["Warranty Terms"],
+    )
+    bm25_indexer.sections = list(live)  # live BM25 corpus — orphan excluded
+    bm25_indexer.rebuild_stats()
+    dense_index.build_index(sections=[*live, orphan])  # stale seed still has it
+    yield {"live": live, "orphan": orphan}
+    bm25_indexer.sections = []
+    bm25_indexer.rebuild_stats()
+    dense_index.vectorstore = None
+    dense_index.sections_indexed = 0
+
+
+def _exact_dense_query_for(section: Section) -> str:
+    """The EXACT text ``dense_index._embed_text`` embeds for ``section``.
+
+    Querying with this exact string gives the hash-based ``fake_embeddings`` a
+    FAISS distance of 0.0 to ``section`` — a deterministic "closest possible"
+    dense hit that does not depend on the fake's lack of real semantics
+    (mirrors the established pattern in ``test_dense_index.py``, which also
+    reaches into ``dense_index._embed_text`` from tests).
+    """
+    return dense_index._embed_text(section)
+
+
+def test_dense_only_orphan_id_dropped_before_gate_and_fusion(
+    orphaned_dense_id_corpus, monkeypatch
+):
+    """An orphaned dense-only id cannot pass the OR-gate alone or enter fusion.
+
+    The query is the orphan's exact embedded text, so — WITHOUT the guard —
+    the dense arm would report distance 0.0 for it: the strongest possible
+    dense clear. The query shares no keywords with the two live pages, so BM25
+    stays weak (``search`` drops zero-score hits). Tightening the dense
+    ceiling isolates the assertion to the guard itself rather than incidental
+    fake-embedding distances between unrelated real Sections.
+    """
+    monkeypatch.setenv("KB_RAG_DISTANCE_THRESHOLD", "0.01")
+    orphan = orphaned_dense_id_corpus["orphan"]
+    query = _exact_dense_query_for(orphan)
+
+    result = retrieval.retrieve_and_gate(query)
+
+    fused_ids = [s.id for s in result["sections"]]
+    assert orphan.id not in fused_ids, (
+        "an orphaned dense-only id must not enter the fused sections/sources"
+    )
+    assert result["grounding_outcome"].passed is False, (
+        "the orphan's near-zero dense distance must not pass the OR-gate alone"
+    )
+    assert result["grounding_outcome"].reason == "below_threshold"
+
+
+def test_still_live_page_dense_hit_unaffected_by_the_guard(
+    orphaned_dense_id_corpus, monkeypatch
+):
+    """A page present in BOTH arms still clears the gate and reaches fusion.
+
+    Proves the guard is a pure membership filter, not a blanket dense
+    suppression: a still-live Section's exact-text query clears the (tightened)
+    dense ceiling and surfaces in the fused result exactly as before.
+    """
+    monkeypatch.setenv("KB_RAG_DISTANCE_THRESHOLD", "0.01")
+    live_page = orphaned_dense_id_corpus["live"][0]  # refund-policy
+    query = _exact_dense_query_for(live_page)
+
+    result = retrieval.retrieve_and_gate(query)
+
+    fused_ids = [s.id for s in result["sections"]]
+    assert live_page.id in fused_ids, "a still-live page's dense hit must be unaffected"
+    assert result["grounding_outcome"].passed is True
+
+
+def test_guard_reads_the_full_live_corpus_not_the_per_query_bm25_pool(
+    orphaned_dense_id_corpus, monkeypatch
+):
+    """A live Section absent from THIS query's ``bm25_ranked`` pool is still retained.
+
+    The live id set must come from ``markdown_kb.app.indexer.sections`` (the
+    WHOLE warm corpus), never from ``bm25_ranked`` / ``bm25_pool`` (this
+    query's candidate pool — which a live Section can fail to enter at ANY
+    depth once its BM25 score is 0, exactly as a Section ranked beyond
+    ``candidate_depth`` never enters it either — both are the same "absent
+    from this query's BM25 pool" case the live id set must NOT be keyed off).
+
+    The orphan-query shares no keywords with either live page (``search``
+    drops zero-score hits, so BOTH live pages are absent from ``bm25_ranked``
+    for this query, regardless of ``candidate_depth``), yet both live pages'
+    dense hits must still reach RRF fusion — a live Section's dense candidacy
+    must never depend on whether THIS query's own BM25 arm happened to rank it.
+    A buggy implementation keying the live-id set off ``bm25_ranked`` /
+    ``bm25_pool`` instead of the full corpus would drop both live pages here
+    too (empty pool), which this test would catch.
+    """
+    monkeypatch.setenv("KB_RAG_DISTANCE_THRESHOLD", "0.01")
+    orphan = orphaned_dense_id_corpus["orphan"]
+    live = orphaned_dense_id_corpus["live"]
+    query = _exact_dense_query_for(orphan)
+
+    result = retrieval.retrieve_and_gate(query)
+
+    fused_ids = {s.id for s in result["sections"]}
+    assert {section.id for section in live} <= fused_ids, (
+        "live Sections absent from this query's own BM25 pool must still be "
+        "retained (from the full corpus) and reach fusion"
+    )
+    assert orphan.id not in fused_ids, "the orphan must still be dropped"
+
+
+# ===========================================================================
 # #327 — _dense_arm_clears None-ceiling gate parity with vector_rag
 #
 # vector_rag treats None ceiling as "gate disabled → proceed" (its refuse
