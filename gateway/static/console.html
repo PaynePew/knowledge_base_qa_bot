@@ -1634,18 +1634,24 @@ function ingestPartialSummary(sources, data) {
    way to retry short of a full page reload. */
 function finishBatchRemediation(summaryText, resultEl, siblingButtons) {
   lastBatchSummary = summaryText;
-  remediationInFlight = false;
+  // Keep remediationInFlight true until the re-lint read-back resolves —
+  // matching the per-row runLintRemediation path — so the beforeunload confirm
+  // stays armed for the whole batch loop, including the re-lint window (issue
+  // #364 verify finding: clearing it before the fetch left a request in flight
+  // with the unload guard already disabled).
   fetch("/wiki/lint?include_c5=false", { method: "POST" })
     .then(function(resp) {
       if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
       return resp.json();
     })
     .then(function(data) {
+      remediationInFlight = false;
       lastLintData = data;
       if (resultEl) resultEl.replaceChildren(renderLintCard(data, resultEl));
       renderCurationQueue(document.getElementById("curation-queue-root"), data);
     })
     .catch(function(err) {
+      remediationInFlight = false;
       lastBatchSummary = summaryText + " (re-lint failed: " + (err.message || String(err)) + " — re-run Lint to refresh)";
       (siblingButtons || []).forEach(function(b) { b.disabled = false; });
     });

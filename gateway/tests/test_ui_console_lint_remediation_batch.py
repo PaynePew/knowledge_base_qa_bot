@@ -272,6 +272,22 @@ def test_beforeunload_comment_frames_the_notice_as_soft_not_alarmist():
     assert "corrupt" not in surrounding.lower() or "never" in surrounding.lower()
 
 
+def test_batch_keeps_in_flight_flag_armed_until_relint_resolves():
+    """finishBatchRemediation must not clear remediationInFlight before the
+    follow-up re-lint read-back — otherwise the beforeunload guard is disabled
+    while a request is still in flight, inconsistent with the per-row
+    runLintRemediation path (issue #364 verify finding). The flag-false must
+    appear only inside the re-lint .then()/.catch(), i.e. after the fetch."""
+    text = _console_text()
+    fn = _extract_function(text, "finishBatchRemediation")
+    fetch_pos = fn.index('fetch("/wiki/lint?include_c5=false"')
+    first_clear = fn.index("remediationInFlight = false")
+    assert first_clear > fetch_pos, (
+        "remediationInFlight is cleared before the re-lint fetch — the unload "
+        "guard would be off during the re-lint window"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Partial-failure summary on completion
 # ---------------------------------------------------------------------------
