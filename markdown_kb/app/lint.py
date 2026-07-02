@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``run_lint``, ``_check_c11_orphan``, ``_check_c3_failed_grounding``, ``_check_c4a_slug_collision``, ``_check_c6_stale``, ``_check_c2_red_links``, ``_check_c1_coverage_gaps``, ``_canonicalise``, ``_candidate_pairs``, ``_judge_page_pair``, ``_check_c5_page_pair``, ``_load_wiki_pages``, ``get_lint_llm``, ``_check_c8_promotion_candidates``, ``_check_c9_qa_staleness``, ``_check_c10_qa_schema_validity``, ``group_findings_by_axis``, ``LINT_CHECK_TAXONOMY``, ``LINT_AXIS_ORDER``.
+"""Deep module per Ousterhout. Public surface: ``run_lint``, ``_check_c11_orphan``, ``_check_c3_failed_grounding``, ``_check_c4a_slug_collision``, ``_check_c6_stale``, ``_check_c2_red_links``, ``_check_c1_coverage_gaps``, ``_canonicalise``, ``_candidate_pairs``, ``_judge_page_pair``, ``_check_c5_page_pair``, ``_load_wiki_pages``, ``get_lint_llm``, ``_check_c8_promotion_candidates``, ``_check_c9_qa_staleness``, ``_check_c10_qa_schema_validity``, ``group_findings_by_axis``, ``LINT_CHECK_TAXONOMY``, ``LINT_AXIS_ORDER``, ``remediation_for``, ``RemediationDescriptor``, ``RemediationAction``.
 
 Lint orchestrator — POST /lint health check for the wiki.
 
@@ -72,6 +72,19 @@ section with its taxonomy code + label, so a later remediation slice (or the
 CLI/MCP surfaces, per ADR-0017 interface parity) can reuse the same taxonomy.
 Lint remains read-only — this is a report-layout change only.
 
+Slice S3 scope (Lint Remediation tier-A — issue #363, ADR-0023)
+-----------------------------------------------------------------
+No new check, no new endpoint. ``remediation_for`` maps each of the ten
+wired checks to a ``RemediationDescriptor`` (tier + executable actions),
+reusing S1's ``LINT_CHECK_TAXONOMY`` codes as keys. The Operator Console is
+its first consumer: Direct-tier findings (C6/C3 stale/failed-grounding,
+C10 invalid-schema) render a per-row Remediation button wired to the
+*existing* ``POST /ingest`` / ``DELETE /qa/{slug}`` endpoints; Authored-tier
+findings (C5/C4/C2/C1) render a disabled tier-B affordance; deferred
+findings (C9/C11) render neither (no lifecycle endpoint exists yet). Lint
+itself is untouched — remediation is always a separate operation triggered
+from the report, never a side-effect of ``run_lint()``.
+
 All four amendments preserve PRD #65 Q3 read-only invariant — they read
 frontmatter and write only ``lint-report.md``, never page frontmatter.
 
@@ -106,7 +119,7 @@ Check execution order (cheapest to most expensive)
 9. C10 qa-schema-validity (read qa frontmatter)
 10. C5 page-pair LLM (F1∪F3 filter + LLM) — most expensive last
 
-Authorised by PRD #65 (Phase 5), GitHub issue #66 (Slice 5-1), GitHub issue #67 (Slice 5-2), GitHub issue #68 (Slice 5-3), GitHub issue #69 (Slice 5-4), GitHub issue #70 (Slice 5-5), PRD #78 (Phase 6), GitHub issue #82 (Slice 6-5 Phase 5 amendment), ADR-0023 (Lint Remediation Direct vs Authored), PRD #359 (Lint Remediation tier-A), and GitHub issue #361 (Slice S1 — Lint Axis taxonomy).
+Authorised by PRD #65 (Phase 5), GitHub issue #66 (Slice 5-1), GitHub issue #67 (Slice 5-2), GitHub issue #68 (Slice 5-3), GitHub issue #69 (Slice 5-4), GitHub issue #70 (Slice 5-5), PRD #78 (Phase 6), GitHub issue #82 (Slice 6-5 Phase 5 amendment), ADR-0023 (Lint Remediation Direct vs Authored), PRD #359 (Lint Remediation tier-A), GitHub issue #361 (Slice S1 — Lint Axis taxonomy), and GitHub issue #363 (Slice S3 — Console axis grouping + per-row Direct Remediation + auto-relint).
 """
 
 from __future__ import annotations
@@ -1855,6 +1868,91 @@ def group_findings_by_axis(findings: LintFindings) -> list[LintAxisGroup]:
         ]
         groups.append(LintAxisGroup(axis=axis, checks=checks))
     return groups
+
+
+# ---------------------------------------------------------------------------
+# Remediation descriptor (issue #363 / ADR-0023 tier-A S3)
+# ---------------------------------------------------------------------------
+
+
+class RemediationAction(NamedTuple):
+    """One executable Remediation operation wired to an *existing* endpoint.
+
+    ``verb`` is the curator-facing action name (``"reingest"``,
+    ``"reingest_retry"``, ``"discard"``, ``"promote"``).
+    ``target_field`` names the finding attribute that supplies the request
+    value (e.g. ``StalePageFinding.source``, ``InvalidQaSchemaFinding.
+    page_slug``) — a consumer reads this field off the finding to build the
+    request body/path; the field name itself is never re-derived client-side
+    (CODING_STANDARD §12.5 no business logic in the client).
+    ``force`` is ``True`` only for C3's retry re-ingest: without
+    ``force=True`` on ``POST /ingest``, hash-skip idempotency (#93) no-ops
+    the retry into a false fix (ADR-0023 Invariant).
+    """
+
+    verb: str
+    target_field: str
+    force: bool = False
+
+
+class RemediationDescriptor(NamedTuple):
+    """A check's Remediation tier plus its executable actions.
+
+    ``actions`` is empty for the ``"authored"`` and ``"deferred"`` tiers —
+    tier alone drives a Direct-only consumer's disabled tier-B affordance
+    (Authored) or "no control yet" rendering (deferred).
+    """
+
+    tier: str  # "direct" | "authored" | "deferred"
+    actions: tuple[RemediationAction, ...] = ()
+
+
+# code -> RemediationDescriptor. Direct-tier actions wire to the *existing*
+# endpoints named in ADR-0023 Consequences (zero new endpoints): C6/C3 ->
+# POST /ingest, C10 -> DELETE /qa/{slug}, C8 -> POST /qa/{slug}/promote +
+# DELETE /qa/{slug} (rendered by the Curation Queue block, not per-row lint
+# buttons — issue #363 AC "C8 promotion controls remain in the dedicated
+# Curation Queue block, unchanged"). Authored-tier checks (Coherence C5/C4,
+# Coverage C1/C2) get an empty ``actions`` tuple: visible under their axis,
+# never one-click actionable — Authored Remediation always has a curator
+# approval gate (ADR-0023). C9 stale-qa and C11 orphan are ``"deferred"``:
+# ADR-0023 Consequences names both as needing a lifecycle endpoint that does
+# not exist yet (orphan-delete would reopen ADR-0012; stale-qa needs a
+# demote-then-re-file operation), so tier-A ships neither as one-click.
+_REMEDIATION_TAXONOMY: dict[str, RemediationDescriptor] = {
+    "C6": RemediationDescriptor("direct", (RemediationAction("reingest", "source"),)),
+    "C3": RemediationDescriptor(
+        "direct", (RemediationAction("reingest_retry", "source", force=True),)
+    ),
+    "C11": RemediationDescriptor("deferred"),
+    "C5": RemediationDescriptor("authored"),
+    "C4": RemediationDescriptor("authored"),
+    "C1": RemediationDescriptor("authored"),
+    "C2": RemediationDescriptor("authored"),
+    "C8": RemediationDescriptor(
+        "direct",
+        (
+            RemediationAction("promote", "slug"),
+            RemediationAction("discard", "slug"),
+        ),
+    ),
+    "C10": RemediationDescriptor("direct", (RemediationAction("discard", "page_slug"),)),
+    "C9": RemediationDescriptor("deferred"),
+}
+
+
+def remediation_for(code: str) -> RemediationDescriptor:
+    """Return the Remediation tier + actions for a wired check code.
+
+    Pure lookup into ``_REMEDIATION_TAXONOMY`` — the single source of truth
+    for which checks are Direct / Authored / deferred (ADR-0023). ``code``
+    is one of the ten ``LINT_CHECK_TAXONOMY`` keys (a finding *type*, e.g.
+    ``"C6"`` — the tier/action/target-field/force shape does not vary per
+    finding *instance*, only per check). Raises ``KeyError`` for an unknown
+    code so a typo fails loudly rather than silently rendering no
+    Remediation.
+    """
+    return _REMEDIATION_TAXONOMY[code]
 
 
 # ---------------------------------------------------------------------------
