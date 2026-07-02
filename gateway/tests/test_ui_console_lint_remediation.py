@@ -85,7 +85,10 @@ def test_c3_failed_grounding_gets_reingest_retry_with_force_true():
         "C3 failed-grounding rows must wire a Re-ingest (retry) action (issue #363 AC)"
     )
     # The reingestAction implementation must forward force through to the request.
-    reingest_fn = re.search(r"function reingestAction\(.*?\n\}", text, re.DOTALL)
+    # reingestAction is nested inside renderLintCard (2-space indent), so its
+    # closing brace is "\n  }", not "\n}" — anchoring on "\n}" would over-match
+    # past the function into the rest of the file.
+    reingest_fn = re.search(r"function reingestAction\(.*?\n  \}", text, re.DOTALL)
     assert reingest_fn is not None
     assert "ingestRemediationRequest(source, retry" in reingest_fn.group(0)
     request_fn = re.search(r"function ingestRemediationRequest\(.*?\n\}", text, re.DOTALL)
@@ -120,7 +123,9 @@ def test_authored_tier_findings_render_disabled_affordance():
     assert "tier-b-btn" in text
     assert "Authored (tier B)" in text
     # The disabled button must actually carry a disabled attribute.
-    tier_b_fn = re.search(r"function tierBAffordance\(\).*?\n\}", text, re.DOTALL)
+    # tierBAffordance is nested inside renderLintCard (2-space indent) — see
+    # the reingestAction comment above for why "\n  }" (not "\n}") is required.
+    tier_b_fn = re.search(r"function tierBAffordance\(\).*?\n  \}", text, re.DOTALL)
     assert tier_b_fn is not None
     assert "disabled" in tier_b_fn.group(0)
 
