@@ -1627,8 +1627,12 @@ function ingestPartialSummary(sources, data) {
    AC, unchanged), then stashes the partial-failure summary so the
    re-rendered Lint card can show it as a one-shot banner (the calling
    button's own status message node is destroyed by the replaceChildren
-   re-render below — issue #364 AC "a partial-failure summary is shown"). */
-function finishBatchRemediation(summaryText, resultEl) {
+   re-render below — issue #364 AC "a partial-failure summary is shown").
+   siblingButtons is re-enabled if the re-lint call itself fails (rare: the
+   batch's own mutation already succeeded and is durable — only the
+   read-back failed) so the card is not left permanently disabled with no
+   way to retry short of a full page reload. */
+function finishBatchRemediation(summaryText, resultEl, siblingButtons) {
   lastBatchSummary = summaryText;
   remediationInFlight = false;
   fetch("/wiki/lint?include_c5=false", { method: "POST" })
@@ -1642,7 +1646,8 @@ function finishBatchRemediation(summaryText, resultEl) {
       renderCurationQueue(document.getElementById("curation-queue-root"), data);
     })
     .catch(function(err) {
-      lastBatchSummary = summaryText + " (re-lint failed: " + (err.message || String(err)) + ")";
+      lastBatchSummary = summaryText + " (re-lint failed: " + (err.message || String(err)) + " — re-run Lint to refresh)";
+      (siblingButtons || []).forEach(function(b) { b.disabled = false; });
     });
 }
 
@@ -1840,7 +1845,7 @@ function renderLintCard(data, resultEl) {
 
       batchIngestRemediationRequest(sources, force)
         .then(function(data) {
-          finishBatchRemediation(ingestPartialSummary(sources, data), resultEl);
+          finishBatchRemediation(ingestPartialSummary(sources, data), resultEl, allButtons);
         })
         .catch(function(err) {
           remediationInFlight = false;
@@ -1880,7 +1885,7 @@ function renderLintCard(data, resultEl) {
       function next(i) {
         if (i >= slugs.length) {
           var summary = "discarded " + slugs.length + ": " + okCount + " ok, " + failCount + " still failing";
-          finishBatchRemediation(summary, resultEl);
+          finishBatchRemediation(summary, resultEl, allButtons);
           return;
         }
         discardRemediationRequest(slugs[i])
