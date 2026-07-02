@@ -1650,11 +1650,13 @@ function finishBatchRemediation(summaryText, resultEl) {
    On success, re-runs the fast (include_c5=false) lint path and re-renders
    BOTH the Lint card and the Curation Queue, so the fixed finding
    disappears and a still-failing one reappears (issue #363 AC). In-flight
-   guard: only the clicked button is disabled while its own request runs
-   (the axis-wide busy-state + beforeunload guard is S4 / issue #364). The
-   fix itself is durable server-side across a disconnect (sync /ingest
-   under _index_lock, ADR-0023) — a network error here just means the
-   status message failed to update, not that the fix was lost. */
+   guard: every remediation button on the card is disabled while this
+   request runs, not just the one clicked (issue #364 — the shared
+   remediationInFlight flag + allButtons list, which also drives the
+   beforeunload confirm). The fix itself is durable server-side across a
+   disconnect (sync /ingest under _index_lock, ADR-0023) — a network error
+   here just means the status message failed to update, not that the fix
+   was lost. */
 function runLintRemediation(requestPromise, btn, statusMsgEl, resultEl, siblingButtons) {
   // siblingButtons (issue #364): every remediation button on the Lint card,
   // so an in-flight remediation — single-row or batch — disables the whole
