@@ -28,7 +28,9 @@ Stop immediately if any step fails.
 git status
 ```
 
-The working tree must be clean. If there are uncommitted changes, abort with an explanation — the implementer or reviewer left something hanging.
+Check the status of the **slice branch's own worktree**. If the slice worktree has uncommitted changes, abort with an explanation — the implementer or reviewer left something hanging.
+
+**NEVER "clean up" a dirty tree yourself: no `git stash`, no `git reset`, no `git checkout --`, no `git clean`.** If you are operating in the shared main working tree, its dirtiness is NOT your concern and NOT a blocker — the branch you push lives in its own worktree; uncommitted changes in the main tree may be the top-level session's in-progress work. Stashing them once destroyed live work (2026-07-03 incident).
 
 ### 2. Re-run the test suite
 
@@ -69,13 +71,13 @@ If push fails (e.g. remote rejects, no network), abort and report the actual err
 
 ### 4. Open the pull request
 
-Gather the implementer's `## What was built` + `## AC self-report` and the reviewer's `## Verdict` + `## Standards drift` + `## Concerns flagged for human` from the issue comments. Build the PR body:
+Gather the implementer's `## What was built` + `## AC self-report` and the reviewer's `## Verdict` + `## Standards drift` + `## Concerns flagged for human` from the issue comments (or from the inline report in your instructions, when the orchestrator embeds one).
 
-```bash
-gh pr create --repo PaynePew/knowledge_base_qa_bot \
-  --head {{BRANCH}} --base {{TARGET_BRANCH}} \
-  --title "<copy the issue title>" \
-  --body-file - <<'PRBODY'
+**Shell-agnostic body handling (hard rule).** This machine may run PowerShell, where bash heredocs (`<<'EOF'`) do not exist and silently produce a broken body. NEVER pipe the body via stdin. Instead: write the body to a temp file with your file-writing tool (NOT shell echo), then pass the path:
+
+1. Write the PR body to `pr-body-{{ISSUE}}.md` in the OS temp directory (not inside the repo/worktree), using this template:
+
+```markdown
 Closes #{{ISSUE}}
 
 ## What was built
@@ -88,7 +90,7 @@ Closes #{{ISSUE}}
 
 ## Reviewer verdict
 
-<!-- copy reviewer's Verdict line and Changes-made list -->
+<!-- copy reviewer's Verdict line and blocker/finding list -->
 
 ## Standards drift / concerns flagged
 
@@ -97,8 +99,18 @@ Closes #{{ISSUE}}
 ## Test results
 
 <!-- final command + exit code from this merge run -->
-PRBODY
 ```
+
+2. Create the PR pointing at that file:
+
+```bash
+gh pr create --repo PaynePew/knowledge_base_qa_bot \
+  --head {{BRANCH}} --base {{TARGET_BRANCH}} \
+  --title "<copy the issue title>" \
+  --body-file "<absolute path to pr-body-{{ISSUE}}.md>"
+```
+
+3. **Verify the body landed** (self-check, do not skip): run `gh pr view <N> --json body` and confirm it contains `Closes #{{ISSUE}}` and the report sections. If the body is empty or a literal flag artifact (e.g. `@-`), fix it with `gh pr edit <N> --body-file "<path>"` before reporting success.
 
 Capture the PR URL from the command output.
 
@@ -115,10 +127,13 @@ Substitute `<N>` with the PR number and `<PR_URL>` with the URL from step 4.
 
 Output `<promise>COMPLETE</promise>` and exit.
 
-If aborted at any step, post:
+If aborted at any step, write the report below to a temp file (same shell-agnostic rule as step 4 — never stdin heredocs) and post it:
 
 ```bash
-gh issue comment {{ISSUE}} --body-file - <<'EOF'
+gh issue comment {{ISSUE}} --body-file "<absolute path to temp report file>"
+```
+
+```markdown
 ## Merge agent report
 
 **Branch:** {{BRANCH}}
@@ -129,7 +144,6 @@ gh issue comment {{ISSUE}} --body-file - <<'EOF'
 
 ### Suggested next step
 <!-- human review, re-implement, re-review, etc. -->
-EOF
 ```
 
 Output `<promise>BLOCKED: <one-line reason></promise>` and exit.
@@ -144,3 +158,4 @@ Output `<promise>BLOCKED: <one-line reason></promise>` and exit.
 - Do NOT merge the PR yourself.
 - Do NOT push to `{{TARGET_BRANCH}}` directly.
 - Do NOT touch `.claude/`.
+- Do NOT run `git stash`, `git reset`, `git checkout --`, or `git clean` in ANY working tree. Abort and report instead.
