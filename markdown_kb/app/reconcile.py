@@ -41,6 +41,14 @@ Reindex is deliberately NOT triggered from this module — ``routes.py`` calls
 ``indexer.build_index()`` exactly once after ``apply_reconcile`` returns,
 mirroring the existing ``POST /qa/{slug}/promote`` convention (reindex lives
 at the route layer, not the domain layer).
+
+Concurrency: ``apply_reconcile`` writes TWO pages, so — mirroring
+``ingest_sources``'s "under ``_index_lock``: delete orphans, then write
+pages" convention (both are multi-file wiki writes) — both writes happen
+inside one ``indexer._index_lock`` acquisition. Without it, a concurrent
+``run_lint()`` (which holds the same lock for its full read sweep) could
+observe page_a already rewritten and page_b not yet, i.e. a still-
+contradicting snapshot.
 """
 
 from __future__ import annotations
@@ -55,7 +63,7 @@ import yaml
 from ._paths import DOCS_DIR
 from .atomic import write_text_atomic
 from .grounding import GroundingOutcome, verify
-from .indexer import parse_markdown
+from .indexer import _index_lock, parse_markdown
 from .lint import generate_reconcile_draft
 from .logger import log_event
 from .schemas import GroundingClaim, GroundingInfo, ReconcileApplyRequest, ReconcileGenerateResponse
@@ -419,8 +427,13 @@ def apply_reconcile(
         raise ReconcileGroundingFailed(grounding)
 
     now_iso = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    _write_reconciled_page(path_a, fm_a, req.content_a, now_iso, req.page_b)
-    _write_reconciled_page(path_b, fm_b, req.content_b, now_iso, req.page_a)
+    # Both pages write under one lock acquisition (see module docstring —
+    # mirrors ingest_sources's multi-file wiki write convention) so a
+    # concurrent run_lint() never observes one page rewritten and the other
+    # still contradicting.
+    with _index_lock:
+        _write_reconciled_page(path_a, fm_a, req.content_a, now_iso, req.page_b)
+        _write_reconciled_page(path_b, fm_b, req.content_b, now_iso, req.page_a)
 
     log_event("reconcile_applied", f"page_a={req.page_a} page_b={req.page_b}")
 
