@@ -154,6 +154,18 @@ def reconcile_client(reconcile_wiki_dir, monkeypatch):
     fake_lint_llm = _make_fake_lint_llm()
     monkeypatch.setattr(lint_module, "get_lint_llm", lambda: fake_lint_llm)
     monkeypatch.setattr(indexer_module, "WIKI_DIR", reconcile_wiki_dir)
+    # SOURCE_DIRS is pre-baked at module load from the real WIKI_DIR; without
+    # realigning it, build_index() scans the committed wiki instead of the tmp
+    # fixture and the reindex assertions below would not see the tmp pages.
+    monkeypatch.setattr(
+        indexer_module,
+        "SOURCE_DIRS",
+        [
+            reconcile_wiki_dir / "entities",
+            reconcile_wiki_dir / "concepts",
+            reconcile_wiki_dir / "qa",
+        ],
+    )
     monkeypatch.setattr(reconcile_module, "DOCS_DIR", _FIXTURE_DOCS_DIR)
 
     from app.main import app
@@ -288,8 +300,17 @@ def test_apply_success_rewrites_both_pages_and_reindexes_exactly_once(
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert data["grounding"]["passed"] is True
-    assert isinstance(data["sections_indexed"], int)
+    assert data["sections_indexed"] == 2, "reindex must cover exactly the two tmp fixture pages"
     assert spy.call_count == 1, "apply must trigger exactly one BM25 reindex"
+
+    # AC: both slugs still retrievable after apply — the rebuilt index serves
+    # the reconciled pages (BM25 over the tmp corpus, not the committed wiki).
+    hit_pages = {
+        section.id.split("#", 1)[0] for section, _ in indexer_module.search("cancelled", k=4)
+    }
+    assert {"cancellation-window-a", "cancellation-window-b"} <= hit_pages, (
+        f"both reconciled slugs must be retrievable post-apply; got {hit_pages}"
+    )
 
     # Both slugs still resolve — no deletion, both pages rewritten in place.
     path_a = reconcile_wiki_dir / "concepts" / "cancellation-window-a.md"
