@@ -58,7 +58,7 @@ import yaml
 
 from .atomic import write_text_atomic
 from .grounding import CitableContent, GroundingOutcome, verify
-from .indexer import slugify
+from .indexer import parse_markdown, slugify
 from .logger import log_event
 from .schemas import FiledStatus, GroundingClaim, GroundingInfo, WikiPageFrontmatter
 
@@ -740,8 +740,6 @@ def _resolve_cited_sections(source_ids: list[str], wiki_dir: Path) -> list[Citab
     an empty result then fails the check deterministically via
     ``grounding.verify``'s empty-sections short-circuit).
     """
-    from . import indexer as indexer_module
-
     sections: list[CitableContent] = []
     seen_ids: set[str] = set()
     parsed_by_page: dict[str, list] = {}
@@ -761,9 +759,7 @@ def _resolve_cited_sections(source_ids: list[str], wiki_dir: Path) -> list[Citab
                 parsed_by_page[page_slug] = []
             else:
                 try:
-                    parsed_by_page[page_slug] = indexer_module.parse_markdown(
-                        page_path, source_id=page_slug
-                    )
+                    parsed_by_page[page_slug] = parse_markdown(page_path, source_id=page_slug)
                 except Exception:  # noqa: BLE001 — a malformed page degrades context, not a hard error
                     parsed_by_page[page_slug] = []
 
