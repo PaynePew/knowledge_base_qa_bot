@@ -28,6 +28,7 @@ shape, not the search-result shape that ``kb_mcp.normalizer`` maps for the MCP
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import typer
@@ -346,26 +347,173 @@ def ingest_cmd(
 # ---------------------------------------------------------------------------
 
 
+def _format_c11_orphans(findings: object, label: str) -> list[str]:
+    """C11 Orphan pages lines, or ``[]`` when there are none."""
+    if not findings.orphans:  # type: ignore[attr-defined]
+        return []
+    lines = [f"C11 Orphan pages ({len(findings.orphans)}) — {label}:"]  # type: ignore[attr-defined]
+    for f in findings.orphans:  # type: ignore[attr-defined]
+        lines.append(f"  • {f.page_slug} — {f.suggested_action}")
+    lines.append("")
+    return lines
+
+
+def _format_c3_failed_grounding(findings: object, label: str) -> list[str]:
+    """C3 Failed grounding lines, or ``[]`` when there are none."""
+    if not findings.failed_grounding:  # type: ignore[attr-defined]
+        return []
+    lines = [
+        f"C3 Failed grounding ({len(findings.failed_grounding)}) — {label}:"  # type: ignore[attr-defined]
+    ]
+    for f in findings.failed_grounding:  # type: ignore[attr-defined]
+        lines.append(f"  • {f.page_slug} (reason: {f.reason}) — {f.suggested_action}")
+    lines.append("")
+    return lines
+
+
+def _format_c4_slug_collisions(findings: object, label: str) -> list[str]:
+    """C4 Slug collisions lines, or ``[]`` when there are none."""
+    if not findings.slug_collisions:  # type: ignore[attr-defined]
+        return []
+    lines = [
+        f"C4 Slug collisions ({len(findings.slug_collisions)}) — {label}:"  # type: ignore[attr-defined]
+    ]
+    for f in findings.slug_collisions:  # type: ignore[attr-defined]
+        pages = ", ".join(f.pages_in_group)
+        lines.append(f"  • {f.base_slug}: {pages}")
+    lines.append("")
+    return lines
+
+
+def _format_c6_stale_pages(findings: object, label: str) -> list[str]:
+    """C6 Stale pages lines, or ``[]`` when there are none."""
+    if not findings.stale_pages:  # type: ignore[attr-defined]
+        return []
+    lines = [f"C6 Stale pages ({len(findings.stale_pages)}) — {label}:"]  # type: ignore[attr-defined]
+    for f in findings.stale_pages:  # type: ignore[attr-defined]
+        lines.append(f"  • {f.page_slug} — drift {f.drift_days:.1f} day(s)")
+    lines.append("")
+    return lines
+
+
+def _format_c2_red_links(findings: object, label: str) -> list[str]:
+    """C2 Red links lines, or ``[]`` when there are none."""
+    if not findings.red_links:  # type: ignore[attr-defined]
+        return []
+    lines = [f"C2 Red links ({len(findings.red_links)}) — {label}:"]  # type: ignore[attr-defined]
+    for f in findings.red_links:  # type: ignore[attr-defined]
+        lines.append(f"  • [[{f.slug}]] — {f.mention_count} mention(s)")
+    lines.append("")
+    return lines
+
+
+def _format_c1_coverage_gaps(findings: object, label: str) -> list[str]:
+    """C1 Coverage gaps lines, or ``[]`` when there are none."""
+    if not findings.coverage_gaps:  # type: ignore[attr-defined]
+        return []
+    lines = [f"C1 Coverage gaps ({len(findings.coverage_gaps)}) — {label}:"]  # type: ignore[attr-defined]
+    for f in findings.coverage_gaps:  # type: ignore[attr-defined]
+        lines.append(f"  • {f.query_canonical} (×{f.hit_count}) — {f.suggested_action}")
+    lines.append("")
+    return lines
+
+
+def _format_c5_contradictions(findings: object, label: str) -> list[str]:
+    """C5 Contradictions lines, or ``[]`` when there are none."""
+    if not findings.page_pairs:  # type: ignore[attr-defined]
+        return []
+    lines = [f"C5 Contradictions ({len(findings.page_pairs)}) — {label}:"]  # type: ignore[attr-defined]
+    for f in findings.page_pairs:  # type: ignore[attr-defined]
+        lines.append(f"  • {f.page_a} ↔ {f.page_b} [{f.severity}] — {f.summary}")
+    lines.append("")
+    return lines
+
+
+def _format_c8_promotion_candidates(findings: object, label: str) -> list[str]:
+    """C8 Promotion candidates lines, or ``[]`` when there are none."""
+    if not findings.promotion_candidates:  # type: ignore[attr-defined]
+        return []
+    lines = [
+        f"C8 Promotion candidates ({len(findings.promotion_candidates)}) — {label}:"  # type: ignore[attr-defined]
+    ]
+    for f in findings.promotion_candidates:  # type: ignore[attr-defined]
+        lines.append(f"  • {f.slug} — count {f.count}, age {f.age_days:.1f} day(s)")
+    lines.append("")
+    return lines
+
+
+def _format_c9_stale_filed_answers(findings: object, label: str) -> list[str]:
+    """C9 Stale filed answers lines, or ``[]`` when there are none."""
+    if not findings.stale_filed_answers:  # type: ignore[attr-defined]
+        return []
+    lines = [
+        f"C9 Stale filed answers ({len(findings.stale_filed_answers)}) — {label}:"  # type: ignore[attr-defined]
+    ]
+    for f in findings.stale_filed_answers:  # type: ignore[attr-defined]
+        lines.append(f"  • {f.page_slug} — drift {f.max_drift_days:.1f} day(s)")
+    lines.append("")
+    return lines
+
+
+def _format_c10_invalid_qa_schemas(findings: object, label: str) -> list[str]:
+    """C10 Invalid qa schemas lines, or ``[]`` when there are none."""
+    if not findings.invalid_qa_schemas:  # type: ignore[attr-defined]
+        return []
+    lines = [
+        f"C10 Invalid qa schemas ({len(findings.invalid_qa_schemas)}) — {label}:"  # type: ignore[attr-defined]
+    ]
+    for f in findings.invalid_qa_schemas:  # type: ignore[attr-defined]
+        lines.append(f"  • {f.page_slug}.{f.property_name} = {f.offending_value}")
+    lines.append("")
+    return lines
+
+
+# code -> formatter, so _print_lint_result's axis loop below only decides
+# ordering (via group_findings_by_axis), not per-check rendering.
+_LINT_CHECK_FORMATTERS: dict[str, Callable[[object, str], list[str]]] = {
+    "C11": _format_c11_orphans,
+    "C3": _format_c3_failed_grounding,
+    "C4": _format_c4_slug_collisions,
+    "C6": _format_c6_stale_pages,
+    "C2": _format_c2_red_links,
+    "C1": _format_c1_coverage_gaps,
+    "C5": _format_c5_contradictions,
+    "C8": _format_c8_promotion_candidates,
+    "C9": _format_c9_stale_filed_answers,
+    "C10": _format_c10_invalid_qa_schemas,
+}
+
+
 def _print_lint_result(response: object) -> None:
-    """Render a LintResponse to stdout in human-readable form.
+    """Render a LintResponse to stdout, grouped under its four Lint Axis headers.
 
     Format:
         Lint Pass — <total> finding(s)  [or "No findings — KB is clean."]
 
-        C11 Orphan pages (<N>):
-          • <page_slug> — <suggested_action>
+        == Freshness ==
 
-        C3 Failed grounding (<N>):
+        C6 Stale pages (<N>) — stale:
+          • <page_slug> — drift <N> day(s)
+
+        C3 Failed grounding (<N>) — failed-grounding:
           • <page_slug> — <reason>
           ...
 
-        C5 Contradictions (<N>):
-          • <page_a> ↔ <page_b> [<severity>] — <summary>
+        == Coherence ==
+        ...
 
         Report written to: <report_path>
 
-    Sections with zero findings are omitted from output to reduce noise.
+    Axis grouping and check order (Freshness -> Coherence -> Coverage ->
+    Lifecycle, checks in taxonomy order) come from
+    ``markdown_kb.app.lint.group_findings_by_axis`` and its
+    ``LINT_CHECK_TAXONOMY`` (issue #361 S1) — this renderer does not
+    re-derive the mapping, per ADR-0017 interface parity with the report and
+    MCP surfaces. An axis header is omitted when every check beneath it has
+    zero findings, matching the report's empty-axis elision.
     """
+    from markdown_kb.app.lint import group_findings_by_axis
+
     findings = response.findings  # type: ignore[attr-defined]
     summary = response.summary  # type: ignore[attr-defined]
     report_path = response.report_path  # type: ignore[attr-defined]
@@ -378,76 +526,16 @@ def _print_lint_result(response: object) -> None:
 
     typer.echo("")
 
-    # C11 Orphan pages
-    if findings.orphans:
-        typer.echo(f"C11 Orphan pages ({len(findings.orphans)}):")
-        for f in findings.orphans:
-            typer.echo(f"  • {f.page_slug} — {f.suggested_action}")
+    for axis_group in group_findings_by_axis(findings):
+        axis_lines: list[str] = []
+        for meta, _findings_list in axis_group.checks:
+            axis_lines.extend(_LINT_CHECK_FORMATTERS[meta.code](findings, meta.label))
+        if not axis_lines:
+            continue
+        typer.echo(f"== {axis_group.axis} ==")
         typer.echo("")
-
-    # C3 Failed grounding
-    if findings.failed_grounding:
-        typer.echo(f"C3 Failed grounding ({len(findings.failed_grounding)}):")
-        for f in findings.failed_grounding:
-            typer.echo(f"  • {f.page_slug} (reason: {f.reason}) — {f.suggested_action}")
-        typer.echo("")
-
-    # C4 Slug collisions
-    if findings.slug_collisions:
-        typer.echo(f"C4 Slug collisions ({len(findings.slug_collisions)}):")
-        for f in findings.slug_collisions:
-            pages = ", ".join(f.pages_in_group)
-            typer.echo(f"  • {f.base_slug}: {pages}")
-        typer.echo("")
-
-    # C6 Stale pages
-    if findings.stale_pages:
-        typer.echo(f"C6 Stale pages ({len(findings.stale_pages)}):")
-        for f in findings.stale_pages:
-            typer.echo(f"  • {f.page_slug} — drift {f.drift_days:.1f} day(s)")
-        typer.echo("")
-
-    # C2 Red links
-    if findings.red_links:
-        typer.echo(f"C2 Red links ({len(findings.red_links)}):")
-        for f in findings.red_links:
-            typer.echo(f"  • [[{f.slug}]] — {f.mention_count} mention(s)")
-        typer.echo("")
-
-    # C1 Coverage gaps
-    if findings.coverage_gaps:
-        typer.echo(f"C1 Coverage gaps ({len(findings.coverage_gaps)}):")
-        for f in findings.coverage_gaps:
-            typer.echo(f"  • {f.query_canonical} (×{f.hit_count}) — {f.suggested_action}")
-        typer.echo("")
-
-    # C5 Contradictions
-    if findings.page_pairs:
-        typer.echo(f"C5 Contradictions ({len(findings.page_pairs)}):")
-        for f in findings.page_pairs:
-            typer.echo(f"  • {f.page_a} ↔ {f.page_b} [{f.severity}] — {f.summary}")
-        typer.echo("")
-
-    # C8 Promotion candidates
-    if findings.promotion_candidates:
-        typer.echo(f"C8 Promotion candidates ({len(findings.promotion_candidates)}):")
-        for f in findings.promotion_candidates:
-            typer.echo(f"  • {f.slug} — count {f.count}, age {f.age_days:.1f} day(s)")
-        typer.echo("")
-
-    # C9 Stale filed answers
-    if findings.stale_filed_answers:
-        typer.echo(f"C9 Stale filed answers ({len(findings.stale_filed_answers)}):")
-        for f in findings.stale_filed_answers:
-            typer.echo(f"  • {f.page_slug} — drift {f.max_drift_days:.1f} day(s)")
-        typer.echo("")
-
-    # C10 Invalid qa schemas
-    if findings.invalid_qa_schemas:
-        typer.echo(f"C10 Invalid qa schemas ({len(findings.invalid_qa_schemas)}):")
-        for f in findings.invalid_qa_schemas:
-            typer.echo(f"  • {f.page_slug}.{f.property_name} = {f.offending_value}")
-        typer.echo("")
+        for line in axis_lines:
+            typer.echo(line)
 
     typer.echo(f"Report written to: {report_path}")
 

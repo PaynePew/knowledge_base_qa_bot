@@ -518,3 +518,106 @@ class TestKbLintV1C5LLMError:
         assert "c5" in result["check_errors"], (
             f"Expected 'c5' in check_errors for non-retryable error: {result['check_errors']}"
         )
+
+
+# ===========================================================================
+# kb_lint_v1 axis_groups (issue #362 S2): the payload carries the Lint Axis
+# grouping, reshaped through S1's shared group_findings_by_axis + taxonomy.
+# ===========================================================================
+
+
+class TestKbLintV1AxisGroups:
+    """kb_lint_v1's success payload carries an ``axis_groups`` structured field.
+
+    The MCP surface adds axis grouping on top of the real ``run_lint`` response
+    by reshaping ``findings`` through the shared ``group_findings_by_axis`` +
+    ``LINT_CHECK_TAXONOMY`` (issue #361 S1) — the SAME taxonomy the CLI's
+    ``kb lint`` and the ``lint-report.md`` renderer consume, so the three
+    surfaces never disagree on the check→axis mapping (ADR-0017 interface
+    parity). These tests drive the real run_lint via the MCP dispatch path
+    (include_c5=False, no LLM) and assert the structured shape, not remediation
+    (S2 read surfaces stay read-only).
+    """
+
+    def test_payload_has_axis_groups(self):
+        """kb_lint_v1 result contains an 'axis_groups' key."""
+        import asyncio
+
+        from kb_mcp.server import mcp
+
+        raw = asyncio.run(mcp.call_tool("kb_lint_v1", {"include_c5": False}))
+        result = _parse_result(raw)
+        assert "axis_groups" in result, f"Missing 'axis_groups' key: {result}"
+
+    def test_axis_groups_enumerate_four_axes_in_taxonomy_order(self):
+        """axis_groups lists all four axes in LINT_AXIS_ORDER (never dropped, even
+        when every check is empty — grouping mirrors group_findings_by_axis)."""
+        import asyncio
+
+        from markdown_kb.app.lint import LINT_AXIS_ORDER
+
+        from kb_mcp.server import mcp
+
+        raw = asyncio.run(mcp.call_tool("kb_lint_v1", {"include_c5": False}))
+        result = _parse_result(raw)
+        axes = [g["axis"] for g in result["axis_groups"]]
+        assert axes == list(LINT_AXIS_ORDER), f"axis order mismatch: {axes}"
+
+    def test_axis_group_checks_carry_code_label_count(self):
+        """Each check entry under an axis has {code, label, count}."""
+        import asyncio
+
+        from kb_mcp.server import mcp
+
+        raw = asyncio.run(mcp.call_tool("kb_lint_v1", {"include_c5": False}))
+        result = _parse_result(raw)
+        for group in result["axis_groups"]:
+            assert group["checks"], f"axis {group['axis']} has no checks"
+            for check in group["checks"]:
+                assert set(check.keys()) == {"code", "label", "count"}, (
+                    f"unexpected check shape: {check}"
+                )
+                assert isinstance(check["count"], int)
+
+    def test_axis_groups_reuse_shared_taxonomy(self):
+        """The code→(axis, label) mapping in the payload matches LINT_CHECK_TAXONOMY
+        exactly — the MCP surface does not re-derive its own mapping (DRY / §3.1)."""
+        import asyncio
+
+        from markdown_kb.app.lint import LINT_CHECK_TAXONOMY
+
+        from kb_mcp.server import mcp
+
+        raw = asyncio.run(mcp.call_tool("kb_lint_v1", {"include_c5": False}))
+        result = _parse_result(raw)
+        for group in result["axis_groups"]:
+            for check in group["checks"]:
+                meta = LINT_CHECK_TAXONOMY[check["code"]]
+                assert check["label"] == meta.label, (
+                    f"{check['code']}: label {check['label']!r} != taxonomy {meta.label!r}"
+                )
+                assert group["axis"] == meta.axis, (
+                    f"{check['code']}: axis {group['axis']!r} != taxonomy {meta.axis!r}"
+                )
+
+    def test_axis_group_counts_reflect_findings(self):
+        """A wiki with one orphan page (C11 → Freshness) surfaces count=1 for C11
+        and 0 elsewhere — the reshape reads the real findings, not a stub."""
+        import asyncio
+
+        import markdown_kb.app.lint as lint_mod
+
+        from kb_mcp.server import mcp
+
+        # One orphan: a page citing a source that does not exist on disk.
+        wiki_dir = lint_mod.WIKI_DIR  # redirected to tmp by conftest
+        _write_wiki_page(wiki_dir, "orphan-page", ["nonexistent-source.md#s"])
+
+        raw = asyncio.run(mcp.call_tool("kb_lint_v1", {"include_c5": False}))
+        result = _parse_result(raw)
+        counts = {
+            check["code"]: check["count"]
+            for group in result["axis_groups"]
+            for check in group["checks"]
+        }
+        assert counts["C11"] == 1, f"expected 1 orphan (C11), got {counts['C11']}"

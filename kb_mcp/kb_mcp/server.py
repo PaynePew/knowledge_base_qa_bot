@@ -398,12 +398,18 @@ def kb_index_v1() -> dict:
         "  include_c5 — whether to run the LLM-backed C5 page-pair "
         "contradiction check (default true).  Pass false to skip C5 and "
         "receive only the fast local checks.\n\n"
-        "Returns on success: {report_path, findings, summary, check_errors}\n"
+        "Returns on success: "
+        "{report_path, findings, summary, check_errors, axis_groups}\n"
         "  findings   — structured per-check finding lists\n"
         "  summary    — {total_findings, findings_by_check, llm_calls, "
         "cost_usd, c5_pairs_capped, generated_at}\n"
         "  check_errors — dict of check_id → error string for any check that "
-        "raised (other checks still ran — continue-on-error semantics)\n\n"
+        "raised (other checks still ran — continue-on-error semantics)\n"
+        "  axis_groups — the same findings reshaped by Lint Axis (Freshness, "
+        "Coherence, Coverage, Lifecycle, in that order): a list of "
+        "{axis, checks: [{code, label, count}]} so you can reason over the "
+        "wiki's health by category without re-deriving the check→axis "
+        "mapping yourself.\n\n"
         "Returns isError=true when the C5 LLM call fails catastrophically:\n"
         "  {code, message} where code is 'LLM_UNAVAILABLE' (retryable) or\n"
         "  'LLM_ERROR' (non-retryable, report message to user).\n"
@@ -435,9 +441,16 @@ def kb_lint_v1(
     judged).  Per-pair C5 failures are handled inside the deep module via
     continue-on-error semantics and appear in ``check_errors['c5']`` of the
     success payload — they do NOT trigger isError.
+
+    ``axis_groups`` is added on top of ``run_lint()``'s ``LintResponse`` by
+    reshaping ``response.findings`` through the shared
+    ``group_findings_by_axis`` helper and its ``LINT_CHECK_TAXONOMY`` (issue
+    #361 S1) — the same taxonomy the CLI's ``kb lint`` and the
+    ``lint-report.md`` renderer consume, so the three surfaces never disagree
+    on check→axis mapping (ADR-0017 interface parity).
     """
     from markdown_kb.app.errors import LLMError
-    from markdown_kb.app.lint import run_lint
+    from markdown_kb.app.lint import group_findings_by_axis, run_lint
 
     # Enforce default server-side
     if include_c5 is None:
@@ -457,7 +470,18 @@ def kb_lint_v1(
     # Serialise the Pydantic LintResponse to a plain dict for MCP transport.
     # model_dump() converts nested Pydantic models to plain dicts/lists;
     # mode="json" ensures non-JSON-native types (e.g. datetime) are strings.
-    return response.model_dump(mode="json")
+    payload = response.model_dump(mode="json")
+    payload["axis_groups"] = [
+        {
+            "axis": axis_group.axis,
+            "checks": [
+                {"code": meta.code, "label": meta.label, "count": len(finding_list)}
+                for meta, finding_list in axis_group.checks
+            ],
+        }
+        for axis_group in group_findings_by_axis(response.findings)
+    ]
+    return payload
 
 
 # ---------------------------------------------------------------------------
