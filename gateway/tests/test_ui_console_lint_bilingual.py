@@ -90,6 +90,23 @@ def test_toggle_click_rerenders_a_visible_lint_card():
     assert "lintResultEl.replaceChildren(renderLintCard(lastLintData, lintResultEl));" in body
 
 
+def test_toggle_rerender_respects_in_flight_busy_state():
+    """The toggle's Lint-card re-render must be gated on !remediationInFlight —
+    re-rendering while a remediation is in flight would mint fresh enabled
+    buttons and defeat the #364 no-double-submit busy-state guard (S5 verify
+    finding). The static chrome still switches immediately via applyConsoleLang."""
+    text = _console_text()
+    init_fn = re.search(r"function initConsoleLangToggle\(\) \{.*?\n\}\)\(\);", text, re.DOTALL)
+    assert init_fn is not None
+    body = init_fn.group(0)
+    guard = re.search(
+        r"if \(lastLintData && lintResultEl && !remediationInFlight\) \{", body
+    )
+    assert guard is not None, (
+        "the toggle's card re-render must be guarded on !remediationInFlight"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Bilingual taxonomy: cross-checked against the SAME source as
 # markdown_kb/app/lint.py (issue #365 AC "single source, no per-interface

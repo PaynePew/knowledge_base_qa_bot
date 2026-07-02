@@ -2927,7 +2927,13 @@ buildPipeline(document.getElementById("pipeline-root"));
       try { localStorage.setItem(LANG_STORAGE_KEY, consoleLang); }
       catch (e) { /* private-mode / disabled storage — language still switches for this session */ }
       applyConsoleLang();
-      if (lastLintData && lintResultEl) {
+      // Do NOT re-render the Lint card while a remediation is in flight: that
+      // would mint fresh (enabled) buttons and defeat the #364 no-double-submit
+      // busy-state guard. The static chrome switches immediately via
+      // applyConsoleLang() above; the card itself re-renders in the new language
+      // when the in-flight remediation finishes its own re-lint (which runs only
+      // after remediationInFlight is cleared).
+      if (lastLintData && lintResultEl && !remediationInFlight) {
         lintResultEl.replaceChildren(renderLintCard(lastLintData, lintResultEl));
       }
     });
