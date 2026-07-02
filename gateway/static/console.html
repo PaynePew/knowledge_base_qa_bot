@@ -705,6 +705,135 @@
     cursor: not-allowed;
   }
 
+  /* ── C5 Reconcile (tier-B S1, issue #376, ADR-0028) ─────────────
+     The one Authored-tier check with a real Gated affordance this slice —
+     C4/C1/C2 keep the disabled .tier-b-btn above until their own slices. */
+  .reconcile-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--accent);
+    color: #fff;
+    border: 0;
+    padding: 4px 10px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .04em;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: opacity .15s ease;
+  }
+  .reconcile-btn:hover:not(:disabled) { opacity: .82; }
+  .reconcile-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+  .reconcile-overlay {
+    position: fixed; inset: 0;
+    background: rgba(17,17,17,.45);
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+    z-index: 1000;
+  }
+  .reconcile-modal {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    max-width: 920px;
+    width: 100%;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .reconcile-modal-head {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--rule);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    letter-spacing: .03em;
+    color: var(--ink);
+  }
+  .reconcile-modal-body {
+    padding: 16px;
+    overflow-y: auto;
+    font-size: 12.5px;
+  }
+  .reconcile-grounding { margin-bottom: 14px; }
+  .reconcile-claims {
+    margin: 6px 0 0;
+    padding-left: 18px;
+    color: var(--fail);
+    font-size: 12px;
+  }
+  .reconcile-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .reconcile-col-head {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 10px 0 4px;
+  }
+  .reconcile-col-head:first-child { margin-top: 0; }
+  .reconcile-old {
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: var(--bg);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 8px 10px;
+    font-size: 12px;
+    color: var(--ink-2);
+    max-height: 160px;
+    overflow-y: auto;
+    margin: 0;
+  }
+  .reconcile-textarea {
+    width: 100%;
+    box-sizing: border-box;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 8px 10px;
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    resize: vertical;
+  }
+  .reconcile-actions {
+    padding: 12px 16px;
+    border-top: 1px solid var(--rule);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .reconcile-apply-btn {
+    background: var(--pass);
+    color: #fff;
+    border: 0;
+    padding: 6px 14px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .04em;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .reconcile-apply-btn:hover:not(:disabled) { opacity: .85; }
+  .reconcile-apply-btn:disabled { opacity: .45; cursor: not-allowed; }
+  .reconcile-cancel-btn {
+    background: none;
+    color: var(--ink-2);
+    border: 1px solid var(--rule);
+    padding: 6px 14px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .04em;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .reconcile-cancel-btn:hover:not(:disabled) { border-color: var(--ink-3); }
+  .reconcile-error { color: var(--fail); }
+
   /* Lint finding rows — extend .rec with a note subrow */
   .rec .note {
     grid-column: 2 / -1;
@@ -1588,6 +1717,11 @@ var LINT_CHROME = {
     checkErrors:     "Check errors",
     noFindings:      "No findings — wiki is clean.",
     langToggleLabel: "中文",
+    reconcile:        "Reconcile",
+    reconcileApply:   "Apply",
+    reconcileCancel:  "Cancel",
+    reconcileClose:   "Close",
+    reconcileWorking: "Working…",
   },
   zh: {
     reingest:        "重新匯入",
@@ -1600,6 +1734,11 @@ var LINT_CHROME = {
     checkErrors:     "檢查錯誤",
     noFindings:      "沒有發現問題 — 知識庫狀態良好。",
     langToggleLabel: "EN",
+    reconcile:        "協調",
+    reconcileApply:   "套用",
+    reconcileCancel:  "取消",
+    reconcileClose:   "關閉",
+    reconcileWorking: "處理中…",
   },
 };
 
@@ -1905,6 +2044,24 @@ function renderLintCard(data, resultEl) {
     );
   }
 
+  /* ── C5 Reconcile — the flagship Gated (Authored) remediation (tier-B S1,
+     issue #376, ADR-0028). Opens a stateless two-phase flow: generate a
+     grounded draft (nothing written yet) → side-by-side old-vs-editable-
+     draft preview → apply re-verifies grounding on the EXACT submitted
+     content and refuses honestly (409 stale draft, 422 ungrounded) rather
+     than silently retrying. C4/C1/C2 still render tierBAffordance() above —
+     only C5 ships a real affordance this slice. */
+  function reconcileAction(pageA, pageB) {
+    var btn = el("button", { class: "reconcile-btn", type: "button",
+      text: LINT_CHROME[consoleLang].reconcile });
+    allButtons.push(btn);
+    btn.addEventListener("click", function() {
+      if (btn.disabled) return;
+      openReconcileModal(pageA, pageB, resultEl);
+    });
+    return el("div", { class: "lint-row-actions" }, btn);
+  }
+
   /* Re-ingest / Re-ingest (retry) action for a C6/C3 finding.
      C3 MUST send force:true — omitting it lets hash-skip (#93) no-op the
      retry into a false fix (ADR-0023 Invariant / CODING_STANDARD §12.8).
@@ -2054,7 +2211,7 @@ function renderLintCard(data, resultEl) {
       return findingRow(i, f.page_a + " / " + f.page_b,
         f.severity + ": " + (f.summary || "").slice(0, 80),
         f.severity, f.severity === "direct" ? "label-failed" : "label-updated",
-        tierBAffordance());
+        reconcileAction(f.page_a, f.page_b));
     },
     C4: function(i, f) {
       return findingRow(i, f.base_slug, (f.pages_in_group || []).join(", "),
@@ -2161,6 +2318,164 @@ function renderLintCard(data, resultEl) {
   }
 
   return el("div", { class: "result-card" }, head, bodyEl);
+}
+
+/* ── C5 Reconcile modal (tier-B S1, issue #376, ADR-0028) ────────────────
+   POST /wiki/pages/reconcile, then render the side-by-side + editable draft
+   preview in a modal overlay appended to document.body (outside the Lint
+   card so a later card re-render never disturbs an open modal). Closed via
+   the Cancel/Close button or a backdrop click. */
+function openReconcileModal(pageA, pageB, resultEl) {
+  var overlay = el("div", { class: "reconcile-overlay" });
+  var modal = el("div", { class: "reconcile-modal" },
+    el("div", { class: "reconcile-modal-head" }, el("span", { text: "Reconcile: " + pageA + " / " + pageB })),
+    el("div", { class: "reconcile-modal-body" },
+      el("span", { class: "spinner" }),
+      document.createTextNode(" Generating draft…")
+    )
+  );
+  overlay.append(modal);
+  document.body.append(overlay);
+
+  function closeModal() { overlay.remove(); }
+  overlay.addEventListener("click", function(e) { if (e.target === overlay) closeModal(); });
+
+  fetch("/wiki/pages/reconcile", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ page_a: pageA, page_b: pageB }),
+  })
+    .then(function(resp) {
+      if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+      return resp.json();
+    })
+    .then(function(data) { renderReconcilePreview(modal, data, resultEl, closeModal); })
+    .catch(function(err) {
+      modal.replaceChildren(
+        el("div", { class: "reconcile-modal-head" }, el("span", { text: "Reconcile — error" })),
+        el("div", { class: "reconcile-modal-body reconcile-error", text: err.message || String(err) }),
+        el("div", { class: "reconcile-actions" },
+          el("button", { class: "reconcile-cancel-btn", type: "button",
+            text: LINT_CHROME[consoleLang].reconcileClose, onclick: closeModal })
+        )
+      );
+    });
+}
+
+/* Renders the generate-time draft: a grounding report, then old-vs-editable
+   columns per page, then Apply/Cancel. Apply sends the (possibly edited)
+   textarea values back with the hash tokens captured verbatim from the
+   generate response — never recomputed client-side (§12.5 no business
+   logic in the client). On success, closes the modal and re-runs the SAME
+   fast (include_c5=false) re-lint + re-render every other remediation uses,
+   so the fixed finding (and every other still-unjudged C5 finding) drops
+   out of the re-rendered Coherence section until the curator re-runs a
+   full Lint. */
+function renderReconcilePreview(modal, data, resultEl, closeModal) {
+  var textareaA = el("textarea", { class: "reconcile-textarea", rows: "8" });
+  textareaA.value = data.content_a;
+  var textareaB = el("textarea", { class: "reconcile-textarea", rows: "8" });
+  textareaB.value = data.content_b;
+
+  var passed = !!(data.grounding && data.grounding.passed);
+  var groundingEl = el("div", { class: "reconcile-grounding" },
+    el("span", { class: passed ? "badge badge-ok" : "badge badge-fail" },
+      el("span", { class: "dot" }),
+      el("span", { text: passed ? "grounded" : "grounding failed" })
+    )
+  );
+  var unsupported = (data.grounding && data.grounding.unsupported_claims) || [];
+  if (unsupported.length > 0) {
+    var claimsList = el("ul", { class: "reconcile-claims" });
+    unsupported.forEach(function(c) { claimsList.append(el("li", { text: c })); });
+    groundingEl.append(claimsList);
+  }
+
+  var statusMsgEl = el("span", { class: "card-status-msg" });
+  var cancelBtn = el("button", { class: "reconcile-cancel-btn", type: "button",
+    text: LINT_CHROME[consoleLang].reconcileCancel, onclick: closeModal });
+  var applyBtn = el("button", { class: "reconcile-apply-btn", type: "button",
+    text: LINT_CHROME[consoleLang].reconcileApply });
+
+  applyBtn.addEventListener("click", function() {
+    if (applyBtn.disabled) return;
+    applyBtn.disabled = true;
+    cancelBtn.disabled = true;
+    statusMsgEl.replaceChildren(el("span", { class: "spinner" }),
+      document.createTextNode(LINT_CHROME[consoleLang].reconcileWorking));
+    statusMsgEl.className = "card-status-msg";
+
+    fetch("/wiki/pages/reconcile/apply", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        page_a: data.page_a,
+        page_b: data.page_b,
+        content_a: textareaA.value,
+        content_b: textareaB.value,
+        hash_a: data.hash_a,
+        hash_b: data.hash_b,
+      }),
+    })
+      .then(function(resp) {
+        if (resp.status === 409) {
+          throw new Error(
+            "Cannot apply: one or both pages changed since this draft was generated " +
+            "(the contradiction may no longer hold). Close and re-open Reconcile to refresh."
+          );
+        }
+        if (resp.status === 422) {
+          return resp.json().then(function(body) {
+            var detail = body.detail || {};
+            var claims = (detail.unsupported_claims || []).join("; ");
+            throw new Error("Grounding check failed" + (claims ? ": " + claims : "") + ". Edit the draft and try again.");
+          });
+        }
+        if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+        return resp.json();
+      })
+      .then(function() {
+        return fetch("/wiki/lint?include_c5=false", { method: "POST" });
+      })
+      .then(function(resp) {
+        if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+        return resp.json();
+      })
+      .then(function(lintData) {
+        closeModal();
+        lastLintData = lintData;
+        if (resultEl) resultEl.replaceChildren(renderLintCard(lintData, resultEl));
+        renderCurationQueue(document.getElementById("curation-queue-root"), lintData);
+      })
+      .catch(function(err) {
+        applyBtn.disabled = false;
+        cancelBtn.disabled = false;
+        statusMsgEl.textContent = "Error: " + (err.message || String(err));
+        statusMsgEl.className = "card-status-msg err";
+      });
+  });
+
+  modal.replaceChildren(
+    el("div", { class: "reconcile-modal-head" }, el("span", { text: "Reconcile: " + data.page_a + " / " + data.page_b })),
+    el("div", { class: "reconcile-modal-body" },
+      groundingEl,
+      el("div", { class: "reconcile-columns" },
+        el("div", { class: "reconcile-col" },
+          el("div", { class: "reconcile-col-head", text: data.page_a + " — current" }),
+          el("pre", { class: "reconcile-old", text: data.old_content_a }),
+          el("div", { class: "reconcile-col-head", text: data.page_a + " — draft (editable)" }),
+          textareaA
+        ),
+        el("div", { class: "reconcile-col" },
+          el("div", { class: "reconcile-col-head", text: data.page_b + " — current" }),
+          el("pre", { class: "reconcile-old", text: data.old_content_b }),
+          el("div", { class: "reconcile-col-head", text: data.page_b + " — draft (editable)" }),
+          textareaB
+        )
+      )
+    ),
+    el("div", { class: "reconcile-actions" }, applyBtn, cancelBtn, statusMsgEl)
+  );
 }
 
 /* Generic error card — used by any step on network/HTTP error */

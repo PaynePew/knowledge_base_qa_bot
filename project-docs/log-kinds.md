@@ -182,6 +182,20 @@ No per-finding log entries — findings live in `wiki/lint-report.md` as the sou
 
 ---
 
+## `/pages/reconcile` route (tier-B S1)
+
+Authorized by GitHub issue #376 (tier-B S1) and [ADR-0028](adr/0028-reconcile-stateless-two-phase-apply-revalidation.md).
+
+| Kind | When fired | Summary template |
+|---|---|---|
+| `reconcile_generate` | `reconcile.generate_reconcile()` returns a draft (writes nothing to disk) | `page_a=<slug> page_b=<slug> passed=<bool> reason=<GroundingInfo.reason>` |
+| `reconcile_apply_refused` | `reconcile.apply_reconcile()` refused because the apply-time grounding re-check failed for either page's submitted content (HTTP 422) | `page_a=<slug> page_b=<slug> reason=<GroundingInfo.reason>` |
+| `reconcile_applied` | `reconcile.apply_reconcile()` successfully rewrote both pages | `page_a=<slug> page_b=<slug>` |
+
+No log entry is emitted for the `ReconcileHashMismatch` (409) or `PageNotFound` (404) / `ReconcileInvalidPair` (400) refusal paths — those are request-shape / staleness rejections surfaced directly via HTTP status, not domain events (mirrors `qa_deleted`'s "only fires on success" convention).
+
+---
+
 ## Vector RAG (Stack B)
 
 Authorized by GitHub issue #103 (Phase 8 Slice 3). Stack B stays decoupled from

@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``run_lint``, ``_check_c11_orphan``, ``_check_c3_failed_grounding``, ``_check_c4a_slug_collision``, ``_check_c6_stale``, ``_check_c2_red_links``, ``_check_c1_coverage_gaps``, ``_canonicalise``, ``_candidate_pairs``, ``_judge_page_pair``, ``_check_c5_page_pair``, ``_load_wiki_pages``, ``get_lint_llm``, ``_check_c8_promotion_candidates``, ``_check_c9_qa_staleness``, ``_check_c10_qa_schema_validity``, ``group_findings_by_axis``, ``LINT_CHECK_TAXONOMY``, ``LINT_AXIS_ORDER``, ``LINT_AXIS_LABEL_ZH``, ``remediation_for``, ``RemediationDescriptor``, ``RemediationAction``.
+"""Deep module per Ousterhout. Public surface: ``run_lint``, ``_check_c11_orphan``, ``_check_c3_failed_grounding``, ``_check_c4a_slug_collision``, ``_check_c6_stale``, ``_check_c2_red_links``, ``_check_c1_coverage_gaps``, ``_canonicalise``, ``_candidate_pairs``, ``_judge_page_pair``, ``_check_c5_page_pair``, ``_load_wiki_pages``, ``get_lint_llm``, ``generate_reconcile_draft``, ``_check_c8_promotion_candidates``, ``_check_c9_qa_staleness``, ``_check_c10_qa_schema_validity``, ``group_findings_by_axis``, ``LINT_CHECK_TAXONOMY``, ``LINT_AXIS_ORDER``, ``LINT_AXIS_LABEL_ZH``, ``remediation_for``, ``RemediationDescriptor``, ``RemediationAction``.
 
 Lint orchestrator — POST /lint health check for the wiki.
 
@@ -102,6 +102,19 @@ using the same stable keys.
 All four amendments preserve PRD #65 Q3 read-only invariant — they read
 frontmatter and write only ``lint-report.md``, never page frontmatter.
 
+Slice S1 scope (Lint Remediation tier-B — issue #376, ADR-0028)
+-----------------------------------------------------------------
+No new check. ``generate_reconcile_draft`` adds a second C5-adjacent LLM
+call site (page-pair *drafting*, distinct from ``_judge_page_pair``'s
+*judging*) reusing the SAME ``get_lint_llm()`` lazy singleton — kept inside
+this module rather than opening a second LLM-facing module for one call
+site (ADR-0005 § "LLM-facing surface enumeration" already blesses
+``lint.py``'s ``ChatOpenAI`` for "contradiction ... checks"). The actual
+disk write-back, hash-based optimistic-concurrency check, and grounding
+re-verification live in the new ``reconcile.py`` deep module (writes) —
+this module stays read-only with respect to wiki page frontmatter, per the
+invariant below; drafting a reconcile is not itself a mutation.
+
 Read-only invariant
 -------------------
 ``run_lint()`` does NOT modify wiki page frontmatter.  It writes only:
@@ -165,6 +178,7 @@ from .schemas import (
     PagePairFinding,
     PromotionCandidateFinding,
     QaStalenessFinding,
+    ReconcileDraft,
     RedLinkFinding,
     SlugCollisionFinding,
     StalePageFinding,
@@ -1328,6 +1342,89 @@ def _judge_page_pair(
         )
 
     return finding
+
+
+# ---------------------------------------------------------------------------
+# Reconcile drafting (tier-B S1 — issue #376, ADR-0028)
+# ---------------------------------------------------------------------------
+
+_RECONCILE_SYSTEM_PROMPT = """\
+You are a knowledge-base curator. Two wiki pages currently disagree about a \
+fact (a Coherence contradiction). You are given both pages' current content \
+and the union of the Source excerpts they cite. Rewrite BOTH pages so they \
+state mutually consistent facts, each one grounded ONLY in the provided \
+Source excerpts — never invent a fact absent from them.
+
+Rules:
+- Keep each page's own topic; resolve the disagreement, do not merge the \
+two pages into one or make either page about the other's topic.
+- Preserve the page's existing "# <Heading>" line and its trailing \
+"[Source: ...]" citation line verbatim; rewrite only the prose between them.
+- Write in the same language as the original page.
+- If the Source excerpts do not settle which side of the disagreement is \
+correct, state the uncertainty explicitly on both pages rather than \
+picking a side arbitrarily.
+
+Return content_a (the full revised content for Page A, structurally \
+identical in shape to the original) and content_b (same for Page B).
+"""
+
+
+def _build_reconcile_user_message(
+    page_a: str,
+    content_a: str,
+    page_b: str,
+    content_b: str,
+    union_sections: list,
+) -> str:
+    """Format the two pages' current content plus the union Sources for the drafting call."""
+    parts = [
+        f"**Page A** (slug: `{page_a}`):\n\n{content_a}",
+        f"**Page B** (slug: `{page_b}`):\n\n{content_b}",
+    ]
+    source_parts = []
+    for section in union_sections:
+        heading = " > ".join(section.heading_path)
+        source_parts.append(f"[Source: {section.id}]\nHeading: {heading}\n{section.content}")
+    sources_text = "\n\n".join(source_parts) if source_parts else "(no Source excerpts available)"
+    parts.append(f"**Cited Source excerpts (union of both pages' Sources):**\n\n{sources_text}")
+    return "\n\n---\n\n".join(parts)
+
+
+def generate_reconcile_draft(
+    page_a: str,
+    content_a: str,
+    page_b: str,
+    content_b: str,
+    union_sections: list,
+) -> ReconcileDraft:
+    """Call the LLM to draft mutually-consistent content for two contradicting pages.
+
+    ADR-0028 tracer bullet (C5 Reconcile, ``POST /pages/reconcile``). Uses
+    ``get_lint_llm().with_structured_output(ReconcileDraft)`` — the SAME lazy
+    singleton ``_judge_page_pair`` uses for C5 judging — so drafting stays
+    inside this already-blessed LLM-facing module (ADR-0005) rather than
+    opening a second one for a single call site.
+
+    LangChain types are confined to this function (CODING_STANDARD §2.4);
+    callers receive a plain ``ReconcileDraft`` Pydantic model.
+    """
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    llm = get_lint_llm()
+    chain = llm.with_structured_output(ReconcileDraft)
+
+    messages = [
+        SystemMessage(content=_RECONCILE_SYSTEM_PROMPT),
+        HumanMessage(
+            content=_build_reconcile_user_message(
+                page_a, content_a, page_b, content_b, union_sections
+            )
+        ),
+    ]
+
+    draft: ReconcileDraft = chain.invoke(messages)
+    return draft
 
 
 def _check_c5_page_pair(
