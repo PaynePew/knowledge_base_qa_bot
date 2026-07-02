@@ -745,6 +745,18 @@ def apply_collision_merge(
     4. Apply-time grounding re-check on the submitted base content
        (``CollisionGroundingFailed`` — 422).
     Only a full pass reaches the write.
+
+    Raises:
+        CollisionInvalidGroup: malformed group shape, or ``hash_variants``
+            keys do not match ``variant_slugs`` exactly.
+        PageNotFound / PageCorrupt: ``base_slug`` or any variant does not
+            resolve / is corrupt.
+        CollisionHashMismatch: the base or any variant's on-disk content
+            changed since generate.
+        CollisionReferenceGuardFailed: any variant slated for deletion has
+            an inbound ``[[link]]`` or qa citation.
+        CollisionGroundingFailed: the apply-time grounding re-check failed
+            for the submitted base content.
     """
     _validate_group(req.base_slug, req.variant_slugs)
     if set(req.hash_variants) != set(req.variant_slugs):
@@ -774,7 +786,7 @@ def apply_collision_merge(
             )
     if referrers:
         log_event(
-            "collision_merge_apply_refused",
+            "collision_merge_guard_refused",
             f"base_slug={req.base_slug} "
             f"referenced_variants={','.join(r.variant_slug for r in referrers)}",
         )
