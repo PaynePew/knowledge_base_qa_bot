@@ -558,6 +558,14 @@ def test_differentiate_apply_success_rewrites_all_pages_and_reindexes_exactly_on
         f"every differentiated slug must be retrievable post-apply; got {hit_pages}"
     )
 
+    # Issue #378 AC "apply → re-lint clears the finding": the sentinel stamped
+    # on every member exempts the group from C4-a on the next lint run.
+    from app.lint import _check_c4a_slug_collision
+
+    bases = {f.base_slug for f in _check_c4a_slug_collision(collision_wiki_dir)}
+    assert "gizmo" not in bases, "re-lint must clear the C4 finding after differentiate apply"
+    assert "widget" in bases, "the untouched merge group must still fire"
+
 
 def test_differentiate_apply_409_on_hash_mismatch_leaves_pages_untouched(
     collision_client, collision_wiki_dir
@@ -603,3 +611,59 @@ def test_differentiate_apply_422_on_grounding_failure(collision_client, collisio
     assert resp.json()["detail"]["unsupported_claims"]
     for slug, text in before.items():
         assert (collision_wiki_dir / "concepts" / f"{slug}.md").read_text(encoding="utf-8") == text
+
+
+# ---------------------------------------------------------------------------
+# C4-a differentiate exemption (check seam) — issue #378 "re-lint clears"
+# ---------------------------------------------------------------------------
+
+
+def _stamp_differentiated(wiki_dir: Path, slug: str, group: list[str]) -> None:
+    """Prepend the differentiate sentinel onto an existing fixture page,
+    mirroring the byte-shape ``reconcile._write_differentiated_page`` writes."""
+    from app.lint import DIFFERENTIATE_SENTINEL_TEMPLATE
+
+    path = wiki_dir / "concepts" / f"{slug}.md"
+    sentinel = DIFFERENTIATE_SENTINEL_TEMPLATE.format(
+        ts="2026-07-03T00:00:00Z", group=", ".join(group)
+    )
+    path.write_text(sentinel + "\n\n" + path.read_text(encoding="utf-8"), encoding="utf-8")
+
+
+def test_c4a_skips_group_where_every_member_is_differentiated(collision_wiki_dir):
+    from app.lint import _check_c4a_slug_collision
+
+    group = ["gizmo", "gizmo-2", "gizmo-3"]
+    for slug in group:
+        _stamp_differentiated(collision_wiki_dir, slug, group)
+
+    bases = {f.base_slug for f in _check_c4a_slug_collision(collision_wiki_dir)}
+    assert "gizmo" not in bases, "fully differentiated group must be exempt from C4-a"
+    assert "widget" in bases, "undifferentiated groups must still fire"
+
+
+def test_c4a_refires_when_a_new_member_joins_a_differentiated_group(collision_wiki_dir):
+    from app.lint import _check_c4a_slug_collision
+
+    group = ["gizmo", "gizmo-2", "gizmo-3"]
+    for slug in group:
+        _stamp_differentiated(collision_wiki_dir, slug, group)
+    _write_page(collision_wiki_dir, "gizmo-4", _GIZMO_BODY)
+
+    bases = {f.base_slug for f in _check_c4a_slug_collision(collision_wiki_dir)}
+    assert "gizmo" in bases, (
+        "a new member outside the recorded differentiate set must re-fire the finding"
+    )
+
+
+def test_c4a_refires_when_one_member_lost_its_sentinel(collision_wiki_dir):
+    """Simulates an ingest rewrite: the replaced file has no sentinel, so the
+    group's differentiate ruling no longer covers every member."""
+    from app.lint import _check_c4a_slug_collision
+
+    group = ["gizmo", "gizmo-2", "gizmo-3"]
+    for slug in group[:2]:
+        _stamp_differentiated(collision_wiki_dir, slug, group)
+
+    bases = {f.base_slug for f in _check_c4a_slug_collision(collision_wiki_dir)}
+    assert "gizmo" in bases, "a member without a sentinel must keep the finding alive"

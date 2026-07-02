@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``run_lint``, ``_check_c11_orphan``, ``_check_c3_failed_grounding``, ``_check_c4a_slug_collision``, ``_check_c6_stale``, ``_check_c2_red_links``, ``_check_c1_coverage_gaps``, ``_canonicalise``, ``_candidate_pairs``, ``_judge_page_pair``, ``_check_c5_page_pair``, ``_load_wiki_pages``, ``get_lint_llm``, ``generate_reconcile_draft``, ``find_inbound_references``, ``generate_collision_merge_draft``, ``generate_collision_differentiate_draft``, ``_check_c8_promotion_candidates``, ``_check_c9_qa_staleness``, ``_check_c10_qa_schema_validity``, ``group_findings_by_axis``, ``LINT_CHECK_TAXONOMY``, ``LINT_AXIS_ORDER``, ``LINT_AXIS_LABEL_ZH``, ``remediation_for``, ``RemediationDescriptor``, ``RemediationAction``.
+"""Deep module per Ousterhout. Public surface: ``run_lint``, ``_check_c11_orphan``, ``_check_c3_failed_grounding``, ``_check_c4a_slug_collision``, ``_check_c6_stale``, ``_check_c2_red_links``, ``_check_c1_coverage_gaps``, ``_canonicalise``, ``_candidate_pairs``, ``_judge_page_pair``, ``_check_c5_page_pair``, ``_load_wiki_pages``, ``get_lint_llm``, ``generate_reconcile_draft``, ``find_inbound_references``, ``generate_collision_merge_draft``, ``generate_collision_differentiate_draft``, ``_check_c8_promotion_candidates``, ``_check_c9_qa_staleness``, ``_check_c10_qa_schema_validity``, ``group_findings_by_axis``, ``LINT_CHECK_TAXONOMY``, ``LINT_AXIS_ORDER``, ``LINT_AXIS_LABEL_ZH``, ``remediation_for``, ``RemediationDescriptor``, ``RemediationAction``, ``DIFFERENTIATE_SENTINEL_TEMPLATE``.
 
 Lint orchestrator — POST /lint health check for the wiki.
 
@@ -504,6 +504,42 @@ def _check_c3_failed_grounding(
 # C4-a — Slug collision groups
 # ---------------------------------------------------------------------------
 
+# Sentinel stamped onto every group member by a successful
+# POST /pages/collision/differentiate/apply (issue #378, ADR-0028). Lives here
+# (not reconcile.py, which writes it) so the writer template and the C4-a
+# exemption parser below cannot drift apart; reconcile.py imports it.
+DIFFERENTIATE_SENTINEL_TEMPLATE = (
+    "<!-- Differentiated by POST /pages/collision/differentiate/apply on {ts}\n"
+    "     (collision group: '{group}').\n"
+    "     Grounded in the union of every group member's Sources, re-verified at apply time.\n"
+    "     Manual edits are safe until the next reconcile/collision resolution or ingest of the\n"
+    "     underlying Source(s) — edit the Source for a permanent change. -->"
+)
+
+_DIFFERENTIATE_SENTINEL_RE = re.compile(
+    r"<!-- Differentiated by POST /pages/collision/differentiate/apply on [^\n]*\n"
+    r"\s*\(collision group: '([^']*)'\)\."
+)
+
+
+def _differentiated_group(page_path: Path) -> set[str] | None:
+    """The collision-group member set recorded by a differentiate sentinel.
+
+    Reads the head of ``page_path`` and parses the sentinel that
+    ``reconcile._write_differentiated_page`` stamps on every member of a
+    differentiated group. Returns ``None`` when the page carries no sentinel
+    (never differentiated, or rewritten since — ingest replaces the whole
+    file, so a re-ingested page correctly loses its exemption).
+    """
+    try:
+        head = page_path.read_text(encoding="utf-8", errors="replace")[:600]
+    except OSError:
+        return None
+    m = _DIFFERENTIATE_SENTINEL_RE.match(head)
+    if not m:
+        return None
+    return {slug.strip() for slug in m.group(1).split(",") if slug.strip()}
+
 
 def _check_c4a_slug_collision(
     wiki_dir: Path,
@@ -531,11 +567,21 @@ def _check_c4a_slug_collision(
     Cross-directory collisions are included (a slug in ``entities/`` and a
     suffixed variant in ``concepts/`` are grouped together) since the ingest
     uniqueness guarantee is wiki-wide, not per-subdirectory.
+
+    **Differentiate exemption** (issue #378 AC "apply → re-lint clears the
+    finding"): a successful differentiate apply stamps every member with a
+    sentinel recording the exact group it resolved. A group is skipped when
+    every current member carries a sentinel for exactly this member set — the
+    curator has ruled the pages intentionally complementary, so the naming
+    pattern is no longer evidence of an unresolved collision. A new member
+    joining (set mismatch) or an ingest rewrite (sentinel gone) re-fires it.
     """
     # Map base_slug → set of member slugs
     groups: dict[str, set[str]] = {}
+    paths: dict[str, Path] = {}
 
-    for slug, _page_path in _iter_wiki_pages(wiki_dir):
+    for slug, page_path in _iter_wiki_pages(wiki_dir):
+        paths[slug] = page_path
         m = _COLLISION_SUFFIX_RE.match(slug)
         if m and int(m.group(2)) >= 2:
             # Suffixed variant (`pricing-2`, `pricing-3`, ...): group under its base.
@@ -551,6 +597,8 @@ def _check_c4a_slug_collision(
     findings: list[SlugCollisionFinding] = []
     for base_slug, members in groups.items():
         if len(members) < 2:
+            continue
+        if all(_differentiated_group(paths[slug]) == members for slug in members):
             continue
         pages_in_group = sorted(members)
         suggested_action = (

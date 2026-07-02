@@ -87,6 +87,7 @@ from .atomic import write_text_atomic
 from .grounding import GroundingOutcome, verify
 from .indexer import _index_lock, parse_markdown
 from .lint import (
+    DIFFERENTIATE_SENTINEL_TEMPLATE,
     find_inbound_references,
     generate_collision_differentiate_draft,
     generate_collision_merge_draft,
@@ -490,22 +491,15 @@ def _write_merged_base_page(
     _rewrite_page(path, fm, content, now_iso, sentinel)
 
 
-_DIFFERENTIATE_SENTINEL_TEMPLATE = (
-    "<!-- Differentiated by POST /pages/collision/differentiate/apply on {ts}\n"
-    "     (collision group: '{group}').\n"
-    "     Grounded in the union of every group member's Sources, re-verified at apply time.\n"
-    "     Manual edits are safe until the next reconcile/collision resolution or ingest of the\n"
-    "     underlying Source(s) — edit the Source for a permanent change. -->"
-)
-
-
 def _write_differentiated_page(
     path: Path, fm: dict, content: str, now_iso: str, group_slugs: list[str]
 ) -> None:
     """Rewrite one group member in place with its differentiated content —
     see ``_rewrite_page``. ``group_slugs`` names the FULL collision group
-    (including this page's own slug), for the sentinel comment."""
-    sentinel = _DIFFERENTIATE_SENTINEL_TEMPLATE.format(ts=now_iso, group=", ".join(group_slugs))
+    (including this page's own slug), for the sentinel comment lint's C4-a
+    differentiate exemption parses (the template lives in ``lint`` so writer
+    and parser cannot drift)."""
+    sentinel = DIFFERENTIATE_SENTINEL_TEMPLATE.format(ts=now_iso, group=", ".join(group_slugs))
     _rewrite_page(path, fm, content, now_iso, sentinel)
 
 
