@@ -1045,6 +1045,78 @@
   .discard-btn:hover:not(:disabled) { background: #fff0f0; }
   .discard-btn:disabled { opacity: .45; cursor: not-allowed; }
 
+  .edit-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: none;
+    color: var(--ink-3);
+    border: 1px solid var(--rule);
+    padding: 5px 12px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .04em;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: color .15s ease, border-color .15s ease, opacity .15s ease;
+  }
+  .edit-btn:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-3); }
+  .edit-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+  /* Gate legibility (issue #379 / ADR-0026): operator-language "what this
+     button does" line, distinct from the section-level ADR-referencing
+     description above the card list. */
+  .draft-card-what-it-means {
+    padding: 0 16px 8px;
+    font-size: 11.5px;
+    color: var(--ink-3);
+    line-height: 1.4;
+    font-style: italic;
+  }
+
+  .draft-card-edit-form {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--rule-2);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .draft-card-edit-form label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  .draft-card-edit-form input[type="text"],
+  .draft-card-edit-form textarea {
+    width: 100%;
+    box-sizing: border-box;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--ink);
+    background: var(--bg);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 6px 8px;
+    resize: vertical;
+  }
+
+  .draft-card-edit-form textarea { min-height: 100px; line-height: 1.5; }
+
+  .edit-validation-errors {
+    margin: 0;
+    padding: 8px 10px;
+    background: #fff0f0;
+    border: 1px solid var(--fail);
+    border-radius: 4px;
+    font-size: 12px;
+    color: var(--fail);
+    line-height: 1.5;
+  }
+
+  .edit-validation-errors ul { margin: 4px 0 0; padding-left: 18px; }
+
+  .edit-form-actions { display: flex; align-items: center; gap: 8px; }
+
   .card-status-msg {
     font-family: "IBM Plex Mono", monospace;
     font-size: 11px;
@@ -3356,20 +3428,43 @@ function makeRefreshBtn() {
   return btn;
 }
 
+/* Extract a wiki/qa/<slug>.md file's answer body (everything after the
+   second frontmatter fence) from the raw content the S5 read API returns.
+   Shared by the initial card render and the Edit form's pre-fill fetch
+   (issue #379) so the dash-fence parsing lives in exactly one place. */
+function extractQaBodyFromFileContent(content) {
+  var lines = content.split("\n");
+  var dashIdxs = [];
+  for (var i = 0; i < lines.length; i++) {
+    if (lines[i].trim() === "---") dashIdxs.push(i);
+    if (dashIdxs.length === 2) break;
+  }
+  var bodyText = dashIdxs.length >= 2
+    ? lines.slice(dashIdxs[1] + 1).join("\n").replace(/^\n+/, "")
+    : content;
+  return bodyText.trim();
+}
+
 /* ── Draft card builder (C8) ────────────────────────────────
    Fetches the draft body via GET /read/file?path=wiki/qa/<slug>.md
    (the S5 read API, issue #171). Shows question, answer, sources.
-   Promote → POST /wiki/qa/{slug}/promote
-   Discard → DELETE /wiki/qa/{slug}                              */
+   Promote  → POST /wiki/qa/{slug}/promote
+   Discard  → DELETE /wiki/qa/{slug}
+   Edit     → PUT /wiki/qa/{slug} (tier-B S3, issue #379, ADR-0026)
+              draft-only; a failing grounding re-check returns 422 with
+              a per-item failure list, rendered inline; nothing else on
+              the card changes when an edit is rejected.               */
 function buildDraftCard(f) {
   /* slug, question, count, age_days, cited_count come from PromotionCandidateFinding */
   var slug = f.slug;
-  var question = f.question || "";
+  var currentQuestion = f.question || "";
+  var currentBodyText = null; /* populated once the initial fetch resolves */
   var metaText = "asked " + f.count + "×";
   if (f.age_days != null) metaText += " · " + f.age_days.toFixed(0) + "d ago";
 
   /* Action state */
   var actionBusy = false;
+  var editing = false;
   var statusMsgEl = el("span", { class: "card-status-msg" });
 
   /* Buttons */
@@ -3383,15 +3478,21 @@ function buildDraftCard(f) {
     type: "button",
     text: "Discard"
   });
+  var editBtn = el("button", {
+    class: "edit-btn",
+    type: "button",
+    text: "Edit"
+  });
 
   function setActionBusy(v) {
     actionBusy = v;
-    promoteBtn.disabled = v;
-    discardBtn.disabled = v;
+    promoteBtn.disabled = v || editing;
+    discardBtn.disabled = v || editing;
+    editBtn.disabled = v || editing;
   }
 
   promoteBtn.addEventListener("click", function() {
-    if (actionBusy) return;
+    if (actionBusy || editing) return;
     setActionBusy(true);
     statusMsgEl.textContent = "Promoting…";
     statusMsgEl.className = "card-status-msg";
@@ -3402,10 +3503,13 @@ function buildDraftCard(f) {
         return resp.json();
       })
       .then(function() {
-        statusMsgEl.textContent = "Promoted — now live in corpus.";
+        /* Gate legibility (issue #379 / ADR-0026): close the loop with the
+           observable consequence instead of a bare "now live" confirmation. */
+        statusMsgEl.textContent = 'Promoted — ask "' + currentQuestion + '" in chat, it now cites this page.';
         statusMsgEl.className = "card-status-msg ok";
         promoteBtn.disabled = true;
         discardBtn.disabled = true;
+        editBtn.disabled = true;
         /* Mark the card as promoted visually */
         cardEl.style.opacity = "0.6";
       })
@@ -3417,7 +3521,7 @@ function buildDraftCard(f) {
   });
 
   discardBtn.addEventListener("click", function() {
-    if (actionBusy) return;
+    if (actionBusy || editing) return;
     setActionBusy(true);
     statusMsgEl.textContent = "Discarding…";
     statusMsgEl.className = "card-status-msg";
@@ -3442,19 +3546,16 @@ function buildDraftCard(f) {
     })
     .then(function(data) {
       var content = data.content || "";
-      /* Extract body (everything after the second ---) */
+      currentBodyText = extractQaBodyFromFileContent(content) || "(no body)";
+      bodyPlaceholder.textContent = currentBodyText;
+
+      /* Extract sources from frontmatter YAML text */
       var lines = content.split("\n");
       var dashIdxs = [];
       for (var i = 0; i < lines.length; i++) {
         if (lines[i].trim() === "---") dashIdxs.push(i);
         if (dashIdxs.length === 2) break;
       }
-      var bodyText = dashIdxs.length >= 2
-        ? lines.slice(dashIdxs[1] + 1).join("\n").replace(/^\n+/, "")
-        : content;
-      bodyPlaceholder.textContent = bodyText.trim() || "(no body)";
-
-      /* Extract sources from frontmatter YAML text */
       if (dashIdxs.length >= 2) {
         var fmLines = lines.slice(dashIdxs[0] + 1, dashIdxs[1]);
         /* Find the sources: list — look for "sources:" then subsequent "- " items */
@@ -3486,19 +3587,126 @@ function buildDraftCard(f) {
     })
     .catch(function() {
       bodyPlaceholder.textContent = "(could not load answer body)";
+      currentBodyText = "";
       sourcesEl.append(el("span", { text: "(unknown)" }));
     });
 
+  /* ── Edit form (issue #379 / ADR-0026 decision 2) ──────────
+     Hidden until Edit is clicked. Save → PUT /wiki/qa/{slug};
+     a 422 grounding-re-check failure renders the per-item claim
+     list inline and leaves the form open — nothing on disk changed,
+     so Promote still works against the pre-edit draft. */
+  var questionInput = el("input", { type: "text" });
+  var bodyTextarea = el("textarea", {});
+  var validationErrorsEl = el("div", { class: "edit-validation-errors" });
+  validationErrorsEl.style.display = "none";
+  var saveBtn = el("button", { class: "promote-btn", type: "button", text: "Save" });
+  var cancelBtn = el("button", { class: "discard-btn", type: "button", text: "Cancel" });
+
+  var editFormEl = el("div", { class: "draft-card-edit-form" },
+    el("label", { text: "Question" }),
+    questionInput,
+    el("label", { text: "Answer" }),
+    bodyTextarea,
+    validationErrorsEl,
+    el("div", { class: "edit-form-actions" }, saveBtn, cancelBtn)
+  );
+  editFormEl.style.display = "none";
+
+  function closeEditForm() {
+    editing = false;
+    editFormEl.style.display = "none";
+    validationErrorsEl.style.display = "none";
+    validationErrorsEl.replaceChildren();
+    setActionBusy(actionBusy); /* re-evaluate disabled state now editing=false */
+  }
+
+  editBtn.addEventListener("click", function() {
+    if (actionBusy || editing) return;
+    editing = true;
+    promoteBtn.disabled = true;
+    discardBtn.disabled = true;
+    editBtn.disabled = true;
+    questionInput.value = currentQuestion;
+    bodyTextarea.value = currentBodyText || "";
+    validationErrorsEl.style.display = "none";
+    validationErrorsEl.replaceChildren();
+    editFormEl.style.display = "flex";
+  });
+
+  cancelBtn.addEventListener("click", function() {
+    closeEditForm();
+  });
+
+  saveBtn.addEventListener("click", function() {
+    saveBtn.disabled = true;
+    cancelBtn.disabled = true;
+    statusMsgEl.textContent = "Saving…";
+    statusMsgEl.className = "card-status-msg";
+
+    fetch("/wiki/qa/" + encodeURIComponent(slug), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: questionInput.value, body: bodyTextarea.value })
+    })
+      .then(function(resp) {
+        return resp.json().then(function(data) { return { ok: resp.ok, status: resp.status, data: data }; });
+      })
+      .then(function(result) {
+        saveBtn.disabled = false;
+        cancelBtn.disabled = false;
+        if (result.ok) {
+          currentQuestion = questionInput.value;
+          currentBodyText = bodyTextarea.value;
+          questionEl.textContent = currentQuestion;
+          bodyPlaceholder.textContent = currentBodyText || "(no body)";
+          statusMsgEl.textContent = "Saved — edit passed the grounding check.";
+          statusMsgEl.className = "card-status-msg ok";
+          closeEditForm();
+          return;
+        }
+        if (result.status === 422) {
+          var claims = (result.data.detail && result.data.detail.unsupported_claims) || [];
+          validationErrorsEl.replaceChildren();
+          validationErrorsEl.append(el("div", { text: "Edit rejected — the grounding check found unsupported claims:" }));
+          var ul = el("ul", {});
+          if (claims.length > 0) {
+            claims.forEach(function(c) { ul.append(el("li", { text: c })); });
+          } else {
+            ul.append(el("li", { text: "(no detail returned)" }));
+          }
+          validationErrorsEl.append(ul);
+          validationErrorsEl.style.display = "block";
+          statusMsgEl.textContent = "";
+          return;
+        }
+        statusMsgEl.textContent = "Error: HTTP " + result.status + " " + (result.data.detail || "");
+        statusMsgEl.className = "card-status-msg err";
+      })
+      .catch(function(err) {
+        saveBtn.disabled = false;
+        cancelBtn.disabled = false;
+        statusMsgEl.textContent = "Error: " + (err.message || String(err));
+        statusMsgEl.className = "card-status-msg err";
+      });
+  });
+
+  var questionEl = el("div", { class: "draft-card-question", text: currentQuestion });
+
   var cardEl = el("div", { class: "draft-card" },
     el("div", { class: "draft-card-head" },
-      el("div", { class: "draft-card-question", text: question }),
+      questionEl,
       el("div", { class: "draft-card-meta",     text: metaText })
     ),
     bodyPlaceholder,
     sourcesEl,
+    el("div", { class: "draft-card-what-it-means",
+      text: "Promoting this answer means: the bot will answer similar questions with this approved answer." }),
+    editFormEl,
     el("div", { class: "draft-card-actions" },
       promoteBtn,
       discardBtn,
+      editBtn,
       statusMsgEl
     )
   );
