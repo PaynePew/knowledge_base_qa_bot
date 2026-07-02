@@ -85,6 +85,20 @@ findings (C9/C11) render neither (no lifecycle endpoint exists yet). Lint
 itself is untouched — remediation is always a separate operation triggered
 from the report, never a side-effect of ``run_lint()``.
 
+Slice S5 scope (Lint Remediation tier-A — issue #365, ADR-0023)
+-----------------------------------------------------------------
+No new check, no new endpoint. Each ``LintCheckMeta`` entry in
+``LINT_CHECK_TAXONOMY`` gains a ``label_zh`` field (the Traditional-Chinese
+short label), and ``LINT_AXIS_LABEL_ZH`` maps each ``LINT_AXIS_ORDER``
+identifier to its zh display string. This is the single source of truth for
+the Operator Console's zh/en header toggle (structural chrome only — axis
+headers, check labels, remediation button verbs, section chrome, empty
+states); the dynamic per-finding ``suggested_action`` text stays English.
+The axis identifiers themselves (``LINT_AXIS_ORDER`` values, dict keys)
+stay English — only their *display* form is bilingual, so the written
+report / CLI / MCP renderers (English-only, unchanged by this slice) keep
+using the same stable keys.
+
 All four amendments preserve PRD #65 Q3 read-only invariant — they read
 frontmatter and write only ``lint-report.md``, never page frontmatter.
 
@@ -119,7 +133,7 @@ Check execution order (cheapest to most expensive)
 9. C10 qa-schema-validity (read qa frontmatter)
 10. C5 page-pair LLM (F1∪F3 filter + LLM) — most expensive last
 
-Authorised by PRD #65 (Phase 5), GitHub issue #66 (Slice 5-1), GitHub issue #67 (Slice 5-2), GitHub issue #68 (Slice 5-3), GitHub issue #69 (Slice 5-4), GitHub issue #70 (Slice 5-5), PRD #78 (Phase 6), GitHub issue #82 (Slice 6-5 Phase 5 amendment), ADR-0023 (Lint Remediation Direct vs Authored), PRD #359 (Lint Remediation tier-A), GitHub issue #361 (Slice S1 — Lint Axis taxonomy), and GitHub issue #363 (Slice S3 — Console axis grouping + per-row Direct Remediation + auto-relint).
+Authorised by PRD #65 (Phase 5), GitHub issue #66 (Slice 5-1), GitHub issue #67 (Slice 5-2), GitHub issue #68 (Slice 5-3), GitHub issue #69 (Slice 5-4), GitHub issue #70 (Slice 5-5), PRD #78 (Phase 6), GitHub issue #82 (Slice 6-5 Phase 5 amendment), ADR-0023 (Lint Remediation Direct vs Authored), PRD #359 (Lint Remediation tier-A), GitHub issue #361 (Slice S1 — Lint Axis taxonomy), GitHub issue #363 (Slice S3 — Console axis grouping + per-row Direct Remediation + auto-relint), and GitHub issue #365 (Slice S5 — Console zh/en language toggle).
 """
 
 from __future__ import annotations
@@ -1792,13 +1806,19 @@ def _check_c10_qa_schema_validity(
 class LintCheckMeta(NamedTuple):
     """One taxonomy entry: a wired check's code, short label, and axis.
 
-    Labels are the CONTEXT.md "Lint Axis" short names (English only for now —
-    zh strings arrive in a later tier-A slice per issue #359).
+    ``label`` is the CONTEXT.md "Lint Axis" short name (English). ``label_zh``
+    is its Traditional-Chinese counterpart, added by issue #365 (tier-A S5)
+    for the Operator Console's zh/en chrome toggle — both live on the same
+    taxonomy entry rather than a separate per-interface table (issue #365 AC
+    "single source, no per-interface duplication"). The written report / CLI
+    / MCP renderers stay English-only for now; the Console is the first (and
+    so far only) ``label_zh`` consumer.
     """
 
     code: str
     label: str
     axis: str
+    label_zh: str
 
 
 # Stable axis order per CONTEXT.md "Lint Axis": Freshness -> Coherence ->
@@ -1807,20 +1827,31 @@ class LintCheckMeta(NamedTuple):
 # (ADR-0017 interface parity, per ADR-0023 "one taxonomy, three interfaces").
 LINT_AXIS_ORDER: tuple[str, ...] = ("Freshness", "Coherence", "Coverage", "Lifecycle")
 
+# Traditional-Chinese display strings for LINT_AXIS_ORDER's axis identifiers
+# (issue #365). The identifiers themselves stay English — they are stable
+# keys used throughout the report renderer / CLI / MCP / tests; only the
+# rendered heading text is bilingual, and only the Console renders it today.
+LINT_AXIS_LABEL_ZH: dict[str, str] = {
+    "Freshness": "新鮮度",
+    "Coherence": "一致性",
+    "Coverage": "覆蓋率",
+    "Lifecycle": "生命週期",
+}
+
 # code -> LintCheckMeta for all ten wired checks. Entries are grouped by axis
 # in LINT_AXIS_ORDER, and ordered within each axis exactly as CONTEXT.md
 # enumerates them — group_findings_by_axis relies on this iteration order.
 LINT_CHECK_TAXONOMY: dict[str, LintCheckMeta] = {
-    "C6": LintCheckMeta("C6", "stale", "Freshness"),
-    "C3": LintCheckMeta("C3", "failed-grounding", "Freshness"),
-    "C11": LintCheckMeta("C11", "orphan", "Freshness"),
-    "C5": LintCheckMeta("C5", "contradiction", "Coherence"),
-    "C4": LintCheckMeta("C4", "collision", "Coherence"),
-    "C1": LintCheckMeta("C1", "coverage-gap", "Coverage"),
-    "C2": LintCheckMeta("C2", "red-link", "Coverage"),
-    "C8": LintCheckMeta("C8", "promotion", "Lifecycle"),
-    "C10": LintCheckMeta("C10", "invalid-schema", "Lifecycle"),
-    "C9": LintCheckMeta("C9", "stale-qa", "Lifecycle"),
+    "C6": LintCheckMeta("C6", "stale", "Freshness", "過時"),
+    "C3": LintCheckMeta("C3", "failed-grounding", "Freshness", "驗證失敗"),
+    "C11": LintCheckMeta("C11", "orphan", "Freshness", "孤立頁面"),
+    "C5": LintCheckMeta("C5", "contradiction", "Coherence", "矛盾"),
+    "C4": LintCheckMeta("C4", "collision", "Coherence", "重複"),
+    "C1": LintCheckMeta("C1", "coverage-gap", "Coverage", "覆蓋缺口"),
+    "C2": LintCheckMeta("C2", "red-link", "Coverage", "失效連結"),
+    "C8": LintCheckMeta("C8", "promotion", "Lifecycle", "待升級"),
+    "C10": LintCheckMeta("C10", "invalid-schema", "Lifecycle", "格式錯誤"),
+    "C9": LintCheckMeta("C9", "stale-qa", "Lifecycle", "資料過舊"),
 }
 
 # code -> LintFindings attribute name, so group_findings_by_axis can pull each
