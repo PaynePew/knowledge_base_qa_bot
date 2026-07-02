@@ -67,6 +67,8 @@ ADMIN_PATHS: frozenset[str] = frozenset(
         "/wiki/import",
         "/upload",
         "/hybrid/index",  # ADR-0022: operator-triggered dense re-embed (issue #348)
+        "/wiki/pages/reconcile",  # ADR-0028: C5 reconcile draft — LLM draft + grounding (issue #376)
+        "/wiki/pages/reconcile/apply",  # ADR-0028: grounding re-check + two-page rewrite + reindex (issue #376)
     }
 )
 

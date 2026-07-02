@@ -1,4 +1,4 @@
-"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``CitationRef``, ``FiledStatus``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``, ``CoverageGapFinding``, ``PagePairFinding``, ``PromotionCandidateFinding``, ``QaStalenessFinding``, ``InvalidQaSchemaFinding``, ``ImportRequest``, ``ImportSourceResultSchema``, ``ImportFailureSchema``, ``ImportResponse``).
+"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``CitationRef``, ``FiledStatus``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``, ``CoverageGapFinding``, ``PagePairFinding``, ``PromotionCandidateFinding``, ``QaStalenessFinding``, ``InvalidQaSchemaFinding``, ``ImportRequest``, ``ImportSourceResultSchema``, ``ImportFailureSchema``, ``ImportResponse``, ``ReconcileDraft``, ``ReconcileGenerateRequest``, ``ReconcileGenerateResponse``, ``ReconcileApplyRequest``, ``ReconcileApplyResponse``).
 
 Pydantic request/response models for the FastAPI routes. No domain logic."""
 
@@ -628,6 +628,90 @@ class LintResponse(BaseModel):
     findings: LintFindings
     summary: LintSummary
     check_errors: dict[str, str] = {}
+
+
+# ---------------------------------------------------------------------------
+# /pages/reconcile schemas (tier-B S1 — issue #376, ADR-0028)
+# ---------------------------------------------------------------------------
+
+
+class ReconcileDraft(BaseModel):
+    """LLM structured-output schema for the C5 Reconcile drafting call (ADR-0028).
+
+    ``content_a``/``content_b`` are the full revised page content *after* the
+    frontmatter fence (heading + prose + trailing citation line, structurally
+    identical in shape to the original — mirrors the single opaque blob
+    ``lint._load_wiki_pages`` already judges pages by for C5). Drafted from
+    the union of both pages' Sources so the two pages state mutually
+    consistent facts.
+    """
+
+    content_a: str
+    content_b: str
+
+
+class ReconcileGenerateRequest(BaseModel):
+    """Request body for POST /pages/reconcile (ADR-0028)."""
+
+    page_a: str
+    page_b: str
+
+
+class ReconcileGenerateResponse(BaseModel):
+    """Response body for POST /pages/reconcile.
+
+    **Invariant (ADR-0028)** — writes nothing to disk. ``old_content_a`` /
+    ``old_content_b`` are each page's CURRENT on-disk content (post-
+    frontmatter) so the Console can render an old-vs-draft side-by-side
+    comparison without a second round trip. ``hash_a`` / ``hash_b`` are the
+    SHA-256 of each page's full on-disk file text at generate time — the
+    client must return them unchanged to POST /pages/reconcile/apply so the
+    server can detect whether either page changed underneath the preview.
+    """
+
+    page_a: str
+    page_b: str
+    old_content_a: str
+    old_content_b: str
+    content_a: str
+    content_b: str
+    grounding: GroundingInfo
+    hash_a: str
+    hash_b: str
+
+
+class ReconcileApplyRequest(BaseModel):
+    """Request body for POST /pages/reconcile/apply (ADR-0028).
+
+    ``content_a`` / ``content_b`` are the final (possibly human-edited) page
+    content submitted for write-back. ``hash_a`` / ``hash_b`` must be the
+    values returned by the matching POST /pages/reconcile call — the server
+    refuses (409) when either page's current on-disk hash no longer matches
+    (the finding may no longer hold).
+    """
+
+    page_a: str
+    page_b: str
+    content_a: str
+    content_b: str
+    hash_a: str
+    hash_b: str
+
+
+class ReconcileApplyResponse(BaseModel):
+    """Response body for a successful POST /pages/reconcile/apply.
+
+    ``sections_indexed`` is the count from the one BM25 reindex the route
+    triggers after both pages are written (ADR-0028 Invariant — a Gated
+    Remediation never batches, but the reindex itself is a single full
+    rebuild covering both rewritten pages, matching the existing
+    ``POST /qa/{slug}/promote`` auto-reindex convention).
+    """
+
+    page_a: str
+    page_b: str
+    grounding: GroundingInfo
+    sections_indexed: int
 
 
 # ---------------------------------------------------------------------------

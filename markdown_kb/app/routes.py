@@ -1,6 +1,7 @@
 """Shallow module per Ousterhout. Public surface: ``router``.
 
-HTTP wiring for /health, /index, /chat, /ingest, /lint, /import. No domain logic."""
+HTTP wiring for /health, /index, /chat, /ingest, /lint, /import,
+/pages/reconcile, /pages/reconcile/apply. No domain logic."""
 
 from __future__ import annotations
 
@@ -8,6 +9,7 @@ from fastapi import APIRouter, HTTPException
 
 from . import indexer as _indexer
 from . import qa as qa_module
+from . import reconcile as reconcile_module
 from .errors import LLMError
 from .importer import ImportBatchResult
 from .importer import import_sources as run_import
@@ -29,6 +31,10 @@ from .schemas import (
     IngestRequest,
     IngestResponse,
     LintResponse,
+    ReconcileApplyRequest,
+    ReconcileApplyResponse,
+    ReconcileGenerateRequest,
+    ReconcileGenerateResponse,
 )
 
 router = APIRouter()
@@ -314,4 +320,107 @@ def import_raw(req: ImportRequest | None = None) -> ImportResponse:
             )
             for f in batch.failed_sources
         ],
+    )
+
+
+# ---------------------------------------------------------------------------
+# /pages/reconcile — C5 Reconcile two-phase flow (tier-B S1, ADR-0028)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/pages/reconcile", response_model=ReconcileGenerateResponse)
+def reconcile_generate(req: ReconcileGenerateRequest) -> ReconcileGenerateResponse:
+    """Draft a reconciled version of two contradicting wiki pages.
+
+    ADR-0028 phase 1 of the stateless two-phase Reconcile flow: the LLM
+    drafts from the union of both pages' Sources, the draft is grounding-
+    checked, and the response carries the draft + grounding report + each
+    page's content hash. **Writes nothing to disk** (Invariant).
+
+    Shallow wrapper around ``reconcile.generate_reconcile`` (CODING_STANDARD
+    §2.3 — all domain logic lives in ``reconcile.py``).
+
+    Raises:
+        HTTP 400: ``page_a`` and ``page_b`` name the same slug.
+        HTTP 404: either slug does not resolve to an existing
+            ``wiki/entities/`` or ``wiki/concepts/`` page.
+        HTTP 500: either page exists but its frontmatter is corrupt
+            (orphan-visibility — surface broken state rather than silently
+            rewriting it, mirrors ``POST /qa/{slug}/promote``).
+    """
+    try:
+        return reconcile_module.generate_reconcile(req.page_a, req.page_b)
+    except reconcile_module.ReconcileInvalidPair as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"page_a and page_b must name different pages, got {exc}",
+        ) from exc
+    except reconcile_module.PageNotFound as exc:
+        raise HTTPException(status_code=404, detail=f"wiki page not found: {exc}") from exc
+    except reconcile_module.PageCorrupt as exc:
+        raise HTTPException(
+            status_code=500, detail=f"wiki page has corrupt frontmatter: {exc}"
+        ) from exc
+
+
+@router.post("/pages/reconcile/apply", response_model=ReconcileApplyResponse)
+def reconcile_apply(req: ReconcileApplyRequest) -> ReconcileApplyResponse:
+    """Re-verify and commit the final (possibly human-edited) reconcile content.
+
+    ADR-0028 phase 2: re-runs the grounding check on the EXACT submitted
+    content and refuses (409) when either page's content hash no longer
+    matches the value returned by ``POST /pages/reconcile`` (the finding may
+    no longer hold). On pass, rewrites both pages in place (both slugs
+    survive — Invariant) and the caller triggers exactly one BM25 reindex.
+
+    Shallow wrapper around ``reconcile.apply_reconcile`` (CODING_STANDARD
+    §2.3 — all domain logic lives in ``reconcile.py``). ``build_index()`` is
+    called here, once, after a successful apply — mirrors
+    ``POST /qa/{slug}/promote``'s auto-reindex convention (reindex is a
+    route-layer concern, not a domain-layer one).
+
+    Raises:
+        HTTP 400: ``page_a`` and ``page_b`` name the same slug.
+        HTTP 404: either slug does not resolve to an existing page.
+        HTTP 409: either page's on-disk content changed since generate time.
+        HTTP 422: the apply-time grounding re-check failed for either page's
+            submitted content; ``detail.unsupported_claims`` lists the
+            offending claims.
+        HTTP 500: either page exists but its frontmatter is corrupt.
+    """
+    try:
+        result = reconcile_module.apply_reconcile(req)
+    except reconcile_module.ReconcileInvalidPair as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"page_a and page_b must name different pages, got {exc}",
+        ) from exc
+    except reconcile_module.PageNotFound as exc:
+        raise HTTPException(status_code=404, detail=f"wiki page not found: {exc}") from exc
+    except reconcile_module.PageCorrupt as exc:
+        raise HTTPException(
+            status_code=500, detail=f"wiki page has corrupt frontmatter: {exc}"
+        ) from exc
+    except reconcile_module.ReconcileHashMismatch as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"one or both pages changed since generate — reconcile refused: {exc}",
+        ) from exc
+    except reconcile_module.ReconcileGroundingFailed as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "reconcile content failed grounding re-check",
+                "reason": exc.grounding.reason,
+                "unsupported_claims": exc.grounding.unsupported_claims or [],
+            },
+        ) from exc
+
+    # ADR-0028: exactly one reindex after both pages are written.
+    _files_indexed, sections_indexed = build_index()
+    return ReconcileApplyResponse(
+        page_a=result.page_a,
+        page_b=result.page_b,
+        grounding=result.grounding,
+        sections_indexed=sections_indexed,
     )

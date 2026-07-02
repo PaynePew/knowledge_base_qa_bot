@@ -28,6 +28,8 @@ Per-endpoint estimate table (USD per request, deliberately generous):
     | /rag/index       | 0.50     | re-embeds the WHOLE corpus (many embed calls)   |
     | /hybrid/index    | 0.50     | re-embeds the WHOLE wiki Section corpus         |
     | /upload          | 0.01     | staging bytes; tiny, but heavy-gated for safety |
+    | /wiki/pages/reconcile       | 0.05 | C5 draft over two pages' Source union + grounding check |
+    | /wiki/pages/reconcile/apply | 0.02 | grounding re-check on the submitted final content       |
     | (default heavy)  | 0.10     | unknown heavy path → assume a mid-range cost    |
 
 The numbers are intentionally above plausible real cost on a small demo corpus
@@ -56,6 +58,8 @@ _COST_ESTIMATES: dict[str, float] = {
     "/rag/index": 0.50,
     "/hybrid/index": 0.50,
     "/upload": 0.01,
+    "/wiki/pages/reconcile": 0.05,
+    "/wiki/pages/reconcile/apply": 0.02,
 }
 
 # Fallback for any heavy path missing from the table — assume a mid-range cost
