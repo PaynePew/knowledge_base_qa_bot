@@ -1,4 +1,4 @@
-"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``CitationRef``, ``FiledStatus``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``, ``CoverageGapFinding``, ``PagePairFinding``, ``PromotionCandidateFinding``, ``QaStalenessFinding``, ``InvalidQaSchemaFinding``, ``ImportRequest``, ``ImportSourceResultSchema``, ``ImportFailureSchema``, ``ImportResponse``, ``ReconcileDraft``, ``ReconcileGenerateRequest``, ``ReconcileGenerateResponse``, ``ReconcileApplyRequest``, ``ReconcileApplyResponse``).
+"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``CitationRef``, ``FiledStatus``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``, ``CoverageGapFinding``, ``PagePairFinding``, ``PromotionCandidateFinding``, ``QaStalenessFinding``, ``InvalidQaSchemaFinding``, ``ImportRequest``, ``ImportSourceResultSchema``, ``ImportFailureSchema``, ``ImportResponse``, ``ReconcileDraft``, ``ReconcileGenerateRequest``, ``ReconcileGenerateResponse``, ``ReconcileApplyRequest``, ``ReconcileApplyResponse``, ``CollisionMergeDraft``, ``CollisionPageDraft``, ``CollisionDifferentiateDraft``, ``CollisionMergeGenerateRequest``, ``CollisionMergeGenerateResponse``, ``CollisionMergeApplyRequest``, ``InboundReference``, ``CollisionMergeApplyResponse``, ``CollisionDifferentiateGenerateRequest``, ``CollisionDifferentiateGenerateResponse``, ``CollisionDifferentiateApplyRequest``, ``CollisionDifferentiateApplyResponse``).
 
 Pydantic request/response models for the FastAPI routes. No domain logic."""
 
@@ -710,6 +710,158 @@ class ReconcileApplyResponse(BaseModel):
 
     page_a: str
     page_b: str
+    grounding: GroundingInfo
+    sections_indexed: int
+
+
+# ---------------------------------------------------------------------------
+# /pages/collision/{merge,differentiate} schemas (tier-B S2 — issue #378, ADR-0028)
+#
+# C4 slug-collision groups gain both documented resolutions on top of S1's
+# two-phase machinery (generate -> preview/edit -> apply-with-revalidation).
+# ---------------------------------------------------------------------------
+
+
+class CollisionMergeDraft(BaseModel):
+    """LLM structured-output schema for the C4 merge-into-base drafting call
+    (ADR-0028). ``content_base`` is the full revised content (post-frontmatter)
+    for the group's unsuffixed base slug, drafted from the union of every
+    group member's Sources."""
+
+    content_base: str
+
+
+class CollisionPageDraft(BaseModel):
+    """One page's drafted content in a C4 differentiate response — a fixed
+    ``{slug, content}`` shape (rather than a ``dict[str, str]``) so the LLM
+    structured-output schema stays a plain JSON-schema object list regardless
+    of how many pages are in the collision group."""
+
+    slug: str
+    content: str
+
+
+class CollisionDifferentiateDraft(BaseModel):
+    """LLM structured-output schema for the C4 differentiate drafting call
+    (ADR-0028). ``pages`` carries one drafted entry per group member, each
+    rewritten to be complementary and more specific — nobody is deleted."""
+
+    pages: list[CollisionPageDraft]
+
+
+class CollisionMergeGenerateRequest(BaseModel):
+    """Request body for POST /pages/collision/merge (ADR-0028)."""
+
+    base_slug: str
+    variant_slugs: list[str]
+
+
+class CollisionMergeGenerateResponse(BaseModel):
+    """Response body for POST /pages/collision/merge.
+
+    **Invariant (ADR-0028)** — writes nothing to disk. ``old_content_base`` is
+    the base page's CURRENT on-disk content (post-frontmatter). ``hash_base`` /
+    ``hash_variants`` are SHA-256 of each page's full on-disk file text at
+    generate time — the client returns them unchanged to
+    POST /pages/collision/merge/apply so the server can detect whether any
+    page changed underneath the preview.
+    """
+
+    base_slug: str
+    variant_slugs: list[str]
+    old_content_base: str
+    content_base: str
+    grounding: GroundingInfo
+    hash_base: str
+    hash_variants: dict[str, str]
+
+
+class CollisionMergeApplyRequest(BaseModel):
+    """Request body for POST /pages/collision/merge/apply (ADR-0028).
+
+    ``content_base`` is the final (possibly human-edited) content submitted
+    for write-back onto ``base_slug``. ``hash_base`` / ``hash_variants`` must
+    be the values returned by the matching POST /pages/collision/merge call —
+    the server refuses (409) when any page's current on-disk hash no longer
+    matches.
+    """
+
+    base_slug: str
+    variant_slugs: list[str]
+    content_base: str
+    hash_base: str
+    hash_variants: dict[str, str]
+
+
+class InboundReference(BaseModel):
+    """Inbound-reference guard detail for one variant slated for deletion by
+    a C4 merge (ADR-0028 Invariant). Populated only for variants that
+    actually have at least one referrer — an empty ``wiki_referrers`` and
+    ``qa_referrers`` pair never appears in a guard-failure response."""
+
+    variant_slug: str
+    wiki_referrers: list[str]
+    qa_referrers: list[str]
+
+
+class CollisionMergeApplyResponse(BaseModel):
+    """Response body for a successful POST /pages/collision/merge/apply.
+
+    ``deleted_variants`` lists the slugs actually removed (reference-free —
+    the guard already refused the call had any variant been referenced).
+    ``sections_indexed`` is the count from the one BM25 reindex triggered
+    after the base rewrite + variant deletions.
+    """
+
+    base_slug: str
+    deleted_variants: list[str]
+    grounding: GroundingInfo
+    sections_indexed: int
+
+
+class CollisionDifferentiateGenerateRequest(BaseModel):
+    """Request body for POST /pages/collision/differentiate (ADR-0028)."""
+
+    slugs: list[str]
+
+
+class CollisionDifferentiateGenerateResponse(BaseModel):
+    """Response body for POST /pages/collision/differentiate.
+
+    **Invariant (ADR-0028)** — writes nothing to disk. ``old_content`` /
+    ``content`` / ``hashes`` are keyed by slug, one entry per group member.
+    """
+
+    slugs: list[str]
+    old_content: dict[str, str]
+    content: dict[str, str]
+    grounding: GroundingInfo
+    hashes: dict[str, str]
+
+
+class CollisionDifferentiateApplyRequest(BaseModel):
+    """Request body for POST /pages/collision/differentiate/apply (ADR-0028).
+
+    ``content`` is the final (possibly human-edited) content submitted for
+    write-back, keyed by slug. ``hashes`` must be the values returned by the
+    matching POST /pages/collision/differentiate call — the server refuses
+    (409) when any page's current on-disk hash no longer matches.
+    """
+
+    slugs: list[str]
+    content: dict[str, str]
+    hashes: dict[str, str]
+
+
+class CollisionDifferentiateApplyResponse(BaseModel):
+    """Response body for a successful POST /pages/collision/differentiate/apply.
+
+    All group members survive, rewritten in place. ``sections_indexed`` is
+    the count from the one BM25 reindex triggered after every page is
+    written.
+    """
+
+    slugs: list[str]
     grounding: GroundingInfo
     sections_indexed: int
 

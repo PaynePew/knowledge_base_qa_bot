@@ -1,7 +1,9 @@
 """Shallow module per Ousterhout. Public surface: ``router``.
 
 HTTP wiring for /health, /index, /chat, /ingest, /lint, /import,
-/pages/reconcile, /pages/reconcile/apply. No domain logic."""
+/pages/reconcile, /pages/reconcile/apply, /pages/collision/merge,
+/pages/collision/merge/apply, /pages/collision/differentiate,
+/pages/collision/differentiate/apply. No domain logic."""
 
 from __future__ import annotations
 
@@ -20,6 +22,14 @@ from .retrieval import query
 from .schemas import (
     ChatRequest,
     ChatResponse,
+    CollisionDifferentiateApplyRequest,
+    CollisionDifferentiateApplyResponse,
+    CollisionDifferentiateGenerateRequest,
+    CollisionDifferentiateGenerateResponse,
+    CollisionMergeApplyRequest,
+    CollisionMergeApplyResponse,
+    CollisionMergeGenerateRequest,
+    CollisionMergeGenerateResponse,
     FiledStatus,
     GroundingClaim,
     GroundingInfo,
@@ -421,6 +431,222 @@ def reconcile_apply(req: ReconcileApplyRequest) -> ReconcileApplyResponse:
     return ReconcileApplyResponse(
         page_a=result.page_a,
         page_b=result.page_b,
+        grounding=result.grounding,
+        sections_indexed=sections_indexed,
+    )
+
+
+# ---------------------------------------------------------------------------
+# /pages/collision — C4 dual resolution (tier-B S2, ADR-0028, issue #378)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/pages/collision/merge", response_model=CollisionMergeGenerateResponse)
+def collision_merge_generate(req: CollisionMergeGenerateRequest) -> CollisionMergeGenerateResponse:
+    """Draft a merged version of a C4 slug-collision group's base page.
+
+    ADR-0028 phase 1 of the merge-into-base resolution: the LLM drafts one
+    merged page from the union of every group member's Sources, the draft is
+    grounding-checked, and the response carries the draft + grounding report
+    + every member's content hash. **Writes nothing to disk** (Invariant).
+
+    Shallow wrapper around ``reconcile.generate_collision_merge``
+    (CODING_STANDARD §2.3 — all domain logic lives in ``reconcile.py``).
+
+    Raises:
+        HTTP 400: ``variant_slugs`` is empty, contains ``base_slug``, or has
+            duplicates.
+        HTTP 404: ``base_slug`` or any variant slug does not resolve to an
+            existing ``wiki/entities/`` or ``wiki/concepts/`` page.
+        HTTP 500: any named page exists but its frontmatter is corrupt.
+    """
+    try:
+        return reconcile_module.generate_collision_merge(req.base_slug, req.variant_slugs)
+    except reconcile_module.CollisionInvalidGroup as exc:
+        raise HTTPException(status_code=400, detail=f"invalid collision group: {exc}") from exc
+    except reconcile_module.PageNotFound as exc:
+        raise HTTPException(status_code=404, detail=f"wiki page not found: {exc}") from exc
+    except reconcile_module.PageCorrupt as exc:
+        raise HTTPException(
+            status_code=500, detail=f"wiki page has corrupt frontmatter: {exc}"
+        ) from exc
+
+
+@router.post("/pages/collision/merge/apply", response_model=CollisionMergeApplyResponse)
+def collision_merge_apply(req: CollisionMergeApplyRequest) -> CollisionMergeApplyResponse:
+    """Re-verify and commit the final (possibly human-edited) merge content,
+    then delete the reference-free variants.
+
+    ADR-0028 phase 2 of merge-into-base: re-runs the grounding check on the
+    EXACT submitted base content and refuses (409) when any page's content
+    hash no longer matches the value returned by
+    ``POST /pages/collision/merge`` (the finding may no longer hold). Before
+    writing, the server also refuses (409) when any variant slated for
+    deletion still has an inbound ``[[link]]`` or qa citation — the
+    **inbound-reference guard** (ADR-0028 Invariant), listing the referrers
+    so the Console can render the refusal honestly. On pass: the base page
+    is rewritten in place and the reference-free variants are deleted; the
+    caller triggers exactly one BM25 reindex.
+
+    Shallow wrapper around ``reconcile.apply_collision_merge``
+    (CODING_STANDARD §2.3 — all domain logic lives in ``reconcile.py``).
+    ``build_index()`` is called here, once, after a successful apply —
+    mirrors ``POST /pages/reconcile/apply``'s auto-reindex convention.
+
+    Raises:
+        HTTP 400: malformed group shape (``CollisionInvalidGroup``).
+        HTTP 404: ``base_slug`` or any variant slug does not resolve.
+        HTTP 409: hash mismatch (plain-string detail) OR the inbound-
+            reference guard refused (``detail`` is a dict listing
+            ``referrers``) — the client distinguishes the two by the shape
+            of ``detail``.
+        HTTP 422: the apply-time grounding re-check failed for the
+            submitted base content; ``detail.unsupported_claims`` lists the
+            offending claims.
+        HTTP 500: any named page exists but its frontmatter is corrupt.
+    """
+    try:
+        result = reconcile_module.apply_collision_merge(req)
+    except reconcile_module.CollisionInvalidGroup as exc:
+        raise HTTPException(status_code=400, detail=f"invalid collision group: {exc}") from exc
+    except reconcile_module.PageNotFound as exc:
+        raise HTTPException(status_code=404, detail=f"wiki page not found: {exc}") from exc
+    except reconcile_module.PageCorrupt as exc:
+        raise HTTPException(
+            status_code=500, detail=f"wiki page has corrupt frontmatter: {exc}"
+        ) from exc
+    except reconcile_module.CollisionHashMismatch as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"one or more pages changed since generate — merge refused: {exc}",
+        ) from exc
+    except reconcile_module.CollisionReferenceGuardFailed as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "merge refused: one or more variants are still referenced",
+                "referrers": [
+                    {
+                        "variant_slug": r.variant_slug,
+                        "wiki_referrers": r.wiki_referrers,
+                        "qa_referrers": r.qa_referrers,
+                    }
+                    for r in exc.referrers
+                ],
+            },
+        ) from exc
+    except reconcile_module.CollisionGroundingFailed as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "merge content failed grounding re-check",
+                "reason": exc.grounding.reason,
+                "unsupported_claims": exc.grounding.unsupported_claims or [],
+            },
+        ) from exc
+
+    # ADR-0028: exactly one reindex after the base rewrite + variant deletions.
+    _files_indexed, sections_indexed = build_index()
+    return CollisionMergeApplyResponse(
+        base_slug=result.base_slug,
+        deleted_variants=result.deleted_variants,
+        grounding=result.grounding,
+        sections_indexed=sections_indexed,
+    )
+
+
+@router.post(
+    "/pages/collision/differentiate", response_model=CollisionDifferentiateGenerateResponse
+)
+def collision_differentiate_generate(
+    req: CollisionDifferentiateGenerateRequest,
+) -> CollisionDifferentiateGenerateResponse:
+    """Draft complementary content for every page in a C4 collision group.
+
+    ADR-0028 phase 1 of the differentiate resolution: the LLM rewrites every
+    group member from the union of every member's Sources so each keeps its
+    own distinct angle; the draft is grounding-checked per page, and the
+    response carries the drafts + grounding report + every member's content
+    hash. **Writes nothing to disk** (Invariant).
+
+    Shallow wrapper around ``reconcile.generate_collision_differentiate``
+    (CODING_STANDARD §2.3 — all domain logic lives in ``reconcile.py``).
+
+    Raises:
+        HTTP 400: ``slugs`` has fewer than 2 members or duplicates.
+        HTTP 404: any slug does not resolve to an existing page.
+        HTTP 500: any named page exists but its frontmatter is corrupt.
+    """
+    try:
+        return reconcile_module.generate_collision_differentiate(req.slugs)
+    except reconcile_module.CollisionInvalidGroup as exc:
+        raise HTTPException(status_code=400, detail=f"invalid collision group: {exc}") from exc
+    except reconcile_module.PageNotFound as exc:
+        raise HTTPException(status_code=404, detail=f"wiki page not found: {exc}") from exc
+    except reconcile_module.PageCorrupt as exc:
+        raise HTTPException(
+            status_code=500, detail=f"wiki page has corrupt frontmatter: {exc}"
+        ) from exc
+
+
+@router.post(
+    "/pages/collision/differentiate/apply", response_model=CollisionDifferentiateApplyResponse
+)
+def collision_differentiate_apply(
+    req: CollisionDifferentiateApplyRequest,
+) -> CollisionDifferentiateApplyResponse:
+    """Re-verify and commit the final (possibly human-edited) differentiate
+    content for every group member.
+
+    ADR-0028 phase 2 of differentiate: re-runs the grounding check on the
+    EXACT submitted content for every page and refuses (409) when any page's
+    content hash no longer matches the value returned by
+    ``POST /pages/collision/differentiate``. No deletion happens on this
+    path — every slug in the group survives, rewritten in place — so there
+    is no inbound-reference guard to run. On pass, the caller triggers
+    exactly one BM25 reindex.
+
+    Shallow wrapper around ``reconcile.apply_collision_differentiate``
+    (CODING_STANDARD §2.3 — all domain logic lives in ``reconcile.py``).
+
+    Raises:
+        HTTP 400: malformed group shape (``CollisionInvalidGroup``).
+        HTTP 404: any slug does not resolve to an existing page.
+        HTTP 409: any page's on-disk content changed since generate time.
+        HTTP 422: the apply-time grounding re-check failed for any page's
+            submitted content; ``detail.unsupported_claims`` lists the
+            offending claims.
+        HTTP 500: any named page exists but its frontmatter is corrupt.
+    """
+    try:
+        result = reconcile_module.apply_collision_differentiate(req)
+    except reconcile_module.CollisionInvalidGroup as exc:
+        raise HTTPException(status_code=400, detail=f"invalid collision group: {exc}") from exc
+    except reconcile_module.PageNotFound as exc:
+        raise HTTPException(status_code=404, detail=f"wiki page not found: {exc}") from exc
+    except reconcile_module.PageCorrupt as exc:
+        raise HTTPException(
+            status_code=500, detail=f"wiki page has corrupt frontmatter: {exc}"
+        ) from exc
+    except reconcile_module.CollisionHashMismatch as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"one or more pages changed since generate — differentiate refused: {exc}",
+        ) from exc
+    except reconcile_module.CollisionGroundingFailed as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "differentiate content failed grounding re-check",
+                "reason": exc.grounding.reason,
+                "unsupported_claims": exc.grounding.unsupported_claims or [],
+            },
+        ) from exc
+
+    # ADR-0028: exactly one reindex after every group member is written.
+    _files_indexed, sections_indexed = build_index()
+    return CollisionDifferentiateApplyResponse(
+        slugs=result.slugs,
         grounding=result.grounding,
         sections_indexed=sections_indexed,
     )

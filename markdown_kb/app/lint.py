@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``run_lint``, ``_check_c11_orphan``, ``_check_c3_failed_grounding``, ``_check_c4a_slug_collision``, ``_check_c6_stale``, ``_check_c2_red_links``, ``_check_c1_coverage_gaps``, ``_canonicalise``, ``_candidate_pairs``, ``_judge_page_pair``, ``_check_c5_page_pair``, ``_load_wiki_pages``, ``get_lint_llm``, ``generate_reconcile_draft``, ``_check_c8_promotion_candidates``, ``_check_c9_qa_staleness``, ``_check_c10_qa_schema_validity``, ``group_findings_by_axis``, ``LINT_CHECK_TAXONOMY``, ``LINT_AXIS_ORDER``, ``LINT_AXIS_LABEL_ZH``, ``remediation_for``, ``RemediationDescriptor``, ``RemediationAction``.
+"""Deep module per Ousterhout. Public surface: ``run_lint``, ``_check_c11_orphan``, ``_check_c3_failed_grounding``, ``_check_c4a_slug_collision``, ``_check_c6_stale``, ``_check_c2_red_links``, ``_check_c1_coverage_gaps``, ``_canonicalise``, ``_candidate_pairs``, ``_judge_page_pair``, ``_check_c5_page_pair``, ``_load_wiki_pages``, ``get_lint_llm``, ``generate_reconcile_draft``, ``find_inbound_references``, ``generate_collision_merge_draft``, ``generate_collision_differentiate_draft``, ``_check_c8_promotion_candidates``, ``_check_c9_qa_staleness``, ``_check_c10_qa_schema_validity``, ``group_findings_by_axis``, ``LINT_CHECK_TAXONOMY``, ``LINT_AXIS_ORDER``, ``LINT_AXIS_LABEL_ZH``, ``remediation_for``, ``RemediationDescriptor``, ``RemediationAction``.
 
 Lint orchestrator — POST /lint health check for the wiki.
 
@@ -115,6 +115,19 @@ re-verification live in the new ``reconcile.py`` deep module (writes) —
 this module stays read-only with respect to wiki page frontmatter, per the
 invariant below; drafting a reconcile is not itself a mutation.
 
+Slice S2 scope (Lint Remediation tier-B — issue #378, ADR-0028)
+-----------------------------------------------------------------
+No new check. C4's slug-collision groups gain both documented resolutions on
+top of S1's two-phase machinery: ``generate_collision_merge_draft`` (merge
+every group member into the unsuffixed base slug) and
+``generate_collision_differentiate_draft`` (rewrite every group member in
+place to be complementary) add a third and fourth C5-adjacent LLM call site,
+reusing the SAME ``get_lint_llm()`` lazy singleton. ``find_inbound_references``
+is read-only (no LLM call) and scans wiki links + qa citations for a single
+slug — the C4 merge-apply reference guard (``reconcile.py``) uses it to
+refuse deleting a variant that is still referenced. Disk write-back, hashing,
+and grounding re-verification live in ``reconcile.py``, mirroring S1.
+
 Read-only invariant
 -------------------
 ``run_lint()`` does NOT modify wiki page frontmatter.  It writes only:
@@ -168,6 +181,8 @@ from .atomic import write_text_atomic
 from .indexer import _index_lock
 from .logger import LOG_PATH, log_event
 from .schemas import (
+    CollisionDifferentiateDraft,
+    CollisionMergeDraft,
     CoverageGapFinding,
     FailedGroundingFinding,
     InvalidQaSchemaFinding,
@@ -555,6 +570,53 @@ def _check_c4a_slug_collision(
     # Sort: group size descending, then alphabetical by base_slug for ties
     findings.sort(key=lambda f: (-len(f.pages_in_group), f.base_slug))
     return findings
+
+
+def find_inbound_references(slug: str, wiki_dir: Path) -> tuple[list[str], list[str]]:
+    """Return ``(wiki_referrer_slugs, qa_referrer_slugs)`` for ``slug``.
+
+    Used by the C4 merge-apply reference guard (``reconcile.py``, ADR-0028
+    Invariant) — a variant with ANY inbound reference refuses deletion. Two
+    distinct reference mechanisms, mirroring the checks that already scan
+    for each:
+
+    - **Wiki referrers** — ``entities/``/``concepts/`` pages with a resolved
+      ``[[slug]]`` wikilink pointing at ``slug`` (same regex C2 uses for red
+      links, but here the target DOES exist — this is the inverse case).
+    - **Qa referrers** — ``wiki/qa/*.md`` Filed Answers whose
+      ``frontmatter.sources`` cites ``slug`` (bare or ``slug#heading``),
+      regardless of ``status`` — a draft citing a soon-deleted page is still
+      a real reference (C9's citation-extraction convention, but unfiltered
+      by status: the guard errs toward refusing).
+
+    Both lists are sorted for deterministic output; ``slug`` itself is never
+    included (a page cannot reference itself as an inbound link for this
+    purpose).
+    """
+    wiki_referrers: set[str] = set()
+    for page_slug, page_path in _iter_wiki_pages(wiki_dir):
+        if page_slug == slug:
+            continue
+        try:
+            body = page_path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for match in _WIKILINK_RE.finditer(body):
+            if match.group(1).strip() == slug:
+                wiki_referrers.add(page_slug)
+                break
+
+    qa_referrers: set[str] = set()
+    for qa_slug, qa_path in _iter_qa_pages(wiki_dir):
+        fm = _parse_frontmatter(qa_path)
+        if fm is None:
+            continue
+        for citation in fm.get("sources", []) or []:
+            if str(citation).split("#", 1)[0].strip() == slug:
+                qa_referrers.add(qa_slug)
+                break
+
+    return sorted(wiki_referrers), sorted(qa_referrers)
 
 
 # ---------------------------------------------------------------------------
@@ -1424,6 +1486,154 @@ def generate_reconcile_draft(
     ]
 
     draft: ReconcileDraft = chain.invoke(messages)
+    return draft
+
+
+# ---------------------------------------------------------------------------
+# Collision drafting (tier-B S2 — issue #378, ADR-0028)
+# ---------------------------------------------------------------------------
+
+_COLLISION_MERGE_SYSTEM_PROMPT = """\
+You are a knowledge-base curator. Several wiki pages were auto-suffixed \
+because they cover the same concept (a Coherence slug collision). You are \
+given the current content of every page in the group and the union of the \
+Source excerpts they cite. Draft ONE merged page that covers everything the \
+group's pages state, grounded ONLY in the provided Source excerpts — never \
+invent a fact absent from them.
+
+Rules:
+- Preserve the base page's existing "# <Heading>" line and its trailing \
+"[Source: ...]" citation line verbatim; rewrite only the prose between them.
+- Fold in every distinct fact from the other pages in the group; do not \
+just repeat the base page unchanged.
+- Write in the same language as the original pages.
+- Resolve near-duplicate phrasing into one clear statement; do not simply \
+concatenate the pages.
+
+Return content_base: the full merged content for the base page, structurally \
+identical in shape to the original base page.
+"""
+
+
+def _build_collision_merge_user_message(
+    base_slug: str,
+    base_content: str,
+    variant_contents: dict[str, str],
+    union_sections: list,
+) -> str:
+    """Format the base page + every variant's current content plus the union
+    Sources for the merge drafting call."""
+    parts = [f"**Base page** (slug: `{base_slug}`):\n\n{base_content}"]
+    for variant_slug, variant_content in variant_contents.items():
+        parts.append(f"**Variant** (slug: `{variant_slug}`):\n\n{variant_content}")
+    source_parts = []
+    for section in union_sections:
+        heading = " > ".join(section.heading_path)
+        source_parts.append(f"[Source: {section.id}]\nHeading: {heading}\n{section.content}")
+    sources_text = "\n\n".join(source_parts) if source_parts else "(no Source excerpts available)"
+    parts.append(
+        f"**Cited Source excerpts (union of every group member's Sources):**\n\n{sources_text}"
+    )
+    return "\n\n---\n\n".join(parts)
+
+
+def generate_collision_merge_draft(
+    base_slug: str,
+    base_content: str,
+    variant_contents: dict[str, str],
+    union_sections: list,
+) -> CollisionMergeDraft:
+    """Call the LLM to draft one merged page for a C4 collision group.
+
+    ADR-0028 tier-B S2 (``POST /pages/collision/merge``). Uses
+    ``get_lint_llm().with_structured_output(CollisionMergeDraft)`` — the SAME
+    lazy singleton every other lint LLM call site uses.
+
+    LangChain types are confined to this function (CODING_STANDARD §2.4);
+    callers receive a plain ``CollisionMergeDraft`` Pydantic model.
+    """
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    llm = get_lint_llm()
+    chain = llm.with_structured_output(CollisionMergeDraft)
+
+    messages = [
+        SystemMessage(content=_COLLISION_MERGE_SYSTEM_PROMPT),
+        HumanMessage(
+            content=_build_collision_merge_user_message(
+                base_slug, base_content, variant_contents, union_sections
+            )
+        ),
+    ]
+
+    draft: CollisionMergeDraft = chain.invoke(messages)
+    return draft
+
+
+_COLLISION_DIFFERENTIATE_SYSTEM_PROMPT = """\
+You are a knowledge-base curator. Several wiki pages were auto-suffixed \
+because they cover the same concept (a Coherence slug collision). You are \
+given the current content of every page in the group and the union of the \
+Source excerpts they cite. Rewrite EVERY page so the group becomes \
+complementary and more specific — each page keeps its own distinct angle on \
+the concept and none of them are dropped — grounded ONLY in the provided \
+Source excerpts — never invent a fact absent from them.
+
+Rules:
+- Preserve each page's existing "# <Heading>" line and its trailing \
+"[Source: ...]" citation line verbatim; rewrite only the prose between them.
+- Do not merge the pages into one; every slug in the group must keep its \
+own page with distinct, non-duplicated content.
+- Write in the same language as the original pages.
+
+Return pages: one entry per input slug, each with its full revised content, \
+structurally identical in shape to the original.
+"""
+
+
+def _build_collision_differentiate_user_message(
+    contents: dict[str, str],
+    union_sections: list,
+) -> str:
+    """Format every group member's current content plus the union Sources
+    for the differentiate drafting call."""
+    parts = [f"**Page** (slug: `{slug}`):\n\n{content}" for slug, content in contents.items()]
+    source_parts = []
+    for section in union_sections:
+        heading = " > ".join(section.heading_path)
+        source_parts.append(f"[Source: {section.id}]\nHeading: {heading}\n{section.content}")
+    sources_text = "\n\n".join(source_parts) if source_parts else "(no Source excerpts available)"
+    parts.append(
+        f"**Cited Source excerpts (union of every group member's Sources):**\n\n{sources_text}"
+    )
+    return "\n\n---\n\n".join(parts)
+
+
+def generate_collision_differentiate_draft(
+    contents: dict[str, str],
+    union_sections: list,
+) -> CollisionDifferentiateDraft:
+    """Call the LLM to draft complementary content for every page in a C4
+    collision group.
+
+    ADR-0028 tier-B S2 (``POST /pages/collision/differentiate``). Uses
+    ``get_lint_llm().with_structured_output(CollisionDifferentiateDraft)`` —
+    the SAME lazy singleton every other lint LLM call site uses.
+
+    LangChain types are confined to this function (CODING_STANDARD §2.4);
+    callers receive a plain ``CollisionDifferentiateDraft`` Pydantic model.
+    """
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    llm = get_lint_llm()
+    chain = llm.with_structured_output(CollisionDifferentiateDraft)
+
+    messages = [
+        SystemMessage(content=_COLLISION_DIFFERENTIATE_SYSTEM_PROMPT),
+        HumanMessage(content=_build_collision_differentiate_user_message(contents, union_sections)),
+    ]
+
+    draft: CollisionDifferentiateDraft = chain.invoke(messages)
     return draft
 
 
