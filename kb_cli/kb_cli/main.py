@@ -459,14 +459,27 @@ def _format_c8_promotion_candidates(findings: object, label: str) -> list[str]:
     return lines
 
 
+def _c9_question_or_placeholder(slug: str) -> str:
+    """The C9-slug's question, backfilled from disk, or a placeholder.
+
+    ``QaStalenessFinding`` carries no ``question`` field, so both the ``kb
+    lint`` C9 renderer and ``kb qa list`` backfill it the same way via
+    ``qa_view.read_qa_page`` — falls back to a placeholder when the page is
+    no longer readable (e.g. deleted since the lint scan) rather than raising.
+    """
+    from kb_mcp import qa_view
+
+    page = qa_view.read_qa_page(slug)
+    if page is not None and page.question:
+        return page.question
+    return "(question unavailable)"
+
+
 def _format_c9_stale_filed_answers(findings: object, label: str) -> list[str]:
     """C9 Stale filed answers lines, or ``[]`` when there are none.
 
     Includes ``question`` and the on-disk ``path`` per finding (issue #377 /
-    ADR-0026 decision 3). ``QaStalenessFinding`` carries no ``question``
-    field, so it is backfilled by reading the page via
-    ``qa_view.read_qa_page`` — falls back to a placeholder when the page is
-    no longer readable (e.g. deleted since the lint scan) rather than raising.
+    ADR-0026 decision 3).
     """
     if not findings.stale_filed_answers:  # type: ignore[attr-defined]
         return []
@@ -477,9 +490,7 @@ def _format_c9_stale_filed_answers(findings: object, label: str) -> list[str]:
     ]
     for f in findings.stale_filed_answers:  # type: ignore[attr-defined]
         lines.append(f"  • {f.page_slug} — drift {f.max_drift_days:.1f} day(s)")
-        page = qa_view.read_qa_page(f.page_slug)
-        question = page.question if page is not None and page.question else "(question unavailable)"
-        lines.append(f'    question: "{question}"')
+        lines.append(f'    question: "{_c9_question_or_placeholder(f.page_slug)}"')
         lines.append(f"    path: {qa_view.display_path(f.page_slug)}")
     lines.append("")
     return lines
@@ -664,14 +675,10 @@ def qa_list_cmd() -> None:
     if stale:
         typer.echo("C9 Stale filed answers (live):")
         for s in stale:
-            page = qa_view.read_qa_page(s.page_slug)
-            question = (
-                page.question if page is not None and page.question else "(question unavailable)"
-            )
             _print_qa_candidate(
                 s.page_slug,
                 "live",
-                question,
+                _c9_question_or_placeholder(s.page_slug),
                 f"drift={s.max_drift_days:.1f}d",
                 qa_view.display_path(s.page_slug),
             )
