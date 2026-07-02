@@ -99,12 +99,8 @@ def test_toggle_rerender_respects_in_flight_busy_state():
     init_fn = re.search(r"function initConsoleLangToggle\(\) \{.*?\n\}\)\(\);", text, re.DOTALL)
     assert init_fn is not None
     body = init_fn.group(0)
-    guard = re.search(
-        r"if \(lastLintData && lintResultEl && !remediationInFlight\) \{", body
-    )
-    assert guard is not None, (
-        "the toggle's card re-render must be guarded on !remediationInFlight"
-    )
+    guard = re.search(r"if \(lastLintData && lintResultEl && !remediationInFlight\) \{", body)
+    assert guard is not None, "the toggle's card re-render must be guarded on !remediationInFlight"
 
 
 # ---------------------------------------------------------------------------

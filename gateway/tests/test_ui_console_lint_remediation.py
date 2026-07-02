@@ -111,9 +111,7 @@ def test_reingest_button_disabled_when_source_empty():
     assert "if (!source)" in body, (
         "reingestAction must guard the empty-source case before wiring a click"
     )
-    assert "btn.disabled = true" in body, (
-        "the empty-source guard must disable the Re-ingest button"
-    )
+    assert "btn.disabled = true" in body, "the empty-source guard must disable the Re-ingest button"
 
 
 def test_c10_invalid_schema_gets_discard_button_in_lint_card():
