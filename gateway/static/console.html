@@ -2056,8 +2056,8 @@ function renderLintCard(data, resultEl) {
       text: LINT_CHROME[consoleLang].reconcile });
     allButtons.push(btn);
     btn.addEventListener("click", function() {
-      if (btn.disabled) return;
-      openReconcileModal(pageA, pageB, resultEl);
+      if (btn.disabled || remediationInFlight) return;
+      openReconcileModal(pageA, pageB, resultEl, allButtons);
     });
     return el("div", { class: "lint-row-actions" }, btn);
   }
@@ -2325,7 +2325,7 @@ function renderLintCard(data, resultEl) {
    preview in a modal overlay appended to document.body (outside the Lint
    card so a later card re-render never disturbs an open modal). Closed via
    the Cancel/Close button or a backdrop click. */
-function openReconcileModal(pageA, pageB, resultEl) {
+function openReconcileModal(pageA, pageB, resultEl, siblingButtons) {
   var overlay = el("div", { class: "reconcile-overlay" });
   var modal = el("div", { class: "reconcile-modal" },
     el("div", { class: "reconcile-modal-head" }, el("span", { text: "Reconcile: " + pageA + " / " + pageB })),
@@ -2349,7 +2349,7 @@ function openReconcileModal(pageA, pageB, resultEl) {
       if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
       return resp.json();
     })
-    .then(function(data) { renderReconcilePreview(modal, data, resultEl, closeModal); })
+    .then(function(data) { renderReconcilePreview(modal, data, resultEl, closeModal, siblingButtons); })
     .catch(function(err) {
       modal.replaceChildren(
         el("div", { class: "reconcile-modal-head" }, el("span", { text: "Reconcile — error" })),
@@ -2370,8 +2370,10 @@ function openReconcileModal(pageA, pageB, resultEl) {
    fast (include_c5=false) re-lint + re-render every other remediation uses,
    so the fixed finding (and every other still-unjudged C5 finding) drops
    out of the re-rendered Coherence section until the curator re-runs a
-   full Lint. */
-function renderReconcilePreview(modal, data, resultEl, closeModal) {
+   full Lint. ``siblingButtons`` (issue #364's shared in-flight-guard list)
+   is disabled for the duration of the apply request — same no-double-submit
+   guarantee every other remediation on the card already gets. */
+function renderReconcilePreview(modal, data, resultEl, closeModal, siblingButtons) {
   var textareaA = el("textarea", { class: "reconcile-textarea", rows: "8" });
   textareaA.value = data.content_a;
   var textareaB = el("textarea", { class: "reconcile-textarea", rows: "8" });
@@ -2398,9 +2400,11 @@ function renderReconcilePreview(modal, data, resultEl, closeModal) {
     text: LINT_CHROME[consoleLang].reconcileApply });
 
   applyBtn.addEventListener("click", function() {
-    if (applyBtn.disabled) return;
+    if (applyBtn.disabled || remediationInFlight) return;
+    remediationInFlight = true;
     applyBtn.disabled = true;
     cancelBtn.disabled = true;
+    (siblingButtons || []).forEach(function(b) { b.disabled = true; });
     statusMsgEl.replaceChildren(el("span", { class: "spinner" }),
       document.createTextNode(LINT_CHROME[consoleLang].reconcileWorking));
     statusMsgEl.className = "card-status-msg";
@@ -2442,14 +2446,17 @@ function renderReconcilePreview(modal, data, resultEl, closeModal) {
         return resp.json();
       })
       .then(function(lintData) {
+        remediationInFlight = false;
         closeModal();
         lastLintData = lintData;
         if (resultEl) resultEl.replaceChildren(renderLintCard(lintData, resultEl));
         renderCurationQueue(document.getElementById("curation-queue-root"), lintData);
       })
       .catch(function(err) {
+        remediationInFlight = false;
         applyBtn.disabled = false;
         cancelBtn.disabled = false;
+        (siblingButtons || []).forEach(function(b) { b.disabled = false; });
         statusMsgEl.textContent = "Error: " + (err.message || String(err));
         statusMsgEl.className = "card-status-msg err";
       });
