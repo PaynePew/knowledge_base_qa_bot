@@ -228,3 +228,129 @@ def test_kb_lint_does_not_write_real_wiki(monkeypatch, tmp_path):
     # Completing without error is the invariant — the autouse fixture ensures
     # real wiki/ was not written
     assert result.exit_code == 0
+
+
+# ---------------------------------------------------------------------------
+# AC (issue #362 S2): kb lint stdout groups findings under axis headers,
+# each check labelled — reusing S1's taxonomy + group_findings_by_axis
+# ---------------------------------------------------------------------------
+
+
+def _make_multi_axis_lint_response():
+    """Return a LintResponse with findings spanning three of the four axes.
+
+    C11 orphan -> Freshness, C2 red link -> Coverage, C8 promotion candidate
+    -> Lifecycle. Coherence is left empty so its axis header must be omitted
+    (empty-axis elision, mirroring the report renderer).
+    """
+    from markdown_kb.app.schemas import (
+        LintFindings,
+        LintResponse,
+        LintSummary,
+        OrphanPageFinding,
+        PromotionCandidateFinding,
+        RedLinkFinding,
+    )
+
+    findings = LintFindings(
+        orphans=[
+            OrphanPageFinding(
+                page_slug="orphan-page",
+                missing_sources=["missing.md"],
+                suggested_action="Review orphan-page.",
+            )
+        ],
+        red_links=[
+            RedLinkFinding(
+                slug="missing-target",
+                mention_count=2,
+                referenced_by=["some-page"],
+                sample_context="...see [[missing-target]] for details...",
+            )
+        ],
+        promotion_candidates=[
+            PromotionCandidateFinding(
+                slug="popular-question",
+                question="How do refunds work?",
+                count=5,
+                age_days=3.0,
+                cited_count=1,
+            )
+        ],
+    )
+    summary = LintSummary(
+        total_findings=3,
+        findings_by_check={"c11": 1, "c2": 1, "c8": 1},
+        generated_at="2026-07-01T00:00:00Z",
+    )
+    return LintResponse(
+        report_path="wiki/lint-report.md",
+        findings=findings,
+        summary=summary,
+        check_errors={},
+    )
+
+
+def test_kb_lint_groups_findings_under_axis_headers(monkeypatch):
+    """``kb lint`` prints the axis headers whose checks have findings."""
+    from kb_cli.main import app
+
+    _patch_run_lint(monkeypatch, _make_multi_axis_lint_response())
+
+    result = runner.invoke(app, ["lint"])
+    assert result.exit_code == 0
+    assert "== Freshness ==" in result.output
+    assert "== Coverage ==" in result.output
+    assert "== Lifecycle ==" in result.output
+
+
+def test_kb_lint_omits_empty_axis_header(monkeypatch):
+    """An axis with zero findings across all its checks gets no header."""
+    from kb_cli.main import app
+
+    _patch_run_lint(monkeypatch, _make_multi_axis_lint_response())
+
+    result = runner.invoke(app, ["lint"])
+    assert "== Coherence ==" not in result.output
+
+
+def test_kb_lint_axis_headers_appear_in_taxonomy_order(monkeypatch):
+    """Axis headers render Freshness -> Coverage -> Lifecycle (LINT_AXIS_ORDER,
+    filtered to non-empty axes), not findings-declaration order."""
+    from kb_cli.main import app
+
+    _patch_run_lint(monkeypatch, _make_multi_axis_lint_response())
+
+    result = runner.invoke(app, ["lint"])
+    freshness_pos = result.output.index("== Freshness ==")
+    coverage_pos = result.output.index("== Coverage ==")
+    lifecycle_pos = result.output.index("== Lifecycle ==")
+    assert freshness_pos < coverage_pos < lifecycle_pos
+
+
+def test_kb_lint_each_check_is_labelled(monkeypatch):
+    """Each check heading carries its taxonomy short label (e.g. 'orphan')."""
+    from kb_cli.main import app
+
+    _patch_run_lint(monkeypatch, _make_multi_axis_lint_response())
+
+    result = runner.invoke(app, ["lint"])
+    assert "C11 Orphan pages (1) — orphan:" in result.output
+    assert "C2 Red links (1) — red-link:" in result.output
+    assert "C8 Promotion candidates (1) — promotion:" in result.output
+
+
+def test_kb_lint_axis_grouping_reuses_shared_taxonomy(monkeypatch):
+    """The CLI's axis headers/labels come from markdown_kb.app.lint's shared
+    taxonomy (issue #361 S1), not a re-derived mapping — the label text for
+    each check in this test's output must match LINT_CHECK_TAXONOMY exactly."""
+    from markdown_kb.app.lint import LINT_CHECK_TAXONOMY
+
+    from kb_cli.main import app
+
+    _patch_run_lint(monkeypatch, _make_multi_axis_lint_response())
+
+    result = runner.invoke(app, ["lint"])
+    for code in ("C11", "C2", "C8"):
+        meta = LINT_CHECK_TAXONOMY[code]
+        assert f"— {meta.label}:" in result.output
