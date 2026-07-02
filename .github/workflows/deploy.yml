@@ -24,6 +24,9 @@ concurrency:
 
 jobs:
   build-and-deploy:
+    # Owner-only guard: skip entirely on forks. Forks have no DEPLOY_* secrets,
+    # and this stops a fork clone from firing failed deploys at the owner's box.
+    if: ${{ github.repository_owner == 'PaynePew' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -57,8 +60,8 @@ jobs:
       - name: Deploy over SSH and smoke /healthz
         uses: appleboy/ssh-action@v1
         with:
-          host: box.paynepew.dev
-          username: deploy
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
             set -euo pipefail
