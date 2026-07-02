@@ -2,6 +2,23 @@
 
 How a fresh Claude Code session drives `ready-for-agent` issues to a merged PR. This document is the **meta-doc** — it points to the four per-role prompt files under [`project-docs/agents/`](agents/) and defines the loop, hand-off contract, and stop conditions. It deliberately does NOT contain agent prompts inline — those live in the role files so each can be tuned independently and stay context-light when injected into sub-agent prompts.
 
+## Two ways to run this
+
+1. **Manual / semi-auto loop** (the rest of this doc) — the top-level session spawns one role agent at a time via the `Agent` tool. Best for the first slice of a new phase, or when you want a gate after each step.
+2. **Executable parallel orchestrator** — [`agents/orchestrator.js`](agents/orchestrator.js), a workflow script that fans out one build (implement+review, same worktree) + adversarial verify per issue in parallel, applies a severity gate, and (by default) leaves branches ready for the human to open PRs + merge. Run it with the `Workflow` tool by **`scriptPath`** (it lives under `project-docs/`, so it is version-controlled and cannot be silently reset by global-tool drift — it is NOT resolved by workflow name):
+
+   ```
+   Workflow({ scriptPath: "project-docs/agents/orchestrator.js",
+              args: { slices: [{ id: "363", title: "…" }] } })          // explicit, zero tracker
+   Workflow({ scriptPath: "project-docs/agents/orchestrator.js",
+              args: { only: ["362","363"], skipPlan: true } })           // explicit ids
+   Workflow({ scriptPath: "project-docs/agents/orchestrator.js" })       // gh issue list (ready-for-agent)
+   ```
+
+   Defaults: `adversarial:true` (only critical/high block), `openPRs:false` (prepare + verify only; the human verifies real artifacts, opens the PR with `Closes #N`, waits for CI, and merges). It points at **this project's** `agents/{implement,review,merge}.md` + `CODING_STANDARD.md`, and every sub-agent prompt carries hard guardrails: **no beads/`bd` commands, no `git init`, no committing `CLAUDE.md`/`.claude`/`.beads`/other slices' work.**
+
+   > ⚠️ **Do NOT use the global `slice-orchestrator` skill/workflow for this repo.** Earlier rounds ran a beads-based version whose `bd` steps failed harmlessly but whose note step once initialised beads and committed it to `main` (reverted). This repo tracks issues in **GitHub Issues + `gh` only**. Use `agents/orchestrator.js` above.
+
 ## Roles
 
 | Role | Prompt file | Triggered by | Produces |

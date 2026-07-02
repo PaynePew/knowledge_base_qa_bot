@@ -16,6 +16,8 @@ See `PROMPT.md` for the exercise spec + the answered design questions, `README.m
 A fresh session can pick up the work by running:
 > "Execute the orchestration loop in `project-docs/orchestration-plan.md`, starting from `agents/plan.md` against the currently open `ready-for-agent` issues."
 
+For parallel fan-out, use this repo's **own** executable orchestrator [`project-docs/agents/orchestrator.js`](project-docs/agents/orchestrator.js) via `Workflow({ scriptPath: "project-docs/agents/orchestrator.js", args: {…} })` — it is gh-native and version-controlled. **Do NOT use the global `slice-orchestrator` skill/workflow here** — it was beads-based and its note step once committed `bd init` to `main`. This repo tracks issues in GitHub Issues + `gh` only (see [`project-docs/orchestration-plan.md`](project-docs/orchestration-plan.md) → "Two ways to run this").
+
 **Before starting any phase beyond the current prototype** (wiki layer, `/ingest`, multi-turn conversation, streaming, etc.):
 
 1. Read [`project-docs/roadmap.md`](project-docs/roadmap.md) to confirm the phase's scope, downstream dependencies, and per-phase prep notes (some phases have gotchas — e.g., Phase 5 `/lint` needs hand-planted test fixtures, Phase 7 Paraphrase Comparison has LLM-bias caveats).
