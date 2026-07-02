@@ -52,10 +52,16 @@ def test_c5_row_wires_reconcile_action_not_tier_b():
     )
 
 
-def test_c4_c1_c2_still_render_disabled_tier_b_affordance():
-    """C4/C1/C2 are out of scope for this slice — unchanged from tier-A."""
+def test_c1_c2_still_render_disabled_tier_b_affordance():
+    """C1/C2 are out of scope for this slice — unchanged from tier-A.
+
+    C4 gained a real dual-choice affordance in tier-B S2 (issue #378,
+    ADR-0028) — see ``test_ui_console_collision.py`` for its coverage; this
+    test's C4 assertion moved there rather than staying pinned to the
+    pre-S2 disabled placeholder.
+    """
     text = _console_text()
-    for code in ("C4", "C1", "C2"):
+    for code in ("C1", "C2"):
         row = re.search(rf"{code}:\s*function\(i, f\)\s*\{{(.*?)\}},", text, re.DOTALL)
         assert row is not None, f"{code} row renderer not found"
         assert "tierBAffordance()" in row.group(1), (

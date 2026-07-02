@@ -834,6 +834,38 @@
   .reconcile-cancel-btn:hover:not(:disabled) { border-color: var(--ink-3); }
   .reconcile-error { color: var(--fail); }
 
+  /* ── C4 collision dual resolution (tier-B S2, issue #378, ADR-0028) ──
+     Both real Gated affordances — C1/C2 keep the disabled .tier-b-btn
+     above until their own slices. Reuses every .reconcile-* modal/column
+     class above (the shape is identical: old-vs-editable preview + apply). */
+  .collision-merge-btn, .collision-differentiate-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--accent);
+    color: #fff;
+    border: 0;
+    padding: 4px 10px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .04em;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: opacity .15s ease;
+  }
+  .collision-merge-btn:hover:not(:disabled), .collision-differentiate-btn:hover:not(:disabled) { opacity: .82; }
+  .collision-merge-btn:disabled, .collision-differentiate-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+  .collision-guard-failed {
+    color: var(--fail);
+    margin: 0 0 10px;
+    font-size: 12.5px;
+  }
+  .collision-referrers {
+    margin: 6px 0 0;
+    padding-left: 18px;
+    color: var(--fail);
+    font-size: 12px;
+  }
+
   /* Lint finding rows — extend .rec with a note subrow */
   .rec .note {
     grid-column: 2 / -1;
@@ -1722,6 +1754,13 @@ var LINT_CHROME = {
     reconcileCancel:  "Cancel",
     reconcileClose:   "Close",
     reconcileWorking: "Working…",
+    collisionMerge:         "Merge",
+    collisionDifferentiate: "Differentiate",
+    collisionApply:         "Apply",
+    collisionCancel:        "Cancel",
+    collisionClose:         "Close",
+    collisionWorking:       "Working…",
+    collisionGuardFailed:   "Cannot merge — still referenced:",
   },
   zh: {
     reingest:        "重新匯入",
@@ -1739,6 +1778,13 @@ var LINT_CHROME = {
     reconcileCancel:  "取消",
     reconcileClose:   "關閉",
     reconcileWorking: "處理中…",
+    collisionMerge:         "合併",
+    collisionDifferentiate: "區分",
+    collisionApply:         "套用",
+    collisionCancel:        "取消",
+    collisionClose:         "關閉",
+    collisionWorking:       "處理中…",
+    collisionGuardFailed:   "無法合併 — 仍被參照：",
   },
 };
 
@@ -2062,6 +2108,30 @@ function renderLintCard(data, resultEl) {
     return el("div", { class: "lint-row-actions" }, btn);
   }
 
+  /* ── C4 collision dual resolution (tier-B S2, issue #378, ADR-0028).
+     The finding offers BOTH documented resolutions as separate buttons:
+     Merge (base_slug must be a real page — the group's unsuffixed slug,
+     variants = every other member) and Differentiate (every member in the
+     group, base_slug included when present). Both open the shared
+     generate -> preview/edit -> apply modal, parameterised by `mode`. */
+  function collisionAction(baseSlug, pagesInGroup) {
+    var variantSlugs = (pagesInGroup || []).filter(function(s) { return s !== baseSlug; });
+    var mergeBtn = el("button", { class: "collision-merge-btn", type: "button",
+      text: LINT_CHROME[consoleLang].collisionMerge });
+    var diffBtn = el("button", { class: "collision-differentiate-btn", type: "button",
+      text: LINT_CHROME[consoleLang].collisionDifferentiate });
+    allButtons.push(mergeBtn, diffBtn);
+    mergeBtn.addEventListener("click", function() {
+      if (mergeBtn.disabled || remediationInFlight) return;
+      openCollisionModal("merge", baseSlug, variantSlugs, resultEl, allButtons);
+    });
+    diffBtn.addEventListener("click", function() {
+      if (diffBtn.disabled || remediationInFlight) return;
+      openCollisionModal("differentiate", baseSlug, pagesInGroup || [], resultEl, allButtons);
+    });
+    return el("div", { class: "lint-row-actions" }, mergeBtn, diffBtn);
+  }
+
   /* Re-ingest / Re-ingest (retry) action for a C6/C3 finding.
      C3 MUST send force:true — omitting it lets hash-skip (#93) no-op the
      retry into a false fix (ADR-0023 Invariant / CODING_STANDARD §12.8).
@@ -2215,7 +2285,7 @@ function renderLintCard(data, resultEl) {
     },
     C4: function(i, f) {
       return findingRow(i, f.base_slug, (f.pages_in_group || []).join(", "),
-        "collision", "label-updated", tierBAffordance());
+        "collision", "label-updated", collisionAction(f.base_slug, f.pages_in_group));
     },
     C1: function(i, f) {
       return findingRow(i, f.query_canonical,
@@ -2481,6 +2551,296 @@ function renderReconcilePreview(modal, data, resultEl, closeModal, siblingButton
         )
       )
     ),
+    el("div", { class: "reconcile-actions" }, applyBtn, cancelBtn, statusMsgEl)
+  );
+}
+
+/* ── C4 collision dual resolution modal (tier-B S2, issue #378, ADR-0028) ──
+   POST /wiki/pages/collision/{merge,differentiate}, then render the
+   preview in a modal overlay — same shell as the C5 Reconcile modal above
+   (reuses every .reconcile-* class), parameterised by `mode`. `groupSlugs`
+   is the merge's variant_slugs (base excluded) for mode "merge", or the
+   full collision group (base included when present) for mode
+   "differentiate" — collisionAction() above builds the right list per
+   button before calling this. */
+function openCollisionModal(mode, baseSlug, groupSlugs, resultEl, siblingButtons) {
+  var title = mode === "merge"
+    ? "Merge: " + baseSlug + " ← " + groupSlugs.join(", ")
+    : "Differentiate: " + groupSlugs.join(", ");
+  var overlay = el("div", { class: "reconcile-overlay" });
+  var modal = el("div", { class: "reconcile-modal" },
+    el("div", { class: "reconcile-modal-head" }, el("span", { text: title })),
+    el("div", { class: "reconcile-modal-body" },
+      el("span", { class: "spinner" }),
+      document.createTextNode(" Generating draft…")
+    )
+  );
+  overlay.append(modal);
+  document.body.append(overlay);
+
+  function closeModal() { overlay.remove(); }
+  overlay.addEventListener("click", function(e) { if (e.target === overlay) closeModal(); });
+
+  var genPath = mode === "merge" ? "/wiki/pages/collision/merge" : "/wiki/pages/collision/differentiate";
+  var genBody = mode === "merge"
+    ? { base_slug: baseSlug, variant_slugs: groupSlugs }
+    : { slugs: groupSlugs };
+
+  fetch(genPath, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(genBody),
+  })
+    .then(function(resp) {
+      if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+      return resp.json();
+    })
+    .then(function(data) {
+      if (mode === "merge") renderCollisionMergePreview(modal, data, resultEl, closeModal, siblingButtons);
+      else renderCollisionDifferentiatePreview(modal, data, resultEl, closeModal, siblingButtons);
+    })
+    .catch(function(err) {
+      modal.replaceChildren(
+        el("div", { class: "reconcile-modal-head" }, el("span", { text: title + " — error" })),
+        el("div", { class: "reconcile-modal-body reconcile-error", text: err.message || String(err) }),
+        el("div", { class: "reconcile-actions" },
+          el("button", { class: "reconcile-cancel-btn", type: "button",
+            text: LINT_CHROME[consoleLang].collisionClose, onclick: closeModal })
+        )
+      );
+    });
+}
+
+/* After a successful apply, both collision preview renderers below re-run
+   the SAME fast (include_c5=false) re-lint + re-render every other
+   remediation uses (issue #363/#376 convention), so the fixed C4 group
+   drops out of the re-rendered Coherence section. */
+function _finishCollisionApply(resultEl, closeModal) {
+  return fetch("/wiki/lint?include_c5=false", { method: "POST" })
+    .then(function(resp) {
+      if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+      return resp.json();
+    })
+    .then(function(lintData) {
+      remediationInFlight = false;
+      closeModal();
+      lastLintData = lintData;
+      if (resultEl) resultEl.replaceChildren(renderLintCard(lintData, resultEl));
+      renderCurationQueue(document.getElementById("curation-queue-root"), lintData);
+    });
+}
+
+/* Renders the generate-time merge draft: a grounding report, the base
+   page's old-vs-editable columns, the (informational) list of variants
+   slated for deletion, then Apply/Cancel. A 409 guard-refusal renders
+   HONESTLY — who references what — rather than a generic error (ADR-0028
+   AC: "guard refusals render honestly"). */
+function renderCollisionMergePreview(modal, data, resultEl, closeModal, siblingButtons) {
+  var textareaBase = el("textarea", { class: "reconcile-textarea", rows: "10" });
+  textareaBase.value = data.content_base;
+
+  var passed = !!(data.grounding && data.grounding.passed);
+  var groundingEl = el("div", { class: "reconcile-grounding" },
+    el("span", { class: passed ? "badge badge-ok" : "badge badge-fail" },
+      el("span", { class: "dot" }),
+      el("span", { text: passed ? "grounded" : "grounding failed" })
+    )
+  );
+  var unsupported = (data.grounding && data.grounding.unsupported_claims) || [];
+  if (unsupported.length > 0) {
+    var claimsList = el("ul", { class: "reconcile-claims" });
+    unsupported.forEach(function(c) { claimsList.append(el("li", { text: c })); });
+    groundingEl.append(claimsList);
+  }
+
+  var guardEl = el("div"); // populated on 409 inbound-reference guard refusal
+
+  var statusMsgEl = el("span", { class: "card-status-msg" });
+  var cancelBtn = el("button", { class: "reconcile-cancel-btn", type: "button",
+    text: LINT_CHROME[consoleLang].collisionCancel, onclick: closeModal });
+  var applyBtn = el("button", { class: "reconcile-apply-btn", type: "button",
+    text: LINT_CHROME[consoleLang].collisionApply });
+
+  applyBtn.addEventListener("click", function() {
+    if (applyBtn.disabled || remediationInFlight) return;
+    remediationInFlight = true;
+    applyBtn.disabled = true;
+    cancelBtn.disabled = true;
+    (siblingButtons || []).forEach(function(b) { b.disabled = true; });
+    guardEl.replaceChildren();
+    statusMsgEl.replaceChildren(el("span", { class: "spinner" }),
+      document.createTextNode(LINT_CHROME[consoleLang].collisionWorking));
+    statusMsgEl.className = "card-status-msg";
+
+    fetch("/wiki/pages/collision/merge/apply", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        base_slug: data.base_slug,
+        variant_slugs: data.variant_slugs,
+        content_base: textareaBase.value,
+        hash_base: data.hash_base,
+        hash_variants: data.hash_variants,
+      }),
+    })
+      .then(function(resp) {
+        if (resp.status === 409) {
+          return resp.json().then(function(body) {
+            var detail = body.detail;
+            // The server distinguishes hash-mismatch (plain-string detail)
+            // from a guard refusal (dict detail carrying `referrers`) — see
+            // routes.py collision_merge_apply docstring.
+            if (detail && typeof detail === "object" && detail.referrers) {
+              var list = el("ul", { class: "collision-referrers" });
+              detail.referrers.forEach(function(r) {
+                var refs = (r.wiki_referrers || []).concat(r.qa_referrers || []);
+                list.append(el("li", { text: r.variant_slug + ": " + refs.join(", ") }));
+              });
+              guardEl.replaceChildren(
+                el("div", { class: "collision-guard-failed",
+                  text: LINT_CHROME[consoleLang].collisionGuardFailed }),
+                list
+              );
+              throw new Error(LINT_CHROME[consoleLang].collisionGuardFailed);
+            }
+            throw new Error(
+              "Cannot apply: one or more pages changed since this draft was generated " +
+              "(the collision may no longer hold). Close and re-open Merge to refresh."
+            );
+          });
+        }
+        if (resp.status === 422) {
+          return resp.json().then(function(body) {
+            var detail = body.detail || {};
+            var claims = (detail.unsupported_claims || []).join("; ");
+            throw new Error("Grounding check failed" + (claims ? ": " + claims : "") + ". Edit the draft and try again.");
+          });
+        }
+        if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+        return resp.json();
+      })
+      .then(function() { return _finishCollisionApply(resultEl, closeModal); })
+      .catch(function(err) {
+        remediationInFlight = false;
+        applyBtn.disabled = false;
+        cancelBtn.disabled = false;
+        (siblingButtons || []).forEach(function(b) { b.disabled = false; });
+        statusMsgEl.textContent = "Error: " + (err.message || String(err));
+        statusMsgEl.className = "card-status-msg err";
+      });
+  });
+
+  modal.replaceChildren(
+    el("div", { class: "reconcile-modal-head" },
+      el("span", { text: "Merge: " + data.base_slug + " ← " + data.variant_slugs.join(", ") })),
+    el("div", { class: "reconcile-modal-body" },
+      groundingEl,
+      guardEl,
+      el("div", { class: "reconcile-columns" },
+        el("div", { class: "reconcile-col" },
+          el("div", { class: "reconcile-col-head", text: data.base_slug + " — current" }),
+          el("pre", { class: "reconcile-old", text: data.old_content_base }),
+          el("div", { class: "reconcile-col-head", text: data.base_slug + " — merged draft (editable)" }),
+          textareaBase
+        )
+      ),
+      el("div", { class: "reconcile-col-head",
+        text: "Variants deleted on apply (only if reference-free): " + data.variant_slugs.join(", ") })
+    ),
+    el("div", { class: "reconcile-actions" }, applyBtn, cancelBtn, statusMsgEl)
+  );
+}
+
+/* Renders the generate-time differentiate drafts: a grounding report, then
+   one old-vs-editable column PER group member — nobody is deleted on this
+   path, so there is no reference guard to render. */
+function renderCollisionDifferentiatePreview(modal, data, resultEl, closeModal, siblingButtons) {
+  var textareas = {};
+  var columnsEl = el("div", { class: "reconcile-columns" });
+  data.slugs.forEach(function(slug) {
+    var ta = el("textarea", { class: "reconcile-textarea", rows: "8" });
+    ta.value = data.content[slug];
+    textareas[slug] = ta;
+    columnsEl.append(
+      el("div", { class: "reconcile-col" },
+        el("div", { class: "reconcile-col-head", text: slug + " — current" }),
+        el("pre", { class: "reconcile-old", text: data.old_content[slug] }),
+        el("div", { class: "reconcile-col-head", text: slug + " — differentiated draft (editable)" }),
+        ta
+      )
+    );
+  });
+
+  var passed = !!(data.grounding && data.grounding.passed);
+  var groundingEl = el("div", { class: "reconcile-grounding" },
+    el("span", { class: passed ? "badge badge-ok" : "badge badge-fail" },
+      el("span", { class: "dot" }),
+      el("span", { text: passed ? "grounded" : "grounding failed" })
+    )
+  );
+  var unsupported = (data.grounding && data.grounding.unsupported_claims) || [];
+  if (unsupported.length > 0) {
+    var claimsList = el("ul", { class: "reconcile-claims" });
+    unsupported.forEach(function(c) { claimsList.append(el("li", { text: c })); });
+    groundingEl.append(claimsList);
+  }
+
+  var statusMsgEl = el("span", { class: "card-status-msg" });
+  var cancelBtn = el("button", { class: "reconcile-cancel-btn", type: "button",
+    text: LINT_CHROME[consoleLang].collisionCancel, onclick: closeModal });
+  var applyBtn = el("button", { class: "reconcile-apply-btn", type: "button",
+    text: LINT_CHROME[consoleLang].collisionApply });
+
+  applyBtn.addEventListener("click", function() {
+    if (applyBtn.disabled || remediationInFlight) return;
+    remediationInFlight = true;
+    applyBtn.disabled = true;
+    cancelBtn.disabled = true;
+    (siblingButtons || []).forEach(function(b) { b.disabled = true; });
+    statusMsgEl.replaceChildren(el("span", { class: "spinner" }),
+      document.createTextNode(LINT_CHROME[consoleLang].collisionWorking));
+    statusMsgEl.className = "card-status-msg";
+
+    var content = {};
+    data.slugs.forEach(function(slug) { content[slug] = textareas[slug].value; });
+
+    fetch("/wiki/pages/collision/differentiate/apply", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slugs: data.slugs, content: content, hashes: data.hashes }),
+    })
+      .then(function(resp) {
+        if (resp.status === 409) {
+          throw new Error(
+            "Cannot apply: one or more pages changed since this draft was generated " +
+            "(the collision may no longer hold). Close and re-open Differentiate to refresh."
+          );
+        }
+        if (resp.status === 422) {
+          return resp.json().then(function(body) {
+            var detail = body.detail || {};
+            var claims = (detail.unsupported_claims || []).join("; ");
+            throw new Error("Grounding check failed" + (claims ? ": " + claims : "") + ". Edit the drafts and try again.");
+          });
+        }
+        if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+        return resp.json();
+      })
+      .then(function() { return _finishCollisionApply(resultEl, closeModal); })
+      .catch(function(err) {
+        remediationInFlight = false;
+        applyBtn.disabled = false;
+        cancelBtn.disabled = false;
+        (siblingButtons || []).forEach(function(b) { b.disabled = false; });
+        statusMsgEl.textContent = "Error: " + (err.message || String(err));
+        statusMsgEl.className = "card-status-msg err";
+      });
+  });
+
+  modal.replaceChildren(
+    el("div", { class: "reconcile-modal-head" },
+      el("span", { text: "Differentiate: " + data.slugs.join(", ") })),
+    el("div", { class: "reconcile-modal-body" }, groundingEl, columnsEl),
     el("div", { class: "reconcile-actions" }, applyBtn, cancelBtn, statusMsgEl)
   );
 }

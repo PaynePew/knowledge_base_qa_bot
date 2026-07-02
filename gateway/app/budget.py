@@ -30,6 +30,10 @@ Per-endpoint estimate table (USD per request, deliberately generous):
     | /upload          | 0.01     | staging bytes; tiny, but heavy-gated for safety |
     | /wiki/pages/reconcile       | 0.05 | C5 draft over two pages' Source union + grounding check |
     | /wiki/pages/reconcile/apply | 0.02 | grounding re-check on the submitted final content       |
+    | /wiki/pages/collision/merge                | 0.05 | C4 merge draft over a group's Source union + grounding check |
+    | /wiki/pages/collision/merge/apply           | 0.02 | grounding re-check on the submitted base content              |
+    | /wiki/pages/collision/differentiate         | 0.08 | C4 differentiate draft over N pages' Source union + N grounding checks |
+    | /wiki/pages/collision/differentiate/apply   | 0.03 | grounding re-check on N submitted pages                        |
     | (default heavy)  | 0.10     | unknown heavy path → assume a mid-range cost    |
 
 The numbers are intentionally above plausible real cost on a small demo corpus
@@ -60,6 +64,10 @@ _COST_ESTIMATES: dict[str, float] = {
     "/upload": 0.01,
     "/wiki/pages/reconcile": 0.05,
     "/wiki/pages/reconcile/apply": 0.02,
+    "/wiki/pages/collision/merge": 0.05,
+    "/wiki/pages/collision/merge/apply": 0.02,
+    "/wiki/pages/collision/differentiate": 0.08,
+    "/wiki/pages/collision/differentiate/apply": 0.03,
 }
 
 # Fallback for any heavy path missing from the table — assume a mid-range cost

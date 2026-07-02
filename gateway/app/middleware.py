@@ -69,6 +69,10 @@ ADMIN_PATHS: frozenset[str] = frozenset(
         "/hybrid/index",  # ADR-0022: operator-triggered dense re-embed (issue #348)
         "/wiki/pages/reconcile",  # ADR-0028: C5 reconcile draft — LLM draft + grounding (issue #376)
         "/wiki/pages/reconcile/apply",  # ADR-0028: grounding re-check + two-page rewrite + reindex (issue #376)
+        "/wiki/pages/collision/merge",  # ADR-0028: C4 merge draft — LLM draft + grounding (issue #378)
+        "/wiki/pages/collision/merge/apply",  # ADR-0028: grounding re-check + base rewrite + variant deletes + reindex (issue #378)
+        "/wiki/pages/collision/differentiate",  # ADR-0028: C4 differentiate draft — LLM draft + grounding (issue #378)
+        "/wiki/pages/collision/differentiate/apply",  # ADR-0028: grounding re-check + N-page rewrite + reindex (issue #378)
     }
 )
 
