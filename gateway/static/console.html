@@ -591,6 +591,20 @@
     font-weight: 400;
   }
 
+  /* Lint Axis section heading (issue #363 — reuses S1's LINT_AXIS_ORDER:
+     Freshness -> Coherence -> Coverage -> Lifecycle). */
+  .lint-axis-head {
+    padding: 14px 16px 2px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--ink);
+    border-top: 2px solid var(--rule);
+  }
+  .lint-axis-head:first-child { border-top: none; padding-top: 0; }
+
   /* Lint check group heading inside result card */
   .lint-group-head {
     padding: 8px 16px 4px;
@@ -602,7 +616,48 @@
     border-top: 1px solid var(--rule);
     background: var(--bg);
   }
-  .lint-group-head:first-child { border-top: none; }
+  .lint-axis-head + .lint-group-head { border-top: none; }
+
+  /* Per-row Remediation actions (issue #363 — Direct Remediation buttons +
+     the disabled Authored/tier-B affordance). Sits inside the .rec "body"
+     cell (below the id/crumb text) so the existing 3-column .rec grid used
+     by every other result card is untouched. */
+  .lint-row-actions {
+    margin-top: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .reingest-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--accent);
+    color: #fff;
+    border: 0;
+    padding: 4px 10px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .04em;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: opacity .15s ease;
+  }
+  .reingest-btn:hover:not(:disabled) { opacity: .82; }
+  .reingest-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+  /* Authored-tier ("tier B") affordance — visible, never actionable
+     (ADR-0023: Authored Remediation is out of tier-A scope). */
+  .tier-b-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: none;
+    color: var(--ink-4);
+    border: 1px dashed var(--ink-4);
+    padding: 4px 10px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .04em;
+    border-radius: 4px;
+    cursor: not-allowed;
+  }
 
   /* Lint finding rows — extend .rec with a note subrow */
   .rec .note {
@@ -1379,8 +1434,121 @@ function renderIndexCard(data) {
   return el("div", { class: "result-card" }, head, bodyEl);
 }
 
-/* Lint result card — renders LintResponse findings grouped by check */
-function renderLintCard(data) {
+/* ============================================================
+   Lint Axis + Remediation taxonomy (issue #363, ADR-0023 tier-A S3)
+
+   The Console has no Python runtime, so this is the client's copy of
+   markdown_kb/app/lint.py's LINT_CHECK_TAXONOMY + remediation_for — the
+   SAME ten codes, axes, and Direct/Authored/deferred tiers (kept honest by
+   the Python remediation_for unit tests plus this file's structural test,
+   gateway/tests/test_ui_console_lint_remediation.py). The client does not
+   decide *eligibility* here (that stays server-side, e.g. C10 discard is
+   refused server-side for a live page) — it only decides which button to
+   show for which check, mirroring the existing C9/C10 split already used
+   by the Curation Queue below (§12.5).
+   ============================================================ */
+var LINT_AXIS_ORDER = ["Freshness", "Coherence", "Coverage", "Lifecycle"];
+
+/* axis -> ordered check codes, matching LINT_CHECK_TAXONOMY's per-axis order */
+var AXIS_CHECK_CODES = {
+  Freshness: ["C6", "C3", "C11"],
+  Coherence: ["C5", "C4"],
+  Coverage:  ["C1", "C2"],
+  Lifecycle: ["C8", "C10", "C9"],
+};
+
+/* code -> {label, tier, findingsKey}. tier drives the per-row affordance:
+   "direct"   — C6/C3/C10 get a Remediation button; C8 gets none here (its
+                Promote/Discard controls live in the dedicated Curation
+                Queue block, unchanged per issue #363 AC).
+   "authored" — disabled tier-B affordance (visible, never actionable).
+   "deferred" — no control yet (C9/C11 need a lifecycle endpoint that does
+                not exist — ADR-0023 Consequences). */
+var LINT_CHECK_META = {
+  C6:  { label: "stale",            tier: "direct",   findingsKey: "stale_pages" },
+  C3:  { label: "failed-grounding", tier: "direct",   findingsKey: "failed_grounding" },
+  C11: { label: "orphan",           tier: "deferred", findingsKey: "orphans" },
+  C5:  { label: "contradiction",    tier: "authored", findingsKey: "page_pairs" },
+  C4:  { label: "collision",        tier: "authored", findingsKey: "slug_collisions" },
+  C1:  { label: "coverage-gap",     tier: "authored", findingsKey: "coverage_gaps" },
+  C2:  { label: "red-link",         tier: "authored", findingsKey: "red_links" },
+  C8:  { label: "promotion",        tier: "direct",   findingsKey: "promotion_candidates" },
+  C10: { label: "invalid-schema",   tier: "direct",   findingsKey: "invalid_qa_schemas" },
+  C9:  { label: "stale-qa",         tier: "deferred", findingsKey: "stale_filed_answers" },
+};
+
+/* ── Remediation requests — thin wrappers around the *existing* endpoints
+   (ADR-0023: zero new endpoints). Each resolves/rejects with the parsed
+   JSON body (or null for a 204), never re-implementing server eligibility
+   decisions (§12.5) — a 409 from Discard still surfaces as a rejection the
+   caller renders verbatim. */
+function ingestRemediationRequest(source, force) {
+  var payload = { source: source };
+  if (force) payload.force = true;
+  return fetch("/wiki/ingest", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  }).then(function(resp) {
+    if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+    return resp.json();
+  });
+}
+
+function discardRemediationRequest(slug) {
+  return fetch("/wiki/qa/" + encodeURIComponent(slug), { method: "DELETE" })
+    .then(function(resp) {
+      if (resp.status === 409) {
+        throw new Error("Cannot discard: page is live (status=live). Use Re-ingest to refresh it instead.");
+      }
+      if (!resp.ok) {
+        return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+      }
+      return null;
+    });
+}
+
+/* ── Shared remediation runner ────────────────────────────────
+   On success, re-runs the fast (include_c5=false) lint path and re-renders
+   BOTH the Lint card and the Curation Queue, so the fixed finding
+   disappears and a still-failing one reappears (issue #363 AC). In-flight
+   guard: only the clicked button is disabled while its own request runs
+   (the axis-wide busy-state + beforeunload guard is S4 / issue #364). The
+   fix itself is durable server-side across a disconnect (sync /ingest
+   under _index_lock, ADR-0023) — a network error here just means the
+   status message failed to update, not that the fix was lost. */
+function runLintRemediation(requestPromise, btn, statusMsgEl, resultEl) {
+  btn.disabled = true;
+  statusMsgEl.textContent = "Working…";
+  statusMsgEl.className = "card-status-msg";
+
+  requestPromise
+    .then(function() {
+      return fetch("/wiki/lint?include_c5=false", { method: "POST" });
+    })
+    .then(function(resp) {
+      if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+      return resp.json();
+    })
+    .then(function(data) {
+      lastLintData = data;
+      if (resultEl) resultEl.replaceChildren(renderLintCard(data, resultEl));
+      renderCurationQueue(document.getElementById("curation-queue-root"), data);
+    })
+    .catch(function(err) {
+      statusMsgEl.textContent = "Error: " + (err.message || String(err));
+      statusMsgEl.className = "card-status-msg err";
+      btn.disabled = false;
+    });
+}
+
+/* Lint result card — renders LintResponse findings grouped by Lint Axis
+   (issue #363), each check labelled, with per-row Direct Remediation
+   buttons (C6/C3 Re-ingest, C10 Discard) and a disabled tier-B affordance
+   on Authored-tier findings (C5/C4/C1/C2). ``resultEl`` is the Lint step's
+   own result container — passed through so a remediation button's success
+   handler can re-render this same card in place. */
+function renderLintCard(data, resultEl) {
   var summary  = data.summary  || {};
   var findings = data.findings || {};
   var checkErrors = data.check_errors || {};
@@ -1400,19 +1568,27 @@ function renderLintCard(data) {
 
   var bodyEl = el("div");
 
-  /* Helper: emit a group section heading */
-  function groupHead(label, count) {
-    var countStr = count != null ? " (" + count + ")" : "";
-    return el("div", { class: "lint-group-head", text: label + countStr });
+  /* Helper: emit an axis section heading */
+  function axisHead(axis) {
+    return el("div", { class: "lint-axis-head", text: axis });
   }
 
-  /* Helper: emit one finding row */
-  function findingRow(idx, title, subtitle, labelText, labelClass) {
+  /* Helper: emit a check group heading, e.g. "C6 stale (2)" */
+  function checkHead(code, count) {
+    var meta = LINT_CHECK_META[code];
+    return el("div", { class: "lint-group-head", text: code + " " + meta.label + " (" + count + ")" });
+  }
+
+  /* Helper: emit one finding row. actionsEl (optional) is appended inside
+     the body cell, below the id/crumb text, so the existing 3-column .rec
+     grid used by every other result card stays untouched. */
+  function findingRow(idx, title, subtitle, labelText, labelClass, actionsEl) {
     var numStr = String(idx).padStart(2, "0");
     var rowBodyEl = el("div", { class: "body" },
       el("div", { class: "id", text: title })
     );
     if (subtitle) rowBodyEl.append(el("div", { class: "crumb", text: subtitle }));
+    if (actionsEl) rowBodyEl.append(actionsEl);
     return el("div", { class: "rec" },
       el("div", { class: "num",    text: numStr }),
       rowBodyEl,
@@ -1420,89 +1596,115 @@ function renderLintCard(data) {
     );
   }
 
-  /* Helper: emit a group (skipped if empty array) */
-  function renderGroup(label, items, rowFn) {
-    if (!items || items.length === 0) return;
-    bodyEl.append(groupHead(label, items.length));
-    items.forEach(function(item, i) { bodyEl.append(rowFn(i + 1, item)); });
+  /* Disabled "tier B" affordance for Authored-tier rows — visible, never
+     actionable (ADR-0023: Authored Remediation is out of tier-A scope). */
+  function tierBAffordance() {
+    return el("div", { class: "lint-row-actions" },
+      el("button", { class: "tier-b-btn", type: "button", disabled: "", text: "Authored (tier B)" })
+    );
   }
 
-  /* C11 Orphan pages */
-  renderGroup("Orphan pages (C11)", findings.orphans, function(i, f) {
-    return findingRow(i, f.page_slug,
-      "missing: " + (f.missing_sources || []).join(", "),
-      "orphan", "label-failed");
+  /* Re-ingest / Re-ingest (retry) action for a C6/C3 finding.
+     C3 MUST send force:true — omitting it lets hash-skip (#93) no-op the
+     retry into a false fix (ADR-0023 Invariant / CODING_STANDARD §12.8). */
+  function reingestAction(source, retry) {
+    var btn = el("button", { class: "reingest-btn", type: "button",
+      text: retry ? "Re-ingest (retry)" : "Re-ingest" });
+    var statusMsgEl = el("span", { class: "card-status-msg" });
+    btn.addEventListener("click", function() {
+      if (btn.disabled) return;
+      runLintRemediation(ingestRemediationRequest(source, retry === true), btn, statusMsgEl, resultEl);
+    });
+    return el("div", { class: "lint-row-actions" }, btn, statusMsgEl);
+  }
+
+  /* Discard action for a C10 finding — DELETE /wiki/qa/{slug}, server-gated
+     (refuses status:live with 409; §12.5). */
+  function discardAction(slug) {
+    var btn = el("button", { class: "discard-btn", type: "button", text: "Discard" });
+    var statusMsgEl = el("span", { class: "card-status-msg" });
+    btn.addEventListener("click", function() {
+      if (btn.disabled) return;
+      runLintRemediation(discardRemediationRequest(slug), btn, statusMsgEl, resultEl);
+    });
+    return el("div", { class: "lint-row-actions" }, btn, statusMsgEl);
+  }
+
+  /* Per-check row renderers, keyed by code — driven by the axis loop below.
+     C8 and C9 render no actionsEl: C8's Promote/Discard stay in the
+     dedicated Curation Queue block (issue #363 AC); C9 is deferred. */
+  var ROW_RENDERERS = {
+    C11: function(i, f) {
+      return findingRow(i, f.page_slug,
+        "missing: " + (f.missing_sources || []).join(", "),
+        "orphan", "label-failed");
+    },
+    C6: function(i, f) {
+      var drift = f.drift_days != null ? f.drift_days.toFixed(1) + "d drift" : "";
+      return findingRow(i, f.page_slug, f.source + (drift ? " · " + drift : ""),
+        "stale", "label-updated", reingestAction(f.source, false));
+    },
+    C3: function(i, f) {
+      return findingRow(i, f.page_slug, f.reason,
+        "grounding", "label-failed", reingestAction(f.source, true));
+    },
+    C5: function(i, f) {
+      return findingRow(i, f.page_a + " / " + f.page_b,
+        f.severity + ": " + (f.summary || "").slice(0, 80),
+        f.severity, f.severity === "direct" ? "label-failed" : "label-updated",
+        tierBAffordance());
+    },
+    C4: function(i, f) {
+      return findingRow(i, f.base_slug, (f.pages_in_group || []).join(", "),
+        "collision", "label-updated", tierBAffordance());
+    },
+    C1: function(i, f) {
+      return findingRow(i, f.query_canonical,
+        f.reason + " · " + f.hit_count + " hit" + (f.hit_count !== 1 ? "s" : ""),
+        "gap", "label-skipped", tierBAffordance());
+    },
+    C2: function(i, f) {
+      return findingRow(i, f.slug,
+        f.mention_count + " mention" + (f.mention_count !== 1 ? "s" : "") +
+        " · " + (f.referenced_by || []).slice(0, 3).join(", "),
+        "red-link", "label-failed", tierBAffordance());
+    },
+    C8: function(i, f) {
+      return findingRow(i, f.slug, f.question, "count:" + f.count, "label-created");
+    },
+    C10: function(i, f) {
+      return findingRow(i, f.page_slug, f.property_name + " = " + f.offending_value,
+        "invalid", "label-failed", discardAction(f.page_slug));
+    },
+    C9: function(i, f) {
+      return findingRow(i, f.page_slug, f.max_drift_days.toFixed(1) + "d drift",
+        "stale-qa", "label-updated");
+    },
+  };
+
+  /* ── Axis-grouped rendering (issue #363 — reuses S1's LINT_AXIS_ORDER).
+     An axis header (and its checks) is skipped entirely when every check
+     under it has zero findings — matching this card's existing skip-empty
+     convention (the written lint-report.md uses a placeholder-text
+     convention instead; this is a UI-only difference, see S1). */
+  LINT_AXIS_ORDER.forEach(function(axis) {
+    var axisBody = [];
+    AXIS_CHECK_CODES[axis].forEach(function(code) {
+      var meta = LINT_CHECK_META[code];
+      var items = findings[meta.findingsKey];
+      if (!items || items.length === 0) return;
+      axisBody.push(checkHead(code, items.length));
+      items.forEach(function(item, i) { axisBody.push(ROW_RENDERERS[code](i + 1, item)); });
+    });
+    if (axisBody.length === 0) return;
+    bodyEl.append(axisHead(axis));
+    axisBody.forEach(function(node) { bodyEl.append(node); });
   });
 
-  /* C6 Stale pages */
-  renderGroup("Stale pages (C6)", findings.stale_pages, function(i, f) {
-    var drift = f.drift_days != null ? f.drift_days.toFixed(1) + "d drift" : "";
-    return findingRow(i, f.page_slug,
-      f.source + (drift ? " · " + drift : ""),
-      "stale", "label-updated");
-  });
-
-  /* C5 Contradictions */
-  renderGroup("Contradictions (C5)", findings.page_pairs, function(i, f) {
-    return findingRow(i, f.page_a + " / " + f.page_b,
-      f.severity + ": " + (f.summary || "").slice(0, 80),
-      f.severity, f.severity === "direct" ? "label-failed" : "label-updated");
-  });
-
-  /* C1 Coverage gaps */
-  renderGroup("Coverage gaps (C1)", findings.coverage_gaps, function(i, f) {
-    return findingRow(i, f.query_canonical,
-      f.reason + " · " + f.hit_count + " hit" + (f.hit_count !== 1 ? "s" : ""),
-      "gap", "label-skipped");
-  });
-
-  /* C8 Promotion candidates */
-  renderGroup("Promotion candidates (C8)", findings.promotion_candidates, function(i, f) {
-    return findingRow(i, f.slug,
-      f.question,
-      "count:" + f.count, "label-created");
-  });
-
-  /* C9 Stale filed answers */
-  renderGroup("Stale filed answers (C9)", findings.stale_filed_answers, function(i, f) {
-    return findingRow(i, f.page_slug,
-      f.max_drift_days.toFixed(1) + "d drift",
-      "stale-qa", "label-updated");
-  });
-
-  /* C10 Invalid qa schema */
-  renderGroup("Invalid qa schema (C10)", findings.invalid_qa_schemas, function(i, f) {
-    return findingRow(i, f.page_slug,
-      f.property_name + " = " + f.offending_value,
-      "invalid", "label-failed");
-  });
-
-  /* C3 Failed grounding */
-  renderGroup("Failed grounding (C3)", findings.failed_grounding, function(i, f) {
-    return findingRow(i, f.page_slug,
-      f.reason,
-      "grounding", "label-failed");
-  });
-
-  /* C4-a Slug collisions */
-  renderGroup("Slug collisions (C4a)", findings.slug_collisions, function(i, f) {
-    return findingRow(i, f.base_slug,
-      (f.pages_in_group || []).join(", "),
-      "collision", "label-updated");
-  });
-
-  /* C2 Red links */
-  renderGroup("Red links (C2)", findings.red_links, function(i, f) {
-    return findingRow(i, f.slug,
-      f.mention_count + " mention" + (f.mention_count !== 1 ? "s" : "") +
-      " · " + (f.referenced_by || []).slice(0, 3).join(", "),
-      "red-link", "label-failed");
-  });
-
-  /* Check errors */
+  /* Check errors — not axis-scoped, surfaced after the axis groups */
   var errKeys = Object.keys(checkErrors);
   if (errKeys.length > 0) {
-    bodyEl.append(groupHead("Check errors", errKeys.length));
+    bodyEl.append(el("div", { class: "lint-group-head", text: "Check errors (" + errKeys.length + ")" }));
     errKeys.forEach(function(k, i) {
       bodyEl.append(findingRow(i + 1, k, checkErrors[k], "error", "label-failed"));
     });
@@ -1767,7 +1969,7 @@ var STEP_DEFS = [
           return resp.json();
         })
         .then(function(data) {
-          resultEl.replaceChildren(renderLintCard(data));
+          resultEl.replaceChildren(renderLintCard(data, resultEl));
           /* Phase 15 S6: store latest lint data and render the Curation Queue */
           lastLintData = data;
           renderCurationQueue(document.getElementById("curation-queue-root"), data);
