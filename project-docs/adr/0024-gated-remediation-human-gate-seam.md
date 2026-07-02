@@ -1,0 +1,25 @@
+# The remediation governance seam is the human gate, not synthesis: Direct vs Gated, with Authored and Confirmed as Gated flavours
+
+[ADR-0023](0023-lint-remediation-direct-vs-authored.md) split [[remediation]] into two governance classes by a single question — *does the fix produce new curated synthesis?* Direct (no synthesis → one-click, review-free, batchable) vs Authored (LLM-drafted synthesis → human approval before write-back). Planning tier B surfaced a finding that binary cannot classify: **C11 orphan-delete** removes a *live* wiki page whose backing [[source]] is gone. It produces no synthesis, so it is not Authored; but it is an irreversible destructive operation, so granting it Direct's one-click/review-free/batchable treatment would break Direct's core promise (safe *because* deterministic and re-derivable) — and [ADR-0012](0012-delete-inert-filed-answers-only.md) refuses live-page deletion for exactly this reason.
+
+The 2026-07-02 grill resolved the misfit by re-cutting the seam. The governance-relevant property was never synthesis itself — synthesis was a *proxy* for "a human must look before this commits". C11 breaks the proxy: no synthesis, yet a human must look. So the primary split becomes the gate, and what the human reviews becomes a second-level distinction:
+
+- **Direct Remediation — no gate.** Re-runs deterministic machinery ([[ingest]] re-sync: C6, C3) or flips a reversible [[filed-answer]] lifecycle bit (C8 promote, C10 discard). One-click, review-free, and the only class that may batch. Unchanged from ADR-0023.
+- **Gated Remediation — commits nothing until a human approves.** Two flavours by *what the human reviews*:
+  - **Authored** — the human approves an **LLM-drafted page** (C5/C4 reconcile/merge; C9 re-file, [[adr-0026]]). Identical to ADR-0023's Authored: validated write-back per [[adr-0020]]. (C1/C2 Coverage Fill sat here initially; the same grill re-classified it as **Routed** — the fill flow contains no draft to approve — see [[adr-0027]].)
+  - **Confirmed** — there is **no draft to review**; the human confirms an **irreversible lifecycle operation** described to them precisely (C11 orphan-delete). No LLM is involved anywhere in the operation.
+
+"Tier B" thereby gains a precise definition: **the Gated class (Authored ∪ Confirmed)**, plus the Routed affordances [[adr-0027]] later added outside the Direct/Gated seam. Every tier-A invariant survives unchanged — batch stays Direct-only (now *derivable*: a Gated remediation's gate is per-item by definition, so Gated can never batch), Authored keeps its approval gate, and Authored's own definition is untouched; it merely gains a parent (Gated) and a sibling (Confirmed).
+
+## Considered Options
+
+- **Flat trichotomy — Direct / Authored / Confirmed with no Gated umbrella (rejected).** Semantically equivalent, but "tier B" becomes a coordination of two unrelated top-level classes instead of one layer, ADR-0023's two-tier narrative needs rewriting, and each future gate flavour (e.g. a two-person sign-off) would mint another top-level class. The umbrella keeps the taxonomy's spine binary at the governance seam.
+- **Widen Direct to swallow C11 behind a confirm dialog (rejected).** Preserves the binary at the cost of its meaning: Direct's review-free and batchable affordances follow from "safe because re-derivable", which an irreversible live-page delete is not. A batchable irreversible delete is a governance hole, not a simplification.
+- **Classify C11 as Authored (rejected).** Nothing is authored; the human would "approve" an empty draft. The gate semantics differ in kind — approving *content* vs confirming an *operation* — and conflating them would force the Authored UX (draft preview, grounding check) onto an operation that has neither.
+
+## Consequences
+
+- **CONTEXT.md `Remediation` is re-cut** to the gate-first taxonomy (same edit session as this ADR). The [[lint-axis]] → remediation-family mapping is unchanged; only the governance layer above it is re-labelled.
+- **C11's endpoint decision is deliberately NOT made here.** The predicate under which a live orphan may be deleted (and whether that widens `DELETE /qa` or adds a new endpoint) reopens ADR-0012 and gets its own decision.
+- **Console affordances follow the class:** Direct buttons act immediately (tier A, shipped); Authored buttons open a draft-review flow; Confirmed buttons open a confirmation flow that names the irreversible operation and its target; Routed controls navigate into an existing workflow with the finding's context ([[adr-0027]]). The disabled "Authored (tier B)" placeholders shipped in tier A become real Gated or Routed affordances in tier B.
+- **Invariants (tagged for the reviewer, per CODING_STANDARD §2.5).** **Invariant** — batch is Direct-only; no Gated remediation (Authored or Confirmed) ever batches. **Invariant** — a Confirmed Remediation involves no LLM call at any point. **Invariant** — no Gated Remediation commits any write before its human gate resolves.

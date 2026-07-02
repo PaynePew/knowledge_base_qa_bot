@@ -1,5 +1,7 @@
 # Lint remediation is a separate, two-tier operation (Direct vs Authored); lint stays read-only, and Authored fixes go through validated write-back
 
+> **Status:** Amended by [ADR-0024](0024-gated-remediation-human-gate-seam.md) — the governance seam is re-cut from "produces new synthesis?" to "requires a human gate?": Direct vs **Gated**, with Authored and a new **Confirmed** flavour (C11 orphan-delete) under Gated. Everything else here — read-only lint, batch-is-Direct-only, validated write-back, the tier-A scope — remains in force; "tier B" now means the Gated class.
+
 The Lint Pass (Phase 5) surfaces ten findings across four [[lint-axis]]es, and each finding already carries an advisory `suggested_action` *string* — but, except for the C8 Curation Queue (Promote/Discard on Filed Answers), no finding has an *executable* fix. A 2026-07-01 grill framed this as the interviewer's "然後呢? (and then?)": the demo **diagnoses** the wiki's health but cannot **remediate** it, so it is not a finished product. This ADR records the decision to add a [[remediation]] layer, and — because the author must defend the shape in an interview — why remediation is split into two governance tiers rather than one uniform "fix" button.
 
 The organising insight is that every lint finding is a **divergence between two things that should agree**, and the divergence's [[lint-axis]] dictates the fix. This yields a clean two-tier split by a single question — *does the fix produce new curated synthesis?*
