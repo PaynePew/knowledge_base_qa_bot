@@ -409,7 +409,15 @@ def kb_index_v1() -> dict:
         "Coherence, Coverage, Lifecycle, in that order): a list of "
         "{axis, checks: [{code, label, count}]} so you can reason over the "
         "wiki's health by category without re-deriving the check→axis "
-        "mapping yourself.\n\n"
+        "mapping yourself.\n"
+        "  findings.promotion_candidates[] (C8) and "
+        "findings.stale_filed_answers[] (C9) each additionally carry a "
+        "'path' (wiki/qa/<slug>.md); C9 entries also carry 'question' "
+        "(read from the page; null if unreadable) so you can report what "
+        "needs curating.  There is no MCP tool to promote or discard a "
+        "Filed Answer — gates resolve on human surfaces only, Console or "
+        "CLI `kb qa promote|discard` (ADR-0026); report findings to your "
+        "human instead of acting on them.\n\n"
         "Returns isError=true when the C5 LLM call fails catastrophically:\n"
         "  {code, message} where code is 'LLM_UNAVAILABLE' (retryable) or\n"
         "  'LLM_ERROR' (non-retryable, report message to user).\n"
@@ -448,9 +456,23 @@ def kb_lint_v1(
     #361 S1) — the same taxonomy the CLI's ``kb lint`` and the
     ``lint-report.md`` renderer consume, so the three surfaces never disagree
     on check→axis mapping (ADR-0017 interface parity).
+
+    C8/C9 visibility (issue #377 / ADR-0026 decision 3): ``qa_view`` (a
+    read-only helper, not a mutation) adds a ``path`` key to every
+    ``promotion_candidates`` (C8) and ``stale_filed_answers`` (C9) entry, and
+    a ``question`` key to C9 entries (``QaStalenessFinding`` carries no
+    question field; C8's already does via ``PromotionCandidateFinding``).
+    This is added here rather than on the Pydantic finding models themselves
+    so the change stays inside kb_mcp/kb_cli — markdown_kb's lint/schema
+    modules are untouched, keeping this slice parallel-safe with sibling
+    tier-B slices editing ``qa.py`` / ``lint.py`` concurrently. No tool
+    resolves a Gated remediation from these findings — MCP sees everything
+    and approves nothing (ADR-0026).
     """
     from markdown_kb.app.errors import LLMError
     from markdown_kb.app.lint import group_findings_by_axis, run_lint
+
+    from . import qa_view
 
     # Enforce default server-side
     if include_c5 is None:
@@ -481,6 +503,14 @@ def kb_lint_v1(
         }
         for axis_group in group_findings_by_axis(response.findings)
     ]
+
+    for candidate in payload["findings"]["promotion_candidates"]:
+        candidate["path"] = qa_view.display_path(candidate["slug"])
+    for stale in payload["findings"]["stale_filed_answers"]:
+        stale["path"] = qa_view.display_path(stale["page_slug"])
+        page = qa_view.read_qa_page(stale["page_slug"])
+        stale["question"] = page.question if page is not None else None
+
     return payload
 
 

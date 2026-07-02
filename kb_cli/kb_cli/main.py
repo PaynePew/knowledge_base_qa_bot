@@ -23,6 +23,12 @@ Human-readable output: the ``ask`` path and the REPL render the full
 ``grounding_outcome``) via ``_print_result``.  This is the grounded-answer
 shape, not the search-result shape that ``kb_mcp.normalizer`` maps for the MCP
 ``kb_search_v1`` tool — the normalizer is therefore not on the CLI path.
+
+``kb qa`` (issue #377 / ADR-0026 decision 3) is a thin sub-command group over
+``markdown_kb.app.qa`` for the Filed Answer curation loop — ``list`` / ``show``
+/ ``promote`` / ``discard``, mirroring the Operator Console's gate semantics
+(promote reindexes; discard refuses a live page).  This is deliberately a CLI
+capability with **no MCP equivalent**: gates resolve on human surfaces only.
 """
 
 from __future__ import annotations
@@ -430,27 +436,62 @@ def _format_c5_contradictions(findings: object, label: str) -> list[str]:
 
 
 def _format_c8_promotion_candidates(findings: object, label: str) -> list[str]:
-    """C8 Promotion candidates lines, or ``[]`` when there are none."""
+    """C8 Promotion candidates lines, or ``[]`` when there are none.
+
+    Includes ``question`` and the on-disk ``path`` per finding (issue #377 /
+    ADR-0026 decision 3: any surface — CLI or MCP — can inspect what needs
+    curating). ``path`` is pure string formatting (``qa_view.display_path``);
+    no file read is required for C8 since ``PromotionCandidateFinding``
+    already carries ``question``.
+    """
     if not findings.promotion_candidates:  # type: ignore[attr-defined]
         return []
+    from kb_mcp import qa_view
+
     lines = [
         f"C8 Promotion candidates ({len(findings.promotion_candidates)}) — {label}:"  # type: ignore[attr-defined]
     ]
     for f in findings.promotion_candidates:  # type: ignore[attr-defined]
         lines.append(f"  • {f.slug} — count {f.count}, age {f.age_days:.1f} day(s)")
+        lines.append(f'    question: "{f.question}"')
+        lines.append(f"    path: {qa_view.display_path(f.slug)}")
     lines.append("")
     return lines
 
 
+def _c9_question_or_placeholder(slug: str) -> str:
+    """The C9-slug's question, backfilled from disk, or a placeholder.
+
+    ``QaStalenessFinding`` carries no ``question`` field, so both the ``kb
+    lint`` C9 renderer and ``kb qa list`` backfill it the same way via
+    ``qa_view.read_qa_page`` — falls back to a placeholder when the page is
+    no longer readable (e.g. deleted since the lint scan) rather than raising.
+    """
+    from kb_mcp import qa_view
+
+    page = qa_view.read_qa_page(slug)
+    if page is not None and page.question:
+        return page.question
+    return "(question unavailable)"
+
+
 def _format_c9_stale_filed_answers(findings: object, label: str) -> list[str]:
-    """C9 Stale filed answers lines, or ``[]`` when there are none."""
+    """C9 Stale filed answers lines, or ``[]`` when there are none.
+
+    Includes ``question`` and the on-disk ``path`` per finding (issue #377 /
+    ADR-0026 decision 3).
+    """
     if not findings.stale_filed_answers:  # type: ignore[attr-defined]
         return []
+    from kb_mcp import qa_view
+
     lines = [
         f"C9 Stale filed answers ({len(findings.stale_filed_answers)}) — {label}:"  # type: ignore[attr-defined]
     ]
     for f in findings.stale_filed_answers:  # type: ignore[attr-defined]
         lines.append(f"  • {f.page_slug} — drift {f.max_drift_days:.1f} day(s)")
+        lines.append(f'    question: "{_c9_question_or_placeholder(f.page_slug)}"')
+        lines.append(f"    path: {qa_view.display_path(f.page_slug)}")
     lines.append("")
     return lines
 
@@ -562,6 +603,177 @@ def lint_cmd() -> None:
         raise typer.Exit(code=1) from exc
 
     _print_lint_result(response)
+
+
+# ---------------------------------------------------------------------------
+# Subcommand group: kb qa (list / show / promote / discard)
+# ---------------------------------------------------------------------------
+# Issue #377 / ADR-0026 decision 3: gates resolve on human surfaces only. This
+# group is a thin wrapper over markdown_kb.app.qa's PUBLIC promote/delete
+# (mirroring POST /qa/{slug}/promote and DELETE /qa/{slug}) plus the read-only
+# kb_mcp.qa_view helper for list/show. There is deliberately no MCP
+# equivalent — see kb_mcp/kb_mcp/server.py's kb_lint_v1 visibility note and
+# kb_mcp/tests/test_no_gate_resolving_tools.py.
+
+qa_app = typer.Typer(
+    name="qa",
+    help=(
+        "Curate Filed Answers (wiki/qa/) — list C8/C9 candidates, inspect "
+        "one, promote a draft to live, or discard an inert page. Mirrors the "
+        "Operator Console's gate semantics (promote reindexes; discard "
+        "refuses a live page)."
+    ),
+    add_completion=False,
+)
+app.add_typer(qa_app, name="qa")
+
+
+def _print_qa_candidate(slug: str, status: str, question: str, detail: str, path: str) -> None:
+    """Shared one-candidate rendering line for ``kb qa list``."""
+    typer.echo(f"  • {slug} [{status}] — {detail}")
+    typer.echo(f'    question: "{question}"')
+    typer.echo(f"    path: {path}")
+
+
+@qa_app.command(name="list")
+def qa_list_cmd() -> None:
+    """List C8 promotion candidates (draft) and C9 stale Filed Answers (live).
+
+    Runs only the fast local Lint checks (``include_c5=False`` — no LLM
+    call), the same call shape the Operator Console's Curation Queue uses
+    (``markdown_kb.app.lint.run_lint`` docstring). C9's question is backfilled
+    by reading the page (``QaStalenessFinding`` carries no question field).
+    """
+    from kb_mcp import qa_view
+    from markdown_kb.app.lint import run_lint
+
+    response = run_lint(include_c5=False)
+    candidates = response.findings.promotion_candidates
+    stale = response.findings.stale_filed_answers
+
+    if not candidates and not stale:
+        typer.echo("No Filed Answers need curation — queue is empty.")
+        return
+
+    typer.echo(
+        f"Filed Answers — {len(candidates)} promotion candidate(s), {len(stale)} stale live page(s)"
+    )
+    typer.echo("")
+
+    if candidates:
+        typer.echo("C8 Promotion candidates (draft):")
+        for c in candidates:
+            _print_qa_candidate(
+                c.slug,
+                "draft",
+                c.question,
+                f"count={c.count}, age={c.age_days:.1f}d",
+                qa_view.display_path(c.slug),
+            )
+        typer.echo("")
+
+    if stale:
+        typer.echo("C9 Stale filed answers (live):")
+        for s in stale:
+            _print_qa_candidate(
+                s.page_slug,
+                "live",
+                _c9_question_or_placeholder(s.page_slug),
+                f"drift={s.max_drift_days:.1f}d",
+                qa_view.display_path(s.page_slug),
+            )
+        typer.echo("")
+
+
+@qa_app.command(name="show")
+def qa_show_cmd(
+    slug: str = typer.Argument(..., help="The wiki/qa/<slug>.md slug to inspect."),
+) -> None:
+    """Show one Filed Answer's question, answer body, sources, and status.
+
+    Exit codes follow the ADR-0015 CLI contract: 0 on success, 1 when the
+    slug has never been filed.
+    """
+    from kb_mcp import qa_view
+
+    page = qa_view.read_qa_page(slug)
+    if page is None:
+        typer.echo(f"Error: wiki/qa/{slug}.md not found.", err=True)
+        raise typer.Exit(code=1)
+
+    typer.echo(f"Slug: {page.slug}")
+    typer.echo(f"Status: {page.status}")
+    typer.echo(f"Question: {page.question}")
+    typer.echo(f"Sources: {', '.join(page.sources) if page.sources else '(none)'}")
+    typer.echo(f"Path: {page.path}")
+    typer.echo("")
+    typer.echo("Answer:")
+    typer.echo(page.body)
+
+
+@qa_app.command(name="promote")
+def qa_promote_cmd(
+    slug: str = typer.Argument(..., help="The wiki/qa/<slug>.md slug to promote to live."),
+) -> None:
+    """Promote a draft Filed Answer to live, then reindex.
+
+    Mirrors ``POST /qa/{slug}/promote``: flips ``status: draft -> live`` via
+    ``markdown_kb.app.qa.promote`` (idempotent on an already-live page), then
+    calls ``build_index()`` so the page is retrievable immediately — the same
+    two-step contract the HTTP route uses (ADR-0020 Consequence 1).
+
+    Exit codes: 0 on success, 1 when the slug was never filed or its
+    frontmatter is corrupt (ADR-0015 CLI contract).
+    """
+    from markdown_kb.app import qa as qa_module
+    from markdown_kb.app.indexer import build_index
+
+    try:
+        result = qa_module.promote(slug)
+    except qa_module.QaPageNotFound:
+        typer.echo(f"Error: wiki/qa/{slug}.md not found.", err=True)
+        raise typer.Exit(code=1) from None
+    except qa_module.QaPageCorrupt as exc:
+        typer.echo(f"Error: wiki/qa/{slug}.md has corrupt frontmatter: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+
+    files_indexed, sections_indexed = build_index()
+    typer.echo(f"Promoted {result.slug}: status={result.status}, count={result.count}")
+    typer.echo(f"Reindexed {files_indexed} file(s), {sections_indexed} section(s).")
+
+
+@qa_app.command(name="discard")
+def qa_discard_cmd(
+    slug: str = typer.Argument(..., help="The wiki/qa/<slug>.md slug to discard."),
+) -> None:
+    """Discard an inert (non-live) Filed Answer.
+
+    Mirrors ``DELETE /qa/{slug}`` via ``markdown_kb.app.qa.delete``: any
+    non-live page (draft, or schema-invalid/unparseable frontmatter) may be
+    discarded; a ``status: live`` page is refused with a clear message (ADR-0012
+    — live pages are the served corpus and are not removed by a one-click
+    action).
+
+    Exit codes: 0 on success, 1 when the slug was never filed or is live
+    (ADR-0015 CLI contract).
+    """
+    from markdown_kb.app import qa as qa_module
+
+    try:
+        result = qa_module.delete(slug)
+    except qa_module.QaPageNotFound:
+        typer.echo(f"Error: wiki/qa/{slug}.md not found.", err=True)
+        raise typer.Exit(code=1) from None
+    except qa_module.QaPageLive:
+        typer.echo(
+            f"Error: wiki/qa/{slug}.md has status=live; discard refused. "
+            "Live pages are the served corpus — re-ingest to refresh a stale "
+            "live page instead of discarding it.",
+            err=True,
+        )
+        raise typer.Exit(code=1) from None
+
+    typer.echo(f"Discarded {result.slug} (was status={result.prev_status}).")
 
 
 # ---------------------------------------------------------------------------
