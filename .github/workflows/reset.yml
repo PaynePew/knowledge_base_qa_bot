@@ -26,13 +26,16 @@ concurrency:
 
 jobs:
   reset:
+    # Owner-only guard: skip on forks (no DEPLOY_* secrets; this cron must never
+    # fire from a fork toward the owner's box).
+    if: ${{ github.repository_owner == 'PaynePew' }}
     runs-on: ubuntu-latest
     steps:
       - name: Force-recreate to seed over SSH and smoke /healthz
         uses: appleboy/ssh-action@v1
         with:
-          host: box.paynepew.dev
-          username: deploy
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
             set -euo pipefail
