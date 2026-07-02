@@ -276,6 +276,9 @@ def _combine_grounding(outcome_a: GroundingOutcome, outcome_b: GroundingOutcome)
 
     return GroundingInfo(
         passed=passed,
+        # mypy cannot narrow GroundingOutcome.reason (the full 6-variant Literal
+        # grounding.py declares) to GroundingInfo's post-LLM-only subset from the
+        # runtime guard above — same shape as ingest._verify_draft's ignore.
         reason=reason,  # type: ignore[arg-type]
         claims=claims or None,
         unsupported_claims=unsupported or None,

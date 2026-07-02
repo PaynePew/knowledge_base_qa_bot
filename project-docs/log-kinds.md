@@ -192,7 +192,7 @@ Authorized by GitHub issue #376 (tier-B S1) and [ADR-0028](adr/0028-reconcile-st
 | `reconcile_apply_refused` | `reconcile.apply_reconcile()` refused because the apply-time grounding re-check failed for either page's submitted content (HTTP 422) | `page_a=<slug> page_b=<slug> reason=<GroundingInfo.reason>` |
 | `reconcile_applied` | `reconcile.apply_reconcile()` successfully rewrote both pages | `page_a=<slug> page_b=<slug>` |
 
-No log entry is emitted for the `ReconcileHashMismatch` (409) or `PageNotFound` (404) / `ReconcileInvalidPair` (400) refusal paths — those are request-shape / staleness rejections surfaced directly via HTTP status, not domain events (mirrors `qa_deleted`'s "only fires on success" convention).
+No log entry is emitted for the `ReconcileHashMismatch` (409), `PageNotFound` (404) / `ReconcileInvalidPair` (400), or `PageCorrupt` (500) refusal paths — those are request-shape / staleness / data-integrity rejections surfaced directly via HTTP status, not domain events (mirrors `qa_deleted`'s "only fires on success" convention).
 
 ---
 
