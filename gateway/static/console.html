@@ -112,6 +112,27 @@
     text-transform: uppercase;
   }
 
+  /* zh/en Lint chrome toggle (issue #365) — sits flush right of the
+     breadcrumb, immediately left of the reader link (its margin-left:auto
+     absorbs the row's free space; .mast-reader's own auto margin is then a
+     no-op since no space remains, keeping both flush right together). */
+  .mast-lang-toggle {
+    margin-left: auto;
+    background: none;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .04em;
+    color: var(--ink-3);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 5px 10px;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .mast-lang-toggle:hover {
+    color: var(--ink);
+    border-color: var(--ink-3);
+  }
+
   /* Reader link — navigates back */
   .mast-reader {
     margin-left: auto;
@@ -954,6 +975,10 @@
       </a>
       <span class="mast-sep">/</span>
       <span class="mast-page">console</span>
+      <!-- zh/en Lint chrome toggle (issue #365) — label is set/updated by
+           applyConsoleLang() below; this static "中文" is the pre-JS/no-JS
+           fallback (default language is English). -->
+      <button id="lang-toggle" class="mast-lang-toggle" type="button" aria-label="Toggle console language">中文</button>
       <a class="mast-reader" href="/">reader</a>
     </header>
 
@@ -1502,6 +1527,92 @@ var LINT_CHECK_META = {
   C9:  { label: "stale-qa",         tier: "deferred", findingsKey: "stale_filed_answers" },
 };
 
+/* ============================================================
+   zh/en Console header language toggle (issue #365, ADR-0023 tier-A S5)
+
+   Switches the Lint card's STRUCTURAL CHROME only — axis headers, check
+   labels, remediation button verbs, section chrome, empty states — between
+   en and zh, persisted in localStorage so the choice survives a reload
+   (issue #365 AC). The dynamic per-finding text (e.g. f.reason, f.source —
+   values that come straight off the LintResponse) is untouched; only
+   literal chrome strings owned by this file are bilingual (issue #365 AC:
+   "the dynamic suggested_action long text is unchanged").
+
+   LINT_AXIS_LABEL_ZH / LINT_CHECK_LABEL_ZH mirror the single source of
+   truth in markdown_kb/app/lint.py (LINT_AXIS_LABEL_ZH / LintCheckMeta.
+   label_zh, issue #365 S5 part 1) — the Console has no Python runtime
+   (see the taxonomy comment above), so this is the same "kept honest via
+   structural tests" mirror pattern S3 already established for
+   LINT_CHECK_META itself.
+   ============================================================ */
+var LANG_STORAGE_KEY = "kb-console-lang";
+var consoleLang = "en";
+try {
+  var _storedLang = localStorage.getItem(LANG_STORAGE_KEY);
+  if (_storedLang === "zh" || _storedLang === "en") consoleLang = _storedLang;
+} catch (e) { /* localStorage unavailable (private mode etc.) — default en */ }
+
+var LINT_AXIS_LABEL_ZH = {
+  Freshness: "新鮮度",
+  Coherence: "一致性",
+  Coverage:  "覆蓋率",
+  Lifecycle: "生命週期",
+};
+
+var LINT_CHECK_LABEL_ZH = {
+  C6:  "過時",
+  C3:  "驗證失敗",
+  C11: "孤立頁面",
+  C5:  "矛盾",
+  C4:  "重複",
+  C1:  "覆蓋缺口",
+  C2:  "失效連結",
+  C8:  "待升級",
+  C10: "格式錯誤",
+  C9:  "資料過舊",
+};
+
+/* Remediation button verbs + Lint-card section/empty-state chrome, per
+   language (issue #365 AC: "button verbs / section chrome / empty
+   states"). langToggleLabel is the header button's own text — it names the
+   language a click WOULD switch to, not the current one. */
+var LINT_CHROME = {
+  en: {
+    reingest:        "Re-ingest",
+    reingestRetry:   "Re-ingest (retry)",
+    reingestAll:     "Re-ingest all",
+    discard:         "Discard",
+    discardAll:      "Discard all",
+    tierB:           "Authored (tier B)",
+    noSource:        "No source recorded — review manually.",
+    checkErrors:     "Check errors",
+    noFindings:      "No findings — wiki is clean.",
+    langToggleLabel: "中文",
+  },
+  zh: {
+    reingest:        "重新匯入",
+    reingestRetry:   "重新匯入（重試）",
+    reingestAll:     "全部重新匯入",
+    discard:         "捨棄",
+    discardAll:      "全部捨棄",
+    tierB:           "需人工撰寫（Tier B）",
+    noSource:        "未記錄來源 — 請手動檢查。",
+    checkErrors:     "檢查錯誤",
+    noFindings:      "沒有發現問題 — 知識庫狀態良好。",
+    langToggleLabel: "EN",
+  },
+};
+
+/* Applies consoleLang to <html lang> (accessibility) and the header toggle
+   button's own label. Looked up fresh by id each call rather than a cached
+   reference — it is called once at boot and again on every toggle click, so
+   there is no hot-path cost to avoiding a second module-level DOM handle. */
+function applyConsoleLang() {
+  document.documentElement.lang = consoleLang === "zh" ? "zh-Hant" : "en";
+  var btn = document.getElementById("lang-toggle");
+  if (btn) btn.textContent = LINT_CHROME[consoleLang].langToggleLabel;
+}
+
 /* ── In-flight guard + durability notice (issue #364) ──────────────
    remediationInFlight is true while ANY Direct Remediation request (single
    row or batch) is running. It drives two things: (1) every remediation
@@ -1742,21 +1853,28 @@ function renderLintCard(data, resultEl) {
   var allButtons = [];
 
   /* Helper: emit an axis section heading. batchBtnEl (optional) renders an
-     axis-level batch action flush right (issue #364 — Freshness only). */
+     axis-level batch action flush right (issue #364 — Freshness only).
+     Display text is bilingual (issue #365) — LINT_AXIS_LABEL_ZH mirrors
+     markdown_kb/app/lint.py's zh strings; the axis identifier itself
+     (``axis``) stays English, only its rendered label switches. */
   function axisHead(axis, batchBtnEl) {
+    var label = consoleLang === "zh" ? LINT_AXIS_LABEL_ZH[axis] : axis;
     return el("div", { class: "lint-axis-head" },
-      el("span", { text: axis }),
+      el("span", { text: label }),
       batchBtnEl || null
     );
   }
 
   /* Helper: emit a check group heading, e.g. "C6 stale (2)". batchBtnEl
      (optional) renders a check-level batch action flush right (issue #364
-     — C6 "Re-ingest all", C10 "Discard all"). */
+     — C6 "Re-ingest all", C10 "Discard all"). Check label is bilingual
+     (issue #365) — LINT_CHECK_LABEL_ZH mirrors LintCheckMeta.label_zh; the
+     code itself (e.g. "C6") is never translated. */
   function checkHead(code, count, batchBtnEl) {
     var meta = LINT_CHECK_META[code];
+    var label = consoleLang === "zh" ? LINT_CHECK_LABEL_ZH[code] : meta.label;
     return el("div", { class: "lint-group-head" },
-      el("span", { text: code + " " + meta.label + " (" + count + ")" }),
+      el("span", { text: code + " " + label + " (" + count + ")" }),
       batchBtnEl || null
     );
   }
@@ -1779,19 +1897,21 @@ function renderLintCard(data, resultEl) {
   }
 
   /* Disabled "tier B" affordance for Authored-tier rows — visible, never
-     actionable (ADR-0023: Authored Remediation is out of tier-A scope). */
+     actionable (ADR-0023: Authored Remediation is out of tier-A scope).
+     Text is bilingual (issue #365) via LINT_CHROME. */
   function tierBAffordance() {
     return el("div", { class: "lint-row-actions" },
-      el("button", { class: "tier-b-btn", type: "button", disabled: "", text: "Authored (tier B)" })
+      el("button", { class: "tier-b-btn", type: "button", disabled: "", text: LINT_CHROME[consoleLang].tierB })
     );
   }
 
   /* Re-ingest / Re-ingest (retry) action for a C6/C3 finding.
      C3 MUST send force:true — omitting it lets hash-skip (#93) no-op the
-     retry into a false fix (ADR-0023 Invariant / CODING_STANDARD §12.8). */
+     retry into a false fix (ADR-0023 Invariant / CODING_STANDARD §12.8).
+     Button text + the empty-source note are bilingual (issue #365). */
   function reingestAction(source, retry) {
     var btn = el("button", { class: "reingest-btn", type: "button",
-      text: retry ? "Re-ingest (retry)" : "Re-ingest" });
+      text: retry ? LINT_CHROME[consoleLang].reingestRetry : LINT_CHROME[consoleLang].reingest });
     var statusMsgEl = el("span", { class: "card-status-msg" });
     // A finding can carry no source (e.g. a failed_grounding page whose
     // frontmatter.sources is empty — lint.py records source=""). There is
@@ -1800,7 +1920,7 @@ function renderLintCard(data, resultEl) {
     // error (ADR-0023 "honest, not alarmist" — no false affordance).
     if (!source) {
       btn.disabled = true;
-      statusMsgEl.textContent = "No source recorded — review manually.";
+      statusMsgEl.textContent = LINT_CHROME[consoleLang].noSource;
       return el("div", { class: "lint-row-actions" }, btn, statusMsgEl);
     }
     allButtons.push(btn);
@@ -1812,9 +1932,10 @@ function renderLintCard(data, resultEl) {
   }
 
   /* Discard action for a C10 finding — DELETE /wiki/qa/{slug}, server-gated
-     (refuses status:live with 409; §12.5). */
+     (refuses status:live with 409; §12.5). Button text is bilingual
+     (issue #365). */
   function discardAction(slug) {
-    var btn = el("button", { class: "discard-btn", type: "button", text: "Discard" });
+    var btn = el("button", { class: "discard-btn", type: "button", text: LINT_CHROME[consoleLang].discard });
     var statusMsgEl = el("span", { class: "card-status-msg" });
     allButtons.push(btn);
     btn.addEventListener("click", function() {
@@ -1830,10 +1951,10 @@ function renderLintCard(data, resultEl) {
      mirrors the per-row C6 action: false) and the Freshness axis-level
      button (C6∪C3, force:true — mandatory because C3 sources are mixed in;
      ADR-0023 Invariant). extraClass distinguishes the two call sites in the
-     DOM (structural test anchor). */
+     DOM (structural test anchor). Button text is bilingual (issue #365). */
   function reingestAllAction(sources, force, extraClass) {
     var btn = el("button", { class: "reingest-btn " + extraClass, type: "button",
-      text: "Re-ingest all (" + sources.length + ")" });
+      text: LINT_CHROME[consoleLang].reingestAll + " (" + sources.length + ")" });
     var statusMsgEl = el("span", { class: "card-status-msg" });
     allButtons.push(btn);
     btn.addEventListener("click", function() {
@@ -1868,10 +1989,18 @@ function renderLintCard(data, resultEl) {
      DELETE /wiki/qa/{slug} calls sequentially behind one click/button — an
      N -> 1 *click*, not an N -> 1 *call* (unlike the ingest batches above,
      which share cross-item used_slugs state that a client loop would
-     break — DELETE /qa has no such shared state, so looping here is safe). */
+     break — DELETE /qa has no such shared state, so looping here is safe).
+     Button text is bilingual (issue #365): built with the English string
+     literally (kept verbatim so it stays a stable anchor for the existing
+     S4 structural test), then overwritten via the same imperative
+     .textContent pattern this file already uses elsewhere (e.g. the status
+     message updates below) when the zh chrome is active. */
   function discardAllAction(slugs) {
     var btn = el("button", { class: "discard-btn check-batch-btn", type: "button",
       text: "Discard all (" + slugs.length + ")" });
+    if (consoleLang === "zh") {
+      btn.textContent = LINT_CHROME.zh.discardAll + " (" + slugs.length + ")";
+    }
     var statusMsgEl = el("span", { class: "card-status-msg" });
     allButtons.push(btn);
     btn.addEventListener("click", function() {
@@ -2014,20 +2143,21 @@ function renderLintCard(data, resultEl) {
     axisBody.forEach(function(node) { bodyEl.append(node); });
   });
 
-  /* Check errors — not axis-scoped, surfaced after the axis groups */
+  /* Check errors — not axis-scoped, surfaced after the axis groups.
+     Header text is bilingual (issue #365). */
   var errKeys = Object.keys(checkErrors);
   if (errKeys.length > 0) {
     renderedAnyFindings = true;
-    bodyEl.append(el("div", { class: "lint-group-head", text: "Check errors (" + errKeys.length + ")" }));
+    bodyEl.append(el("div", { class: "lint-group-head", text: LINT_CHROME[consoleLang].checkErrors + " (" + errKeys.length + ")" }));
     errKeys.forEach(function(k, i) {
       bodyEl.append(findingRow(i + 1, k, checkErrors[k], "error", "label-failed"));
     });
   }
 
-  /* No findings at all */
+  /* No findings at all — empty-state text is bilingual (issue #365) */
   if (!renderedAnyFindings) {
     bodyEl.append(el("div", { style: "padding:12px 16px; font-size:13px; color:var(--pass);",
-      text: "No findings — wiki is clean." }));
+      text: LINT_CHROME[consoleLang].noFindings }));
   }
 
   return el("div", { class: "result-card" }, head, bodyEl);
@@ -2317,6 +2447,10 @@ function buildPipeline(rootEl) {
 
   STEP_DEFS.forEach(function(step) {
     var resultEl = el("div", { class: "step-result" });
+    // Stash the Lint step's own result container (issue #365) so the
+    // header language toggle can re-render an already-visible Lint card
+    // in place, without waiting for another Run click.
+    if (step.id === "lint") lintResultEl = resultEl;
 
     /* Per-step busy state + button toggle */
     var runBtn;
@@ -2382,6 +2516,11 @@ function buildPipeline(rootEl) {
 
 /* Module-level store for the latest LintResponse */
 var lastLintData = null;
+
+/* Module-level handle to the Lint step's own result container, set by
+   buildPipeline (issue #365) so the header language toggle can re-render an
+   already-visible Lint card in place. */
+var lintResultEl = null;
 
 /* ── Curation Queue renderer ──────────────────────────────── */
 function renderCurationQueue(rootEl, lintData) {
@@ -2775,6 +2914,32 @@ function doDiscard(slug, cardEl, statusMsgEl, setActionBusy) {
 
 /* ── Boot ──────────────────────────────────────────────────── */
 buildPipeline(document.getElementById("pipeline-root"));
+
+/* zh/en Console header language toggle (issue #365) — wired after
+   buildPipeline so lintResultEl is already set. Persists the choice to
+   localStorage and, if a Lint card is already on screen, re-renders it in
+   place so the switch is visible immediately. */
+(function initConsoleLangToggle() {
+  var btn = document.getElementById("lang-toggle");
+  if (btn) {
+    btn.addEventListener("click", function() {
+      consoleLang = consoleLang === "zh" ? "en" : "zh";
+      try { localStorage.setItem(LANG_STORAGE_KEY, consoleLang); }
+      catch (e) { /* private-mode / disabled storage — language still switches for this session */ }
+      applyConsoleLang();
+      // Do NOT re-render the Lint card while a remediation is in flight: that
+      // would mint fresh (enabled) buttons and defeat the #364 no-double-submit
+      // busy-state guard. The static chrome switches immediately via
+      // applyConsoleLang() above; the card itself re-renders in the new language
+      // when the in-flight remediation finishes its own re-lint (which runs only
+      // after remediationInFlight is cleared).
+      if (lastLintData && lintResultEl && !remediationInFlight) {
+        lintResultEl.replaceChildren(renderLintCard(lastLintData, lintResultEl));
+      }
+    });
+  }
+  applyConsoleLang();
+})();
 
 /* Populate the Curation Queue immediately via the fast (LLM-free) lint path.
    The queue only needs the local C8/C9/C10 checks, so it must not wait on the
