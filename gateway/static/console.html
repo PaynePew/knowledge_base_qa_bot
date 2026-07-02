@@ -1611,6 +1611,16 @@ function renderLintCard(data, resultEl) {
     var btn = el("button", { class: "reingest-btn", type: "button",
       text: retry ? "Re-ingest (retry)" : "Re-ingest" });
     var statusMsgEl = el("span", { class: "card-status-msg" });
+    // A finding can carry no source (e.g. a failed_grounding page whose
+    // frontmatter.sources is empty — lint.py records source=""). There is
+    // nothing to re-ingest, and POST /wiki/ingest of "" fails server-side, so
+    // disable the button and say why rather than offering a click that can only
+    // error (ADR-0023 "honest, not alarmist" — no false affordance).
+    if (!source) {
+      btn.disabled = true;
+      statusMsgEl.textContent = "No source recorded — review manually.";
+      return el("div", { class: "lint-row-actions" }, btn, statusMsgEl);
+    }
     btn.addEventListener("click", function() {
       if (btn.disabled) return;
       runLintRemediation(ingestRemediationRequest(source, retry === true), btn, statusMsgEl, resultEl);

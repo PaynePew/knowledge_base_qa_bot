@@ -98,6 +98,24 @@ def test_c3_failed_grounding_gets_reingest_retry_with_force_true():
     )
 
 
+def test_reingest_button_disabled_when_source_empty():
+    """A C6/C3 finding with an empty source (lint.py records source="" when the
+    page's frontmatter.sources is empty) must NOT offer a click that can only
+    fail. reingestAction guards the empty-source case: it disables the button
+    and shows an honest note instead of POSTing an empty-source ingest
+    (verify-gate low finding; ADR-0023 'honest, not alarmist' durability)."""
+    text = _console_text()
+    reingest_fn = re.search(r"function reingestAction\(.*?\n  \}", text, re.DOTALL)
+    assert reingest_fn is not None
+    body = reingest_fn.group(0)
+    assert "if (!source)" in body, (
+        "reingestAction must guard the empty-source case before wiring a click"
+    )
+    assert "btn.disabled = true" in body, (
+        "the empty-source guard must disable the Re-ingest button"
+    )
+
+
 def test_c10_invalid_schema_gets_discard_button_in_lint_card():
     text = _console_text()
     assert "discardAction(f.page_slug)" in text, (
