@@ -176,6 +176,50 @@ def test_promote_batch_mixed_valid_and_invalid_promotes_only_valid(tmp_path):
     assert "status: live" in content
 
 
+def test_promote_batch_rejects_pathlike_slugs(tmp_path):
+    """Body-supplied slugs get no path-segment guarantee from FastAPI, so a
+    separator / parent-ref / NUL slug must be skipped as invalid_slug BEFORE
+    any filesystem access — the join would otherwise escape wiki/qa/
+    (verify finding on PR #393)."""
+    from app.qa import promote_batch
+
+    # A real draft OUTSIDE wiki/qa/ that a traversal slug would reach.
+    outside = tmp_path / "wiki" / "entities"
+    outside.mkdir(parents=True, exist_ok=True)
+    (outside / "escape-target.md").write_text(
+        "---\nstatus: draft\n---\n\nnot a qa page.\n", encoding="utf-8"
+    )
+
+    bad = [
+        "../entities/escape-target",
+        "..\\entities\\escape-target",
+        "sub/dir",
+        "..",
+        ".",
+        "",
+        "nul\x00byte",
+    ]
+    result = promote_batch(bad)
+
+    assert result.promoted == []
+    assert [s.reason for s in result.skipped] == ["invalid_slug"] * len(bad)
+    # The out-of-tree draft was never touched — still status: draft.
+    assert "status: draft" in (outside / "escape-target.md").read_text(encoding="utf-8")
+
+
+def test_promote_batch_cjk_slug_is_valid(tmp_path):
+    """Real corpus slugs include CJK (e.g. 你們接受哪些付款方式-fb0f2e) — the
+    path-shape guard must not over-reject them."""
+    from app.qa import promote_batch
+
+    _write_raw_qa(tmp_path, "你們接受哪些付款方式-fb0f2e", "draft")
+
+    result = promote_batch(["你們接受哪些付款方式-fb0f2e"])
+
+    assert result.promoted == ["你們接受哪些付款方式-fb0f2e"]
+    assert result.skipped == []
+
+
 def test_promote_batch_empty_list_returns_empty_result(tmp_path):
     from app.qa import promote_batch
 

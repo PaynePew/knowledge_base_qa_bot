@@ -759,6 +759,23 @@ def promote(slug: str) -> FiledStatus:
 # ---------------------------------------------------------------------------
 
 
+def _is_bare_slug(slug: str) -> bool:
+    """True iff ``slug`` is a bare single filename component, so that
+    ``_qa_dir() / f"{slug}.md"`` cannot resolve outside ``wiki/qa/``.
+
+    The single-item endpoints (``/qa/{slug}/promote`` etc.) get this
+    property for free — a FastAPI path segment cannot contain ``/`` — but
+    ``promote_batch``'s slugs arrive in the JSON body with no such
+    guarantee, so the same property is enforced here (both separators are
+    rejected because the repo runs on Windows AND the Linux deploy). CJK
+    slugs are real corpus shapes (``compute_slug`` preserves them) and stay
+    valid — this is a path-shape guard, not a charset allowlist.
+    """
+    if not slug or slug in {".", ".."}:
+        return False
+    return not any(ch in slug for ch in ("/", "\\", "\x00"))
+
+
 def promote_batch(slugs: list[str]) -> QaPromoteBatchResponse:
     """Curator-driven batch promotion: flip every valid slug in ``slugs`` draft -> live.
 
@@ -772,6 +789,10 @@ def promote_batch(slugs: list[str]) -> QaPromoteBatchResponse:
     Per-slug validation, each independent of the others (a bad slug never
     aborts the batch — non-transactional, ADR-0023):
 
+    - slug not a bare filename component      -> skipped, reason="invalid_slug"
+      (separators / parent refs / NUL — see ``_is_bare_slug``; the batch's
+      slugs arrive in the JSON body, so they never got the no-"/" guarantee
+      a FastAPI path segment gives the single-item endpoints)
     - missing file                            -> skipped, reason="not_found"
     - frontmatter unparseable                 -> skipped, reason="corrupt_frontmatter"
     - ``status`` not in ``{"draft", "live"}``  -> skipped, reason="invalid_status:<value>"
@@ -809,6 +830,10 @@ def promote_batch(slugs: list[str]) -> QaPromoteBatchResponse:
     qa_dir = _qa_dir()
 
     for slug in slugs:
+        if not _is_bare_slug(slug):
+            skipped.append(SkippedSlug(slug=slug, reason="invalid_slug"))
+            continue
+
         path = qa_dir / f"{slug}.md"
         with _filing_lock:
             if not path.exists():
