@@ -1852,7 +1852,6 @@ var LINT_CHROME = {
     deleteConfirm:       "Delete permanently",
     deleteCancel:        "Cancel",
     deleteWorking:       "Deleting…",
-    deleteSuccessPrefix: "deleted orphan page",
     partialOrphanAdvisory: "Partial orphan — a Source still exists. Repair the citation; never delete.",
   },
   zh: {
@@ -1884,7 +1883,6 @@ var LINT_CHROME = {
     deleteConfirm:       "永久刪除",
     deleteCancel:        "取消",
     deleteWorking:       "刪除中…",
-    deleteSuccessPrefix: "已刪除孤立頁面",
     partialOrphanAdvisory: "部分孤立 — 仍有 Source 存在，請修正引用，勿刪除。",
   },
 };
@@ -2544,7 +2542,8 @@ function renderLintCard(data, resultEl) {
    .reconcile-modal/.reconcile-actions chrome (same modal shape, different
    body) rather than inventing a second modal system. On success, closes the
    modal and re-runs the SAME fast (include_c5=false) re-lint + re-render
-   every other remediation on this card uses, so the deleted page's finding
+   every other remediation on this card uses (the ``renderCollisionMerge/
+   DifferentiatePreview`` apply-success shape) so the deleted page's finding
    drops out of the re-rendered Freshness section. */
 function openDeleteOrphanConfirm(slug, resultEl, siblingButtons) {
   var overlay = el("div", { class: "reconcile-overlay" });
@@ -2573,11 +2572,18 @@ function openDeleteOrphanConfirm(slug, resultEl, siblingButtons) {
 
     deleteOrphanRequest(slug)
       .then(function() {
+        return fetch("/wiki/lint?include_c5=false", { method: "POST" });
+      })
+      .then(function(resp) {
+        if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+        return resp.json();
+      })
+      .then(function(lintData) {
+        remediationInFlight = false;
         closeModal();
-        finishBatchRemediation(
-          LINT_CHROME[consoleLang].deleteSuccessPrefix + " '" + slug + "'",
-          resultEl, siblingButtons
-        );
+        lastLintData = lintData;
+        if (resultEl) resultEl.replaceChildren(renderLintCard(lintData, resultEl));
+        renderCurationQueue(document.getElementById("curation-queue-root"), lintData);
       })
       .catch(function(err) {
         remediationInFlight = false;

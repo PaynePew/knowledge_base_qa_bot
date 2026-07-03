@@ -142,13 +142,21 @@ def test_confirm_posts_delete_to_pages_endpoint():
     assert 'method: "DELETE"' in body
 
 
-def test_confirm_success_closes_modal_and_relints():
+def test_confirm_success_relints_then_closes_modal_and_rerenders():
     body = _open_delete_confirm_body()
-    success_branch = re.search(r"\.then\(function\(\)\s*\{(.*?)\n      \}\)", body, re.DOTALL)
+    # The success chain: delete -> POST /wiki/lint?include_c5=false -> close +
+    # re-render (mirrors the collision/reconcile apply-success shape: the
+    # modal closes only after the re-lint read-back resolves, never before).
+    assert '"/wiki/lint?include_c5=false"' in body
+    assert 'method: "POST"' in body
+    success_branch = re.search(
+        r"\.then\(function\(lintData\)\s*\{(.*?)\n      \}\)", body, re.DOTALL
+    )
     assert success_branch is not None
     success_text = success_branch.group(0)
     assert "closeModal()" in success_text
-    assert "finishBatchRemediation(" in success_text
+    assert "renderLintCard(lintData, resultEl)" in success_text
+    assert "renderCurationQueue(" in success_text
 
 
 def test_confirm_409_refusal_renders_honest_message_and_reenables():
