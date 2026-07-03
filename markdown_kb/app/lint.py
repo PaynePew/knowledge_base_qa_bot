@@ -2444,9 +2444,9 @@ def remediation_for(code: str) -> RemediationDescriptor:
     Pure lookup into ``_REMEDIATION_TAXONOMY`` — the single source of truth
     for which checks are Direct / Authored / Confirmed / Routed / deferred
     (ADR-0023 / ADR-0024 / ADR-0027). ``code`` is one of the ten
-    ``LINT_CHECK_TAXONOMY`` keys (a
-    finding *type*, e.g. ``"C6"`` — the tier/action/target-field/force shape
-    does not vary per finding *instance*, only per check). Raises
+    ``LINT_CHECK_TAXONOMY`` keys (a finding *type*, e.g. ``"C6"`` — the
+    tier/action/target-field/force shape does not vary per finding
+    *instance*, only per check). Raises
     ``KeyError`` for an unknown code so a typo fails loudly rather than
     silently rendering no Remediation.
     """
