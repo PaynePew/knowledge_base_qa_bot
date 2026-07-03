@@ -79,7 +79,7 @@ from pathlib import Path
 
 from ._paths import DOCS_DIR
 from .errors import LLMError
-from .grounding import verify
+from .grounding import GroundingResult, verify
 from .indexer import _index_lock, parse_markdown, slugify, split_frontmatter
 from .logger import log_event
 from .schemas import GroundingFailure, IngestSourceResult
@@ -341,6 +341,22 @@ def _synthesize_concept_drafts(sections: list) -> list:
     return drafts
 
 
+def _derive_unsupported_claims(result: GroundingResult | None) -> list[str]:
+    """Union of claims[] entries where supported=False with the flat list.
+
+    ``claims[]`` (per-claim ``supported: bool``) is the authoritative source;
+    the flat ``unsupported_claims`` list is prompt-asked to mirror it but
+    nothing enforces that, so a claim marked unsupported in ``claims[]`` can
+    be missing from the flat list (issue #404). Derive from ``claims[]``
+    first and union in the flat list belt-and-braces so a flat-only entry
+    still survives. Order-preserving, de-duplicated.
+    """
+    if result is None:
+        return []
+    derived = [c.text for c in result.claims if not c.supported]
+    return list(dict.fromkeys(derived + result.unsupported_claims))
+
+
 def _verify_draft(draft, sections: list) -> tuple:
     """Run the grounding verifier on one WikiPageDraft.
 
@@ -355,9 +371,7 @@ def _verify_draft(draft, sections: list) -> tuple:
         return draft, False
 
     reason = grounding_outcome.reason
-    unsupported: list[str] = []
-    if grounding_outcome.result is not None and grounding_outcome.result.unsupported_claims:
-        unsupported = grounding_outcome.result.unsupported_claims
+    unsupported = _derive_unsupported_claims(grounding_outcome.result)
 
     # mypy cannot narrow grounding_outcome.reason (full 6-variant Literal)
     # to GroundingFailure.reason from the runtime guard above.
