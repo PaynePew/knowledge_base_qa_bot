@@ -1,6 +1,7 @@
 """Shallow module per Ousterhout. Public surface: ``router``.
 
-HTTP wiring for /health, /index, /chat, /ingest, /lint, /import,
+HTTP wiring for /health, /index, /chat, /qa/{slug}/promote,
+/qa/{slug} (DELETE, PUT), /ingest, /lint, /import,
 /pages/reconcile, /pages/reconcile/apply, /pages/collision/merge,
 /pages/collision/merge/apply, /pages/collision/differentiate,
 /pages/collision/differentiate/apply. No domain logic."""
@@ -41,6 +42,7 @@ from .schemas import (
     IngestRequest,
     IngestResponse,
     LintResponse,
+    QaEditRequest,
     ReconcileApplyRequest,
     ReconcileApplyResponse,
     ReconcileGenerateRequest,
@@ -219,6 +221,58 @@ def delete_qa(slug: str) -> None:
         raise HTTPException(
             status_code=409,
             detail=f"wiki/qa/{slug}.md has status=live; delete refused (ADR-0012)",
+        ) from exc
+
+
+@router.put("/qa/{slug}", response_model=FiledStatus)
+def edit_qa(slug: str, req: QaEditRequest) -> FiledStatus:
+    """Curator endpoint: edit a draft ``wiki/qa/<slug>.md``'s question/body in place.
+
+    tier-B S3 (issue #379) / ADR-0026 decision 2. Completes the Curation
+    Queue gate's verb set — approve (``/promote``) / edit-then-approve
+    (this endpoint, then ``/promote``) / discard (``DELETE``). Draft-only:
+    refuses a ``status: live`` page (live hand-edits keep the documented
+    file-level path). Re-runs the LLM-free grounding check against the
+    page's cited Sections on the submitted ``body``; a failing check writes
+    nothing (ADR-0026: "the re-check is LLM-free and instant").
+
+    Shallow wrapper around ``qa.edit`` (CODING_STANDARD §2.3 — all domain
+    logic lives in ``qa.py``). No reindex: an edited page stays ``status:
+    draft`` and drafts never enter the BM25 corpus (``promote`` reindexes).
+
+    Exception mapping:
+
+    - ``QaPageNotFound`` → ``404`` (slug has never been filed)
+    - ``QaPageCorrupt``  → ``500`` (orphan-visibility — surface broken state
+      rather than silently rewriting it)
+    - ``QaPageLive``     → ``409`` (edit refused — draft-only, ADR-0026)
+    - ``QaEditRejected`` → ``422`` (grounding re-check failed;
+      ``detail.failures`` lists every problem)
+    """
+    try:
+        return qa_module.edit(slug, req.question, req.body)
+    except qa_module.QaPageNotFound as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"wiki/qa/{slug}.md not found",
+        ) from exc
+    except qa_module.QaPageCorrupt as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"wiki/qa/{slug}.md has corrupt frontmatter: {exc}",
+        ) from exc
+    except qa_module.QaPageLive as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"wiki/qa/{slug}.md has status=live; edit refused (ADR-0026)",
+        ) from exc
+    except qa_module.QaEditRejected as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "qa edit content failed grounding re-check",
+                "failures": exc.failures,
+            },
         ) from exc
 
 

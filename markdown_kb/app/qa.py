@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``compute_slug``, ``normalize_question``, ``maybe_file_answer``, ``dispatch_filing``, ``promote``, ``delete``, ``QaPageNotFound``, ``QaPageCorrupt``, ``QaPageLive``.
+"""Deep module per Ousterhout. Public surface: ``compute_slug``, ``normalize_question``, ``maybe_file_answer``, ``dispatch_filing``, ``promote``, ``delete``, ``edit``, ``QaPageNotFound``, ``QaPageCorrupt``, ``QaPageLive``, ``QaEditRejected``.
 
 Phase 6 Slice 6-2 — Answer Filing for ``POST /chat``.
 Phase 6 Slice 6-4 — curator-driven ``promote(slug)`` flips ``status: draft -> live``.
@@ -35,6 +35,14 @@ Design constraints (PRD #78):
 
 Atomic write uses tmp file + ``os.replace`` per CODING_STANDARD §2.6 — same
 convention as ``wiki_writer.py``.
+
+tier-B S3 (issue #379, ADR-0026 decision 2) — ``edit(slug, question, body)``
+completes the Curation Queue gate's verb set (approve / edit-then-approve /
+discard). Draft-only: refuses a ``status: live`` page (live hand-edits keep
+the documented file-level path). Re-runs the Grounding Check against the
+page's cited Sections (``frontmatter.sources``, resolved back to their wiki
+content by ``_resolve_cited_sections``) on the submitted body — a failing
+check writes nothing (``QaEditRejected``); only a pass rewrites the page.
 """
 
 from __future__ import annotations
@@ -50,7 +58,7 @@ import yaml
 
 from .atomic import write_text_atomic
 from .grounding import CitableContent
-from .indexer import slugify
+from .indexer import parse_markdown, slugify
 from .logger import log_event
 from .schemas import FiledStatus, WikiPageFrontmatter
 
@@ -698,17 +706,214 @@ def promote(slug: str) -> FiledStatus:
 
 
 # ---------------------------------------------------------------------------
+# Edit (tier-B S3, issue #379, ADR-0026 decision 2)
+# ---------------------------------------------------------------------------
+
+
+class QaEditRejected(Exception):
+    """Raised by ``edit`` when the submitted body fails the LLM-free
+    grounding re-check against the page's cited Sections (ADR-0026
+    decision 2: "the re-check is LLM-free and instant"). Carries the
+    caller-facing failure list so the route can render every problem
+    honestly. Nothing is written when this is raised."""
+
+    def __init__(self, failures: list[str]) -> None:
+        self.failures = failures
+        super().__init__("qa edit content failed grounding re-check")
+
+
+def _resolve_cited_sections(source_ids: list[str], wiki_dir: Path) -> list[CitableContent]:
+    """Resolve a qa page's ``frontmatter.sources`` ids back into Sections.
+
+    Each id has the shape ``<wiki-page-slug>#<heading-slug>`` — the slug-based
+    addressing ``indexer.parse_markdown`` assigns to wiki-derived pages (the
+    page's type subdir is not encoded in the id, so ``entities``/``concepts``/
+    ``qa`` are each tried in turn; a filed qa answer can itself cite an
+    already-promoted qa page). Re-parses the cited pages directly from disk
+    rather than depending on the in-memory BM25 index being loaded, so the
+    check works the same whether or not ``build_index()`` has run yet.
+
+    A citation whose page no longer resolves, or whose heading no longer
+    exists on that page, is skipped — best-effort, mirrors
+    ``reconcile._collect_union_sections``'s tolerance of a missing Source (a
+    dangling citation is then reported by ``_check_edit_grounding`` as an
+    unresolvable-citation failure).
+    """
+    sections: list[CitableContent] = []
+    seen_ids: set[str] = set()
+    parsed_by_page: dict[str, list] = {}
+
+    for source_id in source_ids:
+        page_slug, sep, _heading_slug = source_id.partition("#")
+        if not sep:
+            continue
+        if page_slug not in parsed_by_page:
+            page_path = None
+            for subdir_name in ("entities", "concepts", "qa"):
+                candidate = wiki_dir / subdir_name / f"{page_slug}.md"
+                if candidate.exists():
+                    page_path = candidate
+                    break
+            if page_path is None:
+                parsed_by_page[page_slug] = []
+            else:
+                try:
+                    parsed_by_page[page_slug] = parse_markdown(page_path, source_id=page_slug)
+                except Exception:  # noqa: BLE001 — a malformed page degrades context, not a hard error
+                    parsed_by_page[page_slug] = []
+
+        for sec in parsed_by_page[page_slug]:
+            if sec.id == source_id and sec.id not in seen_ids:
+                seen_ids.add(sec.id)
+                sections.append(sec)
+
+    return sections
+
+
+_INLINE_CITATION_RE = re.compile(r"\[Source:\s*([^\]]+?)\s*\]")
+
+
+def _check_edit_grounding(body: str, sources: list[str], wiki_dir: Path) -> list[str]:
+    """LLM-free grounding re-check for a draft edit (ADR-0026 decision 2).
+
+    Deterministic and instant — no LLM call (the ADR's rejected-alternatives
+    note: "The re-check is LLM-free and instant; there is no cost argument
+    for skipping it"). The human curator is the semantic judge at this gate;
+    the server enforces that the edited text stays *structurally* grounded
+    in the page's recorded Sections:
+
+      1. the body carries at least one inline ``[Source: <id>]`` citation,
+      2. every cited id is among ``frontmatter.sources`` (an edit never
+         widens sources — Re-file is the path to fresh Sources), and
+      3. every cited id still resolves to a Section on disk.
+
+    Returns the failure list; empty means the edit passes.
+    """
+    cited = [c.strip() for c in _INLINE_CITATION_RE.findall(body)]
+    if not cited:
+        return [
+            "edited body contains no [Source: ...] citation — "
+            "a Filed Answer must cite the Sections it derives from"
+        ]
+
+    failures: list[str] = []
+    allowed = set(sources)
+    resolved_ids = {s.id for s in _resolve_cited_sections(sorted(set(cited)), wiki_dir)}
+    for citation in dict.fromkeys(cited):
+        if citation not in allowed:
+            failures.append(
+                f"citation '{citation}' is not among this page's sources — an edit "
+                "cannot widen sources (use Re-file to re-derive from fresh Sources)"
+            )
+        elif citation not in resolved_ids:
+            failures.append(f"citation '{citation}' no longer resolves to a wiki Section")
+    return failures
+
+
+def edit(slug: str, question: str, body: str) -> FiledStatus:
+    """Curator-driven edit: rewrite a draft ``wiki/qa/<slug>.md``'s question/body in place.
+
+    ADR-0026 decision 2 — completes the gate's verb set: approve (``promote``)
+    / edit-then-approve (``edit`` then ``promote``) / discard (``delete``).
+
+    - Acquires ``_filing_lock`` (same as ``maybe_file_answer``/``promote``/
+      ``delete``) so an edit cannot interleave with a concurrent filing touch
+      or promote on the same slug.
+    - Not found → ``QaPageNotFound``. Corrupt/invalid-status frontmatter →
+      ``QaPageCorrupt`` (orphan-visibility — surface broken state rather than
+      silently rewriting it, mirrors ``promote``).
+    - ``status == "live"`` → ``QaPageLive``. Draft-only: live hand-edits keep
+      the documented file-level path (ADR-0026).
+    - Re-runs the LLM-free grounding check (``_check_edit_grounding``)
+      against the page's *existing* cited Sections (``frontmatter.sources``
+      is not widened by the edit) on the submitted ``body``. A failing check
+      raises ``QaEditRejected`` with the failure list and writes nothing.
+    - On pass, rewrites the page: ``question``/``body`` become the submitted
+      values, ``updated`` bumps to now, ``status`` stays ``"draft"`` (an edit
+      never promotes) — ``id``/``created``/``sources``/``count``/
+      ``open_questions`` are preserved verbatim.
+
+    Returns:
+        ``FiledStatus`` with ``status="draft"``, ``op="touched"`` (edit is
+        structurally a touch from the FiledStatus enum perspective, same
+        reuse ``promote`` makes of the enum), and the preserved ``count``.
+
+    Raises:
+        QaPageNotFound: no ``wiki/qa/<slug>.md`` on disk.
+        QaPageCorrupt: existing frontmatter has invalid / unparseable
+            ``status`` (orphan zombie).
+        QaPageLive: existing ``status`` is ``"live"`` — edit refused.
+        QaEditRejected: the submitted body failed the grounding re-check
+            against its cited Sections; nothing is written.
+    """
+    qa_dir = _qa_dir()
+    path = qa_dir / f"{slug}.md"
+
+    with _filing_lock:
+        if not path.exists():
+            raise QaPageNotFound(f"wiki/qa/{slug}.md not found")
+
+        existing = _read_existing_frontmatter(path)
+        if existing is None:
+            raise QaPageCorrupt(f"wiki/qa/{slug}.md exists but its frontmatter could not be parsed")
+
+        existing_status = existing.get("status")
+        if existing_status not in {"draft", "live"}:
+            raise QaPageCorrupt(
+                f"wiki/qa/{slug}.md has invalid status={existing_status!r}; "
+                "expected 'draft' or 'live'. The page is left untouched so the "
+                "curator can inspect and repair."
+            )
+        if existing_status == "live":
+            raise QaPageLive(
+                f"wiki/qa/{slug}.md has status=live; edit refused (draft-only, ADR-0026). "
+                "Live hand-edits keep the documented file-level path."
+            )
+
+        existing_sources = [str(s) for s in existing.get("sources", [])]
+        failures = _check_edit_grounding(body, existing_sources, qa_dir.parent)
+        if failures:
+            log_event("qa_edit_rejected", f"slug={slug} failures={len(failures)}")
+            raise QaEditRejected(failures)
+
+        try:
+            existing_count = int(existing.get("count", 1))
+        except (TypeError, ValueError):
+            existing_count = 1
+        existing_created = existing.get("created", _utc_now_iso())
+        existing_open_questions = existing.get("open_questions") or []
+
+        fm = WikiPageFrontmatter(
+            id=existing.get("id", slug),
+            type="qa",
+            created=existing_created,
+            updated=_utc_now_iso(),
+            sources=existing_sources,
+            status="draft",
+            open_questions=existing_open_questions,
+            question=question,
+            count=existing_count,
+        )
+        content = _render_qa_page(fm, body)
+        _atomic_write(path, content)
+
+        log_event("qa_reflect", f"slug={slug} op=edited count={existing_count}")
+        return FiledStatus(slug=slug, status="draft", op="touched", count=existing_count)
+
+
+# ---------------------------------------------------------------------------
 # Delete (Phase 15 Slice 6 / ADR-0012)
 # ---------------------------------------------------------------------------
 
 
 class QaPageLive(Exception):
-    """Raised by ``delete`` when the page's ``status`` is ``live``.
+    """Raised by ``delete`` and ``edit`` when the page's ``status`` is ``live``.
 
     Live pages are the only pages that enter the BM25 corpus and are the
-    "precious" state that must not be removed via a one-click console action.
-    The Console UI gate and the route layer both map this to ``HTTP 409``
-    (Conflict) per ADR-0012.
+    "precious" state that must not be removed via a one-click console action
+    (``delete``, ADR-0012) or bypass the file-level hand-edit path
+    (``edit``, ADR-0026 — draft-only). The Console UI gate and the route
+    layer both map this to ``HTTP 409`` (Conflict).
 
     Not a subclass of ``ValueError`` or ``OSError`` — a distinct sentinel
     keeps the route handler dispatch clean without overloading exception

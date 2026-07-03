@@ -1,4 +1,4 @@
-"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``CitationRef``, ``FiledStatus``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``, ``CoverageGapFinding``, ``PagePairFinding``, ``PromotionCandidateFinding``, ``QaStalenessFinding``, ``InvalidQaSchemaFinding``, ``ImportRequest``, ``ImportSourceResultSchema``, ``ImportFailureSchema``, ``ImportResponse``, ``ReconcileDraft``, ``ReconcileGenerateRequest``, ``ReconcileGenerateResponse``, ``ReconcileApplyRequest``, ``ReconcileApplyResponse``, ``CollisionMergeDraft``, ``CollisionPageDraft``, ``CollisionDifferentiateDraft``, ``CollisionMergeGenerateRequest``, ``CollisionMergeGenerateResponse``, ``CollisionMergeApplyRequest``, ``InboundReference``, ``CollisionMergeApplyResponse``, ``CollisionDifferentiateGenerateRequest``, ``CollisionDifferentiateGenerateResponse``, ``CollisionDifferentiateApplyRequest``, ``CollisionDifferentiateApplyResponse``).
+"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``CitationRef``, ``FiledStatus``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``, ``CoverageGapFinding``, ``PagePairFinding``, ``PromotionCandidateFinding``, ``QaStalenessFinding``, ``InvalidQaSchemaFinding``, ``QaEditRequest``, ``ImportRequest``, ``ImportSourceResultSchema``, ``ImportFailureSchema``, ``ImportResponse``, ``ReconcileDraft``, ``ReconcileGenerateRequest``, ``ReconcileGenerateResponse``, ``ReconcileApplyRequest``, ``ReconcileApplyResponse``, ``CollisionMergeDraft``, ``CollisionPageDraft``, ``CollisionDifferentiateDraft``, ``CollisionMergeGenerateRequest``, ``CollisionMergeGenerateResponse``, ``CollisionMergeApplyRequest``, ``InboundReference``, ``CollisionMergeApplyResponse``, ``CollisionDifferentiateGenerateRequest``, ``CollisionDifferentiateGenerateResponse``, ``CollisionDifferentiateApplyRequest``, ``CollisionDifferentiateApplyResponse``).
 
 Pydantic request/response models for the FastAPI routes. No domain logic."""
 
@@ -142,6 +142,18 @@ class ChatResponse(BaseModel):
     # filing yet) keep working unchanged. None encodes Cannot-Confirm, filing
     # IOError, and orphan-touch refusal.
     filed: FiledStatus | None = None
+
+
+class QaEditRequest(BaseModel):
+    """Request body for PUT /qa/{slug} (tier-B S3, issue #379, ADR-0026 decision 2).
+
+    Draft-only edit of a Filed Answer's question/body — the server refuses a
+    ``status: live`` page and re-runs the Grounding Check against the page's
+    existing cited Sections on ``body`` before writing anything.
+    """
+
+    question: str
+    body: str
 
 
 # ---------------------------------------------------------------------------
