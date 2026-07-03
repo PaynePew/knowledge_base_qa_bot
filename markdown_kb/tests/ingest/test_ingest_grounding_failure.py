@@ -113,6 +113,27 @@ def _verifier_unavailable_outcome() -> GroundingOutcome:
     return GroundingOutcome(passed=False, reason="verifier_unavailable", result=None)
 
 
+def _claim_unsupported_outcome_empty_flat_list() -> GroundingOutcome:
+    """claims[] has a supported=False entry but the flat list was left empty.
+
+    Mirrors the live corpus bug (#404): the LLM marks a claim unsupported in
+    claims[] without mirroring it into the flat unsupported_claims field.
+    """
+    result = GroundingResult(
+        reasoning="One claim is not in the source.",
+        claims=[
+            GroundingClaim(
+                text="ships within 2 business days",
+                supported=False,
+                citing_section_ids=[],
+            )
+        ],
+        unsupported_claims=[],
+        passed=False,
+    )
+    return GroundingOutcome(passed=False, reason="claim_unsupported", result=result)
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -274,6 +295,80 @@ def test_grounding_unavailable_treated_same_as_unsupported(
     )
 
     assert "cancellation-window" in result.pages_with_failed_grounding
+
+
+# ---------------------------------------------------------------------------
+# AC (#404): unsupported_claims derived from authoritative claims[]
+# ---------------------------------------------------------------------------
+
+
+def test_grounding_failure_derives_claims_when_flat_list_empty(
+    tmp_path, monkeypatch, docs_dir, wiki_dir
+):
+    """Empty flat unsupported_claims still persists the claims[]-derived text."""
+    import app.indexer as indexer_module
+    from app.ingest import ingest_sources
+
+    fake_llm = _make_schema_aware_fake_llm()
+    _patch_env(monkeypatch, docs_dir, wiki_dir, fake_llm)
+
+    outcome = _claim_unsupported_outcome_empty_flat_list()
+
+    with patch("app.ingest.verify", return_value=outcome):
+        ingest_sources(["refund_policy.md"], docs_dir=docs_dir, wiki_dir=wiki_dir)
+
+    page_path = wiki_dir / "concepts" / "cancellation-window.md"
+    content = page_path.read_text(encoding="utf-8")
+    lines = content.splitlines()
+    dash_indices = [i for i, line in enumerate(lines) if line.strip() == "---"]
+    fm = yaml.safe_load("\n".join(lines[dash_indices[0] + 1 : dash_indices[1]]))
+
+    gf = fm["grounding_failure"]
+    assert gf["unsupported_claims"] == ["ships within 2 business days"], (
+        f"Expected claims[]-derived text despite empty flat list, got: {gf}"
+    )
+
+
+def test_grounding_failure_unions_flat_list_entries_not_in_claims(
+    tmp_path, monkeypatch, docs_dir, wiki_dir
+):
+    """A flat-list-only entry (not present in claims[]) survives the union (no regression)."""
+    import app.indexer as indexer_module
+    from app.ingest import ingest_sources
+
+    fake_llm = _make_schema_aware_fake_llm()
+    _patch_env(monkeypatch, docs_dir, wiki_dir, fake_llm)
+
+    result = GroundingResult(
+        reasoning="Two claims are not in the source.",
+        claims=[
+            GroundingClaim(
+                text="ships within 2 business days",
+                supported=False,
+                citing_section_ids=[],
+            )
+        ],
+        # "next-day delivery guaranteed" only appears in the flat list, not
+        # mirrored into claims[] — must still survive the union.
+        unsupported_claims=["ships within 2 business days", "next-day delivery guaranteed"],
+        passed=False,
+    )
+    outcome = GroundingOutcome(passed=False, reason="claim_unsupported", result=result)
+
+    with patch("app.ingest.verify", return_value=outcome):
+        ingest_sources(["refund_policy.md"], docs_dir=docs_dir, wiki_dir=wiki_dir)
+
+    page_path = wiki_dir / "concepts" / "cancellation-window.md"
+    content = page_path.read_text(encoding="utf-8")
+    lines = content.splitlines()
+    dash_indices = [i for i, line in enumerate(lines) if line.strip() == "---"]
+    fm = yaml.safe_load("\n".join(lines[dash_indices[0] + 1 : dash_indices[1]]))
+
+    gf = fm["grounding_failure"]
+    assert set(gf["unsupported_claims"]) == {
+        "ships within 2 business days",
+        "next-day delivery guaranteed",
+    }, f"Expected union of claims[] and flat list, got: {gf}"
 
 
 # ---------------------------------------------------------------------------
