@@ -541,6 +541,12 @@ Each signal has a **severity** that determines the reviewer's action:
 - [ ] **FAIL** — A test exercises a real write path (`build_index` / `ingest_sources` / `import_sources`) without redirecting `INDEX_PATH` / `WIKI_DIR` / `LOG_PATH` (and `SOURCE_DIRS` for a default `build_index()`) to `tmp_path`, so it writes the committed `.kb/index.json` or real `wiki/` (per §6.5). The repo-root session guard restoring the file + warning is the signal, not the remedy.
 - [ ] **FAIL** — A fixture for a Wiki Page / Source omits a structural element its real producer writes (e.g. the `/ingest` sentinel HTML comment before frontmatter, or `importer`-written provenance frontmatter), so it cannot catch a regression the real artifact would trigger (per §6.5 fixture fidelity).
 
+### Alias & quarantine drift (ADR-0029 / ADR-0030)
+
+- [ ] **FAIL** — A surface computes wikilink resolution (red-link judgment, linkify, inbound-reference scanning) from a locally-built slug set instead of the shared resolver (ADR-0030: one resolver, all consumers).
+- [ ] **FAIL** — An alias value reaches the Section Index (BM25 tokens) or the dense arm (ADR-0030: link-layer only in v1), or `/ingest`'s overwrite drops the `aliases` frontmatter field (preserve list is `{created, aliases}`).
+- [ ] **FAIL** — The Section Index admits a `status: failed_grounding` page (ADR-0029 quarantine), or an MCP tool writes aliases (ADR-0030 / ADR-0026 posture).
+
 ### Dependencies drift (§7)
 
 - [ ] **FAIL** — `requirements.txt` reappears anywhere in the tree (uv is the single source of truth per §7.1).

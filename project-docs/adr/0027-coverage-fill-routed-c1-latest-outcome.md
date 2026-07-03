@@ -1,5 +1,7 @@
 # Coverage Fill is a Routed remediation (a third class), and C1 resolution is latest-outcome
 
+> **Status:** Amended by [ADR-0030](0030-alias-frontmatter-link-layer-resolver-linkify.md) — the C2 honest-miss report's prose ending ("renaming the link or the page is a curator judgment, done by hand") gains an executable assign-alias offer, and C2's resolution set becomes *slugs ∪ aliases*. The no-slug-hint decision and ingest's contract stand unchanged.
+
 [ADR-0023](0023-lint-remediation-direct-vs-authored.md) classified C1 coverage-gap / C2 red-link "fill" as Authored, and [[adr-0024]] carried that placement into the Gated class. Designing the actual flow broke the classification, and exposed that neither Coverage check could ever close its remediation loop as specified.
 
 **Why fill is not Authored.** Fill routes through the existing Upload → Import → Ingest pipeline (the ADR-0023 decision that stands: never LLM-from-nothing, because a coverage gap has no [[source]] to ground against). Walking that flow: the human supplies the missing file; the LLM synthesis happens *inside ingest* — Direct-class machinery, re-derivable from the Source, whose output pages enter the corpus with no review today. **At no point does a draft exist for a curator to approve.** Keeping fill in Authored would force either inventing an approval gate on ingest output (scope explosion, and a change to Direct-class trust tier A already settled) or shipping an "Authored" remediation whose defining gate gates nothing.
