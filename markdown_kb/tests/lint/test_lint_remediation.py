@@ -1,7 +1,7 @@
 """Unit tests for the Remediation descriptor (issue #363, ADR-0023 tier-A S3).
 
 ``remediation_for`` maps a wired check code to its Remediation tier
-(Direct / Authored / deferred) plus its executable actions — the shared,
+(Direct / Authored / Confirmed / deferred) plus its executable actions — the shared,
 unit-testable source of truth the Operator Console renders per-row buttons
 from (issue #363). This module does not run any check or touch the
 filesystem: it is a pure lookup over ``_REMEDIATION_TAXONOMY``, mirroring
@@ -53,14 +53,18 @@ class TestRemediationTierClassification:
         assert descriptor.tier == "authored"
         assert descriptor.actions == (RemediationAction("refile", "page_slug"),)
 
-    def test_c11_is_still_deferred(self):
-        """C11 orphan needs a lifecycle endpoint that does not exist yet in
-        this table (ADR-0023 Consequences) — its remediation ships as its
-        own Confirmed operation (ADR-0025), tracked outside this taxonomy's
-        three tiers, so it is a separate slice's change, not this one's."""
+    def test_c11_is_confirmed_with_a_delete_action(self):
+        """tier-B S5 (issue #381, ADR-0024/0025): C11 orphan flips
+        deferred -> confirmed now that ``DELETE /pages/{slug}`` exists.
+        Confirmed is a fourth tier value alongside Direct/Authored/deferred
+        (ADR-0024: a human confirms an irreversible operation, not
+        curator-drafted content) — the action wires unconditionally here;
+        per-finding full/partial eligibility (``OrphanPageFinding.full``)
+        is what a consumer reads to decide whether to render the delete
+        button or advisory text only."""
         descriptor = remediation_for("C11")
-        assert descriptor.tier == "deferred"
-        assert descriptor.actions == ()
+        assert descriptor.tier == "confirmed"
+        assert descriptor.actions == (RemediationAction("delete", "page_slug"),)
 
 
 class TestRemediationActions:

@@ -1,0 +1,112 @@
+"""C11 full-vs-partial orphan distinction (tier-B S5, issue #381, ADR-0025).
+
+Covers:
+  - ``OrphanPageFinding.full`` is True only when EVERY citation is missing
+    (full orphan); False when at least one citation still resolves (partial
+    orphan).
+  - The public ``check_full_orphan(sources, docs_dir)`` re-verification
+    entry point (used by ``pages.delete_full_orphan`` at delete time) agrees
+    with the bulk ``run_lint()`` C11 sweep — same predicate, one source of
+    truth (``_orphan_predicate``).
+  - A page with an empty ``sources`` list is never full (nothing confirmed
+    gone) — matches ADR-0025's "sources non-empty" clause.
+
+All tests are hermetic (no OPENAI_API_KEY required).
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import yaml
+
+from app.lint import check_full_orphan, run_lint
+
+
+def _write_wiki_page(
+    wiki_dir: Path,
+    slug: str,
+    sources: list[str],
+    *,
+    subdir: str = "concepts",
+) -> Path:
+    """Write a minimal wiki page with frontmatter.sources pointing at the given source refs."""
+    page_dir = wiki_dir / subdir
+    page_dir.mkdir(parents=True, exist_ok=True)
+    page_path = page_dir / f"{slug}.md"
+    frontmatter = {
+        "id": slug,
+        "type": subdir.rstrip("s"),
+        "created": "2026-07-03T00:00:00Z",
+        "updated": "2026-07-03T00:00:00Z",
+        "sources": sources,
+        "status": "live",
+        "open_questions": [],
+    }
+    content = (
+        f"---\n{yaml.dump(frontmatter, default_flow_style=False)}---\n\n# {slug}\n\nSome content.\n"
+    )
+    page_path.write_text(content, encoding="utf-8")
+    return page_path
+
+
+class TestOrphanFullPartialViaRunLint:
+    """``run_lint()``'s C11 sweep sets ``OrphanPageFinding.full`` correctly."""
+
+    def test_all_sources_missing_is_full(self, lint_env):
+        _write_wiki_page(lint_env["wiki_dir"], "full-orphan", ["gone_a.md#s", "gone_b.md#s"])
+        result = run_lint(**lint_env)
+        orphan = next(o for o in result.findings.orphans if o.page_slug == "full-orphan")
+        assert orphan.full is True
+        assert set(orphan.missing_sources) == {"gone_a.md", "gone_b.md"}
+
+    def test_some_sources_present_is_partial(self, lint_env):
+        (lint_env["docs_dir"] / "still_here.md").write_text("# Still Here\n", encoding="utf-8")
+        _write_wiki_page(lint_env["wiki_dir"], "partial-orphan", ["gone.md#s", "still_here.md#s"])
+        result = run_lint(**lint_env)
+        orphan = next(o for o in result.findings.orphans if o.page_slug == "partial-orphan")
+        assert orphan.full is False
+        assert orphan.missing_sources == ["gone.md"]
+
+    def test_single_missing_source_is_full(self, lint_env):
+        """The pre-existing single-citation orphan shape (every earlier C11
+        test fixture) is a full orphan by construction."""
+        _write_wiki_page(lint_env["wiki_dir"], "single-orphan", ["deleted.md#section"])
+        result = run_lint(**lint_env)
+        orphan = next(o for o in result.findings.orphans if o.page_slug == "single-orphan")
+        assert orphan.full is True
+
+    def test_grounded_page_produces_no_finding_at_all(self, lint_env):
+        (lint_env["docs_dir"] / "present.md").write_text("# Present\n", encoding="utf-8")
+        _write_wiki_page(lint_env["wiki_dir"], "grounded-page", ["present.md#s"])
+        result = run_lint(**lint_env)
+        assert all(o.page_slug != "grounded-page" for o in result.findings.orphans)
+
+
+class TestCheckFullOrphanPredicate:
+    """The public re-verification entry point used at delete time."""
+
+    def test_full_when_every_citation_missing(self, tmp_docs_dir):
+        assert check_full_orphan(["gone_a.md#s", "gone_b.md#s"], tmp_docs_dir) is True
+
+    def test_partial_when_one_citation_survives(self, tmp_docs_dir):
+        (tmp_docs_dir / "present.md").write_text("# Present\n", encoding="utf-8")
+        assert check_full_orphan(["gone.md#s", "present.md#s"], tmp_docs_dir) is False
+
+    def test_false_when_all_citations_present(self, tmp_docs_dir):
+        (tmp_docs_dir / "present.md").write_text("# Present\n", encoding="utf-8")
+        assert check_full_orphan(["present.md#s"], tmp_docs_dir) is False
+
+    def test_false_when_sources_empty(self, tmp_docs_dir):
+        """ADR-0025: 'sources non-empty AND every citation missing' — an
+        empty sources list is never a full orphan (nothing confirmed gone)."""
+        assert check_full_orphan([], tmp_docs_dir) is False
+
+    def test_restored_source_flips_predicate_false(self, tmp_docs_dir):
+        """The stale-report scenario ADR-0025 exists to guard against: a
+        Source restored/re-imported after a lint report rendered must make
+        the SAME sources list re-verify as no-longer-full."""
+        sources = ["restored.md#s"]
+        assert check_full_orphan(sources, tmp_docs_dir) is True
+        (tmp_docs_dir / "restored.md").write_text("# Restored\n", encoding="utf-8")
+        assert check_full_orphan(sources, tmp_docs_dir) is False
