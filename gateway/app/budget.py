@@ -36,15 +36,18 @@ Per-endpoint estimate table (USD per request, deliberately generous):
     | /wiki/pages/collision/differentiate/apply   | 0.03 | grounding re-check on N submitted pages                        |
     | /wiki/qa/{slug}/refile | 0.05 | C9 re-file: full grounded answer round (draft + verify) server-side |
     | /wiki/pages/{slug} (DELETE) | 0.00 | C11 Confirmed orphan-delete: no LLM call at all (ADR-0024 Invariant) — hard delete + one BM25 reindex |
+    | /wiki/qa/promote-batch | 0.00 | Direct-tier batch promote: no LLM call — per-slug status flips + one BM25 reindex (ADR-0023, issue #382) |
     | (default heavy)  | 0.10     | unknown heavy path → assume a mid-range cost    |
 
 The ``/wiki/qa/{slug}/refile`` and ``/wiki/pages/{slug}`` keys are the
 middleware's ``QA_REFILE_TEMPLATE`` / ``PAGES_DELETE_TEMPLATE`` — concrete
 per-slug paths are canonicalised to them before ``charge()`` is called, so
 the table stays exact-match (ADR-0026 decision 1, issue #380; ADR-0025,
-issue #381). The delete path's $0.00 entry is explicit (not left to the
-default-heavy fallback) so its zero LLM cost is documented rather than
-silently indistinguishable from an un-tabulated path.
+issue #381). ``/wiki/qa/promote-batch`` is not parameterized (no slug in the
+path) so it needs no canonicalisation — it is charged directly, mirroring
+the delete path's explicit $0.00 entry (not left to the default-heavy
+fallback) so its zero LLM cost is documented rather than silently
+indistinguishable from an un-tabulated path.
 
 The numbers are intentionally above plausible real cost on a small demo corpus
 (GPT-class answer rounds are sub-cent; ``text-embedding-3-small`` re-embeds are
@@ -80,6 +83,7 @@ _COST_ESTIMATES: dict[str, float] = {
     "/wiki/pages/collision/differentiate/apply": 0.03,
     "/wiki/qa/{slug}/refile": 0.05,
     "/wiki/pages/{slug}": 0.00,
+    "/wiki/qa/promote-batch": 0.00,
 }
 
 # Fallback for any heavy path missing from the table — assume a mid-range cost

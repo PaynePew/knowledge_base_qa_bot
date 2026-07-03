@@ -1,4 +1,4 @@
-"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``CitationRef``, ``FiledStatus``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``, ``CoverageGapFinding``, ``PagePairFinding``, ``PromotionCandidateFinding``, ``QaStalenessFinding``, ``InvalidQaSchemaFinding``, ``QaEditRequest``, ``QaRefileResponse``, ``ImportRequest``, ``ImportSourceResultSchema``, ``ImportFailureSchema``, ``ImportResponse``, ``ReconcileDraft``, ``ReconcileGenerateRequest``, ``ReconcileGenerateResponse``, ``ReconcileApplyRequest``, ``ReconcileApplyResponse``, ``CollisionMergeDraft``, ``CollisionPageDraft``, ``CollisionDifferentiateDraft``, ``CollisionMergeGenerateRequest``, ``CollisionMergeGenerateResponse``, ``CollisionMergeApplyRequest``, ``InboundReference``, ``CollisionMergeApplyResponse``, ``CollisionDifferentiateGenerateRequest``, ``CollisionDifferentiateGenerateResponse``, ``CollisionDifferentiateApplyRequest``, ``CollisionDifferentiateApplyResponse``).
+"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``CitationRef``, ``FiledStatus``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``, ``CoverageGapFinding``, ``PagePairFinding``, ``PromotionCandidateFinding``, ``QaStalenessFinding``, ``InvalidQaSchemaFinding``, ``QaEditRequest``, ``QaRefileResponse``, ``SkippedSlug``, ``QaPromoteBatchRequest``, ``QaPromoteBatchResponse``, ``ImportRequest``, ``ImportSourceResultSchema``, ``ImportFailureSchema``, ``ImportResponse``, ``ReconcileDraft``, ``ReconcileGenerateRequest``, ``ReconcileGenerateResponse``, ``ReconcileApplyRequest``, ``ReconcileApplyResponse``, ``CollisionMergeDraft``, ``CollisionPageDraft``, ``CollisionDifferentiateDraft``, ``CollisionMergeGenerateRequest``, ``CollisionMergeGenerateResponse``, ``CollisionMergeApplyRequest``, ``InboundReference``, ``CollisionMergeApplyResponse``, ``CollisionDifferentiateGenerateRequest``, ``CollisionDifferentiateGenerateResponse``, ``CollisionDifferentiateApplyRequest``, ``CollisionDifferentiateApplyResponse``).
 
 Pydantic request/response models for the FastAPI routes. No domain logic."""
 
@@ -173,6 +173,47 @@ class QaRefileResponse(BaseModel):
     filed: FiledStatus
     grounding: GroundingInfo
     sections_indexed: int
+
+
+class SkippedSlug(BaseModel):
+    """One slug submitted to ``POST /qa/promote-batch`` that was NOT promoted,
+    with a machine-parseable reason (tier-B S6, issue #382, ADR-0023
+    Consequences: "batch remediation ... surfaces partial failure").
+
+    ``reason`` is one of ``"not_found"`` (no such slug on disk),
+    ``"corrupt_frontmatter"`` (frontmatter unparseable), ``"invalid_status:
+    <value>"`` (status outside ``{"draft", "live"}``), or ``"already_live"``
+    (the slug is not a draft — nothing to promote). Rendered per-item by the
+    Console (issue #382 AC).
+    """
+
+    slug: str
+    reason: str
+
+
+class QaPromoteBatchRequest(BaseModel):
+    """Request body for POST /qa/promote-batch (tier-B S6, issue #382, ADR-0023).
+
+    ``slugs`` is the explicit list of drafts the operator actually saw
+    rendered in the Curation Queue — never "all drafts" resolved server-side
+    — so a draft filed after the operator looked is never approved
+    sight-unseen (ADR-0023 Consequences).
+    """
+
+    slugs: list[str]
+
+
+class QaPromoteBatchResponse(BaseModel):
+    """Response body for POST /qa/promote-batch (tier-B S6, issue #382).
+
+    ``promoted`` lists the slugs actually flipped ``draft -> live``, in
+    submission order. ``skipped`` lists every submitted slug that failed
+    per-slug validation, each with a reason — non-transactional, honestly
+    reported (ADR-0023 Consequences), never a silent drop.
+    """
+
+    promoted: list[str]
+    skipped: list[SkippedSlug]
 
 
 # ---------------------------------------------------------------------------
