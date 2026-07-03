@@ -32,22 +32,28 @@ Check the status of the **slice branch's own worktree**. If the slice worktree h
 
 **NEVER "clean up" a dirty tree yourself: no `git stash`, no `git reset`, no `git checkout --`, no `git clean`.** If you are operating in the shared main working tree, its dirtiness is NOT your concern and NOT a blocker — the branch you push lives in its own worktree; uncommitted changes in the main tree may be the top-level session's in-progress work. Stashing them once destroyed live work (2026-07-03 incident).
 
-### 2. Re-run the test suite
+### 2. Fast sanity gate — deliberately NO full-suite re-run
 
 ```bash
-uv run pytest
 uv run ruff check .
 uv run ruff format --check .
 ```
 
-**Failure handling — distinguish lint/format from real test failures:**
+Do NOT run `uv run pytest` here. The implementer and the reviewer each ran the
+full suite green in this same worktree, and CI (ubuntu + windows) re-runs it on
+the PR — that is the mechanical test gate before merge. A fourth in-session run
+adds ~5 minutes and twice killed the merge session mid-run (2026-07-03: the PRs
+for #383 and #392 had to be opened by the top-level session because this agent
+died waiting on pytest).
+
+**Failure handling:**
 
 - **`ruff format --check` fails** (only lines would be reformatted, no logic errors):
-  apply the fix, commit it, re-run the chain:
+  apply the fix, commit it, re-run the gate:
   ```bash
   uv run ruff format .
   git add -A && git commit -m "style: ruff format"
-  uv run pytest && uv run ruff check . && uv run ruff format --check .
+  uv run ruff check . && uv run ruff format --check .
   ```
   Adding a new commit is allowed — hard rules below forbid rebase/squash, not new commits.
 
@@ -55,11 +61,13 @@ uv run ruff format --check .
   ```bash
   uv run ruff check . --fix
   git add -A && git commit -m "style: ruff --fix"
-  uv run pytest && uv run ruff check . && uv run ruff format --check .
+  uv run ruff check . && uv run ruff format --check .
   ```
 
-- **`pytest` fails, or `ruff check` reports lints that are not auto-fixable**:
-  ABORT with an explanation. Do not push a broken branch. This needs another implement pass or human review. Post a comment on the issue noting the failure and exit BLOCKED.
+- **`ruff check` reports lints that are not auto-fixable**:
+  ABORT with an explanation. Do not push a broken branch. This needs another
+  implement pass or human review. Post a comment on the issue noting the
+  failure and exit BLOCKED.
 
 ### 3. Push the branch to origin
 
@@ -98,7 +106,8 @@ Closes #{{ISSUE}}
 
 ## Test results
 
-<!-- final command + exit code from this merge run -->
+<!-- implementer/reviewer full-suite results (copy from their reports) + this
+     merge run's ruff gate exit codes. CI on the PR is the final test gate. -->
 ```
 
 2. Create the PR pointing at that file:
