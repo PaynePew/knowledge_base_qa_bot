@@ -705,9 +705,55 @@
     cursor: not-allowed;
   }
 
+  /* ── C1/C2 Routed Coverage Fill (tier-B S7, issue #383, ADR-0027) ──────
+     Replaces the disabled .tier-b-btn above for C1/C2 only: a Routed
+     remediation is a navigation, not an execution, so this is a REAL
+     clickable button (solid border, not dashed/disabled) — but its click
+     handler never fetches anything (ADR-0027 Invariant). The outline style
+     (no filled background) visually distinguishes "this navigates" from the
+     filled-accent execute buttons (.reingest-btn / .reconcile-btn /
+     .discard-btn) elsewhere on this card. */
+  .fill-import-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: none;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    padding: 4px 10px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .04em;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: opacity .15s ease;
+  }
+  .fill-import-btn:hover { opacity: .7; }
+
+  /* Persistent context banner shown above the pipeline stepper once a
+     "Fill via Import" control is clicked — carries the finding's fields
+     (AC: C2 slug + referenced_by + sample_context; C1 sample_raw_queries +
+     hit_count) into the existing Upload -> Import -> Ingest flow. Same
+     info-banner palette as .demo-reset-banner; toggled via .visible like
+     .staleness-banner (hidden until JS shows it). */
+  .coverage-fill-banner {
+    display: none;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 16px;
+    background: #f0f4ff;
+    border: 1px solid #93b3e6;
+    border-radius: 6px;
+    margin-bottom: 16px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .03em;
+    color: #2a4080;
+    line-height: 1.5;
+  }
+  .coverage-fill-banner.visible { display: flex; }
+
   /* ── C5 Reconcile (tier-B S1, issue #376, ADR-0028) ─────────────
      The one Authored-tier check with a real Gated affordance this slice —
-     C4/C1/C2 keep the disabled .tier-b-btn above until their own slices. */
+     C4 keeps the disabled .tier-b-btn above until its own slice. */
   .reconcile-btn {
     display: inline-flex; align-items: center; gap: 5px;
     background: var(--accent);
@@ -835,8 +881,7 @@
   .reconcile-error { color: var(--fail); }
 
   /* ── C4 collision dual resolution (tier-B S2, issue #378, ADR-0028) ──
-     Both real Gated affordances — C1/C2 keep the disabled .tier-b-btn
-     above until their own slices. Reuses every .reconcile-* modal/column
+     Both real Gated affordances. Reuses every .reconcile-* modal/column
      class above (the shape is identical: old-vs-editable preview + apply). */
   .collision-merge-btn, .collision-differentiate-btn {
     display: inline-flex; align-items: center; gap: 5px;
@@ -1256,6 +1301,13 @@
       <span class="stale-msg">Section Index may be stale — Ingest has run since the last Index build. Run the Index step to rebuild.</span>
     </div>
 
+    <!-- Routed Coverage Fill context banner (tier-B S7, issue #383, ADR-0027):
+         shown when a C1/C2 "Fill via Import" control is clicked, carrying the
+         finding's context into the pipeline below. Text is set by JS
+         (showCoverageFillBanner); this element is a pure navigation aid — it
+         never triggers a request itself. -->
+    <div id="coverage-fill-banner" class="coverage-fill-banner" role="status" aria-live="polite"></div>
+
     <div id="pipeline-root"></div>
 
     <!-- RAG rebuild track: parallel to Wiki chain (#173) -->
@@ -1627,6 +1679,17 @@ function runIngestBatches(sourceNames, resultEl, setStepBusy) {
         failed_sources:             accumulatedFailed,
         pages_with_failed_grounding: accumulatedGrFailed,
       };
+      /* Record the pages THIS run wrote (tier-B S7, issue #383, ADR-0027) —
+         feeds the Routed Coverage Fill honest-miss report: "imported and
+         ingested — new pages A, B — but [[slug]] is still unresolved." Pure
+         extraction (basename, no dir, no .md), same convention the Import
+         step already uses for lastImportedDocFilenames below. */
+      lastIngestedPageSlugs = [];
+      accumulatedResults.forEach(function(r) {
+        (r.pages_written || []).forEach(function(p) {
+          lastIngestedPageSlugs.push(p.split(/[/\\]/).pop().replace(/\.md$/, ""));
+        });
+      });
       resultEl.replaceChildren(renderIngestCard(combined, null));
       return;
     }
@@ -1774,7 +1837,7 @@ var AXIS_CHECK_CODES = {
                 Promote/Discard controls live in the dedicated Curation
                 Queue block, unchanged per issue #363 AC).
    "authored" — disabled tier-B affordance (visible, never actionable) for
-                C5/C4/C1/C2. C9 is the one Authored exception (tier-B S4,
+                C5/C4. C9 is the one Authored exception (tier-B S4,
                 issue #380): its Re-file button lives in the Curation Queue
                 block instead of a per-row lint action, the same split C8
                 already uses — its own human gate is the downstream Promote,
@@ -1784,15 +1847,20 @@ var AXIS_CHECK_CODES = {
                 confirmation dialog naming the operation + target before it
                 runs (no draft to review — Confirmed confirms an operation,
                 Authored approves content); a partial orphan renders
-                advisory text only, never a delete affordance. */
+                advisory text only, never a delete affordance.
+   "routed"    — C1/C2 (tier-B S7, issue #383, ADR-0027): a real "Fill via
+                Import" navigation control (fillViaImportAction) — never an
+                execute button, since there is no draft to approve and no
+                operation to confirm, only an existing workflow to carry the
+                finding's context into. */
 var LINT_CHECK_META = {
   C6:  { label: "stale",            tier: "direct",    findingsKey: "stale_pages" },
   C3:  { label: "failed-grounding", tier: "direct",    findingsKey: "failed_grounding" },
   C11: { label: "orphan",           tier: "confirmed", findingsKey: "orphans" },
   C5:  { label: "contradiction",    tier: "authored",  findingsKey: "page_pairs" },
   C4:  { label: "collision",        tier: "authored",  findingsKey: "slug_collisions" },
-  C1:  { label: "coverage-gap",     tier: "authored",  findingsKey: "coverage_gaps" },
-  C2:  { label: "red-link",         tier: "authored",  findingsKey: "red_links" },
+  C1:  { label: "coverage-gap",     tier: "routed",    findingsKey: "coverage_gaps" },
+  C2:  { label: "red-link",         tier: "routed",    findingsKey: "red_links" },
   C8:  { label: "promotion",        tier: "direct",    findingsKey: "promotion_candidates" },
   C10: { label: "invalid-schema",   tier: "direct",    findingsKey: "invalid_qa_schemas" },
   C9:  { label: "stale-qa",         tier: "authored",  findingsKey: "stale_filed_answers" },
@@ -1878,6 +1946,7 @@ var LINT_CHROME = {
     deleteCancel:        "Cancel",
     deleteWorking:       "Deleting…",
     partialOrphanAdvisory: "Partial orphan — a Source still exists. Repair the citation; never delete.",
+    fillViaImport:       "Fill via Import",
   },
   zh: {
     reingest:        "重新匯入",
@@ -1909,8 +1978,122 @@ var LINT_CHROME = {
     deleteCancel:        "取消",
     deleteWorking:       "刪除中…",
     partialOrphanAdvisory: "部分孤立 — 仍有 Source 存在，請修正引用，勿刪除。",
+    fillViaImport:       "透過匯入補齊",
   },
 };
+
+/* ============================================================
+   C1/C2 Routed Coverage Fill (tier-B S7, issue #383, ADR-0027)
+
+   A Routed remediation navigates an existing workflow instead of executing
+   anything — fill has no draft to approve (the LLM synthesis, if any,
+   happens *inside* Import/Ingest, Direct-class machinery the operator
+   already drives by hand). This block is therefore pure navigation state:
+   which finding is "pending" a fill, the context banner shown while the
+   operator works the pipeline, and the one-shot honest-miss check run on
+   the next re-lint (ADR-0027 decision 3 — C1's own closure signal is a
+   separate slice, tier-B S8 issue #384; a pending C1 fill just clears here).
+
+   INVARIANT (ADR-0027): none of this ever issues a request of its own —
+   every write happens inside the existing Import/Ingest machinery under its
+   own rules, triggered by the operator's own clicks on those steps.
+   ============================================================ */
+
+/* {code, target} of the C1/C2 finding a "Fill via Import" click is
+   currently tracking, or null. target is the red-link slug (C2) or the
+   canonical query (C1) — the identity checkCoverageFillOutcome re-checks
+   for on the next lint. One pending fill at a time (matches the pipeline
+   stepper itself being a single shared flow, not per-finding). */
+var pendingCoverageFill = null;
+
+/* Bare page slugs (no dir, no .md) written by the MOST RECENT Ingest run —
+   feeds the honest-miss report ("imported and ingested — new pages A, B —
+   but [[slug]] is still unresolved."). Populated by runIngestBatches. */
+var lastIngestedPageSlugs = [];
+
+/* One-shot outcome text for the NEXT renderLintCard, mirroring
+   lastBatchSummary's pattern exactly (set here, read-and-cleared there). */
+var lastCoverageFillOutcome = null;
+
+/* Context text carrying the finding's own fields into the banner (AC: C2
+   needs slug + referenced_by + sample_context; C1 needs sample_raw_queries +
+   hit_count). Pure string shaping over server-computed fields (§12.5). */
+function coverageFillContextText(code, finding) {
+  if (code === "C2") {
+    var refs = (finding.referenced_by || []).join(", ") || "(none)";
+    var ctx = finding.sample_context ? " — “" + finding.sample_context + "”" : "";
+    return "Fill via Import — red link [[" + finding.slug + "]]: referenced by " + refs + ctx;
+  }
+  // C1
+  var samples = (finding.sample_raw_queries || []).join("; ") || "(none)";
+  var hits = finding.hit_count != null ? finding.hit_count : 0;
+  return "Fill via Import — coverage gap \"" + finding.query_canonical + "\": " +
+    hits + " hit" + (hits !== 1 ? "s" : "") + " · sample queries: " + samples;
+}
+
+/* Shows the persistent context banner above the pipeline and scrolls it
+   into view — the operator still has to click Import then Ingest by hand;
+   this only carries context, it does not start anything. */
+function showCoverageFillBanner(code, finding) {
+  var banner = document.getElementById("coverage-fill-banner");
+  if (banner) {
+    banner.textContent = coverageFillContextText(code, finding);
+    banner.classList.add("visible");
+  }
+  var pipelineRoot = document.getElementById("pipeline-root");
+  if (pipelineRoot) scrollSoftIntoView(pipelineRoot, "start");
+}
+
+function hideCoverageFillBanner() {
+  var banner = document.getElementById("coverage-fill-banner");
+  if (banner) banner.classList.remove("visible");
+}
+
+/* The C1/C2 per-row action (ROW_RENDERERS below) — replaces the disabled
+   tierBAffordance() placeholder those two checks used before this slice.
+   INVARIANT: no fetch call anywhere in this function or its click handler —
+   commits nothing itself (ADR-0027). Not added to allButtons: it is not a
+   remediation execution subject to the remediationInFlight disable guard,
+   and clicking it more than once is harmless (it only resets which finding
+   the pending banner tracks). */
+function fillViaImportAction(code, finding) {
+  var btn = el("button", { class: "fill-import-btn", type: "button",
+    text: LINT_CHROME[consoleLang].fillViaImport });
+  btn.addEventListener("click", function() {
+    pendingCoverageFill = {
+      code: code,
+      target: code === "C2" ? finding.slug : finding.query_canonical,
+    };
+    showCoverageFillBanner(code, finding);
+  });
+  return el("div", { class: "lint-row-actions" }, btn);
+}
+
+/* Runs on every post-fill re-lint (both the Lint step's own Run and the
+   Direct-remediation auto-relint call this before renderLintCard) — checks
+   whether a pending C2 fill actually resolved its red link. One-shot:
+   pendingCoverageFill is always consumed here, whether the outcome is a
+   silent resolve (the finding disappearing IS the story — PRD #373 story
+   28) or the honest-miss message below (ADR-0027 decision 3). C1 has no
+   closure signal in this slice (tier-B S8, issue #384, ships latest-outcome
+   + Verify: re-ask) — a pending C1 fill just clears quietly. */
+function checkCoverageFillOutcome(lintData) {
+  if (!pendingCoverageFill) return;
+  var fill = pendingCoverageFill;
+  pendingCoverageFill = null;
+  hideCoverageFillBanner();
+
+  if (fill.code !== "C2") return;
+
+  var redLinks = (lintData.findings && lintData.findings.red_links) || [];
+  var stillPresent = redLinks.some(function(f) { return f.slug === fill.target; });
+  if (!stillPresent) return; // resolved — the finding disappearing IS the story
+
+  var newPages = lastIngestedPageSlugs.length > 0 ? lastIngestedPageSlugs.join(", ") : "none";
+  lastCoverageFillOutcome =
+    "Fill via Import: imported and ingested — new pages: " + newPages +
+    " — but [[" + fill.target + "]] is still unresolved.";
+}
 
 /* Applies consoleLang to <html lang> (accessibility) and the header toggle
    button's own label. Looked up fresh by id each call rather than a cached
@@ -2087,6 +2270,7 @@ function finishBatchRemediation(summaryText, resultEl, siblingButtons) {
     .then(function(data) {
       remediationInFlight = false;
       lastLintData = data;
+      checkCoverageFillOutcome(data);
       if (resultEl) resultEl.replaceChildren(renderLintCard(data, resultEl));
       renderCurationQueue(document.getElementById("curation-queue-root"), data);
     })
@@ -2129,6 +2313,7 @@ function runLintRemediation(requestPromise, btn, statusMsgEl, resultEl, siblingB
     .then(function(data) {
       remediationInFlight = false;
       lastLintData = data;
+      checkCoverageFillOutcome(data);
       if (resultEl) resultEl.replaceChildren(renderLintCard(data, resultEl));
       renderCurationQueue(document.getElementById("curation-queue-root"), data);
     })
@@ -2142,10 +2327,11 @@ function runLintRemediation(requestPromise, btn, statusMsgEl, resultEl, siblingB
 
 /* Lint result card — renders LintResponse findings grouped by Lint Axis
    (issue #363), each check labelled, with per-row Direct Remediation
-   buttons (C6/C3 Re-ingest, C10 Discard) and a disabled tier-B affordance
-   on Authored-tier findings (C5/C4/C1/C2). ``resultEl`` is the Lint step's
-   own result container — passed through so a remediation button's success
-   handler can re-render this same card in place. */
+   buttons (C6/C3 Re-ingest, C10 Discard), a disabled tier-B affordance on
+   Authored-tier findings (C5/C4), and a "Fill via Import" navigation
+   control on Routed-tier findings (C1/C2, ADR-0027). ``resultEl`` is the
+   Lint step's own result container — passed through so a remediation
+   button's success handler can re-render this same card in place. */
 function renderLintCard(data, resultEl) {
   var summary  = data.summary  || {};
   var findings = data.findings || {};
@@ -2172,6 +2358,15 @@ function renderLintCard(data, resultEl) {
   if (lastBatchSummary) {
     bodyEl.append(el("div", { class: "lint-batch-summary", text: lastBatchSummary }));
     lastBatchSummary = null;
+  }
+
+  /* Routed Coverage Fill honest-miss banner (tier-B S7, issue #383,
+     ADR-0027 decision 3) — same one-shot pattern as lastBatchSummary above:
+     checkCoverageFillOutcome (called by the caller before this function)
+     sets it when a post-fill re-lint finds the red link still unresolved. */
+  if (lastCoverageFillOutcome) {
+    bodyEl.append(el("div", { class: "lint-batch-summary", text: lastCoverageFillOutcome }));
+    lastCoverageFillOutcome = null;
   }
 
   /* Every clickable remediation button this card renders (per-row AND
@@ -2239,8 +2434,8 @@ function renderLintCard(data, resultEl) {
      grounded draft (nothing written yet) → side-by-side old-vs-editable-
      draft preview → apply re-verifies grounding on the EXACT submitted
      content and refuses honestly (409 stale draft, 422 ungrounded) rather
-     than silently retrying. C4/C1/C2 still render tierBAffordance() above —
-     only C5 ships a real affordance this slice. */
+     than silently retrying. C4 still renders tierBAffordance() above — C1/C2
+     render fillViaImportAction() instead (Routed, not Authored — ADR-0027). */
   function reconcileAction(pageA, pageB) {
     var btn = el("button", { class: "reconcile-btn", type: "button",
       text: LINT_CHROME[consoleLang].reconcile });
@@ -2459,13 +2654,13 @@ function renderLintCard(data, resultEl) {
     C1: function(i, f) {
       return findingRow(i, f.query_canonical,
         f.reason + " · " + f.hit_count + " hit" + (f.hit_count !== 1 ? "s" : ""),
-        "gap", "label-skipped", tierBAffordance());
+        "gap", "label-skipped", fillViaImportAction("C1", f));
     },
     C2: function(i, f) {
       return findingRow(i, f.slug,
         f.mention_count + " mention" + (f.mention_count !== 1 ? "s" : "") +
         " · " + (f.referenced_by || []).slice(0, 3).join(", "),
-        "red-link", "label-failed", tierBAffordance());
+        "red-link", "label-failed", fillViaImportAction("C2", f));
     },
     C8: function(i, f) {
       return findingRow(i, f.slug, f.question, "count:" + f.count, "label-created");
@@ -3337,6 +3532,10 @@ var STEP_DEFS = [
           return resp.json();
         })
         .then(function(data) {
+          /* tier-B S7 (issue #383, ADR-0027): resolve any pending Routed
+             Coverage Fill BEFORE rendering, so a one-shot outcome banner is
+             already queued (mirrors the lastBatchSummary ordering above). */
+          checkCoverageFillOutcome(data);
           resultEl.replaceChildren(renderLintCard(data, resultEl));
           /* Phase 15 S6: store latest lint data and render the Curation Queue */
           lastLintData = data;
