@@ -88,19 +88,19 @@ Authorized by GitHub issue #28 (Phase 3 PRD), § Q9.
 
 ## `/import` route
 
-Authorized by GitHub issue #89 (Phase 7 PRD). Slice 7-1 (#90) introduces the three end-of-batch / per-source kinds below; slice 7-2 (#91) adds `import_error`, slice 7-3 (#92) adds `import_skipped`.
+Authorized by GitHub issue #89 (Phase 7 PRD). Slice 7-1 (#90) introduces the three end-of-batch / per-source kinds below; slice 7-2 (#91) adds `import_error`, slice 7-3 (#92) adds `import_skipped`. PRD #414 / ADR-0031 (issues #415, #416) add `.pdf` as a fourth `original_format` and three PDF-specific `import_error` sub-tags.
 
 | Kind | When fired | Summary template |
 |---|---|---|
 | `import_batch_started` | Start of an `import_sources()` call | `mode=<batch\|single> source=<filename\|*>` |
-| `import_source` | One raw file successfully imported to `docs/<basename>.md` | `source=<basename> docs=<docs_filename> format=<html\|txt>` |
+| `import_source` | One raw file successfully imported to `docs/<basename>.md` | `source=<basename> docs=<docs_filename> format=<html\|txt\|md\|pdf>` |
 | `import_batch_completed` | End of `import_sources()`; emitted even when some sources failed | `imported=A skipped=B failed=C duration_ms=N` |
-| `import_error` | _(Slice 7-2)_ One raw file failed at any stage (continue-on-error semantics) | `raw=<raw_path> error_type=<one of 12 typed errors> error_message=<truncated≤200>` |
+| `import_error` | _(Slice 7-2)_ One raw file failed at any stage (continue-on-error semantics) | `raw=<raw_path> error_type=<one of the typed errors below> error_message=<truncated≤200>` |
 | `import_skipped` | Re-import no-op when `content_sha256` matches existing docs frontmatter | `raw=<raw_path> docs=<docs_path> content_sha256=<hex>` |
 
-### `import_error` `error_type=` sub-tags (slice 7-2)
+### `import_error` `error_type=` sub-tags (slice 7-2, plus PDF-specific additions)
 
-Full enumeration landed with slice 7-2 (#91). All 11 typed failure modes are emitted via `_emit_import_error` in `importer.py`.
+Full enumeration landed with slice 7-2 (#91); PDF-specific modes added by issue #415 (`NoTextLayer`, `PdfExtractionError`) and issue #416 (`EncryptedPdf`). All typed failure modes are emitted via `_emit_import_error` in `importer.py`.
 
 | `error_type` | Trigger |
 |---|---|
@@ -108,13 +108,16 @@ Full enumeration landed with slice 7-2 (#91). All 11 typed failure modes are emi
 | `UnicodeDecodeError` | raw file not UTF-8 (Big5, Shift_JIS, etc.) |
 | `EmptySource` | raw file size 0 bytes |
 | `OversizedSource` | raw file > 10 MB hard limit (protects markdownify from in-memory OOM) |
-| `UnsupportedExtension` | single-mode source has unsupported extension (`.pdf`, `.docx`, etc.); batch mode silently skips |
+| `UnsupportedExtension` | single-mode source has unsupported extension (`.docx`, etc.); batch mode silently skips |
 | `FileNotFoundError` | single-mode source doesn't exist in `raw/` |
 | `MarkdownifyError` | markdownify internal exception (rare; BS4 is highly tolerant) |
 | `IOError` | atomic-write `os.replace` failure (disk full, permission) |
 | `InvalidFilename` | basename contains a rejected character class (`#`, `/`, `\`, `:`, control chars, bidi control chars U+202A-E/U+2066-9 per CVE-2021-42574) |
 | `InvalidSourcePath` | single-mode `source` format violation (absolute path, `..` traversal, `raw/` prefix) |
 | `FilenameCollision` | two raw files in the same batch produce the same docs basename; first wins, second fails |
+| `NoTextLayer` | _(#415)_ PDF extraction yielded an empty/whitespace body (scanned/image-only PDF); curator must OCR externally and re-import |
+| `PdfExtractionError` | _(#415)_ MarkItDown internal exception (corrupt/truncated PDF), distinct from an encryption failure |
+| `EncryptedPdf` | _(#416)_ password-protected PDF (pdfminer's `PDFEncryptionError`/`PDFPasswordIncorrect` on open); curator must supply a decrypted copy and re-import |
 
 ---
 
