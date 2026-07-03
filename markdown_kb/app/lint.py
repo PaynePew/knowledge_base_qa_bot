@@ -128,6 +128,19 @@ slug — the C4 merge-apply reference guard (``reconcile.py``) uses it to
 refuse deleting a variant that is still referenced. Disk write-back, hashing,
 and grounding re-verification live in ``reconcile.py``, mirroring S1.
 
+Slice S4 scope (Lint Remediation tier-B — issue #380, ADR-0026)
+-----------------------------------------------------------------
+No new check, no change to this module's checks or report rendering. The
+new ``POST /qa/{slug}/refile`` endpoint (chained re-synthesis + grounding-
+check + demote-in-place, implemented in ``qa.py``) is C9's remediation, so
+``_REMEDIATION_TAXONOMY["C9"]`` flips from ``"deferred"`` to an Authored
+descriptor carrying a ``refile`` action — the shared taxonomy this table
+already is (S3) now tells every consumer (Console, and any future CLI/MCP
+tier label) that C9 is remediable, matching C8's ``page_slug`` target-field
+convention. This module has no write path of its own for it: the write,
+the LLM-free-vs-LLM-based distinction, and the invariant ("a failed
+re-ground writes nothing") all live in ``qa.refile``.
+
 Read-only invariant
 -------------------
 ``run_lint()`` does NOT modify wiki page frontmatter.  It writes only:
@@ -2284,9 +2297,13 @@ class RemediationAction(NamedTuple):
 class RemediationDescriptor(NamedTuple):
     """A check's Remediation tier plus its executable actions.
 
-    ``actions`` is empty for the ``"authored"`` and ``"deferred"`` tiers —
-    tier alone drives a Direct-only consumer's disabled tier-B affordance
-    (Authored) or "no control yet" rendering (deferred).
+    ``actions`` is empty for most ``"authored"`` findings and every
+    ``"deferred"`` one — tier alone drives a Direct-only consumer's disabled
+    tier-B affordance (Authored) or "no control yet" rendering (deferred).
+    C9 is the one Authored exception (tier-B S4, issue #380, ADR-0026): its
+    ``refile`` action carries a real one-click-to-open remediation (the
+    human gate is the downstream Promote, not a preview step here) — see
+    the C9 entry in ``_REMEDIATION_TAXONOMY`` below.
     """
 
     tier: str  # "direct" | "authored" | "deferred"
@@ -2298,13 +2315,21 @@ class RemediationDescriptor(NamedTuple):
 # POST /ingest, C10 -> DELETE /qa/{slug}, C8 -> POST /qa/{slug}/promote +
 # DELETE /qa/{slug} (rendered by the Curation Queue block, not per-row lint
 # buttons — issue #363 AC "C8 promotion controls remain in the dedicated
-# Curation Queue block, unchanged"). Authored-tier checks (Coherence C5/C4,
-# Coverage C1/C2) get an empty ``actions`` tuple: visible under their axis,
-# never one-click actionable — Authored Remediation always has a curator
-# approval gate (ADR-0023). C9 stale-qa and C11 orphan are ``"deferred"``:
-# ADR-0023 Consequences names both as needing a lifecycle endpoint that does
-# not exist yet (orphan-delete would reopen ADR-0012; stale-qa needs a
-# demote-then-re-file operation), so tier-A ships neither as one-click.
+# Curation Queue block, unchanged"). Authored-tier checks C5/C4/C1/C2 get an
+# empty ``actions`` tuple: visible under their axis, never one-click
+# actionable — Authored Remediation always has a curator approval gate
+# (ADR-0023) that these four checks surface as a preview/edit/apply step
+# (reconcile/collision, ADR-0028) or a not-yet-built tier-B affordance
+# (C1/C2). C9 is Authored WITH an action (tier-B S4, issue #380, ADR-0026
+# decision 1): its own gate is the *downstream* Promote step on the
+# resulting draft, not a preview here, so ``refile`` wires directly like a
+# Direct action even though the check stays Authored-classified (the
+# additive synthesis half is what classifies it — see ADR-0026). C11 orphan
+# is still ``"deferred"`` here: ADR-0025 names its remediation a Confirmed
+# operation (``DELETE /pages/{slug}``, a separate tier-B slice) — Confirmed
+# isn't one of this table's three tiers (it has no curator-drafted content
+# to gate), so C11's flip out of ``"deferred"`` is that slice's own change,
+# not this one's.
 _REMEDIATION_TAXONOMY: dict[str, RemediationDescriptor] = {
     "C6": RemediationDescriptor("direct", (RemediationAction("reingest", "source"),)),
     "C3": RemediationDescriptor(
@@ -2323,7 +2348,7 @@ _REMEDIATION_TAXONOMY: dict[str, RemediationDescriptor] = {
         ),
     ),
     "C10": RemediationDescriptor("direct", (RemediationAction("discard", "page_slug"),)),
-    "C9": RemediationDescriptor("deferred"),
+    "C9": RemediationDescriptor("authored", (RemediationAction("refile", "page_slug"),)),
 }
 
 

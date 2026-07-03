@@ -41,11 +41,24 @@ class TestRemediationTierClassification:
         assert descriptor.tier == "authored"
         assert descriptor.actions == ()
 
-    @pytest.mark.parametrize("code", ["C9", "C11"])
-    def test_deferred_checks_have_no_actions(self, code):
-        """C9 stale-qa and C11 orphan need a lifecycle endpoint that does not
-        exist yet (ADR-0023 Consequences) — deferred, not Direct or Authored."""
-        descriptor = remediation_for(code)
+    def test_c9_is_authored_with_a_refile_action(self):
+        """tier-B S4 (issue #380, ADR-0026 decision 1): C9 stale-qa flips
+        deferred -> authored now that ``POST /qa/{slug}/refile`` exists.
+        Unlike C5/C4/C1/C2, C9's own human gate is the *downstream* Promote
+        on the resulting draft (not a preview step here), so it carries a
+        real action even while staying Authored-classified — see the
+        ``_REMEDIATION_TAXONOMY`` comment for why this is the one exception
+        to "authored-tier checks have no actions" above."""
+        descriptor = remediation_for("C9")
+        assert descriptor.tier == "authored"
+        assert descriptor.actions == (RemediationAction("refile", "page_slug"),)
+
+    def test_c11_is_still_deferred(self):
+        """C11 orphan needs a lifecycle endpoint that does not exist yet in
+        this table (ADR-0023 Consequences) — its remediation ships as its
+        own Confirmed operation (ADR-0025), tracked outside this taxonomy's
+        three tiers, so it is a separate slice's change, not this one's."""
+        descriptor = remediation_for("C11")
         assert descriptor.tier == "deferred"
         assert descriptor.actions == ()
 
