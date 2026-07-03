@@ -57,10 +57,10 @@ from typing import Any
 import yaml
 
 from .atomic import write_text_atomic
-from .grounding import CitableContent, GroundingOutcome, verify
+from .grounding import CitableContent
 from .indexer import parse_markdown, slugify
 from .logger import log_event
-from .schemas import FiledStatus, GroundingClaim, GroundingInfo, WikiPageFrontmatter
+from .schemas import FiledStatus, WikiPageFrontmatter
 
 # ---------------------------------------------------------------------------
 # Sentinel HTML comment (PRD #78 Q8a — verbatim)
@@ -711,14 +711,14 @@ def promote(slug: str) -> FiledStatus:
 
 
 class QaEditRejected(Exception):
-    """Raised by ``edit`` when the submitted body fails the Grounding Check
-    re-run against the page's cited Sections (ADR-0026 Invariant). Carries
-    the caller-facing ``GroundingInfo`` so the route can render the failure
-    honestly (mirrors ``reconcile.ReconcileGroundingFailed``). Nothing is
-    written when this is raised."""
+    """Raised by ``edit`` when the submitted body fails the LLM-free
+    grounding re-check against the page's cited Sections (ADR-0026
+    decision 2: "the re-check is LLM-free and instant"). Carries the
+    caller-facing failure list so the route can render every problem
+    honestly. Nothing is written when this is raised."""
 
-    def __init__(self, grounding: GroundingInfo) -> None:
-        self.grounding = grounding
+    def __init__(self, failures: list[str]) -> None:
+        self.failures = failures
         super().__init__("qa edit content failed grounding re-check")
 
 
@@ -736,9 +736,8 @@ def _resolve_cited_sections(source_ids: list[str], wiki_dir: Path) -> list[Citab
     A citation whose page no longer resolves, or whose heading no longer
     exists on that page, is skipped — best-effort, mirrors
     ``reconcile._collect_union_sections``'s tolerance of a missing Source (a
-    dangling citation degrades the grounding context rather than raising;
-    an empty result then fails the check deterministically via
-    ``grounding.verify``'s empty-sections short-circuit).
+    dangling citation is then reported by ``_check_edit_grounding`` as an
+    unresolvable-citation failure).
     """
     sections: list[CitableContent] = []
     seen_ids: set[str] = set()
@@ -771,29 +770,44 @@ def _resolve_cited_sections(source_ids: list[str], wiki_dir: Path) -> list[Citab
     return sections
 
 
-def _grounding_info_from_outcome(outcome: GroundingOutcome) -> GroundingInfo:
-    """Map an internal ``GroundingOutcome`` to the API-exposed ``GroundingInfo``.
+_INLINE_CITATION_RE = re.compile(r"\[Source:\s*([^\]]+?)\s*\]")
 
-    Same selective-expose mapping ``routes.chat`` and ``reconcile._combine_grounding``
-    each apply locally (reasoning/error_type/retries_attempted stay server-side).
+
+def _check_edit_grounding(body: str, sources: list[str], wiki_dir: Path) -> list[str]:
+    """LLM-free grounding re-check for a draft edit (ADR-0026 decision 2).
+
+    Deterministic and instant — no LLM call (the ADR's rejected-alternatives
+    note: "The re-check is LLM-free and instant; there is no cost argument
+    for skipping it"). The human curator is the semantic judge at this gate;
+    the server enforces that the edited text stays *structurally* grounded
+    in the page's recorded Sections:
+
+      1. the body carries at least one inline ``[Source: <id>]`` citation,
+      2. every cited id is among ``frontmatter.sources`` (an edit never
+         widens sources — Re-file is the path to fresh Sources), and
+      3. every cited id still resolves to a Section on disk.
+
+    Returns the failure list; empty means the edit passes.
     """
-    claims = None
-    if outcome.result is not None and outcome.result.claims:
-        claims = [
-            GroundingClaim(
-                text=c.text, supported=c.supported, citing_section_ids=c.citing_section_ids
-            )
-            for c in outcome.result.claims
+    cited = [c.strip() for c in _INLINE_CITATION_RE.findall(body)]
+    if not cited:
+        return [
+            "edited body contains no [Source: ...] citation — "
+            "a Filed Answer must cite the Sections it derives from"
         ]
-    unsupported_claims = None
-    if outcome.reason == "claim_unsupported" and outcome.result is not None:
-        unsupported_claims = outcome.result.unsupported_claims or None
-    return GroundingInfo(
-        passed=outcome.passed,
-        reason=outcome.reason,
-        claims=claims,
-        unsupported_claims=unsupported_claims,
-    )
+
+    failures: list[str] = []
+    allowed = set(sources)
+    resolved_ids = {s.id for s in _resolve_cited_sections(sorted(set(cited)), wiki_dir)}
+    for citation in dict.fromkeys(cited):
+        if citation not in allowed:
+            failures.append(
+                f"citation '{citation}' is not among this page's sources — an edit "
+                "cannot widen sources (use Re-file to re-derive from fresh Sources)"
+            )
+        elif citation not in resolved_ids:
+            failures.append(f"citation '{citation}' no longer resolves to a wiki Section")
+    return failures
 
 
 def edit(slug: str, question: str, body: str) -> FiledStatus:
@@ -810,10 +824,10 @@ def edit(slug: str, question: str, body: str) -> FiledStatus:
       silently rewriting it, mirrors ``promote``).
     - ``status == "live"`` → ``QaPageLive``. Draft-only: live hand-edits keep
       the documented file-level path (ADR-0026).
-    - Re-runs the Grounding Check against the page's *existing* cited
-      Sections (``frontmatter.sources`` is not widened by the edit) on the
-      submitted ``body``. A failing check raises ``QaEditRejected`` and
-      writes nothing.
+    - Re-runs the LLM-free grounding check (``_check_edit_grounding``)
+      against the page's *existing* cited Sections (``frontmatter.sources``
+      is not widened by the edit) on the submitted ``body``. A failing check
+      raises ``QaEditRejected`` with the failure list and writes nothing.
     - On pass, rewrites the page: ``question``/``body`` become the submitted
       values, ``updated`` bumps to now, ``status`` stays ``"draft"`` (an edit
       never promotes) — ``id``/``created``/``sources``/``count``/
@@ -857,12 +871,10 @@ def edit(slug: str, question: str, body: str) -> FiledStatus:
             )
 
         existing_sources = [str(s) for s in existing.get("sources", [])]
-        cited_sections = _resolve_cited_sections(existing_sources, qa_dir.parent)
-        outcome = verify(body, cited_sections)
-        grounding = _grounding_info_from_outcome(outcome)
-        if not grounding.passed:
-            log_event("qa_edit_rejected", f"slug={slug} reason={grounding.reason}")
-            raise QaEditRejected(grounding)
+        failures = _check_edit_grounding(body, existing_sources, qa_dir.parent)
+        if failures:
+            log_event("qa_edit_rejected", f"slug={slug} failures={len(failures)}")
+            raise QaEditRejected(failures)
 
         try:
             existing_count = int(existing.get("count", 1))

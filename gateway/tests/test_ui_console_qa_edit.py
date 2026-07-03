@@ -9,7 +9,7 @@ invariants of the Edit affordance:
 - The C8 draft card renders a real Edit button wired to ``PUT /wiki/qa/{slug}``
   (draft-only edit-before-promote).
 - Save forwards the live textarea/input values (not a stale closure).
-- A 422 grounding-re-check failure renders the per-item ``unsupported_claims``
+- A 422 grounding-re-check failure renders the per-item ``failures``
   list inline rather than a generic error.
 - Card copy states what promoting *does* in operator language (no ADR
   reference required in this NEW copy — issue #379 AC), and the post-promote
@@ -83,10 +83,12 @@ def test_edit_endpoint_is_put_not_post_and_matches_route():
 # ---------------------------------------------------------------------------
 
 
-def test_422_renders_unsupported_claims_list_inline():
+def test_422_renders_failure_list_inline():
     body = _build_draft_card_body()
     assert "result.status === 422" in body
-    assert "unsupported_claims" in body
+    assert "detail.failures" in body, (
+        "the 422 handler must render the LLM-free check's detail.failures list (ADR-0026)"
+    )
     assert '"edit-validation-errors"' in body, (
         "422 rejection must render into a dedicated validation-errors element, not the generic status message"
     )

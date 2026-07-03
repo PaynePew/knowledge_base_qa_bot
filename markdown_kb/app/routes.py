@@ -232,8 +232,9 @@ def edit_qa(slug: str, req: QaEditRequest) -> FiledStatus:
     Queue gate's verb set — approve (``/promote``) / edit-then-approve
     (this endpoint, then ``/promote``) / discard (``DELETE``). Draft-only:
     refuses a ``status: live`` page (live hand-edits keep the documented
-    file-level path). Re-runs the Grounding Check against the page's cited
-    Sections on the submitted ``body``; a failing check writes nothing.
+    file-level path). Re-runs the LLM-free grounding check against the
+    page's cited Sections on the submitted ``body``; a failing check writes
+    nothing (ADR-0026: "the re-check is LLM-free and instant").
 
     Shallow wrapper around ``qa.edit`` (CODING_STANDARD §2.3 — all domain
     logic lives in ``qa.py``). No reindex: an edited page stays ``status:
@@ -246,7 +247,7 @@ def edit_qa(slug: str, req: QaEditRequest) -> FiledStatus:
       rather than silently rewriting it)
     - ``QaPageLive``     → ``409`` (edit refused — draft-only, ADR-0026)
     - ``QaEditRejected`` → ``422`` (grounding re-check failed;
-      ``detail.unsupported_claims`` lists the offending claims)
+      ``detail.failures`` lists every problem)
     """
     try:
         return qa_module.edit(slug, req.question, req.body)
@@ -270,8 +271,7 @@ def edit_qa(slug: str, req: QaEditRequest) -> FiledStatus:
             status_code=422,
             detail={
                 "message": "qa edit content failed grounding re-check",
-                "reason": exc.grounding.reason,
-                "unsupported_claims": exc.grounding.unsupported_claims or [],
+                "failures": exc.failures,
             },
         ) from exc
 
