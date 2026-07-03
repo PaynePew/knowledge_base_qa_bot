@@ -3,22 +3,26 @@
 Multi-Format Import coordinator — raw/ → docs/ format-conversion pipeline.
 
 Provides ``import_sources(source_filter)`` which converts raw ``.html``,
-``.txt``, and ``.md`` files into normalized Markdown files in ``docs/`` with
-provenance frontmatter.  This is a mechanical conversion (no LLM calls) — the
-import path is completely disjoint from ``/ingest``.
+``.txt``, ``.md``, and ``.pdf`` files into normalized Markdown files in
+``docs/`` with provenance frontmatter.  This is a mechanical conversion (no
+LLM calls, no OCR, no network) — the import path is completely disjoint from
+``/ingest``.
 
 Pipeline per source file:
-    1. Resolve source path(s): batch = glob ``raw/**/*.{html,txt}``; single =
-       ``raw_dir / source_filter``.
+    1. Resolve source path(s): batch = glob ``raw/**/*.{html,txt,md,pdf}``;
+       single = ``raw_dir / source_filter``.
     2. Validate (slice 7-2): NFC-normalize filename, reject invalid filenames
        and source paths, check extension, existence, size, UTF-8 encoding,
        hand-authored collision (docs target without ``imported_from``).
     3. Compute SHA-256 of raw bytes (``raw_path.read_bytes()``) — slice 7-3.
     4. Hash-skip check (slice 7-3): if docs target exists and its frontmatter
-       ``content_sha256`` matches the computed hash → skip (no markdownify,
+       ``content_sha256`` matches the computed hash → skip (no conversion,
        no disk write).  Emit ``import_skipped`` Wiki Log event.
     5. Convert: ``.html`` → markdownify with semantic whitelist + strip list;
-       ``.txt`` / ``.md`` → passthrough (no heading inference).
+       ``.txt`` / ``.md`` → passthrough (no heading inference); ``.pdf`` →
+       MarkItDown text-layer extraction (ADR-0031) — binary bytes bypass the
+       UTF-8 decode step; no heading inference of our own, headings are
+       whatever literal ``#`` text the extractor emits.
     6. Render output: YAML frontmatter (imported_from, original_format,
        imported_at, content_sha256) + converted body.
     7. Atomic write: tempfile in same dir + ``os.replace`` + cleanup on
@@ -34,7 +38,8 @@ Status values for ImportSourceResult:
       overwritten with new content.
     - ``'skipped'``: docs target existed and hash matched; no write performed.
 
-Error handling (slice 7-2 — full 12 typed failure modes):
+Error handling (slice 7-2 full 12 typed failure modes, plus two PDF-specific
+modes added by issue #415 / ADR-0031 — ``EncryptedPdf`` is deferred to Slice 2):
     - ``InvalidFilename``        — basename contains rejected character class
     - ``InvalidSourcePath``      — single-mode source format violation
     - ``FileNotFoundError``      — single-mode source not found in raw/
@@ -46,20 +51,26 @@ Error handling (slice 7-2 — full 12 typed failure modes):
     - ``MarkdownifyError``       — markdownify internal exception
     - ``FilenameCollision``      — two batch files map to same docs basename
     - ``IOError``                — atomic-write OS failure
+    - ``NoTextLayer``            — PDF extraction yielded an empty/whitespace
+      body (deterministic scanned-PDF detector); curator must OCR externally
+      and re-import
+    - ``PdfExtractionError``     — MarkItDown internal exception (corrupt PDF)
 
 Continue-on-error: one failing source does not abort the batch.
 
 Concurrency: inherits Phase 3 Q7 single-writer assumption — no new lock.
 ``docs/`` is the only write target; reads from ``raw/`` only.
 
-See PRD #89 (Phase 7), and slice issues #90 (7-1 scaffold), #91 (7-2 error
-handling), and #92 (7-3 hash chain) for the full design.
+See PRD #89 (Phase 7), slice issues #90 (7-1 scaffold), #91 (7-2 error
+handling), and #92 (7-3 hash chain) for the original design; PRD #414 /
+issue #415 (ADR-0031) add ``.pdf`` support.
 """
 
 from __future__ import annotations
 
 import datetime
 import hashlib
+import io
 import re
 import time
 import unicodedata
@@ -70,6 +81,7 @@ from typing import Literal
 import yaml
 from bs4 import BeautifulSoup, Comment
 from markdownify import markdownify
+from markitdown import MarkItDown
 
 from ._paths import _REPO_ROOT, DOCS_DIR
 from .atomic import write_text_atomic
@@ -127,7 +139,7 @@ _HTML_STRIP_TAGS = [
     "link",
 ]
 
-_SUPPORTED_EXTENSIONS = {".html", ".txt", ".md"}
+_SUPPORTED_EXTENSIONS = {".html", ".txt", ".md", ".pdf"}
 
 # Rejected characters in basenames per PRD #89 §"Filename validation":
 #   - '#'  breaks Section.id contract {filename}#{heading_slug}
@@ -153,7 +165,7 @@ class ImportSourceResult:
 
     ``raw_path`` is the path to the raw source (relative string for the API).
     ``docs_path`` is the output Markdown file path (relative string).
-    ``original_format`` is ``'html'``, ``'txt'``, or ``'md'``.
+    ``original_format`` is ``'html'``, ``'txt'``, ``'md'``, or ``'pdf'``.
     ``content_sha256`` is the hex SHA-256 of the raw bytes (slice 7-3).
     ``status`` is one of ``'created'`` (fresh write), ``'updated'`` (hash-drift overwrite),
     or ``'skipped'`` (hash-match no-op) — full enum exercised in slice 7-3.
@@ -161,7 +173,7 @@ class ImportSourceResult:
 
     raw_path: str
     docs_path: str
-    original_format: Literal["html", "txt", "md"]
+    original_format: Literal["html", "txt", "md", "pdf"]
     content_sha256: str = ""
     status: Literal["created", "updated", "skipped"] = "created"
 
@@ -171,7 +183,8 @@ class ImportFailure:
     """Per-source failure record.
 
     ``raw_path`` is the path string (best-effort; may be the requested source name).
-    ``error_type`` is one of the 12 typed failure mode strings (PRD #89 §7-2).
+    ``error_type`` is one of the typed failure mode strings — the original 12
+    (PRD #89 §7-2) plus ``NoTextLayer`` / ``PdfExtractionError`` (issue #415).
     ``error_message`` is truncated to 200 characters, no stack trace.
     """
 
@@ -274,10 +287,8 @@ def import_path(path: Path) -> ImportSourceResult:
         2. Extract and NFC-normalise the basename; validate it with
            ``_validate_filename`` (rejects ``#``, ``/``, ``\\``, ``:``,
            control chars, bidi controls).
-        3. Check extension — supported: ``.html``, ``.txt``, ``.md``;
-           ``.pdf``: raise ``ImportPathError`` with "extractor not yet available"
-           message (wires the path but defers implementation per PRD #226
-           Out-of-Scope); any other extension: raise ``ImportPathError``.
+        3. Check extension — supported: ``.html``, ``.txt``, ``.md``, ``.pdf``;
+           any other extension: raise ``ImportPathError``.
         4. Copy the raw file bytes into ``raw/<basename>`` atomically.
         5. Call ``_process_one_source`` against the staged raw path.
         6. Return the ``ImportSourceResult`` on success, or raise
@@ -319,12 +330,6 @@ def import_path(path: Path) -> ImportSourceResult:
 
     # Step 3: extension check.
     ext = Path(basename).suffix.lower()
-    if ext == ".pdf":
-        raise ImportPathError(
-            f"PDF extractor not yet available: {basename}. "
-            "Convert the PDF to text or Markdown manually and re-import.",
-            error_type="UnsupportedExtension",
-        )
     if ext not in _SUPPORTED_EXTENSIONS:
         raise ImportPathError(
             f"Unsupported file extension '{ext}': {basename}. "
@@ -377,7 +382,7 @@ def import_path(path: Path) -> ImportSourceResult:
 
 
 def _collect_batch_sources() -> list[Path]:
-    """Glob raw/**/*.{html,txt,md} recursively.
+    """Glob raw/**/*.{html,txt,md,pdf} recursively.
 
     Returns all matching absolute Paths. Unsupported extensions are silently
     skipped (per PRD #89 §23 batch mode semantics).
@@ -391,7 +396,7 @@ def _collect_batch_sources() -> list[Path]:
     sources: list[Path] = []
     if not RAW_DIR.exists():
         return sources
-    for ext in (".html", ".txt", ".md"):
+    for ext in (".html", ".txt", ".md", ".pdf"):
         sources.extend(RAW_DIR.glob(f"**/*{ext}"))
     inbox_marker = RAW_DIR / "README.md"
     return [p for p in sources if p != inbox_marker]
@@ -589,11 +594,13 @@ def _process_one_source(
 
     # Determine format — unsupported extensions are silently skipped in batch mode.
     if ext == ".html":
-        fmt: Literal["html", "txt", "md"] = "html"
+        fmt: Literal["html", "txt", "md", "pdf"] = "html"
     elif ext == ".txt":
         fmt = "txt"
     elif ext == ".md":
         fmt = "md"
+    elif ext == ".pdf":
+        fmt = "pdf"
     else:
         # Batch mode: silent skip (no failure entry, no log)
         return
@@ -698,31 +705,63 @@ def _process_one_source(
         "updated" if docs_path.exists() else "created"
     )
 
-    # Decode UTF-8 — UnicodeDecodeError for non-UTF-8 raw bytes.
-    try:
-        raw_text = raw_bytes.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        failure = ImportFailure(
-            raw_path=str(raw_path),
-            error_type="UnicodeDecodeError",
-            error_message=str(exc)[:200],
-        )
-        result.failed_sources.append(failure)
-        _emit_import_error(failure)
-        return
+    # Binary-format branch (ADR-0031): PDF bytes bypass the UTF-8 decode step
+    # entirely — the SHA-256 hash-skip chain above already operated on raw
+    # bytes, so idempotency and drift-overwrite semantics are unaffected.
+    if fmt == "pdf":
+        try:
+            md_body = _convert_pdf_to_markdown(raw_bytes)
+        except Exception as exc:
+            failure = ImportFailure(
+                raw_path=str(raw_path),
+                error_type="PdfExtractionError",
+                error_message=str(exc)[:200],
+            )
+            result.failed_sources.append(failure)
+            _emit_import_error(failure)
+            return
 
-    # Convert to Markdown — MarkdownifyError for markdownify internal exception
-    try:
-        md_body = _convert_to_markdown(raw_text, fmt)
-    except Exception as exc:
-        failure = ImportFailure(
-            raw_path=str(raw_path),
-            error_type="MarkdownifyError",
-            error_message=str(exc)[:200],
-        )
-        result.failed_sources.append(failure)
-        _emit_import_error(failure)
-        return
+        # NoTextLayer: deterministic scanned-PDF detector. An empty/whitespace
+        # extraction is not itself an exception, so it is checked separately
+        # from the PdfExtractionError try/except above.
+        if not md_body.strip():
+            failure = ImportFailure(
+                raw_path=str(raw_path),
+                error_type="NoTextLayer",
+                error_message=(
+                    f"No extractable text layer in {basename} (scanned/image-only "
+                    "PDF?). Run OCR externally and re-import the result."
+                )[:200],
+            )
+            result.failed_sources.append(failure)
+            _emit_import_error(failure)
+            return
+    else:
+        # Decode UTF-8 — UnicodeDecodeError for non-UTF-8 raw bytes.
+        try:
+            raw_text = raw_bytes.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            failure = ImportFailure(
+                raw_path=str(raw_path),
+                error_type="UnicodeDecodeError",
+                error_message=str(exc)[:200],
+            )
+            result.failed_sources.append(failure)
+            _emit_import_error(failure)
+            return
+
+        # Convert to Markdown — MarkdownifyError for markdownify internal exception
+        try:
+            md_body = _convert_to_markdown(raw_text, fmt)
+        except Exception as exc:
+            failure = ImportFailure(
+                raw_path=str(raw_path),
+                error_type="MarkdownifyError",
+                error_message=str(exc)[:200],
+            )
+            result.failed_sources.append(failure)
+            _emit_import_error(failure)
+            return
 
     # Build full output with frontmatter (incl. content_sha256 — slice 7-3)
     output = _render_output(md_body, raw_path, fmt, content_sha256)
@@ -831,10 +870,41 @@ def _convert_to_markdown(raw_text: str, fmt: Literal["html", "txt", "md"]) -> st
     return md
 
 
+# Lazy singleton (CODING_STANDARD §2.7 pattern): MarkItDown() construction has
+# a real cost (loads the magika file-type model), so a batch import of many
+# PDFs shares one instance instead of paying that cost per file.
+_markitdown_singleton: MarkItDown | None = None
+
+
+def _get_markitdown() -> MarkItDown:
+    """Return the process-wide lazily-constructed ``MarkItDown`` converter."""
+    global _markitdown_singleton
+    if _markitdown_singleton is None:
+        _markitdown_singleton = MarkItDown()
+    return _markitdown_singleton
+
+
+def _convert_pdf_to_markdown(raw_bytes: bytes) -> str:
+    """Extract Markdown text from PDF bytes via MarkItDown (ADR-0031).
+
+    Text-layer extraction only — no OCR, no LLM, no network (MarkItDown's
+    pdfplumber + pdfminer.six hybrid). No heading inference of our own:
+    whatever literal ``#``/``##`` text the extractor emits is what indexer's
+    HEADING_RE later recognises, exactly like the ``.txt`` passthrough.
+
+    Any internal extractor exception propagates to the caller, which maps it
+    to the typed ``PdfExtractionError`` failure. An empty/whitespace-only
+    result is returned as-is (not raised) — the caller checks that separately
+    and maps it to ``NoTextLayer``, since an empty string is not an exception.
+    """
+    result = _get_markitdown().convert_stream(io.BytesIO(raw_bytes), file_extension=".pdf")
+    return result.text_content
+
+
 def _render_output(
     md_body: str,
     raw_path: Path,
-    fmt: Literal["html", "txt", "md"],
+    fmt: Literal["html", "txt", "md", "pdf"],
     content_sha256: str,
 ) -> str:
     """Build the full docs/*.md content: YAML frontmatter + converted body.

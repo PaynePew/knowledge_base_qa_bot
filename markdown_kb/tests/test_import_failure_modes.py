@@ -149,13 +149,18 @@ def test_failure_oversized_source(import_env, monkeypatch):
 
 
 def test_failure_unsupported_extension_single_mode(import_env):
-    """Single-mode source with unsupported extension (.pdf) → UnsupportedExtension."""
+    """Single-mode source with unsupported extension (.docx) → UnsupportedExtension.
+
+    Note: .pdf was the example extension here prior to issue #415 (ADR-0031),
+    which added .pdf to _SUPPORTED_EXTENSIONS. .docx now exercises the same
+    AC — an extension genuinely outside the supported set.
+    """
     client = import_env["client"]
     raw_dir = import_env["raw_dir"]
 
-    (raw_dir / "document.pdf").write_bytes(b"%PDF-1.4 fake content")
+    (raw_dir / "document.docx").write_bytes(b"fake docx content")
 
-    resp = client.post("/import", json={"source": "document.pdf"})
+    resp = client.post("/import", json={"source": "document.docx"})
     assert resp.status_code == 200
     _assert_failure(resp.json(), "UnsupportedExtension")
 
@@ -281,11 +286,16 @@ def test_failure_filename_collision(import_env):
 
 
 def test_unsupported_extension_batch_mode_silent_skip(import_env):
-    """Batch mode silently skips .pdf files (no failed_sources entry)."""
+    """Batch mode silently skips .docx files (no failed_sources entry).
+
+    Note: .pdf was the example extension here prior to issue #415 (ADR-0031),
+    which added .pdf to _SUPPORTED_EXTENSIONS. .docx now exercises the same
+    AC — an extension genuinely outside the supported set.
+    """
     client = import_env["client"]
     raw_dir = import_env["raw_dir"]
 
-    (raw_dir / "document.pdf").write_bytes(b"%PDF-1.4 fake content")
+    (raw_dir / "document.docx").write_bytes(b"fake docx content")
     (raw_dir / "good.html").write_text("<h1>Good</h1><p>Content.</p>", encoding="utf-8")
 
     resp = client.post("/import")
