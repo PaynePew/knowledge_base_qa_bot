@@ -20,10 +20,17 @@ The Gateway is a thin parent ASGI app that:
   - Exposes ``GET /healthz`` (always 200 liveness) and ``GET /healthz/shed``
     (200 normally, 503 when the read semaphore is saturated — edge-active
     health check).
+  - Runs a ``lifespan`` that enters both mounted sub-apps' own lifespans on
+    startup (issue #398): ``app.mount()`` does NOT propagate the ASGI
+    lifespan protocol into a mounted sub-app, so without this a cold Gateway
+    process serves ``/wiki`` and ``/rag`` with an empty in-memory index until
+    something happens to lazy-load it.
 """
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 
 from dotenv import find_dotenv, load_dotenv
@@ -43,6 +50,32 @@ from vector_rag.app.main import app as _rag_app  # noqa: E402
 from .middleware import ProdMiddleware, read_saturated  # noqa: E402
 from .routes import router  # noqa: E402
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Run the mounted sub-apps' own lifespans (issue #398).
+
+    Starlette's ``app.mount()`` wires a sub-app in as a plain ASGI callable —
+    it does NOT forward the top-level ``lifespan.startup`` / ``lifespan.shutdown``
+    messages into it. Both ``markdown_kb`` and ``vector_rag`` rely on their own
+    lifespan to rehydrate their index (``load_index_json`` / ``load_vector_index``)
+    on startup, so under the Gateway that rehydration silently never ran: a cold
+    process served every route — most dangerously ``POST /wiki/lint?include_c5=true``
+    — against an empty in-memory index with no error, only ``llm_calls=0``.
+
+    Entering each sub-app's own ``router.lifespan_context`` here re-runs exactly
+    the startup (and shutdown) logic that app would run standalone, so future
+    changes to either sub-app's lifespan propagate automatically with no edit
+    needed here. The per-route lazy-load fallbacks in each sub-app's
+    ``retrieval.py`` stay in place as a second line of defence (e.g. for a
+    freshly-deployed box with no persisted index yet).
+    """
+    async with AsyncExitStack() as stack:
+        await stack.enter_async_context(_wiki_app.router.lifespan_context(_wiki_app))
+        await stack.enter_async_context(_rag_app.router.lifespan_context(_rag_app))
+        yield
+
+
 # Path constants — resolved relative to this file so they work regardless of cwd.
 _STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 _UI_PATH = _STATIC_DIR / "index.html"
@@ -56,7 +89,7 @@ _FAVICON_PATH = _STATIC_DIR / "favicon.svg"
 # a hard refresh (the mark is tiny; a day of staleness is harmless).
 _FAVICON_CACHE = "public, max-age=86400"
 
-app = FastAPI(title="KB Gateway", version="0.1.0")
+app = FastAPI(title="KB Gateway", version="0.1.0", lifespan=lifespan)
 # Production overload + cost-protection guard (issue #269).  Added BEFORE the
 # routes/mounts so it wraps every request to the parent app and both sub-apps.
 app.add_middleware(ProdMiddleware)
