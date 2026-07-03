@@ -18,7 +18,7 @@ We chose partial borrowing because the project's value is in its *opinions* (the
   - **Adopt `EnsembleRetriever` (LangChain) or `QueryFusionRetriever` (LlamaIndex)** when `vector_rag/` is activated and the hybrid retrieval layer is wanted. Matches the `inspiration.md` "Reciprocal Rank Fusion / cross-encoder rerank — phase: query" deferred pattern.
   - **Adopt format-appropriate converter at the leaf-node layer when supporting non-Markdown sources.** The principle is unchanged from line 5 of this ADR (`borrow at leaf nodes where framework adds value, hand-write at joints where opinion lives`). Trigger refinement: `non-Markdown source` alone is too coarse — the right framework depends on whether the framework actually produces Markdown, not just on whether the input is non-Markdown. Per-format mapping:
     - **HTML → Markdown**: `markdownify` (single-purpose conversion lib; LlamaHub loaders output stripped text, not markdown — not applicable here). Applied in Phase 7 (PRD #89).
-    - **PDF → Markdown**: LlamaHub `PDFReader` or `pypdf` (when triggered).
+    - **PDF → Markdown**: `markitdown` (text-layer extraction; trigger fired 2026-07-03, applied in the Phase 7 amendment — PRD #414). *Amended by ADR-0031*: the original pre-blessing here (LlamaHub `PDFReader` or `pypdf`) emits flat heading-less text, which would collapse a Source into a single Section and defeat the Section retrieval model this ADR exists to protect — see ADR-0031 for the full comparison (AGPL/torch/cloud options all rejected).
     - **Notion export → Markdown**: LlamaHub `NotionPageReader` (when triggered).
     - **Generic binary / structured formats**: LlamaHub readers or Unstructured (when triggered).
     Markdown itself stays on the hand-written parser.
