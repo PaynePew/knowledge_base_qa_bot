@@ -342,7 +342,7 @@ def _synthesize_concept_drafts(sections: list) -> list:
 
 
 def _derive_unsupported_claims(result: GroundingResult | None) -> list[str]:
-    """Union of claims[] entries marked unsupported=False with the flat list.
+    """Union of claims[] entries where supported=False with the flat list.
 
     ``claims[]`` (per-claim ``supported: bool``) is the authoritative source;
     the flat ``unsupported_claims`` list is prompt-asked to mirror it but
