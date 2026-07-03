@@ -379,24 +379,3 @@ def test_promote_cjk_slug_is_not_over_rejected(tmp_path):
     result = promote(slug)
 
     assert result.status == "live"
-
-
-def test_route_promote_pathlike_slug_returns_404(tmp_path):
-    """``POST /qa/{slug}/promote`` for a backslash-carrying slug returns 404,
-    mirroring the "no such qa page" behaviour a garbage slug produces on
-    Linux (issue #397 AC)."""
-    from fastapi.testclient import TestClient
-
-    from app.main import app
-
-    outside = tmp_path / "wiki" / "entities"
-    outside.mkdir(parents=True, exist_ok=True)
-    (outside / "escape-target.md").write_text(
-        "---\nstatus: draft\n---\n\nnot a qa page.\n", encoding="utf-8"
-    )
-
-    client = TestClient(app, raise_server_exceptions=False)
-    resp = client.post("/qa/..\\entities\\escape-target/promote")
-
-    assert resp.status_code == 404, resp.text
-    assert "status: draft" in (outside / "escape-target.md").read_text(encoding="utf-8")

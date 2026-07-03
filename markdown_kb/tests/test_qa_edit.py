@@ -248,29 +248,6 @@ def test_edit_cjk_slug_is_not_over_rejected(tmp_path):
     assert result.status == "draft"
 
 
-def test_route_edit_pathlike_slug_returns_404(tmp_path):
-    """``PUT /qa/{slug}`` for a backslash-carrying slug returns 404, matching
-    the "no such qa page" 404 a garbage slug produces on Linux (issue #397 AC)."""
-    from fastapi.testclient import TestClient
-
-    from app.main import app
-
-    escape_dir = tmp_path / "wiki" / "entities"
-    escape_dir.mkdir(parents=True, exist_ok=True)
-    outside = escape_dir / "escape-target.md"
-    before = "---\nstatus: draft\n---\n\nnot a qa page.\n"
-    outside.write_text(before, encoding="utf-8")
-
-    client = TestClient(app, raise_server_exceptions=False)
-    resp = client.put(
-        "/qa/..\\entities\\escape-target",
-        json={"question": "q", "body": "b"},
-    )
-
-    assert resp.status_code == 404, resp.text
-    assert outside.read_text(encoding="utf-8") == before
-
-
 def test_edit_corrupt_frontmatter_raises_corrupt(tmp_path):
     from app.qa import QaPageCorrupt, edit
 
@@ -381,6 +358,24 @@ def test_route_edit_missing_slug_returns_404(edit_client):
     resp = edit_client.put("/qa/no-such-slug", json={"question": "q", "body": "b"})
 
     assert resp.status_code == 404
+
+
+def test_route_edit_pathlike_slug_returns_404(edit_client, tmp_path):
+    """``PUT /qa/{slug}`` for a backslash-carrying slug returns 404, matching
+    the "no such qa page" 404 a garbage slug produces on Linux (issue #397 AC)."""
+    escape_dir = tmp_path / "wiki" / "entities"
+    escape_dir.mkdir(parents=True, exist_ok=True)
+    outside = escape_dir / "escape-target.md"
+    before = "---\nstatus: draft\n---\n\nnot a qa page.\n"
+    outside.write_text(before, encoding="utf-8")
+
+    resp = edit_client.put(
+        "/qa/..\\entities\\escape-target",
+        json={"question": "q", "body": "b"},
+    )
+
+    assert resp.status_code == 404, resp.text
+    assert outside.read_text(encoding="utf-8") == before
 
 
 def test_route_edit_grounding_failure_returns_422_with_failures(edit_client, tmp_path):

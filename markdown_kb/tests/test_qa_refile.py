@@ -217,17 +217,6 @@ def test_refile_rejects_pathlike_slug_raises_not_found_before_filesystem_touch(
     )
 
 
-def test_route_refile_pathlike_slug_returns_404(refile_client, tmp_path, monkeypatch):
-    """``POST /qa/{slug}/refile`` for a backslash-carrying slug returns 404,
-    matching the "no such qa page" 404 a garbage slug produces on Linux
-    (issue #397 AC)."""
-    _patch_source_dirs(monkeypatch, tmp_path / "wiki")
-
-    resp = refile_client.post("/qa/..\\entities\\escape-target/refile")
-
-    assert resp.status_code == 404, resp.text
-
-
 def test_refile_cjk_slug_is_not_over_rejected(tmp_path, monkeypatch):
     """Real corpus slugs include CJK — the path-shape guard must not
     treat them as invalid."""
@@ -368,6 +357,17 @@ def test_route_refile_missing_slug_returns_404(refile_client, tmp_path, monkeypa
     resp = refile_client.post("/qa/no-such-slug/refile")
 
     assert resp.status_code == 404
+
+
+def test_route_refile_pathlike_slug_returns_404(refile_client, tmp_path, monkeypatch):
+    """``POST /qa/{slug}/refile`` for a backslash-carrying slug returns 404,
+    matching the "no such qa page" 404 a garbage slug produces on Linux
+    (issue #397 AC)."""
+    _patch_source_dirs(monkeypatch, tmp_path / "wiki")
+
+    resp = refile_client.post("/qa/..\\entities\\escape-target/refile")
+
+    assert resp.status_code == 404, resp.text
 
 
 def test_route_refile_grounding_failure_returns_422_and_writes_nothing(

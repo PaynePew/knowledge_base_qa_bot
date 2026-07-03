@@ -351,6 +351,28 @@ def test_promote_endpoint_missing_slug_returns_404(grounded_client):
     )
 
 
+def test_promote_endpoint_pathlike_slug_returns_404(grounded_client, tmp_path):
+    """``POST /qa/{slug}/promote`` for a backslash-carrying slug returns 404,
+    mirroring the "no such qa page" behaviour a garbage slug produces on
+    Linux (issue #397 — a FastAPI path segment can carry ``\\`` / ``:``
+    straight through to the handler; both act as path separators once
+    joined into a filesystem path on Windows)."""
+    client, _ = grounded_client
+
+    outside = tmp_path / "wiki" / "entities"
+    outside.mkdir(parents=True, exist_ok=True)
+    (outside / "escape-target.md").write_text(
+        "---\nstatus: draft\n---\n\nnot a qa page.\n", encoding="utf-8"
+    )
+
+    resp = client.post("/qa/..\\entities\\escape-target/promote")
+
+    assert resp.status_code == 404, resp.text
+    assert "status: draft" in (outside / "escape-target.md").read_text(encoding="utf-8"), (
+        "a path-shaped slug must never reach the filesystem"
+    )
+
+
 def test_promote_endpoint_corrupt_status_returns_500(grounded_client, tmp_path):
     """POST /qa/<corrupt-slug>/promote → 500 (orphan-visibility, do not silently fix)."""
     client, _ = grounded_client
