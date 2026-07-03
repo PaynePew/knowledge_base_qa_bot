@@ -133,6 +133,15 @@ def persisted_wiki_index_fresh_process(tmp_path, monkeypatch):
     monkeypatch.setattr(mk_indexer, "WIKI_DIR", wiki_dir)
     monkeypatch.setattr(mk_indexer, "SOURCE_DIRS", [entities_dir, concepts_dir])
 
+    # The Gateway lifespan under test enters BOTH sub-apps' lifespans, so the
+    # vector_rag leg must be neutralized too or `load_vector_index()` reaches
+    # the real committed .kb/faiss_index and the live embeddings seam
+    # (CODING_STANDARD §6.3, incident #332): point FAISS at an empty tmp dir
+    # (load no-ops) and fake the embeddings getter (belt and suspenders).
+    monkeypatch.setattr(vr_indexer, "FAISS_INDEX_DIR", tmp_path / ".kb" / "faiss_index")
+    monkeypatch.setattr(vr_indexer, "get_embeddings", lambda: _FakeEmbeddings())
+    monkeypatch.setattr(vr_logger, "LOG_PATH", tmp_path / "vector_rag" / "log.md")
+
     # lint.py rebinds its own WIKI_DIR/DOCS_DIR/LOG_PATH names (see
     # markdown_kb/app/_paths.py) — patch those too so POST /wiki/lint's
     # defaults resolve to the same tmp fixture, not the real repo wiki/.
