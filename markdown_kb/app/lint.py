@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``run_lint``, ``_check_c11_orphan``, ``check_full_orphan``, ``_check_c3_failed_grounding``, ``_check_c4a_slug_collision``, ``_check_c6_stale``, ``_check_c2_red_links``, ``_check_c1_coverage_gaps``, ``_canonicalise``, ``_candidate_pairs``, ``_judge_page_pair``, ``_check_c5_page_pair``, ``_load_wiki_pages``, ``get_lint_llm``, ``generate_reconcile_draft``, ``find_inbound_references``, ``generate_collision_merge_draft``, ``generate_collision_differentiate_draft``, ``_check_c8_promotion_candidates``, ``_check_c9_qa_staleness``, ``_check_c10_qa_schema_validity``, ``group_findings_by_axis``, ``LINT_CHECK_TAXONOMY``, ``LINT_AXIS_ORDER``, ``LINT_AXIS_LABEL_ZH``, ``remediation_for``, ``RemediationDescriptor``, ``RemediationAction``, ``DIFFERENTIATE_SENTINEL_TEMPLATE``.
+"""Deep module per Ousterhout. Public surface: ``run_lint``, ``_check_c11_orphan``, ``check_full_orphan``, ``_check_c3_failed_grounding``, ``_check_c4a_slug_collision``, ``_check_c6_stale``, ``_check_c2_red_links``, ``_check_c1_coverage_gaps``, ``_canonicalise``, ``_candidate_pairs``, ``_judge_page_pair``, ``_check_c5_page_pair``, ``_load_wiki_pages``, ``get_lint_llm``, ``generate_reconcile_draft``, ``find_inbound_references``, ``generate_collision_merge_draft``, ``generate_collision_differentiate_draft``, ``_check_c8_promotion_candidates``, ``_check_c9_qa_staleness``, ``_check_c10_qa_schema_validity``, ``_check_c12_alias_collision``, ``group_findings_by_axis``, ``LINT_CHECK_TAXONOMY``, ``LINT_AXIS_ORDER``, ``LINT_AXIS_LABEL_ZH``, ``remediation_for``, ``RemediationDescriptor``, ``RemediationAction``, ``DIFFERENTIATE_SENTINEL_TEMPLATE``.
 
 Lint orchestrator — POST /lint health check for the wiki.
 
@@ -101,6 +101,27 @@ using the same stable keys.
 
 All four amendments preserve PRD #65 Q3 read-only invariant — they read
 frontmatter and write only ``lint-report.md``, never page frontmatter.
+
+Alias core (issue #406, ADR-0030)
+-----------------------------------------------------------------
+A new check, **C12 alias-collision** (Coherence axis; C7 is skipped and
+stays unassigned), plus two amendments to existing checks — all sharing the
+ONE resolver in ``slugs.build_alias_resolution_map`` (ADR-0030 Invariant:
+every wikilink-resolution consumer uses the shared resolver):
+
+- **C2 red-link** now resolves a ``[[wikilink]]`` by slug OR alias before
+  calling it red (previously slug-only).
+- **``find_inbound_references``** (the C4 merge-apply reference guard) now
+  counts an alias-mediated ``[[link]]`` as a real inbound reference.
+- **C12 alias-collision** fires on two shapes: an alias colliding with an
+  existing page slug, or two pages claiming the same alias. Advisory, Direct
+  remediation tier (no executable action yet — the assign-alias endpoint
+  that would wire one is a follow-up ticket; this is the foundation slice).
+
+Still read-only — this module never writes the ``aliases`` frontmatter
+field itself (that lives in the follow-up assign-alias endpoint); the
+preserve-across-re-ingest write path lives in ``ingest.py`` /
+``wiki_writer.py``.
 
 Slice S1 scope (Lint Remediation tier-B — issue #376, ADR-0028)
 -----------------------------------------------------------------
@@ -218,13 +239,14 @@ Check execution order (cheapest to most expensive)
 1. C11 orphan (read frontmatter only)
 2. C3 failed-grounding (read frontmatter only)
 3. C4-a slug collision (filename list only)
-4. C6 stale pages (stat docs/ files)
-5. C2 red links (scan wiki page bodies)
-6. C1 coverage gap (read log.md only)
-7. C8 promotion candidates (read qa frontmatter)
-8. C9 qa-staleness (stat entity files vs qa updated)
-9. C10 qa-schema-validity (read qa frontmatter)
-10. C5 page-pair LLM (F1∪F3 filter + LLM) — most expensive last
+4. C12 alias-collision (read frontmatter only)
+5. C6 stale pages (stat docs/ files)
+6. C2 red links (scan wiki page bodies)
+7. C1 coverage gap (read log.md only)
+8. C8 promotion candidates (read qa frontmatter)
+9. C9 qa-staleness (stat entity files vs qa updated)
+10. C10 qa-schema-validity (read qa frontmatter)
+11. C5 page-pair LLM (F1∪F3 filter + LLM) — most expensive last
 
 Authorised by PRD #65 (Phase 5), GitHub issue #66 (Slice 5-1), GitHub issue #67 (Slice 5-2), GitHub issue #68 (Slice 5-3), GitHub issue #69 (Slice 5-4), GitHub issue #70 (Slice 5-5), PRD #78 (Phase 6), GitHub issue #82 (Slice 6-5 Phase 5 amendment), ADR-0023 (Lint Remediation Direct vs Authored), PRD #359 (Lint Remediation tier-A), GitHub issue #361 (Slice S1 — Lint Axis taxonomy), GitHub issue #363 (Slice S3 — Console axis grouping + per-row Direct Remediation + auto-relint), and GitHub issue #365 (Slice S5 — Console zh/en language toggle).
 """
@@ -248,6 +270,7 @@ from .atomic import write_text_atomic
 from .indexer import _index_lock
 from .logger import LOG_PATH, log_event
 from .schemas import (
+    AliasCollisionFinding,
     CollisionDifferentiateDraft,
     CollisionMergeDraft,
     CoverageGapFinding,
@@ -265,6 +288,7 @@ from .schemas import (
     SlugCollisionFinding,
     StalePageFinding,
 )
+from .slugs import build_alias_resolution_map
 
 # ---------------------------------------------------------------------------
 # C5 — Lazy LLM singleton (ADR-0005 pattern)
@@ -723,6 +747,100 @@ def _check_c4a_slug_collision(
     return findings
 
 
+# ---------------------------------------------------------------------------
+# C12 — Alias-collision (issue #406, ADR-0030, Coherence axis)
+# ---------------------------------------------------------------------------
+# ID skips C7 — never assigned, left unused (issue #406 scope item 5).
+
+
+def _check_c12_alias_collision(wiki_dir: Path) -> list[AliasCollisionFinding]:
+    """Return alias-collision findings for every conflicting alias claim.
+
+    Two collision shapes (ADR-0030 decision 4):
+
+    (a) **alias_vs_slug** — a page's declared alias equals another (or the
+        same) page's real slug. The real page always wins resolution
+        (``slugs.build_alias_resolution_map``), so the corpus stays
+        queryable while the finding stands, but the alias is dead weight —
+        it can never resolve to the page that declared it.
+    (b) **alias_vs_alias** — two or more pages independently declare the
+        SAME alias and no real page owns that slug. The shared resolver's
+        tie-break (lexicographically-first canonical slug) decides which
+        page currently "wins" that alias; the other claimant(s) silently
+        never resolve via it.
+
+    Algorithm:
+    1. Collect every real page slug from ``entities/`` and ``concepts/``.
+    2. Collect every ``(alias, declaring_slug)`` pair from each page's
+       frontmatter ``aliases`` list.
+    3. Group declarations by alias. An alias with a single declarer AND no
+       real-slug collision resolves cleanly — not a finding.
+    4. Emit one finding per alias that collides either way, sorted
+       alphabetically by ``alias``.
+
+    Read-only — mirrors every other lint check's frontmatter-scan contract
+    (PRD #65 Q3 invariant); this check never edits frontmatter.
+    """
+    real_slugs: set[str] = set()
+    for slug, _page_path in _iter_wiki_pages(wiki_dir):
+        real_slugs.add(slug)
+
+    alias_claims: dict[str, list[str]] = defaultdict(list)
+    for slug, page_path in _iter_wiki_pages(wiki_dir):
+        fm = _parse_frontmatter(page_path)
+        if fm is None:
+            continue
+        raw_aliases = fm.get("aliases", [])
+        if not isinstance(raw_aliases, list):
+            continue
+        for raw_alias in raw_aliases:
+            alias = str(raw_alias).strip()
+            if not alias:
+                continue
+            alias_claims[alias].append(slug)
+
+    findings: list[AliasCollisionFinding] = []
+    for alias, claimants in alias_claims.items():
+        claimed_by = sorted(set(claimants))
+        claimed_by_str = ", ".join(f"'{c}'" for c in claimed_by)
+
+        if alias in real_slugs:
+            findings.append(
+                AliasCollisionFinding(
+                    kind="alias_vs_slug",
+                    alias=alias,
+                    claimed_by=claimed_by,
+                    slug_owner=alias,
+                    resolved_to=alias,
+                    suggested_action=(
+                        f"Alias '{alias}' collides with the existing page slug '{alias}'. "
+                        f"The real page always wins resolution, so the alias declared by "
+                        f"{claimed_by_str} can never resolve to its own declaring page. "
+                        f"Edit the frontmatter to remove or rename this alias."
+                    ),
+                )
+            )
+        elif len(claimed_by) >= 2:
+            resolved_to = min(claimed_by)
+            findings.append(
+                AliasCollisionFinding(
+                    kind="alias_vs_alias",
+                    alias=alias,
+                    claimed_by=claimed_by,
+                    slug_owner=None,
+                    resolved_to=resolved_to,
+                    suggested_action=(
+                        f"Alias '{alias}' is claimed by multiple pages ({claimed_by_str}). "
+                        f"Resolution currently favors '{resolved_to}' (lexicographically "
+                        f"first); edit the frontmatter so only one page declares this alias."
+                    ),
+                )
+            )
+
+    findings.sort(key=lambda f: f.alias)
+    return findings
+
+
 def find_inbound_references(slug: str, wiki_dir: Path) -> tuple[list[str], list[str]]:
     """Return ``(wiki_referrer_slugs, qa_referrer_slugs)`` for ``slug``.
 
@@ -731,9 +849,14 @@ def find_inbound_references(slug: str, wiki_dir: Path) -> tuple[list[str], list[
     distinct reference mechanisms, mirroring the checks that already scan
     for each:
 
-    - **Wiki referrers** — ``entities/``/``concepts/`` pages with a resolved
-      ``[[slug]]`` wikilink pointing at ``slug`` (same regex C2 uses for red
-      links, but here the target DOES exist — this is the inverse case).
+    - **Wiki referrers** — ``entities/``/``concepts/`` pages with a
+      ``[[link]]`` that RESOLVES to ``slug``, via the shared ADR-0030
+      resolver (``slugs.build_alias_resolution_map``) — a literal
+      ``[[slug]]`` match (the pre-#406 behaviour) OR an alias-mediated
+      ``[[alias-of-slug]]`` match both count (ADR-0030 Invariant: every
+      wikilink-resolution consumer uses the shared resolver; an
+      alias-mediated link is a real inbound reference the guard must not
+      miss — a merge-delete of ``slug`` would break it just the same).
     - **Qa referrers** — ``wiki/qa/*.md`` Filed Answers whose
       ``frontmatter.sources`` cites ``slug`` (bare or ``slug#heading``),
       regardless of ``status`` — a draft citing a soon-deleted page is still
@@ -744,6 +867,8 @@ def find_inbound_references(slug: str, wiki_dir: Path) -> tuple[list[str], list[
     included (a page cannot reference itself as an inbound link for this
     purpose).
     """
+    resolution_map = build_alias_resolution_map(wiki_dir)
+
     wiki_referrers: set[str] = set()
     for page_slug, page_path in _iter_wiki_pages(wiki_dir):
         if page_slug == slug:
@@ -753,7 +878,8 @@ def find_inbound_references(slug: str, wiki_dir: Path) -> tuple[list[str], list[
         except OSError:
             continue
         for match in _WIKILINK_RE.finditer(body):
-            if match.group(1).strip() == slug:
+            target = match.group(1).strip()
+            if resolution_map.get(target) == slug:
                 wiki_referrers.add(page_slug)
                 break
 
@@ -931,27 +1057,25 @@ def _check_c2_red_links(
     ``wiki/.archive/*`` and root-level special files are explicitly excluded.
 
     Algorithm:
-    1. Build the set of existing page slugs from ``entities/*.md`` + ``concepts/*.md``.
+    1. Build the shared ADR-0030 resolution map (existing slugs UNION
+       aliases -> canonical slug) via ``slugs.build_alias_resolution_map``.
     2. For each page in those dirs, scan the page body for ``[[...]]`` patterns.
        Skip files in ``_C2_EXCLUDED_FILENAMES`` (by basename).
        Skip files in ``wiki/.archive/``.
     3. For each wikilink, extract the slug portion (drop ``#anchor`` and ``|alias``).
-       If the slug is NOT in the existing slugs set, it is a red link.
+       If the slug is NOT a key in the resolution map (resolvable by neither
+       a real slug nor an alias — ADR-0030 decision 2), it is a red link.
     4. Aggregate by slug: count total occurrences; track pages that reference it;
        capture ~50-char context from the first occurrence.
     5. Return findings sorted by ``mention_count`` descending, alphabetical by ``slug`` for ties.
 
     Heading anchors (``[[slug#heading]]``) are captured but only the slug is checked.
     """
-    # Build the set of known page slugs
-    existing_slugs: set[str] = set()
-    # TODO: consolidate ("entities", "concepts") with ADR-0006 SOURCE_DIRS string-name companion
-    for subdir_name in ("entities", "concepts"):
-        subdir = wiki_dir / subdir_name
-        if not subdir.exists():
-            continue
-        for page_path in subdir.glob("*.md"):
-            existing_slugs.add(page_path.stem)
+    # ADR-0030 Invariant: every wikilink-resolution consumer uses the ONE
+    # shared resolver — never a locally-built slug set. When no page
+    # declares any aliases this degenerates to exactly the prior "real
+    # slugs only" behaviour (every key maps to itself).
+    resolution_map = build_alias_resolution_map(wiki_dir)
 
     # Per-slug aggregation: mention_count, referenced_by set, first context
     slug_counts: dict[str, int] = defaultdict(int)
@@ -982,8 +1106,8 @@ def _check_c2_red_links(
                 target_slug = match.group(1).strip()
                 if not target_slug:
                     continue
-                if target_slug in existing_slugs:
-                    # Resolved — not a red link
+                if target_slug in resolution_map:
+                    # Resolved by slug or alias — not a red link (ADR-0030)
                     continue
                 # Unresolved red link
                 slug_counts[target_slug] += 1
@@ -2403,6 +2527,7 @@ LINT_CHECK_TAXONOMY: dict[str, LintCheckMeta] = {
     "C11": LintCheckMeta("C11", "orphan", "Freshness", "孤立頁面"),
     "C5": LintCheckMeta("C5", "contradiction", "Coherence", "矛盾"),
     "C4": LintCheckMeta("C4", "collision", "Coherence", "重複"),
+    "C12": LintCheckMeta("C12", "alias-collision", "Coherence", "別名衝突"),
     "C1": LintCheckMeta("C1", "coverage-gap", "Coverage", "覆蓋缺口"),
     "C2": LintCheckMeta("C2", "red-link", "Coverage", "失效連結"),
     "C8": LintCheckMeta("C8", "promotion", "Lifecycle", "待升級"),
@@ -2416,6 +2541,7 @@ _FINDINGS_ATTR_BY_CODE: dict[str, str] = {
     "C11": "orphans",
     "C3": "failed_grounding",
     "C4": "slug_collisions",
+    "C12": "alias_collisions",
     "C6": "stale_pages",
     "C2": "red_links",
     "C1": "coverage_gaps",
@@ -2538,6 +2664,14 @@ class RemediationDescriptor(NamedTuple):
 # every surface can render the SAME navigation hint off the one shared
 # taxonomy (Console: a real "Fill via Import" control; CLI/MCP: the route as
 # text). ADR-0027 Invariant: a Routed remediation commits nothing itself.
+# C12 alias-collision (issue #406, ADR-0030) is ``"direct"`` — the fix is a
+# hand-edit of frontmatter, no LLM, no synthesis, reversible — but carries
+# NO action yet: the endpoint that would execute it (``POST
+# /pages/{slug}/aliases`` assign-alias, or a future frontmatter-edit route)
+# is explicitly out of scope for this foundation slice (issue #406 "no HTTP
+# surface, no UI"). A follow-up slice adds the real ``RemediationAction``
+# once that endpoint exists — until then this entry only classifies the
+# tier and supplies the zh/en label via the shared taxonomy.
 _REMEDIATION_TAXONOMY: dict[str, RemediationDescriptor] = {
     "C6": RemediationDescriptor("direct", (RemediationAction("reingest", "source"),)),
     "C3": RemediationDescriptor(
@@ -2546,6 +2680,7 @@ _REMEDIATION_TAXONOMY: dict[str, RemediationDescriptor] = {
     "C11": RemediationDescriptor("confirmed", (RemediationAction("delete", "page_slug"),)),
     "C5": RemediationDescriptor("authored"),
     "C4": RemediationDescriptor("authored"),
+    "C12": RemediationDescriptor("direct"),
     "C1": RemediationDescriptor("routed", route="import"),
     "C2": RemediationDescriptor("routed", route="import"),
     "C8": RemediationDescriptor(
@@ -2565,7 +2700,7 @@ def remediation_for(code: str) -> RemediationDescriptor:
 
     Pure lookup into ``_REMEDIATION_TAXONOMY`` — the single source of truth
     for which checks are Direct / Authored / Confirmed / Routed / deferred
-    (ADR-0023 / ADR-0024 / ADR-0027). ``code`` is one of the ten
+    (ADR-0023 / ADR-0024 / ADR-0027). ``code`` is one of the
     ``LINT_CHECK_TAXONOMY`` keys (a finding *type*, e.g. ``"C6"`` — the
     tier/action/target-field/force shape does not vary per finding
     *instance*, only per check). Raises
@@ -2650,6 +2785,26 @@ def _render_c4_slug_collisions(findings: LintFindings) -> list[str]:
         lines.append("")
         for sc in findings.slug_collisions:
             lines.append(f"**`{sc.base_slug}`** — {sc.suggested_action}")
+            lines.append("")
+    lines.append("")
+    return lines
+
+
+def _render_c12_alias_collisions(findings: LintFindings) -> list[str]:
+    """C12 Alias collisions — always rendered (empty-section convention, matching C4/C5)."""
+    n_c12 = len(findings.alias_collisions)
+    lines: list[str] = [_check_heading("C12", f"Alias collisions ({n_c12} findings)"), ""]
+    if not findings.alias_collisions:
+        lines.append("_No alias collisions found._")
+    else:
+        lines.append("| Alias | Kind | Claimed by | Resolves to |")
+        lines.append("| --- | --- | --- | --- |")
+        for ac in findings.alias_collisions:
+            claimed_cell = ", ".join(f"`{c}`" for c in ac.claimed_by)
+            lines.append(f"| `{ac.alias}` | {ac.kind} | {claimed_cell} | `{ac.resolved_to}` |")
+        lines.append("")
+        for ac in findings.alias_collisions:
+            lines.append(f"**`{ac.alias}`** — {ac.suggested_action}")
             lines.append("")
     lines.append("")
     return lines
@@ -2837,7 +2992,7 @@ def _render_report_markdown(
     ``LINT_CHECK_TAXONOMY``'s per-axis order via ``group_findings_by_axis``,
     each as its own ``### <CODE> ... — <label>`` sub-heading (built by
     ``_check_heading``). Each check keeps its own empty-section convention:
-    C1/C2/C3/C4/C5/C6/C11 always render (with a "_No … found._" placeholder
+    C1/C2/C3/C4/C5/C6/C11/C12 always render (with a "_No … found._" placeholder
     when empty), while C8/C9/C10 (Slice 6-5) are omitted entirely when empty.
 
     The report also starts with the sentinel HTML comment
@@ -2861,6 +3016,7 @@ def _render_report_markdown(
         "C11": _render_c11_orphans(findings),
         "C3": _render_c3_failed_grounding(findings),
         "C4": _render_c4_slug_collisions(findings),
+        "C12": _render_c12_alias_collisions(findings),
         "C6": _render_c6_stale_pages(findings),
         "C2": _render_c2_red_links(findings),
         "C1": _render_c1_coverage_gaps(findings),
@@ -2980,6 +3136,15 @@ def run_lint(
             check_errors["c4a"] = err_msg
             log_event("lint_check_error", f"check=c4a exc={err_msg}", log_path=resolved_log)
 
+        # --- C12 Alias collisions ---
+        alias_collisions: list[AliasCollisionFinding] = []
+        try:
+            alias_collisions = _check_c12_alias_collision(resolved_wiki)
+        except Exception as exc:  # noqa: BLE001
+            err_msg = f"{type(exc).__name__}: {exc}"
+            check_errors["c12"] = err_msg
+            log_event("lint_check_error", f"check=c12 exc={err_msg}", log_path=resolved_log)
+
         # --- C6 Stale pages ---
         stale_pages: list[StalePageFinding] = []
         try:
@@ -3076,6 +3241,7 @@ def run_lint(
         orphans=orphans,
         failed_grounding=failed_grounding,
         slug_collisions=slug_collisions,
+        alias_collisions=alias_collisions,
         stale_pages=stale_pages,
         red_links=red_links,
         coverage_gaps=coverage_gaps,
@@ -3088,6 +3254,7 @@ def run_lint(
         len(orphans)
         + len(failed_grounding)
         + len(slug_collisions)
+        + len(alias_collisions)
         + len(stale_pages)
         + len(red_links)
         + len(coverage_gaps)
@@ -3100,6 +3267,7 @@ def run_lint(
         "c11": len(orphans),
         "c3": len(failed_grounding),
         "c4a": len(slug_collisions),
+        "c12": len(alias_collisions),
         "c6": len(stale_pages),
         "c2": len(red_links),
         "c1": len(coverage_gaps),

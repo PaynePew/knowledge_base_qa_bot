@@ -47,6 +47,13 @@ def project_wiki_index(sections: list[Section]) -> str:
        - Slug-bearing: ``- [<heading>](../docs/<file>#<slug>) — `<id>```
        - Bare-filename (id == filename, no ``#``):
          ``- [<filename>](../docs/<filename>) — `<filename>```
+       - When the Section's frontmatter carries a non-empty ``aliases`` list
+         (issue #406, ADR-0030), the bullet gains a trailing
+         `` (aliases: `a`, `b`)`` suffix — read straight off
+         ``Section.metadata["aliases"]``, which already carries the whole
+         parsed frontmatter dict (no indexer change needed). Absent/empty on
+         every page that has not been assigned an alias, so a wiki with no
+         aliases yet renders byte-identical to before this amendment.
     6. Trailing newline (``text.rstrip() + "\\n"``).
     7. Empty sections list → placeholder body instead of H2 blocks.
 
@@ -159,6 +166,11 @@ def _format_bullet(sec: Section) -> str:
     extract the slug from ``id`` (the part after the ``#``) and use
     ``[<heading>](../docs/<file>#<slug>)``.
 
+    Issue #406 (ADR-0030): appends `` (aliases: ...)`` when the Section's
+    frontmatter carries a non-empty ``aliases`` list — purely a display
+    projection, never fed into BM25 tokens (ADR-0030 Invariant: link-layer
+    only, aliases never reach the Section Index).
+
     Args:
         sec: A single Section from the index.
 
@@ -177,4 +189,11 @@ def _format_bullet(sec: Section) -> str:
         display = sec.heading
         code_id = sec.id
 
-    return f"- [{display}]({link}) — `{code_id}`"
+    bullet = f"- [{display}]({link}) — `{code_id}`"
+
+    aliases = sec.metadata.get("aliases")
+    if isinstance(aliases, list) and aliases:
+        alias_cell = ", ".join(f"`{a}`" for a in aliases)
+        bullet += f" (aliases: {alias_cell})"
+
+    return bullet

@@ -1928,6 +1928,13 @@ var LINT_CHECK_LABEL_ZH = {
   C11: "孤立頁面",
   C5:  "矛盾",
   C4:  "重複",
+  /* C12 alias-collision (issue #406, ADR-0030): label only, kept in sync
+     with markdown_kb/app/lint.py's LINT_CHECK_TAXONOMY["C12"].label_zh so
+     the bilingual-parity structural test stays green. Deliberately NOT
+     added to LINT_CHECK_META / AXIS_ORDER below — this foundation slice
+     ships no HTTP surface / UI for C12 (no assign-alias endpoint exists
+     yet); a follow-up slice wires the real Console rendering. */
+  C12: "別名衝突",
   C1:  "覆蓋缺口",
   C2:  "失效連結",
   C8:  "待升級",
