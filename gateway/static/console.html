@@ -945,6 +945,31 @@
     line-height: 1.45;
   }
 
+  /* Promote-all batch action (tier-B S6, issue #382) — sits flush right of
+     the C8 section-head label/count, same margin-left:auto technique as
+     .queue-refresh-btn in .queue-header. */
+  .queue-batch-action {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* One-shot Promote-all result banner (issue #382 AC — per-item skipped
+     list). Cleared after a single render, mirrors .lint-batch-summary. */
+  .promote-batch-summary {
+    padding: 8px 0;
+    font-size: 12px;
+  }
+  .promote-batch-skipped {
+    margin: 6px 0 0;
+    padding-left: 18px;
+    color: var(--ink-3);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    line-height: 1.6;
+  }
+
   /* Draft card: bordered, full-width, body preview */
   .draft-card {
     border: 1px solid var(--rule);
@@ -3419,6 +3444,14 @@ function buildPipeline(rootEl) {
 /* Module-level store for the latest LintResponse */
 var lastLintData = null;
 
+/* Module-level store for the latest POST /wiki/qa/promote-batch result
+   (tier-B S6, issue #382) — a one-shot banner shown at the top of the C8
+   section on the NEXT renderCurationQueue call (the batch's own success
+   handler re-lints and re-renders the queue, which would otherwise destroy
+   the button's own status message before the operator can read it; mirrors
+   the ``lastBatchSummary`` pattern the Lint card's batch actions already use). */
+var lastPromoteBatchResult = null;
+
 /* Module-level handle to the Lint step's own result container, set by
    buildPipeline (issue #365) so the header language toggle can re-render an
    already-visible Lint card in place. */
@@ -3470,11 +3503,16 @@ function renderCurationQueue(rootEl, lintData) {
     var c8Section = el("div", { class: "queue-section" },
       el("div", { class: "queue-section-head" },
         el("span", { text: "Promotion Candidates (C8)" }),
-        el("span", { class: "label label-created", text: String(candidates.length) })
+        el("span", { class: "label label-created", text: String(candidates.length) }),
+        promoteAllAction(candidates.map(function(f) { return f.slug; }))
       ),
       el("p", { class: "queue-section-desc",
         text: "Promote: a curator approves a draft Filed Answer so it becomes retrievable — the bot starts answering matching questions with it. Discard: remove an inert (draft) entry from the queue — refused for live answers (server decides eligibility)." })
     );
+    if (lastPromoteBatchResult) {
+      c8Section.append(renderPromoteBatchSummary(lastPromoteBatchResult));
+      lastPromoteBatchResult = null;
+    }
     candidates.forEach(function(f) {
       c8Section.append(buildDraftCard(f));
     });
@@ -3573,6 +3611,80 @@ function makeRefreshBtn() {
       });
   });
   return btn;
+}
+
+/* ── Promote-all batch action (tier-B S6, issue #382, ADR-0023) ────────
+   Direct-tier's one pre-authorized batch endpoint: POST /wiki/qa/promote-batch
+   with the EXACT slugs currently rendered as candidates — never re-resolved
+   as "all drafts" client- or server-side, so a draft filed after this queue
+   rendered is never approved sight-unseen. Shares the same remediationInFlight
+   guard + beforeunload confirm the Lint card's batch actions use (issue #364)
+   so a promote-all in flight also blocks a concurrent Lint-card batch, and
+   vice versa — one guard, one durability story, across both cards. */
+function promoteAllAction(slugs) {
+  var btn = el("button", { class: "promote-btn queue-batch-btn", type: "button",
+    text: "Promote all (" + slugs.length + ")" });
+  var statusMsgEl = el("span", { class: "card-status-msg" });
+
+  btn.addEventListener("click", function() {
+    if (btn.disabled || remediationInFlight) return;
+    remediationInFlight = true;
+    btn.disabled = true;
+    statusMsgEl.replaceChildren(
+      el("span", { class: "spinner" }),
+      document.createTextNode(
+        "Promoting " + slugs.length + " draft" + (slugs.length !== 1 ? "s" : "") + "…"
+      )
+    );
+    statusMsgEl.className = "card-status-msg";
+
+    fetch("/wiki/qa/promote-batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slugs: slugs })
+    })
+      .then(function(resp) {
+        if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+        return resp.json();
+      })
+      .then(function(data) {
+        lastPromoteBatchResult = data;
+        var summary = "promoted " + data.promoted.length + " of " + slugs.length +
+          (data.skipped.length ? ": " + data.skipped.length + " skipped" : "");
+        /* Reuses the Lint card's shared batch-completion path (re-lint once,
+           re-render the Lint card AND the Curation Queue, honest re-lint-
+           failure fallback) — a promote-all is just another Direct-tier
+           batch from that path's point of view. */
+        finishBatchRemediation(summary, lintResultEl, [btn]);
+      })
+      .catch(function(err) {
+        remediationInFlight = false;
+        btn.disabled = false;
+        statusMsgEl.textContent = "Error: " + (err.message || String(err));
+        statusMsgEl.className = "card-status-msg err";
+      });
+  });
+
+  return el("div", { class: "queue-batch-action" }, btn, statusMsgEl);
+}
+
+/* Renders the one-shot Promote-all result banner: how many promoted, and
+   every skipped slug with its reason (issue #382 AC: "skipped list rendered
+   per-item in the Console"). */
+function renderPromoteBatchSummary(result) {
+  var promotedCount = result.promoted.length;
+  var summaryEl = el("div", { class: "promote-batch-summary" },
+    el("span", { class: "card-status-msg ok",
+      text: "Promoted " + promotedCount + (promotedCount ? ": " + result.promoted.join(", ") : "") })
+  );
+  if (result.skipped.length > 0) {
+    var skipList = el("ul", { class: "promote-batch-skipped" });
+    result.skipped.forEach(function(s) {
+      skipList.append(el("li", { text: s.slug + " — " + s.reason }));
+    });
+    summaryEl.append(skipList);
+  }
+  return summaryEl;
 }
 
 /* Extract a wiki/qa/<slug>.md file's answer body (everything after the

@@ -36,7 +36,11 @@ decision 1, issue #380) to ``QA_REFILE_TEMPLATE``, and ``DELETE
 /wiki/pages/{slug}`` (ADR-0025, issue #381) to ``PAGES_DELETE_TEMPLATE`` —
 the latter calls no LLM (Confirmed Remediation, ADR-0024 Invariant) but
 still mutates the live corpus, so it stays admin-semaphore + kill-switch
-gated even at a $0.00 budget estimate.
+gated even at a $0.00 budget estimate. ``POST /wiki/qa/promote-batch``
+(ADR-0023, issue #382) needs no such canonicalisation — the path carries no
+slug — but is classified as ``ADMIN_PATHS`` for the same reason as the
+delete path: no LLM call, but a batch of live-corpus mutations plus a BM25
+reindex is exactly the kind of write the admin gate exists for.
 """
 
 from __future__ import annotations
@@ -101,6 +105,7 @@ ADMIN_PATHS: frozenset[str] = frozenset(
         "/wiki/pages/collision/differentiate",  # ADR-0028: C4 differentiate draft — LLM draft + grounding (issue #378)
         "/wiki/pages/collision/differentiate/apply",  # ADR-0028: grounding re-check + N-page rewrite + reindex (issue #378)
         PAGES_DELETE_TEMPLATE,  # ADR-0025: C11 Confirmed orphan-delete — no LLM, still a live-corpus mutation (issue #381)
+        "/wiki/qa/promote-batch",  # ADR-0023: Direct-tier batch promote — no LLM, still a live-corpus mutation (issue #382)
     }
 )
 

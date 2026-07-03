@@ -1,10 +1,11 @@
 """Shallow module per Ousterhout. Public surface: ``router``.
 
 HTTP wiring for /health, /index, /chat, /qa/{slug}/promote,
-/qa/{slug} (DELETE, PUT), /qa/{slug}/refile, /ingest, /lint, /import,
-/pages/reconcile, /pages/reconcile/apply, /pages/collision/merge,
-/pages/collision/merge/apply, /pages/collision/differentiate,
-/pages/collision/differentiate/apply, /pages/{slug} (DELETE). No domain logic."""
+/qa/promote-batch, /qa/{slug} (DELETE, PUT), /qa/{slug}/refile, /ingest,
+/lint, /import, /pages/reconcile, /pages/reconcile/apply,
+/pages/collision/merge, /pages/collision/merge/apply,
+/pages/collision/differentiate, /pages/collision/differentiate/apply,
+/pages/{slug} (DELETE). No domain logic."""
 
 from __future__ import annotations
 
@@ -44,6 +45,8 @@ from .schemas import (
     IngestResponse,
     LintResponse,
     QaEditRequest,
+    QaPromoteBatchRequest,
+    QaPromoteBatchResponse,
     QaRefileResponse,
     ReconcileApplyRequest,
     ReconcileApplyResponse,
@@ -191,6 +194,35 @@ def promote_qa(slug: str) -> FiledStatus:
             detail=f"wiki/qa/{slug}.md has corrupt frontmatter: {exc}",
         ) from exc
     # ADR-0020: auto-reindex so the live page is retrievable immediately.
+    build_index()
+    return result
+
+
+@router.post("/qa/promote-batch", response_model=QaPromoteBatchResponse)
+def promote_batch_qa(req: QaPromoteBatchRequest) -> QaPromoteBatchResponse:
+    """Curator endpoint: batch-promote an explicit slugs list, one reindex.
+
+    tier-B S6 (issue #382) / ADR-0023 Consequences — the one pre-authorized
+    Direct-tier batch endpoint ("a batch-promote endpoint, deferred" — this
+    slice ships it). ``req.slugs`` must be exactly what the operator saw
+    rendered in the Curation Queue, never "all drafts" resolved server-side,
+    so a draft filed after the operator looked is never approved
+    sight-unseen.
+
+    Shallow wrapper around ``qa.promote_batch`` (CODING_STANDARD §2.3 — all
+    domain logic, including per-slug validation, lives in ``qa.py``).
+    ``build_index()`` is called here exactly once after the loop, regardless
+    of how many slugs were promoted (issue #382 AC) — mirrors ``POST
+    /qa/{slug}/promote``'s auto-reindex convention, just once for the whole
+    batch instead of once per slug.
+
+    Always returns HTTP 200 — an individual slug's validation failure is
+    reported honestly in ``response.skipped``, not raised as an exception
+    (ADR-0023: "Non-transactional, honestly reported"); there is nothing to
+    map to an error status here.
+    """
+    result = qa_module.promote_batch(req.slugs)
+    # ADR-0023: exactly one reindex for the whole batch, regardless of N.
     build_index()
     return result
 

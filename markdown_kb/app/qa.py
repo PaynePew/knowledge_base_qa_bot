@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``compute_slug``, ``normalize_question``, ``maybe_file_answer``, ``dispatch_filing``, ``promote``, ``delete``, ``edit``, ``refile``, ``QaPageNotFound``, ``QaPageCorrupt``, ``QaPageLive``, ``QaEditRejected``, ``QaRefileRejected``, ``RefiledAnswer``.
+"""Deep module per Ousterhout. Public surface: ``compute_slug``, ``normalize_question``, ``maybe_file_answer``, ``dispatch_filing``, ``promote``, ``promote_batch``, ``delete``, ``edit``, ``refile``, ``QaPageNotFound``, ``QaPageCorrupt``, ``QaPageLive``, ``QaEditRejected``, ``QaRefileRejected``, ``RefiledAnswer``.
 
 Phase 6 Slice 6-2 — Answer Filing for ``POST /chat``.
 Phase 6 Slice 6-4 — curator-driven ``promote(slug)`` flips ``status: draft -> live``.
@@ -56,6 +56,18 @@ slug in place with the fresh answer + its fresh cited Sections,
 ``status: draft``. The corpus gap between re-file and promote is deliberate
 (ADR-0026) — the curator reviews the re-filed draft in the existing
 Promote/Edit/Discard Curation Queue loop.
+
+tier-B S6 (issue #382, ADR-0023 Consequences) — ``promote_batch(slugs)`` is
+the one pre-authorized Direct-tier batch endpoint ("a batch-promote
+endpoint, deferred" — this closes that gap). ``slugs`` is the explicit list
+the operator saw rendered in the Curation Queue, never "all drafts" resolved
+server-side, so a draft filed after the operator looked is never approved
+sight-unseen. Per-slug validation is independent (a bad slug never aborts
+the batch — non-transactional, ADR-0023): missing file, unparseable
+frontmatter, an invalid ``status``, or ``status == "live"`` are each skipped
+with a reason; only a ``status == "draft"`` slug is flipped to ``live``.
+Reindexing is the route layer's job, once, after the whole batch — mirrors
+``promote``'s own route/domain split.
 """
 
 from __future__ import annotations
@@ -73,7 +85,14 @@ from .atomic import write_text_atomic
 from .grounding import CitableContent, GroundingOutcome
 from .indexer import parse_markdown, slugify
 from .logger import log_event
-from .schemas import FiledStatus, GroundingClaim, GroundingInfo, WikiPageFrontmatter
+from .schemas import (
+    FiledStatus,
+    GroundingClaim,
+    GroundingInfo,
+    QaPromoteBatchResponse,
+    SkippedSlug,
+    WikiPageFrontmatter,
+)
 
 # ---------------------------------------------------------------------------
 # Sentinel HTML comment (PRD #78 Q8a — verbatim)
@@ -622,6 +641,46 @@ class QaPageCorrupt(Exception):
     """
 
 
+def _flip_draft_to_live(slug: str, path: Path, existing: dict) -> int:
+    """Rewrite an already-validated draft page to ``status: live`` in place.
+
+    Caller must hold ``_filing_lock`` and must have already validated
+    ``existing["status"] == "draft"`` — this helper does no validation of
+    its own. Shared by ``promote`` (one slug) and ``promote_batch`` (N
+    slugs, one call each per valid slug) so the draft->live rewrite stays
+    in exactly one place. Rebuilds the full frontmatter (avoids surgical
+    mid-line edits that would break round-tripping); body is preserved
+    verbatim. Emits the same ``qa_reflect op=promoted by=curator`` log line
+    either caller would emit on its own.
+
+    Returns the preserved ``count`` so each caller can build its own return
+    shape (``FiledStatus`` for ``promote``; an accumulator list for
+    ``promote_batch``).
+    """
+    try:
+        existing_count = int(existing.get("count", 1))
+    except (TypeError, ValueError):
+        existing_count = 1
+    now = _utc_now_iso()
+    fm = WikiPageFrontmatter(
+        id=existing.get("id", slug),
+        type="qa",
+        created=existing.get("created", now),
+        updated=now,
+        sources=[str(s) for s in existing.get("sources", [])],
+        status="live",
+        open_questions=existing.get("open_questions") or [],
+        question=existing.get("question"),
+        count=existing_count,
+    )
+    body = _read_existing_body(path)
+    content = _render_qa_page(fm, body)
+    _atomic_write(path, content)
+
+    log_event("qa_reflect", f"slug={slug} op=promoted by=curator")
+    return existing_count
+
+
 def promote(slug: str) -> FiledStatus:
     """Curator-driven promotion: flip ``wiki/qa/<slug>.md`` ``status: draft -> live``.
 
@@ -690,32 +749,118 @@ def promote(slug: str) -> FiledStatus:
                 count=existing_count,
             )
 
-        # Draft -> live transition. Rebuild the full frontmatter so the YAML
-        # block stays canonical (avoids surgical mid-line edits that would
-        # break round-tripping). Body is preserved verbatim.
-        now = _utc_now_iso()
-        existing_sources = [str(s) for s in existing.get("sources", [])]
-        existing_question = existing.get("question")
-        existing_created = existing.get("created", now)
-        existing_open_questions = existing.get("open_questions") or []
-
-        fm = WikiPageFrontmatter(
-            id=existing.get("id", slug),
-            type="qa",
-            created=existing_created,
-            updated=now,
-            sources=existing_sources,
-            status="live",
-            open_questions=existing_open_questions,
-            question=existing_question,
-            count=existing_count,
-        )
-        body = _read_existing_body(path)
-        content = _render_qa_page(fm, body)
-        _atomic_write(path, content)
-
-        log_event("qa_reflect", f"slug={slug} op=promoted by=curator")
+        # Draft -> live transition, shared with promote_batch's per-slug write.
+        existing_count = _flip_draft_to_live(slug, path, existing)
         return FiledStatus(slug=slug, status="live", op="touched", count=existing_count)
+
+
+# ---------------------------------------------------------------------------
+# Promote batch (tier-B S6, issue #382, ADR-0023 Consequences)
+# ---------------------------------------------------------------------------
+
+
+def _is_bare_slug(slug: str) -> bool:
+    """True iff ``slug`` is a bare single filename component, so that
+    ``_qa_dir() / f"{slug}.md"`` cannot resolve outside ``wiki/qa/``.
+
+    The single-item endpoints (``/qa/{slug}/promote`` etc.) get this
+    property for free — a FastAPI path segment cannot contain ``/`` — but
+    ``promote_batch``'s slugs arrive in the JSON body with no such
+    guarantee, so the same property is enforced here (both separators are
+    rejected because the repo runs on Windows AND the Linux deploy; ``:``
+    is rejected because a Windows drive-relative slug like ``D:x`` joins
+    OUTSIDE ``qa_dir`` while never appearing in a real slug). CJK slugs are
+    real corpus shapes (``compute_slug`` preserves them) and stay valid —
+    this is a path-shape guard, not a charset allowlist.
+    """
+    if not slug or slug in {".", ".."}:
+        return False
+    return not any(ch in slug for ch in ("/", "\\", ":", "\x00"))
+
+
+def promote_batch(slugs: list[str]) -> QaPromoteBatchResponse:
+    """Curator-driven batch promotion: flip every valid slug in ``slugs`` draft -> live.
+
+    tier-B S6 (issue #382) — the one pre-authorized Direct-tier batch
+    endpoint ADR-0023 Consequences deferred ("a batch-promote endpoint,
+    deferred" — this closes that gap). ``slugs`` must be the explicit list
+    the operator actually saw rendered in the Curation Queue at click time —
+    never resolved as "all drafts" server-side — so a draft filed after the
+    operator looked is never approved sight-unseen.
+
+    Per-slug validation, each independent of the others (a bad slug never
+    aborts the batch — non-transactional, ADR-0023):
+
+    - slug not a bare filename component      -> skipped, reason="invalid_slug"
+      (separators / parent refs / NUL — see ``_is_bare_slug``; the batch's
+      slugs arrive in the JSON body, so they never got the no-"/" guarantee
+      a FastAPI path segment gives the single-item endpoints)
+    - missing file                            -> skipped, reason="not_found"
+    - frontmatter unparseable                 -> skipped, reason="corrupt_frontmatter"
+    - ``status`` not in ``{"draft", "live"}``  -> skipped, reason="invalid_status:<value>"
+    - ``status == "live"``                     -> skipped, reason="already_live"
+      (the operator's queue only ever renders drafts, so a submitted slug
+      that is already live means someone else promoted it since the queue
+      was rendered; silently re-promoting it would hide that from the
+      curator instead of surfacing it)
+    - ``status == "draft"``                    -> promoted
+
+    Each valid slug is flipped under ``_filing_lock`` (the same lock
+    ``promote`` uses) one slug at a time — the batch does not hold a single
+    lock for its whole duration, so a large batch never blocks concurrent
+    filing/promote on unrelated slugs for longer than one page's write.
+
+    Reindexing is deliberately NOT this function's job (mirrors ``promote``'s
+    own route/domain split): the caller (route layer) calls
+    ``build_index()`` exactly once after this returns, regardless of how
+    many slugs were promoted (issue #382 AC: "exactly one reindex regardless
+    of N").
+
+    Each successful promotion emits the same ``qa_reflect op=promoted
+    by=curator`` log line a single ``promote()`` call would — a batch is
+    just N of the same curator action, so a log reader grepping
+    ``op=promoted`` sees every promoted page the same way regardless of the
+    caller. Skipped slugs emit nothing, mirroring ``promote``'s own
+    not-found/corrupt refusal paths.
+
+    Returns:
+        ``QaPromoteBatchResponse`` with ``promoted`` (slugs flipped to live,
+        submission order) and ``skipped`` (slug + reason, submission order).
+    """
+    promoted: list[str] = []
+    skipped: list[SkippedSlug] = []
+    qa_dir = _qa_dir()
+
+    for slug in slugs:
+        if not _is_bare_slug(slug):
+            skipped.append(SkippedSlug(slug=slug, reason="invalid_slug"))
+            continue
+
+        path = qa_dir / f"{slug}.md"
+        with _filing_lock:
+            if not path.exists():
+                skipped.append(SkippedSlug(slug=slug, reason="not_found"))
+                continue
+
+            existing = _read_existing_frontmatter(path)
+            if existing is None:
+                skipped.append(SkippedSlug(slug=slug, reason="corrupt_frontmatter"))
+                continue
+
+            existing_status = existing.get("status")
+            if existing_status not in {"draft", "live"}:
+                skipped.append(SkippedSlug(slug=slug, reason=f"invalid_status:{existing_status}"))
+                continue
+            if existing_status == "live":
+                skipped.append(SkippedSlug(slug=slug, reason="already_live"))
+                continue
+
+            # status == "draft" — the only promotable case. Shared with
+            # promote's single-slug draft->live write.
+            _flip_draft_to_live(slug, path, existing)
+            promoted.append(slug)
+
+    return QaPromoteBatchResponse(promoted=promoted, skipped=skipped)
 
 
 # ---------------------------------------------------------------------------
