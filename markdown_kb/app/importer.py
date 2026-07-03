@@ -38,8 +38,9 @@ Status values for ImportSourceResult:
       overwritten with new content.
     - ``'skipped'``: docs target existed and hash matched; no write performed.
 
-Error handling (slice 7-2 full 12 typed failure modes, plus two PDF-specific
-modes added by issue #415 / ADR-0031 — ``EncryptedPdf`` is deferred to Slice 2):
+Error handling (slice 7-2 full 12 typed failure modes, plus three PDF-specific
+modes added by PRD #414 / ADR-0031, issue #415 (NoTextLayer, PdfExtractionError)
+and issue #416 (EncryptedPdf)):
     - ``InvalidFilename``        — basename contains rejected character class
     - ``InvalidSourcePath``      — single-mode source format violation
     - ``FileNotFoundError``      — single-mode source not found in raw/
@@ -55,6 +56,9 @@ modes added by issue #415 / ADR-0031 — ``EncryptedPdf`` is deferred to Slice 2
       body (deterministic scanned-PDF detector); curator must OCR externally
       and re-import
     - ``PdfExtractionError``     — MarkItDown internal exception (corrupt PDF)
+    - ``EncryptedPdf``           — password-protected PDF (pdfminer's
+      ``PDFEncryptionError``/``PDFPasswordIncorrect`` on open); curator must
+      supply a decrypted copy and re-import
 
 Continue-on-error: one failing source does not abort the batch.
 
@@ -63,7 +67,8 @@ Concurrency: inherits Phase 3 Q7 single-writer assumption — no new lock.
 
 See PRD #89 (Phase 7), slice issues #90 (7-1 scaffold), #91 (7-2 error
 handling), and #92 (7-3 hash chain) for the original design; PRD #414 /
-issue #415 (ADR-0031) add ``.pdf`` support.
+ADR-0031 add ``.pdf`` support across issues #415 (happy path + NoTextLayer /
+PdfExtractionError) and #416 (EncryptedPdf + fixture/taxonomy hardening).
 """
 
 from __future__ import annotations
@@ -81,7 +86,8 @@ from typing import Literal
 import yaml
 from bs4 import BeautifulSoup, Comment
 from markdownify import markdownify
-from markitdown import MarkItDown
+from markitdown import FileConversionException, MarkItDown
+from pdfminer.pdfdocument import PDFEncryptionError
 
 from ._paths import _REPO_ROOT, DOCS_DIR
 from .atomic import write_text_atomic
@@ -184,7 +190,8 @@ class ImportFailure:
 
     ``raw_path`` is the path string (best-effort; may be the requested source name).
     ``error_type`` is one of the typed failure mode strings — the original 12
-    (PRD #89 §7-2) plus ``NoTextLayer`` / ``PdfExtractionError`` (issue #415).
+    (PRD #89 §7-2) plus ``NoTextLayer`` / ``PdfExtractionError`` (issue #415)
+    and ``EncryptedPdf`` (issue #416).
     ``error_message`` is truncated to 200 characters, no stack trace.
     """
 
@@ -711,6 +718,21 @@ def _process_one_source(
     if fmt == "pdf":
         try:
             md_body = _convert_pdf_to_markdown(raw_bytes)
+        except _EncryptedPdfError:
+            # EncryptedPdf (issue #416): distinguished from the catch-all
+            # PdfExtractionError below because the fix is different — the
+            # curator must supply a decrypted copy, not a valid/repaired file.
+            failure = ImportFailure(
+                raw_path=str(raw_path),
+                error_type="EncryptedPdf",
+                error_message=(
+                    f"{basename} is password-protected/encrypted; Import performs "
+                    "no decryption. Supply a decrypted copy and re-import."
+                )[:200],
+            )
+            result.failed_sources.append(failure)
+            _emit_import_error(failure)
+            return
         except Exception as exc:
             failure = ImportFailure(
                 raw_path=str(raw_path),
@@ -884,6 +906,38 @@ def _get_markitdown() -> MarkItDown:
     return _markitdown_singleton
 
 
+class _EncryptedPdfError(Exception):
+    """Internal signal: MarkItDown's PDF converter hit a password-protected PDF.
+
+    Raised only by ``_convert_pdf_to_markdown`` and caught by
+    ``_process_one_source`` to produce the typed ``EncryptedPdf`` failure
+    (issue #416 / ADR-0031), distinct from the catch-all
+    ``PdfExtractionError``. Never surfaces past ``_process_one_source``.
+    """
+
+
+def _is_encrypted_pdf_error(exc: Exception) -> bool:
+    """Return True if ``exc`` represents an encrypted/password-protected PDF.
+
+    MarkItDown wraps every converter failure in ``FileConversionException``,
+    whose ``attempts`` list carries the original underlying exception via
+    ``FailedConversionAttempt.exc_info`` (a ``(type, value, traceback)``
+    tuple). A password-protected PDF surfaces there as pdfminer's
+    ``PDFEncryptionError`` or its ``PDFPasswordIncorrect`` subclass — the only
+    reliable seam to distinguish "encrypted" from "any other extractor crash"
+    without re-implementing MarkItDown's PDF-open logic. The direct
+    ``isinstance`` check guards future MarkItDown versions that might let the
+    exception propagate unwrapped.
+    """
+    if isinstance(exc, PDFEncryptionError):
+        return True
+    if isinstance(exc, FileConversionException):
+        for attempt in exc.attempts or []:
+            if attempt.exc_info is not None and isinstance(attempt.exc_info[1], PDFEncryptionError):
+                return True
+    return False
+
+
 def _convert_pdf_to_markdown(raw_bytes: bytes) -> str:
     """Extract Markdown text from PDF bytes via MarkItDown (ADR-0031).
 
@@ -892,12 +946,20 @@ def _convert_pdf_to_markdown(raw_bytes: bytes) -> str:
     whatever literal ``#``/``##`` text the extractor emits is what indexer's
     HEADING_RE later recognises, exactly like the ``.txt`` passthrough.
 
-    Any internal extractor exception propagates to the caller, which maps it
-    to the typed ``PdfExtractionError`` failure. An empty/whitespace-only
-    result is returned as-is (not raised) — the caller checks that separately
-    and maps it to ``NoTextLayer``, since an empty string is not an exception.
+    A password-protected PDF is reclassified here as ``_EncryptedPdfError``
+    (issue #416) so the caller can map it to the typed ``EncryptedPdf``
+    failure. Any other internal extractor exception propagates unchanged to
+    the caller, which maps it to the typed ``PdfExtractionError`` failure. An
+    empty/whitespace-only result is returned as-is (not raised) — the caller
+    checks that separately and maps it to ``NoTextLayer``, since an empty
+    string is not an exception.
     """
-    result = _get_markitdown().convert_stream(io.BytesIO(raw_bytes), file_extension=".pdf")
+    try:
+        result = _get_markitdown().convert_stream(io.BytesIO(raw_bytes), file_extension=".pdf")
+    except Exception as exc:
+        if _is_encrypted_pdf_error(exc):
+            raise _EncryptedPdfError(str(exc)) from exc
+        raise
     return result.text_content
 
 
