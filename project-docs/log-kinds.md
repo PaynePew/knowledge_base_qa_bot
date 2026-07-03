@@ -200,6 +200,16 @@ No log entry is emitted for the `ReconcileHashMismatch` (409), `PageNotFound` (4
 
 ---
 
+## `/pages/{slug}` route (tier-B S5)
+
+Authorized by GitHub issue #381 (tier-B S5) and [ADR-0025](adr/0025-delete-live-orphans-full-orphan-predicate.md).
+
+| Kind | When fired | Summary template |
+|---|---|---|
+| `orphan_page_deleted` | `pages.delete_full_orphan()` successfully hard-deleted an entities/concepts page after re-verifying the ADR-0025 full-orphan predicate at delete time. Only fires when the delete succeeds — `PageNotFound` (404), `PageCorrupt` (500), and `PageNotFullOrphan` (409, the predicate no longer holding) refusals are surfaced via HTTP status and do not emit a log entry (mirrors `qa_deleted`'s "only fires on success" convention). | `slug=<slug>` |
+
+---
+
 ## Vector RAG (Stack B)
 
 Authorized by GitHub issue #103 (Phase 8 Slice 3). Stack B stays decoupled from
