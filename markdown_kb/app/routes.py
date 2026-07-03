@@ -1,7 +1,7 @@
 """Shallow module per Ousterhout. Public surface: ``router``.
 
 HTTP wiring for /health, /index, /chat, /qa/{slug}/promote,
-/qa/{slug} (DELETE, PUT), /ingest, /lint, /import,
+/qa/{slug} (DELETE, PUT), /qa/{slug}/refile, /ingest, /lint, /import,
 /pages/reconcile, /pages/reconcile/apply, /pages/collision/merge,
 /pages/collision/merge/apply, /pages/collision/differentiate,
 /pages/collision/differentiate/apply. No domain logic."""
@@ -43,6 +43,7 @@ from .schemas import (
     IngestResponse,
     LintResponse,
     QaEditRequest,
+    QaRefileResponse,
     ReconcileApplyRequest,
     ReconcileApplyResponse,
     ReconcileGenerateRequest,
@@ -274,6 +275,64 @@ def edit_qa(slug: str, req: QaEditRequest) -> FiledStatus:
                 "failures": exc.failures,
             },
         ) from exc
+
+
+@router.post("/qa/{slug}/refile", response_model=QaRefileResponse)
+def refile_qa(slug: str) -> QaRefileResponse:
+    """Curator endpoint: C9 remediation — chained re-file of a stale Filed Answer.
+
+    tier-B S4 (issue #380) / ADR-0026 decision 1. Fixed internal order (see
+    ``qa.refile`` docstring): re-synthesize the page's question via the chat
+    pipeline with ``wiki/qa/`` excluded from retrieval, grounding-check the
+    fresh answer BEFORE any write, and only on pass overwrite the same slug
+    in place as ``status: draft``. A failed re-ground writes nothing — the
+    old live page keeps serving and the C9 finding stays (Invariant).
+
+    Shallow wrapper around ``qa.refile`` (CODING_STANDARD §2.3 — all domain
+    logic lives in ``qa.py``). ``build_index()`` is called here, once, after
+    a successful refile — mirrors ``POST /qa/{slug}/promote``'s auto-reindex
+    convention (reindex is a route-layer concern, not a domain-layer one);
+    this is what actually removes the stale answer from the BM25 corpus.
+
+    Exception mapping (build_index is NOT called on any exception path):
+
+    - ``QaPageNotFound``     → ``404`` (slug has never been filed, or was
+      deleted by a concurrent operation during re-synthesis)
+    - ``QaPageCorrupt``      → ``500`` (orphan-visibility — surface broken
+      state rather than silently rewriting it)
+    - ``QaRefileRejected``   → ``422`` (the fresh re-synthesis failed the
+      Grounding Check; ``detail.reason`` / ``detail.unsupported_claims``
+      report why; nothing was written)
+    """
+    try:
+        result = qa_module.refile(slug)
+    except qa_module.QaPageNotFound as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"wiki/qa/{slug}.md not found",
+        ) from exc
+    except qa_module.QaPageCorrupt as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"wiki/qa/{slug}.md has corrupt frontmatter: {exc}",
+        ) from exc
+    except qa_module.QaRefileRejected as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "qa refile failed to re-ground",
+                "reason": exc.grounding.reason,
+                "unsupported_claims": exc.grounding.unsupported_claims or [],
+            },
+        ) from exc
+
+    # ADR-0026: auto-reindex so the stale live answer leaves the corpus immediately.
+    _files_indexed, sections_indexed = build_index()
+    return QaRefileResponse(
+        filed=result.filed,
+        grounding=result.grounding,
+        sections_indexed=sections_indexed,
+    )
 
 
 @router.post("/lint", response_model=LintResponse)

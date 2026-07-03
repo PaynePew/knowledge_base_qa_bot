@@ -926,7 +926,7 @@ def _section_lang(section: Section) -> str:
     return detect_lang(section.content)
 
 
-def search(query: str, k: int = 3) -> list[tuple[Section, float]]:
+def search(query: str, k: int = 3, exclude_qa: bool = False) -> list[tuple[Section, float]]:
     """Return the top-``k`` BM25 Sections in the QUERY's language.
 
     Language-filtered retrieval (#287, PRD #284): a Chinese query is scored only
@@ -943,6 +943,13 @@ def search(query: str, k: int = 3) -> list[tuple[Section, float]]:
     under plain BM25 lets the wrong-language Section match — and sometimes out-rank
     — the right one. Filtering by language is belt-and-suspenders for the BM25 stack
     and the essential gate for the RAG stack (PRD #284).
+
+    ``exclude_qa`` (tier-B S4, issue #380, ADR-0026 decision 1) drops every
+    ``wiki/qa/`` Section (``Section.metadata["type"] == "qa"``) from candidate
+    scoring before ranking. Used by the C9 Re-file remediation's re-synthesis
+    call so a stale Filed Answer being re-derived can never retrieve — and
+    re-cite — itself; answers must re-derive from entities/concepts. Default
+    ``False`` preserves every existing caller's behaviour unchanged.
     """
     query_lang = detect_lang(query)
     query_tokens = tokenize(query)
@@ -950,6 +957,7 @@ def search(query: str, k: int = 3) -> list[tuple[Section, float]]:
         (section, bm25_score(query_tokens, section))
         for section in sections
         if _section_lang(section) == query_lang
+        and not (exclude_qa and (section.metadata or {}).get("type") == "qa")
     ]
     ranked.sort(key=lambda item: item[1], reverse=True)
     return [(section, score) for section, score in ranked[:k] if score > 0]

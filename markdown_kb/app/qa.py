@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``compute_slug``, ``normalize_question``, ``maybe_file_answer``, ``dispatch_filing``, ``promote``, ``delete``, ``edit``, ``QaPageNotFound``, ``QaPageCorrupt``, ``QaPageLive``, ``QaEditRejected``.
+"""Deep module per Ousterhout. Public surface: ``compute_slug``, ``normalize_question``, ``maybe_file_answer``, ``dispatch_filing``, ``promote``, ``delete``, ``edit``, ``refile``, ``QaPageNotFound``, ``QaPageCorrupt``, ``QaPageLive``, ``QaEditRejected``, ``QaRefileRejected``, ``RefiledAnswer``.
 
 Phase 6 Slice 6-2 — Answer Filing for ``POST /chat``.
 Phase 6 Slice 6-4 — curator-driven ``promote(slug)`` flips ``status: draft -> live``.
@@ -43,6 +43,19 @@ the documented file-level path). Re-runs the Grounding Check against the
 page's cited Sections (``frontmatter.sources``, resolved back to their wiki
 content by ``_resolve_cited_sections``) on the submitted body — a failing
 check writes nothing (``QaEditRejected``); only a pass rewrites the page.
+
+tier-B S4 (issue #380, ADR-0026 decision 1) — ``refile(slug)`` is the C9
+stale-Filed-Answer remediation: a single chained operation in a fixed
+internal order — (1) re-synthesize the page's recorded ``question`` through
+the chat pipeline (``retrieval.query``) with ``wiki/qa/`` excluded from
+retrieval, so the re-derivation can never retrieve (and re-cite) the stale
+page itself; (2) grounding-check the fresh answer BEFORE any write — a
+failing check raises ``QaRefileRejected`` and writes nothing (old live page
+keeps serving, the C9 finding stays); (3) only on pass, overwrite the SAME
+slug in place with the fresh answer + its fresh cited Sections,
+``status: draft``. The corpus gap between re-file and promote is deliberate
+(ADR-0026) — the curator reviews the re-filed draft in the existing
+Promote/Edit/Discard Curation Queue loop.
 """
 
 from __future__ import annotations
@@ -57,10 +70,10 @@ from typing import Any
 import yaml
 
 from .atomic import write_text_atomic
-from .grounding import CitableContent
+from .grounding import CitableContent, GroundingOutcome
 from .indexer import parse_markdown, slugify
 from .logger import log_event
-from .schemas import FiledStatus, WikiPageFrontmatter
+from .schemas import FiledStatus, GroundingClaim, GroundingInfo, WikiPageFrontmatter
 
 # ---------------------------------------------------------------------------
 # Sentinel HTML comment (PRD #78 Q8a — verbatim)
@@ -1006,3 +1019,186 @@ def delete(slug: str) -> DeletedQaPage:
             f"slug={slug} prev_status={prev_status}",
         )
         return DeletedQaPage(slug=slug, prev_status=prev_status)
+
+
+# ---------------------------------------------------------------------------
+# Re-file (tier-B S4, issue #380, ADR-0026 decision 1)
+# ---------------------------------------------------------------------------
+
+
+class QaRefileRejected(Exception):
+    """Raised by ``refile`` when the fresh re-synthesis fails the Grounding
+    Check (ADR-0026 decision 1, step 2 — "grounding-check before any write").
+
+    Nothing is written when this is raised: the old live page keeps serving
+    and the C9 finding stays (ADR-0026 § Consequences Invariant: "a failed
+    re-ground during re-file writes nothing: no demote, no draft, no
+    reindex"). Carries the caller-facing ``GroundingInfo`` so the route can
+    report why — mirrors ``reconcile.ReconcileGroundingFailed``."""
+
+    def __init__(self, grounding: GroundingInfo) -> None:
+        self.grounding = grounding
+        super().__init__(f"qa refile failed to re-ground: reason={grounding.reason}")
+
+
+class RefiledAnswer:
+    """Result of a successful ``refile``.
+
+    ``filed`` is the standard ``FiledStatus`` (``status="draft"`` — the
+    demoted corpus state the curator now reviews via the existing Promote/
+    Edit/Discard loop), reusing the same shape ``promote``/``edit`` return.
+    ``grounding`` is the fresh, passing ``GroundingInfo`` for audit.
+
+    Not a Pydantic model: mirrors ``DeletedQaPage``'s route-internal-only
+    convention — the route layer wraps this into its own response schema
+    (adding ``sections_indexed`` from its own ``build_index()`` call, the
+    same reindex-is-a-route-concern split ``promote``/``reconcile_apply``
+    already use)."""
+
+    __slots__ = ("filed", "grounding")
+
+    def __init__(self, filed: FiledStatus, grounding: GroundingInfo) -> None:
+        self.filed = filed
+        self.grounding = grounding
+
+
+def _grounding_info_from_outcome(outcome: GroundingOutcome) -> GroundingInfo:
+    """Map a single ``GroundingOutcome`` to the caller-facing ``GroundingInfo``.
+
+    Refile re-synthesizes from exactly one call, so there is only ever one
+    outcome to map — no combination step like ``reconcile._combine_grounding``
+    (two pages) needs. Mirrors the ``/chat`` route's inline mapping
+    (``routes.chat``) so the three surfaces that expose grounding detail
+    (``/chat``, reconcile/collision, refile) stay shape-consistent.
+    """
+    claims = None
+    if outcome.result is not None and outcome.result.claims:
+        claims = [
+            GroundingClaim(
+                text=c.text, supported=c.supported, citing_section_ids=c.citing_section_ids
+            )
+            for c in outcome.result.claims
+        ]
+    unsupported_claims = None
+    if outcome.reason == "claim_unsupported" and outcome.result is not None:
+        unsupported_claims = outcome.result.unsupported_claims or None
+    return GroundingInfo(
+        passed=outcome.passed,
+        reason=outcome.reason,
+        claims=claims,
+        unsupported_claims=unsupported_claims,
+    )
+
+
+def refile(slug: str) -> RefiledAnswer:
+    """Curator-driven C9 remediation: chained re-file (ADR-0026 decision 1).
+
+    Fixed internal order — the order is the design:
+
+    1. Read the page's recorded ``question`` (lock held only for this read;
+       the re-synthesis call below is an LLM round-trip and must not hold
+       ``_filing_lock`` for its duration — that would block every other qa
+       mutator on any slug for the ~seconds a chat call takes).
+    2. Re-synthesize: run the question through the chat pipeline
+       (``retrieval.query``) with ``wiki/qa/`` excluded from retrieval
+       (ADR-0026 decision 1 step 1) — the fresh answer must re-derive from
+       entities/concepts, never from the stale qa page being re-filed.
+    3. Grounding-check BEFORE any write: a failing outcome raises
+       ``QaRefileRejected`` and writes nothing.
+    4. Only on pass: re-acquire the lock and overwrite the SAME slug in
+       place with the fresh answer and its fresh cited Sections,
+       ``status: draft``, bumped ``updated`` — preserving ``id``/
+       ``created``/``count``/``open_questions``. The stale answer leaves the
+       BM25 corpus once the caller reindexes (route layer, mirrors
+       ``promote``'s auto-reindex convention — reindex is not this module's
+       concern, per ``POST /qa/{slug}/promote``).
+
+    Args:
+        slug: the ``wiki/qa/<slug>.md`` slug to re-file.
+
+    Returns:
+        ``RefiledAnswer`` (``filed`` status=draft; the passing
+        ``GroundingInfo``).
+
+    Raises:
+        QaPageNotFound: no ``wiki/qa/<slug>.md`` on disk (checked both at
+            the initial read and again before the write — a page deleted by
+            a concurrent operation during the re-synthesis round-trip is
+            reported the same way).
+        QaPageCorrupt: existing frontmatter has invalid/unparseable
+            ``status``, or no recorded ``question`` (orphan-visibility —
+            surface broken state rather than guessing).
+        QaRefileRejected: the fresh re-synthesis failed the Grounding Check;
+            nothing is written.
+    """
+    qa_dir = _qa_dir()
+    path = qa_dir / f"{slug}.md"
+
+    with _filing_lock:
+        if not path.exists():
+            raise QaPageNotFound(f"wiki/qa/{slug}.md not found")
+
+        existing = _read_existing_frontmatter(path)
+        if existing is None:
+            raise QaPageCorrupt(f"wiki/qa/{slug}.md exists but its frontmatter could not be parsed")
+
+        existing_status = existing.get("status")
+        if existing_status not in {"draft", "live"}:
+            raise QaPageCorrupt(
+                f"wiki/qa/{slug}.md has invalid status={existing_status!r}; "
+                "expected 'draft' or 'live'. The page is left untouched so the "
+                "curator can inspect and repair."
+            )
+
+        question = existing.get("question")
+        if not question:
+            raise QaPageCorrupt(f"wiki/qa/{slug}.md has no recorded question; cannot re-file")
+
+        existing_id = existing.get("id", slug)
+        try:
+            existing_count = int(existing.get("count", 1))
+        except (TypeError, ValueError):
+            existing_count = 1
+        existing_created = existing.get("created", _utc_now_iso())
+        existing_open_questions = existing.get("open_questions") or []
+
+    # ---- re-synthesize + grounding-check OUTSIDE the lock (LLM round-trip,
+    # ADR-0026 decision 1 steps 1-2). Lazy import: retrieval.py lazy-imports
+    # this module too (stream_query's filing dispatch), so a module-level
+    # import here would create an import cycle.
+    from .retrieval import query as _retrieval_query
+
+    result = _retrieval_query(question, exclude_qa=True)
+    outcome = result["grounding_outcome"]
+    grounding = _grounding_info_from_outcome(outcome)
+
+    if not outcome.passed:
+        log_event("qa_refile_rejected", f"slug={slug} reason={outcome.reason}")
+        raise QaRefileRejected(grounding)
+
+    cited_ids = [s["source"] for s in result["sources"]]
+
+    # ---- write, only on pass (ADR-0026 decision 1 step 3) ----
+    with _filing_lock:
+        if not path.exists():
+            raise QaPageNotFound(f"wiki/qa/{slug}.md not found")
+
+        fm = WikiPageFrontmatter(
+            id=existing_id,
+            type="qa",
+            created=existing_created,
+            updated=_utc_now_iso(),
+            sources=cited_ids,
+            status="draft",
+            open_questions=existing_open_questions,
+            question=question,
+            count=existing_count,
+        )
+        content = _render_qa_page(fm, result["answer"])
+        _atomic_write(path, content)
+
+        log_event("qa_reflect", f"slug={slug} op=refiled count={existing_count}")
+        return RefiledAnswer(
+            filed=FiledStatus(slug=slug, status="draft", op="touched", count=existing_count),
+            grounding=grounding,
+        )

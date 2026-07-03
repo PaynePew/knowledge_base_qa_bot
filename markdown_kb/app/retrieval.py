@@ -120,7 +120,7 @@ def get_retry_llm():
     return _retry_llm
 
 
-def query(question: str) -> dict:
+def query(question: str, exclude_qa: bool = False) -> dict:
     """Answer a question against the indexed corpus.
 
     Returns a dict with keys:
@@ -138,10 +138,17 @@ def query(question: str) -> dict:
        Any unsupported claim → Cannot Confirm (claim_unsupported).
        Verifier failure after retry → Cannot Confirm (verifier_unavailable).
 
+    ``exclude_qa`` (tier-B S4, issue #380, ADR-0026 decision 1) drops every
+    ``wiki/qa/`` Section from retrieval for this call — the C9 Re-file
+    remediation's internal re-synthesis step, so a stale Filed Answer being
+    re-derived can never retrieve (and re-cite) itself. Default ``False``
+    preserves every existing caller (``/chat``, ``stream_query``, the CLI/
+    MCP/hybrid callers) unchanged.
+
     Phase 9: composes _retrieve_and_gate() + _draft_and_verify().
     Public contract is unchanged; the split is behaviour-preserving.
     """
-    gate = _retrieve_and_gate(question)
+    gate = _retrieve_and_gate(question, exclude_qa=exclude_qa)
     if gate["early_exit"]:
         # Pre-LLM gate fired — return early without calling the LLM.
         return {
@@ -235,7 +242,7 @@ def stream_query(question: str) -> Iterator[dict]:
 # ---------------------------------------------------------------------------
 
 
-def _retrieve_and_gate(question: str) -> dict:
+def _retrieve_and_gate(question: str, exclude_qa: bool = False) -> dict:
     """BM25 retrieval + all pre-LLM Cannot Confirm gates (ADR-0001).
 
     Returns a dict with:
@@ -250,6 +257,9 @@ def _retrieve_and_gate(question: str) -> dict:
     whether to call _draft_and_verify().  The sources list is always
     populated even on early_exit paths — the gateway emits a sources SSE
     event before checking early_exit.
+
+    ``exclude_qa`` is forwarded to ``indexer.search`` (ADR-0026 decision 1 —
+    see ``query()``'s docstring).
     """
     if not indexer.sections:
         # Lazy-load the persisted .kb/index.json from disk so a fresh Gateway
@@ -272,7 +282,16 @@ def _retrieve_and_gate(question: str) -> dict:
             "ranked": [],
         }
 
-    ranked = indexer.search(question, k=3)
+    # exclude_qa is forwarded only when truthy, so the default call shape
+    # (indexer.search(question, k=3)) is byte-identical to every pre-#380
+    # caller — several test doubles across the suite replace indexer.search
+    # with a fixed lambda(query, k=3) and would TypeError on an unconditional
+    # extra kwarg (CODING_STANDARD §11: do not widen a call site's shape for
+    # every caller when only one caller needs the new argument).
+    if exclude_qa:
+        ranked = indexer.search(question, k=3, exclude_qa=True)
+    else:
+        ranked = indexer.search(question, k=3)
     top_score = ranked[0][1] if ranked else 0.0
 
     # Per-language gate routing (#261): a CJK query is gated by the Chinese-calibrated
