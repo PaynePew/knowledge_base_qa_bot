@@ -767,13 +767,15 @@ def _is_bare_slug(slug: str) -> bool:
     property for free — a FastAPI path segment cannot contain ``/`` — but
     ``promote_batch``'s slugs arrive in the JSON body with no such
     guarantee, so the same property is enforced here (both separators are
-    rejected because the repo runs on Windows AND the Linux deploy). CJK
-    slugs are real corpus shapes (``compute_slug`` preserves them) and stay
-    valid — this is a path-shape guard, not a charset allowlist.
+    rejected because the repo runs on Windows AND the Linux deploy; ``:``
+    is rejected because a Windows drive-relative slug like ``D:x`` joins
+    OUTSIDE ``qa_dir`` while never appearing in a real slug). CJK slugs are
+    real corpus shapes (``compute_slug`` preserves them) and stay valid —
+    this is a path-shape guard, not a charset allowlist.
     """
     if not slug or slug in {".", ".."}:
         return False
-    return not any(ch in slug for ch in ("/", "\\", "\x00"))
+    return not any(ch in slug for ch in ("/", "\\", ":", "\x00"))
 
 
 def promote_batch(slugs: list[str]) -> QaPromoteBatchResponse:

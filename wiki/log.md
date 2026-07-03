@@ -115,3 +115,4 @@
 ## [2026-06-15T14:24:35.954725Z] grounding_verify | reason=claim_supported retries=0 latency=4.125s
 ## [2026-06-15T14:24:35.955734Z] chat | "你們有提供國際配送嗎？運送時間和關稅怎麼算？" top=國際配送#國際配送:23.25
 ## [2026-06-15T14:24:48.104771Z] grounding_verify | reason=claim_supported retries=0 latency=8.516s
+## [2026-07-03T07:00:25.059193Z] qa_reflect | slug=../entities/escape-target op=promoted by=curator

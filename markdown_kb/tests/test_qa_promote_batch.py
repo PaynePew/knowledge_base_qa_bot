@@ -198,6 +198,7 @@ def test_promote_batch_rejects_pathlike_slugs(tmp_path):
         ".",
         "",
         "nul\x00byte",
+        "D:drive-relative",  # joins outside qa_dir on Windows dev boxes
     ]
     result = promote_batch(bad)
 
