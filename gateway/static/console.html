@@ -1127,7 +1127,9 @@
   .card-status-msg.ok   { color: var(--pass); }
   .card-status-msg.err  { color: var(--fail); }
 
-  /* Flag card (C9 stale / C10 invalid) — no destructive actions on stale */
+  /* Flag card (C9 stale / C10 invalid). C9 offers Re-file (tier-B S4,
+     issue #380) — never destructive: a failed re-ground writes nothing and
+     the live page keeps serving; C10 offers Discard (inert only). */
   .flag-card {
     border: 1px solid var(--rule);
     border-radius: 6px;
@@ -1740,13 +1742,20 @@ var AXIS_CHECK_CODES = {
   Lifecycle: ["C8", "C10", "C9"],
 };
 
-/* code -> {label, tier, findingsKey}. tier drives the per-row affordance:
+/* code -> {label, tier, findingsKey}. tier mirrors markdown_kb/app/lint.py's
+   _REMEDIATION_TAXONOMY (the single source of truth, ADR-0026 § Consequences)
+   and drives the per-row affordance:
    "direct"   — C6/C3/C10 get a Remediation button; C8 gets none here (its
                 Promote/Discard controls live in the dedicated Curation
                 Queue block, unchanged per issue #363 AC).
-   "authored" — disabled tier-B affordance (visible, never actionable).
-   "deferred" — no control yet (C9/C11 need a lifecycle endpoint that does
-                not exist — ADR-0023 Consequences). */
+   "authored" — disabled tier-B affordance (visible, never actionable) for
+                C5/C4/C1/C2. C9 is the one Authored exception (tier-B S4,
+                issue #380): its Re-file button lives in the Curation Queue
+                block instead of a per-row lint action, the same split C8
+                already uses — its own human gate is the downstream Promote,
+                not a preview step here.
+   "deferred" — no control yet (C11 needs the lifecycle endpoint ADR-0025
+                ships in its own slice). */
 var LINT_CHECK_META = {
   C6:  { label: "stale",            tier: "direct",   findingsKey: "stale_pages" },
   C3:  { label: "failed-grounding", tier: "direct",   findingsKey: "failed_grounding" },
@@ -1757,7 +1766,7 @@ var LINT_CHECK_META = {
   C2:  { label: "red-link",         tier: "authored", findingsKey: "red_links" },
   C8:  { label: "promotion",        tier: "direct",   findingsKey: "promotion_candidates" },
   C10: { label: "invalid-schema",   tier: "direct",   findingsKey: "invalid_qa_schemas" },
-  C9:  { label: "stale-qa",         tier: "deferred", findingsKey: "stale_filed_answers" },
+  C9:  { label: "stale-qa",         tier: "authored", findingsKey: "stale_filed_answers" },
 };
 
 /* ============================================================
@@ -2332,8 +2341,9 @@ function renderLintCard(data, resultEl) {
   }
 
   /* Per-check row renderers, keyed by code — driven by the axis loop below.
-     C8 and C9 render no actionsEl: C8's Promote/Discard stay in the
-     dedicated Curation Queue block (issue #363 AC); C9 is deferred. */
+     C8 and C9 render no actionsEl here: both checks' real actions live in
+     the dedicated Curation Queue block instead — C8's Promote/Discard
+     (issue #363 AC) and, since tier-B S4 (issue #380), C9's Re-file. */
   var ROW_RENDERERS = {
     C11: function(i, f) {
       return findingRow(i, f.page_slug,
@@ -3262,7 +3272,10 @@ function buildPipeline(rootEl) {
    Driven by the latest LintResponse stored in lastLintData.
    Sections:
      - C8 Promotion candidates (draft Filed Answers, ranked) — Promote + Discard
-     - C9 Stale filed answers — read-only flag, "re-ingest source" hint
+     - C9 Stale filed answers — Re-file (tier-B S4, issue #380, ADR-0026):
+       chained re-synthesize + grounding-check + demote-in-place; a failed
+       re-ground changes nothing, so the button just re-enables with an
+       honest message
      - C10 Invalid qa schema — read-only flag + optional Discard (inert only)
    §12.4: all server-derived text via textContent.
    §12.5: server decides inert/live eligibility; the client just calls and shows.
@@ -3349,12 +3362,11 @@ function renderCurationQueue(rootEl, lintData) {
     staleSlugs.forEach(function(slug) {
       var f = staleMap[slug];
       var drift = f.max_drift_days != null ? f.max_drift_days.toFixed(1) + "d drift" : "";
-      var hint = "Re-ingest the source document to refresh this live Filed Answer.";
-      c9Section.append(buildFlagCard(
-        /* icon */ "~",
+      var hint = "Re-file: re-derive this answer from the current entities/concepts and " +
+        "stage it as a fresh draft for review — the old answer leaves the corpus.";
+      c9Section.append(buildRefileFlagCard(
         /* slug */ f.page_slug,
-        /* subtitle */ drift + (drift ? " — " : "") + hint,
-        /* discardBtn? */ false
+        /* subtitle */ drift + (drift ? " — " : "") + hint
       ));
     });
     queueEl.append(c9Section);
@@ -3714,10 +3726,12 @@ function buildDraftCard(f) {
   return cardEl;
 }
 
-/* ── Flag card builder (C9 / C10) ───────────────────────────
-   Read-only card with icon, slug, hint text, and optional Discard.
-   C9 (live stale):  discardBtn=false — never offer destructive action on live.
-   C10 (invalid):    discardBtn=true  — inert, safe to discard.            */
+/* ── Flag card builder (C10) ─────────────────────────────────
+   Card with icon, slug, hint text, and optional Discard.
+   C10 (invalid):    discardBtn=true — inert, safe to discard.
+   (C9 stale used this with discardBtn=false until tier-B S4, issue #380 —
+   it now renders via the dedicated buildRefileFlagCard below, which has
+   its own POST /refile action instead of a discard toggle.)            */
 function buildFlagCard(icon, slug, subtitle, showDiscard, onDiscard) {
   var actionBusy = false;
   var statusMsgEl = el("span", { class: "card-status-msg" });
@@ -3750,6 +3764,81 @@ function buildFlagCard(icon, slug, subtitle, showDiscard, onDiscard) {
     bodyEl,
     el("div", { class: "flag-actions" }, actionsChildren[0],
       actionsChildren.length > 1 ? actionsChildren[1] : null)
+  );
+
+  return cardEl;
+}
+
+/* ── C9 Re-file flag card (tier-B S4, issue #380, ADR-0026 decision 1) ───
+   A live Filed Answer flagged stale by C9. Clicking Re-file POSTs
+   /wiki/qa/{slug}/refile: the server re-derives the answer from the
+   current entities/concepts (wiki/qa/ excluded from retrieval),
+   grounding-checks it BEFORE any write, and — only on pass — demotes the
+   page in place to status=draft, so it re-enters the C8 Promote/Edit/
+   Discard loop on the next Refresh (issue #380 AC: "the re-filed draft
+   appears in the Curation Queue"). A failed re-ground (422) writes
+   nothing: the old live page keeps serving, this card stays exactly as
+   it is, and the button re-enables so the curator can retry or wait for
+   the underlying content to change. Does not auto-refresh the queue —
+   mirrors C10's buildFlagCard/doDiscard convention of marking the card
+   in place and leaving Refresh to the curator. */
+function buildRefileFlagCard(slug, subtitle) {
+  var actionBusy = false;
+  var statusMsgEl = el("span", { class: "card-status-msg" });
+  var refileBtn = el("button", { class: "edit-btn", type: "button", text: "Re-file" });
+
+  refileBtn.addEventListener("click", function() {
+    if (actionBusy) return;
+    actionBusy = true;
+    refileBtn.disabled = true;
+    statusMsgEl.textContent = "Re-filing…";
+    statusMsgEl.className = "card-status-msg";
+
+    fetch("/wiki/qa/" + encodeURIComponent(slug) + "/refile", { method: "POST" })
+      .then(function(resp) {
+        return resp.json().then(function(data) { return { ok: resp.ok, status: resp.status, data: data }; });
+      })
+      .then(function(result) {
+        if (result.ok) {
+          statusMsgEl.textContent =
+            "Re-filed as a draft — old answer left the corpus. Click Refresh to review it under Promotion Candidates (C8).";
+          statusMsgEl.className = "card-status-msg ok";
+          cardEl.style.opacity = "0.6";
+          var slugEl = cardEl.querySelector(".flag-slug");
+          if (slugEl) slugEl.style.textDecoration = "line-through";
+          return; /* leave refileBtn disabled — the finding is now stale */
+        }
+        if (result.status === 422) {
+          var reason = (result.data.detail && result.data.detail.reason) || "unknown";
+          statusMsgEl.textContent =
+            "Cannot re-ground (reason: " + reason + ") — nothing changed, this page keeps serving.";
+          statusMsgEl.className = "card-status-msg err";
+          actionBusy = false;
+          refileBtn.disabled = false;
+          return;
+        }
+        statusMsgEl.textContent = "Error: HTTP " + result.status + " " + (result.data.detail || "");
+        statusMsgEl.className = "card-status-msg err";
+        actionBusy = false;
+        refileBtn.disabled = false;
+      })
+      .catch(function(err) {
+        statusMsgEl.textContent = "Error: " + (err.message || String(err));
+        statusMsgEl.className = "card-status-msg err";
+        actionBusy = false;
+        refileBtn.disabled = false;
+      });
+  });
+
+  var bodyEl = el("div", { class: "flag-body" },
+    el("div", { class: "flag-slug", text: slug }),
+    el("div", { class: "flag-hint", text: subtitle })
+  );
+
+  var cardEl = el("div", { class: "flag-card" },
+    el("div", { class: "flag-icon", text: "~" }),
+    bodyEl,
+    el("div", { class: "flag-actions" }, refileBtn, statusMsgEl)
   );
 
   return cardEl;

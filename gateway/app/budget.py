@@ -34,7 +34,12 @@ Per-endpoint estimate table (USD per request, deliberately generous):
     | /wiki/pages/collision/merge/apply           | 0.02 | grounding re-check on the submitted base content              |
     | /wiki/pages/collision/differentiate         | 0.08 | C4 differentiate draft over N pages' Source union + N grounding checks |
     | /wiki/pages/collision/differentiate/apply   | 0.03 | grounding re-check on N submitted pages                        |
+    | /wiki/qa/{slug}/refile | 0.05 | C9 re-file: full grounded answer round (draft + verify) server-side |
     | (default heavy)  | 0.10     | unknown heavy path → assume a mid-range cost    |
+
+The ``/wiki/qa/{slug}/refile`` key is the middleware's ``QA_REFILE_TEMPLATE``
+— concrete per-slug paths are canonicalised to it before ``charge()`` is
+called, so the table stays exact-match (ADR-0026 decision 1, issue #380).
 
 The numbers are intentionally above plausible real cost on a small demo corpus
 (GPT-class answer rounds are sub-cent; ``text-embedding-3-small`` re-embeds are
@@ -68,6 +73,7 @@ _COST_ESTIMATES: dict[str, float] = {
     "/wiki/pages/collision/merge/apply": 0.02,
     "/wiki/pages/collision/differentiate": 0.08,
     "/wiki/pages/collision/differentiate/apply": 0.03,
+    "/wiki/qa/{slug}/refile": 0.05,
 }
 
 # Fallback for any heavy path missing from the table — assume a mid-range cost
