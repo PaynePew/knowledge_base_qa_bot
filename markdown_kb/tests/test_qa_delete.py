@@ -292,6 +292,75 @@ def test_delete_missing_via_route_returns_404(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Path-shape guard (issue #397): %5C (backslash) / drive-relative traversal
+# ---------------------------------------------------------------------------
+#
+# A FastAPI ``{slug}`` path segment cannot contain "/" but CAN contain "\\"
+# or ":" (route matching is unaffected), which act as path separators once
+# joined into ``_qa_dir() / f"{slug}.md"`` on Windows.
+
+
+def test_delete_rejects_pathlike_slug_raises_not_found_before_filesystem_touch(tmp_path):
+    """A traversal-shaped slug raises QaPageNotFound and never deletes (or
+    even touches) a file outside wiki/qa/."""
+    from app.qa import QaPageNotFound, delete
+
+    escape_dir = tmp_path / "wiki" / "entities"
+    escape_dir.mkdir(parents=True, exist_ok=True)
+    outside = escape_dir / "escape-target.md"
+    outside.write_text("---\nstatus: live\n---\n\nnot a qa page.\n", encoding="utf-8")
+
+    for bad in (
+        "..\\entities\\escape-target",
+        "../entities/escape-target",
+        "D:drive-relative",
+        "..",
+        ".",
+        "",
+        "nul\x00byte",
+    ):
+        with pytest.raises(QaPageNotFound):
+            delete(bad)
+
+    assert outside.exists(), "a path-shaped slug must never reach the filesystem"
+
+
+def test_delete_cjk_slug_is_not_over_rejected(tmp_path):
+    """Real corpus slugs include CJK — the path-shape guard must not
+    treat them as invalid."""
+    from app.qa import delete
+
+    slug = "你們接受哪些付款方式-fb0f2e"
+    qa_path = _write_raw_qa(tmp_path, slug, "draft")
+    assert qa_path.exists()
+
+    result = delete(slug)
+
+    assert not qa_path.exists()
+    assert result.slug == slug
+
+
+def test_route_delete_pathlike_slug_returns_404(tmp_path):
+    """``DELETE /qa/{slug}`` for a backslash-carrying slug returns 404,
+    matching the "no such qa page" 404 a garbage slug produces on Linux
+    (issue #397 AC)."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    escape_dir = tmp_path / "wiki" / "entities"
+    escape_dir.mkdir(parents=True, exist_ok=True)
+    outside = escape_dir / "escape-target.md"
+    outside.write_text("---\nstatus: live\n---\n\nnot a qa page.\n", encoding="utf-8")
+
+    client = TestClient(app, raise_server_exceptions=False)
+    response = client.delete("/qa/..\\entities\\escape-target")
+
+    assert response.status_code == 404, response.text
+    assert outside.exists()
+
+
+# ---------------------------------------------------------------------------
 # Route: 204 on successful delete
 # ---------------------------------------------------------------------------
 

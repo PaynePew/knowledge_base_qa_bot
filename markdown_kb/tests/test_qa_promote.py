@@ -323,3 +323,80 @@ def test_concurrent_filing_and_promote_no_torn_write(tmp_path):
             # be idempotent against a draft/live page that filing might be
             # mid-touching. If we ever raise here, the lock is broken.
             raise AssertionError(f"Concurrent op raised unexpectedly: {r!r}")
+
+
+# ---------------------------------------------------------------------------
+# Path-shape guard (issue #397): %5C (backslash) / drive-relative traversal
+# ---------------------------------------------------------------------------
+#
+# A FastAPI ``{slug}`` path segment cannot contain "/" but CAN contain "\\"
+# or ":" (route matching is unaffected — the request still reaches this
+# handler with the raw character inside the slug). On Windows these act as
+# path separators once joined into ``_qa_dir() / f"{slug}.md"``, so the
+# guard must reject them the same way ``qa.promote_batch`` already does for
+# its body-supplied slugs (PR #393).
+
+
+def test_promote_rejects_pathlike_slug_raises_not_found_before_filesystem_touch(tmp_path):
+    """A traversal-shaped slug raises QaPageNotFound (matches the route's
+    existing 404 mapping) and never touches a file outside wiki/qa/."""
+    from app.qa import QaPageNotFound, promote
+
+    outside = tmp_path / "wiki" / "entities"
+    outside.mkdir(parents=True, exist_ok=True)
+    (outside / "escape-target.md").write_text(
+        "---\nstatus: draft\n---\n\nnot a qa page.\n", encoding="utf-8"
+    )
+
+    for bad in (
+        "..\\entities\\escape-target",
+        "../entities/escape-target",
+        "D:drive-relative",
+        "..",
+        ".",
+        "",
+        "nul\x00byte",
+    ):
+        with pytest.raises(QaPageNotFound):
+            promote(bad)
+
+    assert "status: draft" in (outside / "escape-target.md").read_text(encoding="utf-8"), (
+        "a path-shaped slug must never reach the filesystem"
+    )
+
+
+def test_promote_cjk_slug_is_not_over_rejected(tmp_path):
+    """Real corpus slugs include CJK (compute_slug preserves Unicode
+    verbatim) — the path-shape guard must not treat them as invalid."""
+    from app.qa import compute_slug, maybe_file_answer, promote
+
+    query = "退款政策是什麼？"
+    cited = [_stub("refund-policy#cancellation-window")]
+    filed = maybe_file_answer(query, "24小時內可退款。", cited)
+    assert filed is not None
+    slug = compute_slug(query)
+
+    result = promote(slug)
+
+    assert result.status == "live"
+
+
+def test_route_promote_pathlike_slug_returns_404(tmp_path):
+    """``POST /qa/{slug}/promote`` for a backslash-carrying slug returns 404,
+    mirroring the "no such qa page" behaviour a garbage slug produces on
+    Linux (issue #397 AC)."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    outside = tmp_path / "wiki" / "entities"
+    outside.mkdir(parents=True, exist_ok=True)
+    (outside / "escape-target.md").write_text(
+        "---\nstatus: draft\n---\n\nnot a qa page.\n", encoding="utf-8"
+    )
+
+    client = TestClient(app, raise_server_exceptions=False)
+    resp = client.post("/qa/..\\entities\\escape-target/promote")
+
+    assert resp.status_code == 404, resp.text
+    assert "status: draft" in (outside / "escape-target.md").read_text(encoding="utf-8")

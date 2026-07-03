@@ -36,7 +36,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ._paths import DOCS_DIR
+from ._paths import DOCS_DIR, is_bare_slug
 from .indexer import _index_lock
 from .lint import check_full_orphan
 from .logger import log_event
@@ -88,7 +88,18 @@ def _find_page_path(slug: str, wiki_dir: Path) -> Path:
     ``concepts/`` — C11 scans only these two subdirs, so a delete target is
     always an entity or concept page. Slugs are corpus-unique
     (``wiki_writer.resolve_slug_collision``), so the server resolves the
-    subdir itself (ADR-0025: "Slug resolved server-side")."""
+    subdir itself (ADR-0025: "Slug resolved server-side").
+
+    Rejects a path-shaped ``slug`` (separators, ``..``, a Windows drive
+    prefix, NUL) up front via ``_paths.is_bare_slug``, before either
+    candidate join is even built — issue #397: a FastAPI ``{slug}`` path
+    segment cannot contain ``/`` but CAN contain ``\\`` / ``:``, which join
+    OUTSIDE ``wiki_dir`` on Windows. Raises the same ``PageNotFound`` a
+    missing-but-well-shaped slug would, so the route's existing 404 mapping
+    covers this with no route-layer change.
+    """
+    if not is_bare_slug(slug):
+        raise PageNotFound(slug)
     for subdir_name in ("entities", "concepts"):
         candidate = wiki_dir / subdir_name / f"{slug}.md"
         if candidate.exists():
@@ -110,7 +121,9 @@ def delete_full_orphan(
     """Delete ``slug`` only if the ADR-0025 full-orphan predicate holds NOW.
 
     Raises:
-        PageNotFound: ``slug`` does not resolve to an entities/concepts page.
+        PageNotFound: ``slug`` does not resolve to an entities/concepts page,
+            OR ``slug`` is not a bare filename component (issue #397 — see
+            ``_find_page_path``; rejected before any filesystem access).
         PageCorrupt: the page exists but its frontmatter cannot be parsed.
         PageNotFullOrphan: the predicate does not hold — refused (409).
 
