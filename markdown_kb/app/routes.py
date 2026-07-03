@@ -4,13 +4,14 @@ HTTP wiring for /health, /index, /chat, /qa/{slug}/promote,
 /qa/{slug} (DELETE, PUT), /qa/{slug}/refile, /ingest, /lint, /import,
 /pages/reconcile, /pages/reconcile/apply, /pages/collision/merge,
 /pages/collision/merge/apply, /pages/collision/differentiate,
-/pages/collision/differentiate/apply. No domain logic."""
+/pages/collision/differentiate/apply, /pages/{slug} (DELETE). No domain logic."""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
 from . import indexer as _indexer
+from . import pages as pages_module
 from . import qa as qa_module
 from . import reconcile as reconcile_module
 from .errors import LLMError
@@ -763,3 +764,59 @@ def collision_differentiate_apply(
         grounding=result.grounding,
         sections_indexed=sections_indexed,
     )
+
+
+# ---------------------------------------------------------------------------
+# /pages/{slug} — C11 Confirmed orphan-delete (tier-B S5, issue #381, ADR-0025)
+# ---------------------------------------------------------------------------
+
+
+@router.delete("/pages/{slug}", status_code=204)
+def delete_page(slug: str) -> None:
+    """Curator endpoint: delete an entities/concepts page — full orphans only.
+
+    tier-B S5 (issue #381) / ADR-0025. Confirmed Remediation (ADR-0024): the
+    human confirms the named irreversible operation; no LLM is involved; not
+    a general page delete — the server recomputes the full-orphan predicate
+    (``sources`` non-empty and every citation's file missing under docs/**)
+    at delete time and refuses otherwise. Slug resolved server-side across
+    ``entities/`` / ``concepts/`` (slugs are corpus-unique).
+
+    Shallow wrapper around ``pages.delete_full_orphan`` (CODING_STANDARD
+    §2.3 — all domain logic lives in ``pages.py``). ``build_index()`` is
+    called here, once, after a successful delete — mirrors ``POST
+    /qa/{slug}/promote``'s auto-reindex convention (reindex is a route-layer
+    concern, not a domain-layer one).
+
+    Exception mapping (build_index is NOT called on any exception path):
+
+    - ``PageNotFound``      → ``404`` (slug has never been written, or was
+      already deleted by a concurrent operation)
+    - ``PageCorrupt``       → ``500`` (orphan-visibility — surface broken
+      state rather than silently acting on it)
+    - ``PageNotFullOrphan`` → ``409`` (predicate does not hold NOW — stale
+      lint report, restored/re-imported Source, partial orphan, or a page
+      with no sources at all; ADR-0025 Invariant)
+
+    Returns HTTP 204 No Content on success (the resource is gone; no body).
+    """
+    try:
+        pages_module.delete_full_orphan(slug)
+    except pages_module.PageNotFound as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"wiki page '{slug}' not found under entities/ or concepts/",
+        ) from exc
+    except pages_module.PageCorrupt as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"wiki page '{slug}' has corrupt frontmatter: {exc}",
+        ) from exc
+    except pages_module.PageNotFullOrphan as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=(f"wiki page '{slug}' is not a full orphan (ADR-0025); delete refused: {exc}"),
+        ) from exc
+
+    # ADR-0025 Invariant: a successful delete triggers exactly one BM25 reindex.
+    build_index()
