@@ -77,6 +77,30 @@ git push -u origin {{BRANCH}}
 
 If push fails (e.g. remote rejects, no network), abort and report the actual error in your closing comment.
 
+### 3.5 Post the verifier verdict as a commit status (Rung 2)
+
+`main` requires the `verify/verdict` status check — a PR whose head commit
+lacks it cannot be merged. You only run after the adversarial-verify gate
+passed (critical/high block upstream), so post `success` with the counts from
+the inline report:
+
+```bash
+git rev-parse HEAD
+gh api repos/PaynePew/knowledge_base_qa_bot/statuses/<HEAD_SHA> \
+  -f state=success \
+  -f context=verify/verdict \
+  -f description="adversarial verify: pass - 0 critical/high, <N> non-blocking finding(s)"
+```
+
+Substitute `<HEAD_SHA>` with the `git rev-parse HEAD` output and `<N>` with the
+non-blocking finding count from the inline report. Keep the description under
+140 characters. If the `gh api` call fails, report the error but continue —
+the top-level session can re-post the status; do not treat it as a hard abort.
+
+(If a later commit is pushed to the PR branch — e.g. a top-level fix — the new
+head SHA needs a fresh `verify/verdict` post after its own re-verify; that is
+the top-level session's job, not yours.)
+
 ### 4. Open the pull request
 
 Gather the implementer's `## What was built` + `## AC self-report` and the reviewer's `## Verdict` + `## Standards drift` + `## Concerns flagged for human` from the issue comments (or from the inline report in your instructions, when the orchestrator embeds one).

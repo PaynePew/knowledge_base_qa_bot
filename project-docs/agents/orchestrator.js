@@ -95,6 +95,7 @@ ${JSON.stringify(nonBlocking, null, 2).slice(0, 3000)}
 === /報告 ===
 ${GUARDRAILS}
 - 你在共用的主工作樹操作：絕不執行 git stash / git reset / git checkout -- / git clean（主工作樹可能有頂層 session 的未提交工作）。發現未提交變更擋路時，一律 abort 回報，不要「幫忙清理」。你要 push 的分支在它自己的 worktree，主工作樹髒不髒與你的任務無關。
+Rung 2：照 merge.md 步驟 3.5 在 push 後把 verify verdict 貼成 head SHA 的 commit status（context=verify/verdict、state=success、description 用 verdict=${r?.v?.verdict ?? 'pass'}、非阻擋 finding ${nonBlocking.length} 個）——main 的 branch protection 要求這個 check，漏貼 = PR 永遠不能 merge。
 注意：只 push + 開 PR（body 含 Closes #${i.id} + 上述 verify 報告）+ 在 issue 留 PR 連結；絕不自己按 merge、絕不 gh issue close（GitHub 會在人類 merge PR 時自動關）。
 回傳：PR 連結與狀態。`
 }
