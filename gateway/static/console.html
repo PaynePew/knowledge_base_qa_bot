@@ -1754,19 +1754,23 @@ var AXIS_CHECK_CODES = {
                 block instead of a per-row lint action, the same split C8
                 already uses — its own human gate is the downstream Promote,
                 not a preview step here.
-   "deferred" — no control yet (C11 needs the lifecycle endpoint ADR-0025
-                ships in its own slice). */
+   "confirmed" — C11 (tier-B S5, issue #381, ADR-0024/0025): a full orphan
+                (``f.full === true``) gets a real Delete button that opens a
+                confirmation dialog naming the operation + target before it
+                runs (no draft to review — Confirmed confirms an operation,
+                Authored approves content); a partial orphan renders
+                advisory text only, never a delete affordance. */
 var LINT_CHECK_META = {
-  C6:  { label: "stale",            tier: "direct",   findingsKey: "stale_pages" },
-  C3:  { label: "failed-grounding", tier: "direct",   findingsKey: "failed_grounding" },
-  C11: { label: "orphan",           tier: "deferred", findingsKey: "orphans" },
-  C5:  { label: "contradiction",    tier: "authored", findingsKey: "page_pairs" },
-  C4:  { label: "collision",        tier: "authored", findingsKey: "slug_collisions" },
-  C1:  { label: "coverage-gap",     tier: "authored", findingsKey: "coverage_gaps" },
-  C2:  { label: "red-link",         tier: "authored", findingsKey: "red_links" },
-  C8:  { label: "promotion",        tier: "direct",   findingsKey: "promotion_candidates" },
-  C10: { label: "invalid-schema",   tier: "direct",   findingsKey: "invalid_qa_schemas" },
-  C9:  { label: "stale-qa",         tier: "authored", findingsKey: "stale_filed_answers" },
+  C6:  { label: "stale",            tier: "direct",    findingsKey: "stale_pages" },
+  C3:  { label: "failed-grounding", tier: "direct",    findingsKey: "failed_grounding" },
+  C11: { label: "orphan",           tier: "confirmed", findingsKey: "orphans" },
+  C5:  { label: "contradiction",    tier: "authored",  findingsKey: "page_pairs" },
+  C4:  { label: "collision",        tier: "authored",  findingsKey: "slug_collisions" },
+  C1:  { label: "coverage-gap",     tier: "authored",  findingsKey: "coverage_gaps" },
+  C2:  { label: "red-link",         tier: "authored",  findingsKey: "red_links" },
+  C8:  { label: "promotion",        tier: "direct",    findingsKey: "promotion_candidates" },
+  C10: { label: "invalid-schema",   tier: "direct",    findingsKey: "invalid_qa_schemas" },
+  C9:  { label: "stale-qa",         tier: "authored",  findingsKey: "stale_filed_answers" },
 };
 
 /* ============================================================
@@ -1842,6 +1846,13 @@ var LINT_CHROME = {
     collisionClose:         "Close",
     collisionWorking:       "Working…",
     collisionGuardFailed:   "Cannot merge — still referenced:",
+    deleteOrphan:        "Delete",
+    deleteConfirmTitle:  "Delete orphan page",
+    deleteConfirmBody:   "This permanently deletes wiki page '{slug}'. Every Source it cited is gone, so nothing can re-derive it — this cannot be undone.",
+    deleteConfirm:       "Delete permanently",
+    deleteCancel:        "Cancel",
+    deleteWorking:       "Deleting…",
+    partialOrphanAdvisory: "Partial orphan — a Source still exists. Repair the citation; never delete.",
   },
   zh: {
     reingest:        "重新匯入",
@@ -1866,6 +1877,13 @@ var LINT_CHROME = {
     collisionClose:         "關閉",
     collisionWorking:       "處理中…",
     collisionGuardFailed:   "無法合併 — 仍被參照：",
+    deleteOrphan:        "刪除",
+    deleteConfirmTitle:  "刪除孤立頁面",
+    deleteConfirmBody:   "此操作將永久刪除 wiki 頁面「{slug}」。其引用的所有 Source 皆已不存在，無法重新推導 — 此操作無法復原。",
+    deleteConfirm:       "永久刪除",
+    deleteCancel:        "取消",
+    deleteWorking:       "刪除中…",
+    partialOrphanAdvisory: "部分孤立 — 仍有 Source 存在，請修正引用，勿刪除。",
   },
 };
 
@@ -1926,6 +1944,26 @@ function discardRemediationRequest(slug) {
     .then(function(resp) {
       if (resp.status === 409) {
         throw new Error("Cannot discard: page is live (status=live). Use Re-ingest to refresh it instead.");
+      }
+      if (!resp.ok) {
+        return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+      }
+      return null;
+    });
+}
+
+/* C11 Confirmed orphan-delete (tier-B S5, issue #381, ADR-0025). The 409
+   case is the ADR-0025 Invariant surfacing at the client: the server
+   re-verified the full-orphan predicate at delete time and it no longer
+   holds (stale report, restored Source, or a partial orphan) — rendered
+   honestly, never silently retried. */
+function deleteOrphanRequest(slug) {
+  return fetch("/wiki/pages/" + encodeURIComponent(slug), { method: "DELETE" })
+    .then(function(resp) {
+      if (resp.status === 409) {
+        return resp.text().then(function(t) {
+          throw new Error("Cannot delete: no longer a full orphan (" + t + ")");
+        });
       }
       if (!resp.ok) {
         return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
@@ -2213,6 +2251,30 @@ function renderLintCard(data, resultEl) {
     return el("div", { class: "lint-row-actions" }, mergeBtn, diffBtn);
   }
 
+  /* ── C11 orphan Confirmed delete (tier-B S5, issue #381, ADR-0024/0025).
+     Full orphans (``full === true``) get a real Delete button that opens a
+     confirmation dialog naming the operation + target before it runs — no
+     draft to review (Confirmed confirms an OPERATION; Authored above
+     approves CONTENT). Partial orphans render advisory text only, never a
+     delete affordance — the server re-verifies the predicate at delete time
+     regardless (ADR-0025 Invariant), but showing the wrong control here
+     would still be dishonest UX. This mirrors §12.5: the client renders the
+     eligibility the server already computed, it never re-derives it. */
+  function deleteOrphanAction(slug, full) {
+    if (!full) {
+      return el("div", { class: "lint-row-actions" },
+        el("span", { class: "card-status-msg", text: LINT_CHROME[consoleLang].partialOrphanAdvisory }));
+    }
+    var btn = el("button", { class: "discard-btn", type: "button",
+      text: LINT_CHROME[consoleLang].deleteOrphan });
+    allButtons.push(btn);
+    btn.addEventListener("click", function() {
+      if (btn.disabled || remediationInFlight) return;
+      openDeleteOrphanConfirm(slug, resultEl, allButtons);
+    });
+    return el("div", { class: "lint-row-actions" }, btn);
+  }
+
   /* Re-ingest / Re-ingest (retry) action for a C6/C3 finding.
      C3 MUST send force:true — omitting it lets hash-skip (#93) no-op the
      retry into a false fix (ADR-0023 Invariant / CODING_STANDARD §12.8).
@@ -2348,7 +2410,7 @@ function renderLintCard(data, resultEl) {
     C11: function(i, f) {
       return findingRow(i, f.page_slug,
         "missing: " + (f.missing_sources || []).join(", "),
-        "orphan", "label-failed");
+        "orphan", "label-failed", deleteOrphanAction(f.page_slug, f.full));
     },
     C6: function(i, f) {
       var drift = f.drift_days != null ? f.drift_days.toFixed(1) + "d drift" : "";
@@ -2470,6 +2532,79 @@ function renderLintCard(data, resultEl) {
   }
 
   return el("div", { class: "result-card" }, head, bodyEl);
+}
+
+/* ── C11 orphan Confirmed-delete dialog (tier-B S5, issue #381, ADR-0024/
+   0025) ──────────────────────────────────────────────────────────────
+   Names the irreversible operation and its target BEFORE it runs (ADR-0024:
+   a Confirmed dialog confirms an operation, it does not preview drafted
+   content — there is none to preview). Reuses the .reconcile-overlay/
+   .reconcile-modal/.reconcile-actions chrome (same modal shape, different
+   body) rather than inventing a second modal system. On success, closes the
+   modal and re-runs the SAME fast (include_c5=false) re-lint + re-render
+   every other remediation on this card uses (the ``renderCollisionMerge/
+   DifferentiatePreview`` apply-success shape) so the deleted page's finding
+   drops out of the re-rendered Freshness section. */
+function openDeleteOrphanConfirm(slug, resultEl, siblingButtons) {
+  var overlay = el("div", { class: "reconcile-overlay" });
+  var statusMsgEl = el("span", { class: "card-status-msg" });
+  var cancelBtn = el("button", { class: "reconcile-cancel-btn", type: "button",
+    text: LINT_CHROME[consoleLang].deleteCancel });
+  var confirmBtn = el("button", { class: "discard-btn", type: "button",
+    text: LINT_CHROME[consoleLang].deleteConfirm });
+
+  function closeModal() { overlay.remove(); }
+  overlay.addEventListener("click", function(e) { if (e.target === overlay) closeModal(); });
+  cancelBtn.addEventListener("click", function() {
+    if (cancelBtn.disabled) return;
+    closeModal();
+  });
+
+  confirmBtn.addEventListener("click", function() {
+    if (confirmBtn.disabled || remediationInFlight) return;
+    remediationInFlight = true;
+    confirmBtn.disabled = true;
+    cancelBtn.disabled = true;
+    (siblingButtons || []).forEach(function(b) { b.disabled = true; });
+    statusMsgEl.replaceChildren(el("span", { class: "spinner" }),
+      document.createTextNode(LINT_CHROME[consoleLang].deleteWorking));
+    statusMsgEl.className = "card-status-msg";
+
+    deleteOrphanRequest(slug)
+      .then(function() {
+        return fetch("/wiki/lint?include_c5=false", { method: "POST" });
+      })
+      .then(function(resp) {
+        if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+        return resp.json();
+      })
+      .then(function(lintData) {
+        remediationInFlight = false;
+        closeModal();
+        lastLintData = lintData;
+        if (resultEl) resultEl.replaceChildren(renderLintCard(lintData, resultEl));
+        renderCurationQueue(document.getElementById("curation-queue-root"), lintData);
+      })
+      .catch(function(err) {
+        remediationInFlight = false;
+        confirmBtn.disabled = false;
+        cancelBtn.disabled = false;
+        (siblingButtons || []).forEach(function(b) { b.disabled = false; });
+        statusMsgEl.textContent = "Error: " + (err.message || String(err));
+        statusMsgEl.className = "card-status-msg err";
+      });
+  });
+
+  var modal = el("div", { class: "reconcile-modal" },
+    el("div", { class: "reconcile-modal-head" },
+      el("span", { text: LINT_CHROME[consoleLang].deleteConfirmTitle + ": " + slug })),
+    el("div", { class: "reconcile-modal-body" },
+      el("p", { text: LINT_CHROME[consoleLang].deleteConfirmBody.replace("{slug}", slug) })
+    ),
+    el("div", { class: "reconcile-actions" }, confirmBtn, cancelBtn, statusMsgEl)
+  );
+  overlay.append(modal);
+  document.body.append(overlay);
 }
 
 /* ── C5 Reconcile modal (tier-B S1, issue #376, ADR-0028) ────────────────

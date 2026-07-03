@@ -28,11 +28,15 @@ module only wires guards around them (CODING_STANDARD §2.3).  Single-worker
 model: the semaphores and budget are plain in-process objects (§2.6/§2.7).
 
 Path matching uses the **full mounted path** with any trailing slash stripped
-(``/wiki/chat/`` == ``/wiki/chat``).  The one parameterized heavy path,
-``POST /wiki/qa/{slug}/refile`` (ADR-0026 decision 1, issue #380), is
-canonicalised to its ``QA_REFILE_TEMPLATE`` before classification and
-charging — an exact-match set cannot see a per-slug concrete path, and an
-unclassified LLM-calling path bypasses ALL guards (the #376 bug class).
+(``/wiki/chat/`` == ``/wiki/chat``).  Two parameterized heavy paths are
+canonicalised before classification and charging — an exact-match set
+cannot see a per-slug concrete path, and an unclassified path bypasses ALL
+guards (the #376 bug class): ``POST /wiki/qa/{slug}/refile`` (ADR-0026
+decision 1, issue #380) to ``QA_REFILE_TEMPLATE``, and ``DELETE
+/wiki/pages/{slug}`` (ADR-0025, issue #381) to ``PAGES_DELETE_TEMPLATE`` —
+the latter calls no LLM (Confirmed Remediation, ADR-0024 Invariant) but
+still mutates the live corpus, so it stays admin-semaphore + kill-switch
+gated even at a $0.00 budget estimate.
 """
 
 from __future__ import annotations
@@ -70,6 +74,14 @@ READ_PATHS: frozenset[str] = frozenset(
 QA_REFILE_TEMPLATE = "/wiki/qa/{slug}/refile"
 _QA_REFILE_RE = re.compile(r"^/wiki/qa/[^/]+/refile$")
 
+# Canonical billing/classification key for the C11 orphan-delete path (ADR-0025,
+# issue #381). Excludes the "reconcile" literal segment so it never collapses
+# ``/wiki/pages/reconcile`` (a distinct, already-classified path) onto this
+# template; ``/wiki/pages/collision/...`` has an extra path segment and never
+# matches the single-segment ``[^/]+$`` shape in the first place.
+PAGES_DELETE_TEMPLATE = "/wiki/pages/{slug}"
+_PAGES_DELETE_RE = re.compile(r"^/wiki/pages/(?!reconcile$)[^/]+$")
+
 # Admin / index / mutating paths — gated by the admin semaphore, the budget
 # guard, AND the optional admin-token kill-switch.
 ADMIN_PATHS: frozenset[str] = frozenset(
@@ -88,6 +100,7 @@ ADMIN_PATHS: frozenset[str] = frozenset(
         "/wiki/pages/collision/merge/apply",  # ADR-0028: grounding re-check + base rewrite + variant deletes + reindex (issue #378)
         "/wiki/pages/collision/differentiate",  # ADR-0028: C4 differentiate draft — LLM draft + grounding (issue #378)
         "/wiki/pages/collision/differentiate/apply",  # ADR-0028: grounding re-check + N-page rewrite + reindex (issue #378)
+        PAGES_DELETE_TEMPLATE,  # ADR-0025: C11 Confirmed orphan-delete — no LLM, still a live-corpus mutation (issue #381)
     }
 )
 
@@ -148,7 +161,8 @@ def _normalise_path(raw_path: str) -> str:
 def _canonical_path(raw_path: str) -> str:
     """Normalise, then collapse a parameterized heavy path to its template key.
 
-    ``/wiki/qa/<slug>/refile`` → ``QA_REFILE_TEMPLATE`` so the exact-match
+    ``/wiki/qa/<slug>/refile`` → ``QA_REFILE_TEMPLATE`` and
+    ``/wiki/pages/<slug>`` → ``PAGES_DELETE_TEMPLATE`` so the exact-match
     classification sets and the budget table see one stable key per endpoint
     (also keeps per-slug cardinality out of the budget/log keys). Every other
     path passes through unchanged.
@@ -156,6 +170,8 @@ def _canonical_path(raw_path: str) -> str:
     path = _normalise_path(raw_path)
     if _QA_REFILE_RE.fullmatch(path):
         return QA_REFILE_TEMPLATE
+    if _PAGES_DELETE_RE.fullmatch(path):
+        return PAGES_DELETE_TEMPLATE
     return path
 
 

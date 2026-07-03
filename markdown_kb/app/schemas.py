@@ -343,11 +343,20 @@ class OrphanPageFinding(BaseModel):
 
     ``suggested_action`` mentions both rename and deletion paths because C11 cannot
     distinguish between a deleted Source and a renamed one — curator must judge.
+
+    ``full`` (tier-B S5, issue #381, ADR-0025) distinguishes the CONTEXT.md
+    "Orphan Page" full/partial split: ``True`` when ``sources`` is non-empty
+    and EVERY citation's file is missing (nothing can ground the page —
+    eligible for the Confirmed ``DELETE /pages/{slug}``); ``False`` when at
+    least one citation still resolves (partial — advisory only, never
+    delete). Defaults to ``False`` for pre-existing callers that construct
+    this model directly without the field.
     """
 
     page_slug: str
     missing_sources: list[str]
     suggested_action: str
+    full: bool = False
 
 
 class FailedGroundingFinding(BaseModel):

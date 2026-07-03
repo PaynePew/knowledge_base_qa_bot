@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``run_lint``, ``_check_c11_orphan``, ``_check_c3_failed_grounding``, ``_check_c4a_slug_collision``, ``_check_c6_stale``, ``_check_c2_red_links``, ``_check_c1_coverage_gaps``, ``_canonicalise``, ``_candidate_pairs``, ``_judge_page_pair``, ``_check_c5_page_pair``, ``_load_wiki_pages``, ``get_lint_llm``, ``generate_reconcile_draft``, ``find_inbound_references``, ``generate_collision_merge_draft``, ``generate_collision_differentiate_draft``, ``_check_c8_promotion_candidates``, ``_check_c9_qa_staleness``, ``_check_c10_qa_schema_validity``, ``group_findings_by_axis``, ``LINT_CHECK_TAXONOMY``, ``LINT_AXIS_ORDER``, ``LINT_AXIS_LABEL_ZH``, ``remediation_for``, ``RemediationDescriptor``, ``RemediationAction``, ``DIFFERENTIATE_SENTINEL_TEMPLATE``.
+"""Deep module per Ousterhout. Public surface: ``run_lint``, ``_check_c11_orphan``, ``check_full_orphan``, ``_check_c3_failed_grounding``, ``_check_c4a_slug_collision``, ``_check_c6_stale``, ``_check_c2_red_links``, ``_check_c1_coverage_gaps``, ``_canonicalise``, ``_candidate_pairs``, ``_judge_page_pair``, ``_check_c5_page_pair``, ``_load_wiki_pages``, ``get_lint_llm``, ``generate_reconcile_draft``, ``find_inbound_references``, ``generate_collision_merge_draft``, ``generate_collision_differentiate_draft``, ``_check_c8_promotion_candidates``, ``_check_c9_qa_staleness``, ``_check_c10_qa_schema_validity``, ``group_findings_by_axis``, ``LINT_CHECK_TAXONOMY``, ``LINT_AXIS_ORDER``, ``LINT_AXIS_LABEL_ZH``, ``remediation_for``, ``RemediationDescriptor``, ``RemediationAction``, ``DIFFERENTIATE_SENTINEL_TEMPLATE``.
 
 Lint orchestrator — POST /lint health check for the wiki.
 
@@ -141,6 +141,21 @@ convention. This module has no write path of its own for it: the write,
 the LLM-free-vs-LLM-based distinction, and the invariant ("a failed
 re-ground writes nothing") all live in ``qa.refile``.
 
+Slice S5 scope (Lint Remediation tier-B — issue #381, ADR-0025)
+-----------------------------------------------------------------
+No new check. C11's missing-citation scan is refactored into
+``_orphan_predicate`` (shared helper) so both ``_check_c11_orphan`` (the bulk
+sweep) and the new public ``check_full_orphan`` (the ``DELETE /pages/{slug}``
+re-verification entry point, called from the new ``pages.py`` deep module)
+compute the SAME full/partial split — ``OrphanPageFinding`` gains a ``full``
+field (CONTEXT.md "Orphan Page": every citation missing vs some surviving).
+``_REMEDIATION_TAXONOMY["C11"]`` flips from ``"deferred"`` to a Confirmed
+descriptor carrying a ``delete`` action — Confirmed sits alongside Direct/
+Authored/deferred as a fourth tier value (ADR-0024: a human confirms an
+irreversible operation, not curator-drafted content, so it is not Authored).
+This module still writes nothing: the delete + reindex live in ``pages.py`` /
+``routes.py``, mirroring how ``qa.refile`` owns C9's write path.
+
 Read-only invariant
 -------------------
 ``run_lint()`` does NOT modify wiki page frontmatter.  It writes only:
@@ -282,6 +297,62 @@ _COLLISION_SUFFIX_RE = re.compile(r"^(.+)-(\d+)$")
 # ---------------------------------------------------------------------------
 
 
+def _orphan_predicate(sources: list[str], docs_filenames: set[str]) -> tuple[bool, list[str]]:
+    """Recompute the C11 orphan predicate for one page's frontmatter ``sources``.
+
+    Returns ``(full, missing_deduped)``:
+    - ``missing_deduped`` — the missing citation basenames, de-duplicated in
+      first-seen order (the existing C11 rendering convention).
+    - ``full`` — True iff ``sources`` carries at least one citation with a
+      non-empty file part AND every such citation's file is missing under
+      ``docs_filenames`` (ADR-0025's full-orphan predicate: "``sources``
+      non-empty and every citation's file missing under ``docs/**``"). A
+      page whose ``sources`` entries are all blank never counts as full —
+      nothing has been confirmed gone.
+
+    Shared by ``_check_c11_orphan`` (the bulk sweep) and ``check_full_orphan``
+    (the ``DELETE /pages/{slug}`` re-verification entry point) so the two can
+    never disagree about what counts as a full orphan.
+    """
+    missing: list[str] = []
+    valid_citations = 0
+    for citation in sources:
+        # citation format: "filename.md#anchor"  or just "filename.md"
+        file_part = citation.split("#")[0].strip()
+        if not file_part:
+            continue
+        valid_citations += 1
+        basename = Path(file_part).name
+        if basename not in docs_filenames:
+            missing.append(basename)
+
+    # Deduplicate while preserving order
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for m in missing:
+        if m not in seen:
+            seen.add(m)
+            deduped.append(m)
+
+    full = valid_citations > 0 and len(missing) == valid_citations
+    return full, deduped
+
+
+def check_full_orphan(sources: list[str], docs_dir: Path) -> bool:
+    """Recompute the ADR-0025 full-orphan predicate for one page at delete time.
+
+    Public re-verification entry point for ``pages.delete_full_orphan`` /
+    ``DELETE /pages/{slug}`` (ADR-0025 Invariant: "recomputes the full-orphan
+    predicate server-side at delete time... never trusts the client's lint
+    finding"). Shares ``_orphan_predicate`` with the bulk C11 sweep, so a
+    Source restored or re-imported since a lint report rendered is always
+    reflected here, and the two call sites can never disagree.
+    """
+    docs_filenames: set[str] = {p.name for p in docs_dir.glob("**/*.md")}
+    full, _missing = _orphan_predicate(sources, docs_filenames)
+    return full
+
+
 def _check_c11_orphan(
     wiki_dir: Path,
     docs_dir: Path,
@@ -299,9 +370,11 @@ def _check_c11_orphan(
        under ``docs_dir`` using ``glob("**/*.md")``.
     2. For each wiki page in ``entities/`` and ``concepts/``, parse its YAML
        frontmatter and read the ``sources`` list.
-    3. For each source citation ``<file>#<anchor>``, extract the file portion.
-       If the filename is NOT in the docs set, add it to ``missing_sources``.
-    4. If any sources are missing, emit one ``OrphanPageFinding`` per page.
+    3. Recompute the missing-citations + full/partial predicate via
+       ``_orphan_predicate`` (tier-B S5, issue #381, ADR-0025) — the same
+       helper ``check_full_orphan`` re-runs at delete time.
+    4. If any sources are missing, emit one ``OrphanPageFinding`` per page,
+       carrying the full/partial distinction (CONTEXT.md "Orphan Page").
     5. Return findings sorted alphabetically by ``page_slug``.
 
     Only the basename of each source file is matched against the docs glob
@@ -324,23 +397,8 @@ def _check_c11_orphan(
             sources = _read_frontmatter_sources(page_path)
             if not sources:
                 continue
-            missing: list[str] = []
-            for citation in sources:
-                # citation format: "filename.md#anchor"  or just "filename.md"
-                file_part = citation.split("#")[0].strip()
-                if not file_part:
-                    continue
-                basename = Path(file_part).name
-                if basename not in docs_filenames:
-                    missing.append(basename)
-            if missing:
-                # Deduplicate while preserving order
-                seen: set[str] = set()
-                deduped: list[str] = []
-                for m in missing:
-                    if m not in seen:
-                        seen.add(m)
-                        deduped.append(m)
+            full, deduped = _orphan_predicate(sources, docs_filenames)
+            if deduped:
                 findings.append(
                     OrphanPageFinding(
                         page_slug=slug,
@@ -351,6 +409,7 @@ def _check_c11_orphan(
                             f"page's frontmatter sources field and re-ingest. If the Source "
                             f"was deleted, delete this wiki page as it has no valid source."
                         ),
+                        full=full,
                     )
                 )
 
@@ -363,26 +422,18 @@ def _read_frontmatter_sources(page_path: Path) -> list[str]:
 
     Returns an empty list if the page has no frontmatter, the frontmatter
     cannot be parsed, or the ``sources`` field is absent/empty.
+
+    Delegates to ``_parse_frontmatter`` (fence-*line* scanning) rather than
+    requiring the file to *start* with ``---``: real ``/ingest``-produced
+    entities/concepts pages open with a sentinel HTML comment before the
+    fence, so a ``startswith("---")`` reader returned ``[]`` for every real
+    page and C11 could never fire on the actual corpus — the same byte-shape
+    bug that once made C8/C9/C10 skip every real Filed Answer (see
+    ``_parse_frontmatter``'s docstring). Found live when tier-B S5 made C11
+    executable (issue #381).
     """
-    try:
-        text = page_path.read_text(encoding="utf-8")
-    except OSError:
-        return []
-
-    if not text.startswith("---"):
-        return []
-
-    # Extract frontmatter block between first --- and second ---
-    parts = text.split("---", 2)
-    if len(parts) < 3:
-        return []
-
-    try:
-        fm = yaml.safe_load(parts[1])
-    except yaml.YAMLError:
-        return []
-
-    if not isinstance(fm, dict):
+    fm = _parse_frontmatter(page_path)
+    if fm is None:
         return []
 
     sources = fm.get("sources", [])
@@ -2278,7 +2329,7 @@ class RemediationAction(NamedTuple):
     """One executable Remediation operation wired to an *existing* endpoint.
 
     ``verb`` is the curator-facing action name (``"reingest"``,
-    ``"reingest_retry"``, ``"discard"``, ``"promote"``).
+    ``"reingest_retry"``, ``"discard"``, ``"promote"``, ``"delete"``).
     ``target_field`` names the finding attribute that supplies the request
     value (e.g. ``StalePageFinding.source``, ``InvalidQaSchemaFinding.
     page_slug``) — a consumer reads this field off the finding to build the
@@ -2303,10 +2354,14 @@ class RemediationDescriptor(NamedTuple):
     C9 is the one Authored exception (tier-B S4, issue #380, ADR-0026): its
     ``refile`` action carries a real one-click-to-open remediation (the
     human gate is the downstream Promote, not a preview step here) — see
-    the C9 entry in ``_REMEDIATION_TAXONOMY`` below.
+    the C9 entry in ``_REMEDIATION_TAXONOMY`` below. C11 is the one
+    Confirmed check with an action (tier-B S5, issue #381, ADR-0024/0025):
+    its ``delete`` action opens a confirmation naming the operation, not a
+    draft-review — Confirmed's human gate is "confirm this happens", never
+    "approve this content".
     """
 
-    tier: str  # "direct" | "authored" | "deferred"
+    tier: str  # "direct" | "authored" | "confirmed" | "deferred"
     actions: tuple[RemediationAction, ...] = ()
 
 
@@ -2325,17 +2380,19 @@ class RemediationDescriptor(NamedTuple):
 # resulting draft, not a preview here, so ``refile`` wires directly like a
 # Direct action even though the check stays Authored-classified (the
 # additive synthesis half is what classifies it — see ADR-0026). C11 orphan
-# is still ``"deferred"`` here: ADR-0025 names its remediation a Confirmed
-# operation (``DELETE /pages/{slug}``, a separate tier-B slice) — Confirmed
-# isn't one of this table's three tiers (it has no curator-drafted content
-# to gate), so C11's flip out of ``"deferred"`` is that slice's own change,
-# not this one's.
+# is ``"confirmed"`` (tier-B S5, issue #381, ADR-0024/0025): a human confirms
+# the named irreversible ``DELETE /pages/{slug}`` operation, not curator-
+# drafted content, so it is a fourth tier value rather than shoehorned into
+# Authored — Confirmed involves no LLM call anywhere and never batches
+# (ADR-0024 Invariant). The action wires unconditionally here; the per-finding
+# full/partial eligibility (``OrphanPageFinding.full``) is what a consumer
+# reads to decide whether to render the delete button or advisory text only.
 _REMEDIATION_TAXONOMY: dict[str, RemediationDescriptor] = {
     "C6": RemediationDescriptor("direct", (RemediationAction("reingest", "source"),)),
     "C3": RemediationDescriptor(
         "direct", (RemediationAction("reingest_retry", "source", force=True),)
     ),
-    "C11": RemediationDescriptor("deferred"),
+    "C11": RemediationDescriptor("confirmed", (RemediationAction("delete", "page_slug"),)),
     "C5": RemediationDescriptor("authored"),
     "C4": RemediationDescriptor("authored"),
     "C1": RemediationDescriptor("authored"),
@@ -2356,12 +2413,12 @@ def remediation_for(code: str) -> RemediationDescriptor:
     """Return the Remediation tier + actions for a wired check code.
 
     Pure lookup into ``_REMEDIATION_TAXONOMY`` — the single source of truth
-    for which checks are Direct / Authored / deferred (ADR-0023). ``code``
-    is one of the ten ``LINT_CHECK_TAXONOMY`` keys (a finding *type*, e.g.
-    ``"C6"`` — the tier/action/target-field/force shape does not vary per
-    finding *instance*, only per check). Raises ``KeyError`` for an unknown
-    code so a typo fails loudly rather than silently rendering no
-    Remediation.
+    for which checks are Direct / Authored / Confirmed / deferred (ADR-0023 /
+    ADR-0024). ``code`` is one of the ten ``LINT_CHECK_TAXONOMY`` keys (a
+    finding *type*, e.g. ``"C6"`` — the tier/action/target-field/force shape
+    does not vary per finding *instance*, only per check). Raises
+    ``KeyError`` for an unknown code so a typo fails loudly rather than
+    silently rendering no Remediation.
     """
     return _REMEDIATION_TAXONOMY[code]
 
@@ -2395,6 +2452,10 @@ def _render_c11_orphans(findings: LintFindings) -> list[str]:
             lines.append(
                 f"**Missing sources:** {', '.join(f'`{s}`' for s in orphan.missing_sources)}"
             )
+            lines.append("")
+            # tier-B S5 (issue #381, ADR-0025): full orphans are eligible for the
+            # Confirmed delete; partial orphans stay advisory-only (repair, never delete).
+            lines.append(f"**Orphan type:** {'full' if orphan.full else 'partial'}")
             lines.append("")
             lines.append(f"**Suggested action:** {orphan.suggested_action}")
             lines.append("")
