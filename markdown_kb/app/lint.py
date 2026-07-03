@@ -1349,6 +1349,24 @@ _KB_LINT_C5_MAX_PAIRS_DEFAULT = 30
 _KB_LINT_C5_CONCURRENCY_DEFAULT = 5
 
 
+def _extract_body_after_frontmatter(full_text: str) -> str:
+    """Return the file text after the frontmatter's closing ``---`` fence.
+
+    Scans for ``---`` fence *lines* (mirrors ``_parse_frontmatter``) rather
+    than requiring the file to *start* with ``---``, so a page that opens
+    with a sentinel HTML comment before the fence (real ``/ingest`` output)
+    still gets its real body instead of leaking the sentinel + full
+    frontmatter block into it — the same byte-shape bug class fixed for
+    ``_parse_frontmatter`` (issue #381). Returns the text unchanged if no
+    fence pair is found.
+    """
+    lines = full_text.splitlines(keepends=True)
+    dash_indices = [i for i, line in enumerate(lines) if line.strip() == "---"]
+    if len(dash_indices) < 2:
+        return full_text
+    return "".join(lines[dash_indices[1] + 1 :])
+
+
 def _load_wiki_pages(wiki_dir: Path) -> dict[str, dict]:
     """Load all wiki pages from entities/, concepts/, and qa/ into a dict.
 
@@ -1387,10 +1405,7 @@ def _load_wiki_pages(wiki_dir: Path) -> dict[str, dict]:
         except OSError:
             full_text = ""
         # Strip frontmatter to get body
-        body = full_text
-        if full_text.startswith("---"):
-            parts = full_text.split("---", 2)
-            body = parts[2] if len(parts) >= 3 else full_text
+        body = _extract_body_after_frontmatter(full_text)
         pages[slug] = {
             "slug": slug,
             "body": body.strip(),
