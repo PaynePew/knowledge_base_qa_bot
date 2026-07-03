@@ -175,11 +175,17 @@ Slice S8 scope (Lint Remediation tier-B — issue #384, ADR-0027 decision 2)
 -----------------------------------------------------------------
 No new check, no new state file, no log mutation. ``_check_c1_coverage_gaps``
 now also reads plain ``chat`` log entries (retrieval.py's
-``_write_chat_log``, written on every completed chat) and suppresses a
-cluster once a ``chat`` entry for the same canonical query is newer than the
-cluster's own newest fallback entry — the latest ask succeeded. A fallback
-entry logged after that success re-opens the cluster on the next parse
-(whole-log reading, no persisted resolution marker). This sharpens C1's
+``_write_chat_log``, written on every completed chat — failing post-LLM asks
+included) and suppresses a cluster once a BARE ``chat`` entry for the same
+canonical query is newer than the cluster's own newest fallback entry — the
+latest ask succeeded. "Bare" is load-bearing: every
+``chat_grounding_fallback`` is itself followed by a same-ask ``chat`` entry
+microseconds later (retrieval.py logs the fallback then calls
+``_write_chat_log`` unconditionally on both post-LLM failure branches), so
+each such fallback consumes the next same-query ``chat`` entry and only an
+unconsumed one counts as success. A fallback entry logged after a success
+re-opens the cluster on the next parse (whole-log reading, no persisted
+resolution marker). This sharpens C1's
 meaning from "queries that ever failed" to "queries whose latest outcome is
 still a failure", and incidentally fixes organic healing: a gap answered by
 later content growth stops nagging with no fill required. The report's C1
@@ -1027,11 +1033,20 @@ _C1_HANDLED_REASONS = frozenset({"retrieval_empty", "below_threshold", "claim_un
 
 # Success-signal kind for latest-outcome resolution (ADR-0027 decision 2,
 # tier-B S8, issue #384). Every completed chat writes exactly one of these
-# (retrieval.py's ``_write_chat_log``) after the fallback kinds above have
-# already had their chance to fire, so a ``chat`` entry newer than a
-# cluster's newest fallback entry proves the latest ask for that query
-# succeeded.
+# (retrieval.py's ``_write_chat_log``) — INCLUDING failing post-LLM asks:
+# both grounding-failure branches (self-refusal and verifier-fail) log
+# ``chat_grounding_fallback`` and then call ``_write_chat_log``
+# unconditionally, so the failing ask's own ``chat`` entry lands
+# microseconds after its fallback entry. A ``chat`` entry therefore only
+# proves success when it is BARE — not consumed by a preceding
+# ``chat_grounding_fallback`` for the same canonical query (the pairing
+# rule in ``_check_c1_coverage_gaps``).
 _CHAT_SUCCESS_KIND = "chat"
+
+# The post-LLM fallback kind — the only C1 kind whose producer also writes
+# a trailing ``chat`` entry for the same ask (the pre-LLM ``chat_fallback``
+# gates return before ``_write_chat_log`` is reached).
+_C1_GROUNDING_FALLBACK_KIND = "chat_grounding_fallback"
 
 
 def _canonicalise(q: str) -> str:
@@ -1090,15 +1105,20 @@ def _check_c1_coverage_gaps(log_path: Path) -> list[CoverageGapFinding]:
 
     Latest-outcome resolution (ADR-0027 decision 2, tier-B S8, issue #384):
     a cluster is **suppressed** (excluded from the returned list) when a
-    plain ``chat`` log entry (retrieval.py's ``_write_chat_log``, written on
-    every completed chat) for the SAME canonical query is newer than the
-    cluster's own newest fallback entry — the latest ask for that query
-    succeeded, whether via a curator's fill or organic content growth. A
-    fallback entry newer than that success re-opens the cluster on the next
-    parse (no state is persisted between runs; this re-derives from the
-    whole log every time, per the read-only invariant). This changes C1's
-    meaning from "queries that ever failed" to "queries whose latest outcome
-    is still a failure".
+    BARE ``chat`` log entry (retrieval.py's ``_write_chat_log``) for the
+    SAME canonical query is newer than the cluster's own newest fallback
+    entry — the latest ask for that query succeeded, whether via a
+    curator's fill or organic content growth. Pairing rule: the producer
+    writes a ``chat`` entry on EVERY completed chat, failing post-LLM asks
+    included (both grounding-failure branches log
+    ``chat_grounding_fallback`` then call ``_write_chat_log``
+    unconditionally), so each ``chat_grounding_fallback`` consumes the next
+    same-query ``chat`` entry and only an unconsumed ("bare") one is a
+    success signal. A fallback entry newer than that success re-opens the
+    cluster on the next parse (no state is persisted between runs; this
+    re-derives from the whole log every time, per the read-only invariant).
+    This changes C1's meaning from "queries that ever failed" to "queries
+    whose latest outcome is still a failure".
 
     Counter semantics:
     - ``malformed_lines``: lines that are in a C1 kind but whose structure
@@ -1124,12 +1144,18 @@ def _check_c1_coverage_gaps(log_path: Path) -> list[CoverageGapFinding]:
     #              "top_section": str|None, "cited_pages": list[str]|None}
     clusters: dict[tuple[str, Any], dict[str, Any]] = {}
 
-    # Newest ``chat`` (success) timestamp seen per canonical query — the
+    # Newest BARE ``chat`` (success) timestamp seen per canonical query — the
     # latest-outcome signal (ADR-0027 decision 2). ISO-8601 timestamps from
     # ``logger.log_event`` are fixed-width UTC, so plain string comparison
     # orders them correctly (same assumption the existing first_seen/
     # last_seen sort already relies on).
     chat_last_seen: dict[str, str] = {}
+
+    # Trailing ``chat`` entries still owed, per canonical query, by failing
+    # post-LLM asks: every ``chat_grounding_fallback`` is followed by one
+    # (see ``_C1_GROUNDING_FALLBACK_KIND``), and that tail must be consumed
+    # instead of counting as a success signal.
+    pending_failed_chat: dict[str, int] = defaultdict(int)
 
     malformed_lines = 0
     out_of_scope_reasons = 0
@@ -1154,16 +1180,20 @@ def _check_c1_coverage_gaps(log_path: Path) -> list[CoverageGapFinding]:
         summary = m.group("summary")
 
         if kind == _CHAT_SUCCESS_KIND:
-            # A bare ``chat`` entry proves the latest ask succeeded (it is
-            # only ever written after the fallback-logging gates have
-            # already passed — see retrieval.py's ``_write_chat_log``).
-            # Malformed chat lines are not a C1 parse failure (that counter
-            # only tracks the fallback kinds this check exists to detect) —
+            # Only a BARE ``chat`` entry proves the latest ask succeeded.
+            # Each preceding ``chat_grounding_fallback`` for the same
+            # canonical query consumes exactly one following ``chat`` entry
+            # (the failing ask's own tail — retrieval.py writes it
+            # unconditionally on both post-LLM failure branches). Malformed
+            # chat lines are not a C1 parse failure (that counter only
+            # tracks the fallback kinds this check exists to detect) —
             # skip silently.
             qm = _SUMMARY_QUERY_RE.match(summary)
             if qm:
                 canonical_chat = _canonicalise(qm.group("query"))
-                if ts > chat_last_seen.get(canonical_chat, ""):
+                if pending_failed_chat[canonical_chat] > 0:
+                    pending_failed_chat[canonical_chat] -= 1
+                elif ts > chat_last_seen.get(canonical_chat, ""):
                     chat_last_seen[canonical_chat] = ts
             continue
 
@@ -1176,6 +1206,14 @@ def _check_c1_coverage_gaps(log_path: Path) -> list[CoverageGapFinding]:
             malformed_lines += 1
             continue
         raw_query = qm.group("query")
+
+        # Register the failing ask's trailing ``chat`` entry for consumption
+        # BEFORE any reason filtering: retrieval.py writes that tail for
+        # out-of-scope reasons too (e.g. ``verifier_unavailable``), and even
+        # when this line's key=value part fails to parse below — in every
+        # case the tail must not be mistaken for a success signal.
+        if kind == _C1_GROUNDING_FALLBACK_KIND:
+            pending_failed_chat[_canonicalise(raw_query)] += 1
 
         # Parse key=value pairs from remainder
         try:
@@ -1252,11 +1290,12 @@ def _check_c1_coverage_gaps(log_path: Path) -> list[CoverageGapFinding]:
         first_seen = timestamps[0] if timestamps else ""
         last_seen = timestamps[-1] if timestamps else ""
 
-        # Latest-outcome resolution (ADR-0027 decision 2): a chat success
-        # strictly newer than this cluster's newest fallback entry means the
-        # latest ask for this query resolved — suppress the finding. A
-        # fallback entry logged after that success already moved last_seen
-        # past it, so the cluster correctly stays open (re-opened).
+        # Latest-outcome resolution (ADR-0027 decision 2): a BARE chat
+        # success (unconsumed by the pairing rule above) strictly newer than
+        # this cluster's newest fallback entry means the latest ask for this
+        # query resolved — suppress the finding. A fallback entry logged
+        # after that success already moved last_seen past it, so the cluster
+        # correctly stays open (re-opened).
         newest_chat = chat_last_seen.get(canonical)
         if newest_chat is not None and newest_chat > last_seen:
             continue

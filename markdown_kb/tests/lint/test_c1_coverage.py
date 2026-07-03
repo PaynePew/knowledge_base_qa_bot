@@ -829,6 +829,132 @@ class TestC1LatestOutcomeResolution:
         findings = _check_c1_coverage_gaps(log_path)
         assert findings == []
 
+    def test_grounding_failures_own_chat_tail_does_not_suppress(self, lint_env, monkeypatch):
+        """Producer byte-shape (§6.5): retrieval.py logs
+        ``chat_grounding_fallback`` and then calls ``_write_chat_log``
+        UNCONDITIONALLY on the same failing ask, so a ``chat`` entry lands
+        microseconds after the fallback. That tail is the failing ask's own,
+        not a success — the cluster must still surface (the #384 verify
+        blocker: with a newer-than-only rule, every post-LLM grounding
+        failure suppressed itself)."""
+        monkeypatch.delenv("KB_LINT_MIN_HITS", raising=False)
+        log_path = lint_env["log_path"]
+        _write_log(
+            log_path,
+            [
+                _fallback_line(
+                    "2026-07-01T10:00:00.000000Z",
+                    "chat_grounding_fallback",
+                    '"what is the refund window" reason=claim_unsupported cited=refunds',
+                ),
+                _fallback_line(
+                    "2026-07-01T10:00:00.000137Z",
+                    "chat",
+                    '"what is the refund window" top=refunds#window:0.81',
+                ),
+            ],
+        )
+        from app.lint import _check_c1_coverage_gaps
+
+        findings = _check_c1_coverage_gaps(log_path)
+        assert len(findings) == 1
+        assert findings[0].query_canonical == "what is the refund window"
+
+    def test_repeated_grounding_failures_never_self_suppress(self, lint_env, monkeypatch):
+        """Three grounding-failed asks in a row — each writes its
+        fallback + chat-tail pair — must aggregate into one open cluster,
+        not vanish."""
+        monkeypatch.delenv("KB_LINT_MIN_HITS", raising=False)
+        log_path = lint_env["log_path"]
+        lines = []
+        for hour in (10, 11, 12):
+            lines.append(
+                _fallback_line(
+                    f"2026-07-01T{hour}:00:00.000000Z",
+                    "chat_grounding_fallback",
+                    '"what is the refund window" reason=claim_unsupported cited=refunds',
+                )
+            )
+            lines.append(
+                _fallback_line(
+                    f"2026-07-01T{hour}:00:00.000137Z",
+                    "chat",
+                    '"what is the refund window" top=refunds#window:0.81',
+                )
+            )
+        _write_log(log_path, lines)
+        from app.lint import _check_c1_coverage_gaps
+
+        findings = _check_c1_coverage_gaps(log_path)
+        assert len(findings) == 1
+        assert findings[0].hit_count == 3
+
+    def test_grounding_failure_then_bare_success_suppresses(self, lint_env, monkeypatch):
+        """After a grounding-failed ask (fallback + tail pair), a later ask
+        that truly succeeds writes a BARE chat entry — that one does
+        suppress the cluster."""
+        monkeypatch.delenv("KB_LINT_MIN_HITS", raising=False)
+        log_path = lint_env["log_path"]
+        _write_log(
+            log_path,
+            [
+                _fallback_line(
+                    "2026-07-01T10:00:00.000000Z",
+                    "chat_grounding_fallback",
+                    '"what is the refund window" reason=claim_unsupported cited=refunds',
+                ),
+                _fallback_line(
+                    "2026-07-01T10:00:00.000137Z",
+                    "chat",
+                    '"what is the refund window" top=refunds#window:0.81',
+                ),
+                _fallback_line(
+                    "2026-07-01T11:00:00.000000Z",
+                    "chat",
+                    '"what is the refund window" top=refunds#window:0.93',
+                ),
+            ],
+        )
+        from app.lint import _check_c1_coverage_gaps
+
+        findings = _check_c1_coverage_gaps(log_path)
+        assert findings == []
+
+    def test_out_of_scope_grounding_failure_tail_does_not_suppress_open_cluster(
+        self, lint_env, monkeypatch
+    ):
+        """A ``chat_grounding_fallback`` with an out-of-scope reason (e.g.
+        ``verifier_unavailable``) still writes its chat tail — that tail must
+        be consumed BEFORE reason filtering, or it would masquerade as a
+        success and wrongly close an open cluster for the same query."""
+        monkeypatch.delenv("KB_LINT_MIN_HITS", raising=False)
+        log_path = lint_env["log_path"]
+        _write_log(
+            log_path,
+            [
+                _fallback_line(
+                    "2026-07-01T10:00:00.000000Z",
+                    "chat_fallback",
+                    '"what is the refund window" reason=retrieval_empty top_score=0.0',
+                ),
+                _fallback_line(
+                    "2026-07-01T11:00:00.000000Z",
+                    "chat_grounding_fallback",
+                    '"what is the refund window" reason=verifier_unavailable cited=refunds',
+                ),
+                _fallback_line(
+                    "2026-07-01T11:00:00.000137Z",
+                    "chat",
+                    '"what is the refund window" top=refunds#window:0.81',
+                ),
+            ],
+        )
+        from app.lint import _check_c1_coverage_gaps
+
+        findings = _check_c1_coverage_gaps(log_path)
+        assert len(findings) == 1
+        assert findings[0].reason == "retrieval_empty"
+
     def test_success_for_a_different_query_does_not_suppress(self, lint_env, monkeypatch):
         """A chat success only suppresses clusters for the SAME canonical
         query — no cross-query bleed into an unrelated cluster."""
