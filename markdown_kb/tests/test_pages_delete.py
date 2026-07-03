@@ -137,6 +137,72 @@ def test_delete_refuses_when_source_restored_since_lint(
 
 
 # ---------------------------------------------------------------------------
+# Path-shape guard (issue #397): %5C (backslash) / drive-relative traversal
+# ---------------------------------------------------------------------------
+#
+# A FastAPI ``{slug}`` path segment cannot contain "/" but CAN contain "\\"
+# or ":" (route matching is unaffected), which act as path separators once
+# joined into ``wiki_dir / subdir_name / f"{slug}.md"`` on Windows.
+
+
+def test_delete_rejects_pathlike_slug_returns_404_before_filesystem_touch(pages_client, tmp_path):
+    """A traversal-shaped slug returns 404 (same mapping a missing slug
+    already gets) and never touches a file outside entities/ or concepts/."""
+    escape_dir = tmp_path / "wiki" / "qa"
+    escape_dir.mkdir(parents=True, exist_ok=True)
+    outside = escape_dir / "escape-target.md"
+    before = "---\nstatus: live\n---\n\nnot an entity/concept page.\n"
+    outside.write_text(before, encoding="utf-8")
+
+    # NUL is exercised directly against ``is_bare_slug`` /
+    # ``qa.delete`` etc. in ``test_paths_is_bare_slug.py`` / ``test_qa_delete.py``
+    # — httpx refuses to put a raw NUL byte on the wire (InvalidURL), so it
+    # cannot reach this route-level seam at all. A forward slash is likewise
+    # not a route-level case here: "/pages/../qa/x" normalizes to "/qa/x"
+    # before routing (a DIFFERENT endpoint), which is exactly why "/" needs
+    # no guard — a FastAPI path segment can never contain it. The forward-
+    # slash shape is exercised directly against ``is_bare_slug`` instead.
+    for bad in (
+        "..\\qa\\escape-target",
+        "D:drive-relative",
+        "..",
+        ".",
+    ):
+        resp = pages_client.delete(f"/pages/{bad}")
+        assert resp.status_code == 404, f"slug={bad!r} got {resp.status_code}: {resp.text}"
+
+    assert outside.read_text(encoding="utf-8") == before, (
+        "a path-shaped slug must never reach the filesystem"
+    )
+
+
+def test_delete_full_orphan_cjk_slug_is_not_over_rejected(pages_client, pages_wiki_dir):
+    """Real corpus slugs include CJK — the path-shape guard must not
+    treat them as invalid."""
+    slug = "你們接受哪些付款方式-fb0f2e"
+    path = pages_wiki_dir / "concepts" / f"{slug}.md"
+    path.write_text(
+        "---\n"
+        f"id: {slug}\n"
+        "type: concept\n"
+        "created: '2026-07-03T00:00:00Z'\n"
+        "updated: '2026-07-03T00:00:00Z'\n"
+        "sources:\n  - gone_a.md#s\n  - gone_b.md#s\n"
+        "status: live\n"
+        "open_questions: []\n"
+        "source_hashes: {}\n"
+        "---\n\n"
+        f"# {slug}\n\nSome content.\n",
+        encoding="utf-8",
+    )
+
+    resp = pages_client.delete(f"/pages/{slug}")
+
+    assert resp.status_code == 204, resp.text
+    assert not path.exists()
+
+
+# ---------------------------------------------------------------------------
 # Pass path — full orphan deletes, exactly one reindex, page not retrievable
 # ---------------------------------------------------------------------------
 

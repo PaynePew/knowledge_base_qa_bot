@@ -196,6 +196,58 @@ def test_edit_missing_slug_raises_not_found(tmp_path):
         edit("no-such-slug", "q", "b")
 
 
+# ---------------------------------------------------------------------------
+# Path-shape guard (issue #397): %5C (backslash) / drive-relative traversal
+# ---------------------------------------------------------------------------
+#
+# A FastAPI ``{slug}`` path segment cannot contain "/" but CAN contain "\\"
+# or ":" (route matching is unaffected), which act as path separators once
+# joined into ``_qa_dir() / f"{slug}.md"`` on Windows.
+
+
+def test_edit_rejects_pathlike_slug_raises_not_found_before_filesystem_touch(tmp_path):
+    """A traversal-shaped slug raises QaPageNotFound and never rewrites a
+    file outside wiki/qa/."""
+    from app.qa import QaPageNotFound, edit
+
+    escape_dir = tmp_path / "wiki" / "entities"
+    escape_dir.mkdir(parents=True, exist_ok=True)
+    outside = escape_dir / "escape-target.md"
+    before = "---\nstatus: draft\n---\n\nnot a qa page.\n"
+    outside.write_text(before, encoding="utf-8")
+
+    for bad in (
+        "..\\entities\\escape-target",
+        "../entities/escape-target",
+        "D:drive-relative",
+        "..",
+        ".",
+        "",
+        "nul\x00byte",
+    ):
+        with pytest.raises(QaPageNotFound):
+            edit(bad, "q", "b")
+
+    assert outside.read_text(encoding="utf-8") == before, (
+        "a path-shaped slug must never reach the filesystem"
+    )
+
+
+def test_edit_cjk_slug_is_not_over_rejected(tmp_path):
+    """Real corpus slugs include CJK — the path-shape guard must not
+    treat them as invalid."""
+    from app.qa import edit
+
+    _write_cited_entity_page(tmp_path)
+    slug = "你們接受哪些付款方式-fb0f2e"
+    _write_raw_qa(tmp_path, slug, "draft", sources=[_CITED_SECTION_ID])
+
+    result = edit(slug, "edited question", _CITED_BODY)
+
+    assert result.slug == slug
+    assert result.status == "draft"
+
+
 def test_edit_corrupt_frontmatter_raises_corrupt(tmp_path):
     from app.qa import QaPageCorrupt, edit
 
@@ -306,6 +358,24 @@ def test_route_edit_missing_slug_returns_404(edit_client):
     resp = edit_client.put("/qa/no-such-slug", json={"question": "q", "body": "b"})
 
     assert resp.status_code == 404
+
+
+def test_route_edit_pathlike_slug_returns_404(edit_client, tmp_path):
+    """``PUT /qa/{slug}`` for a backslash-carrying slug returns 404, matching
+    the "no such qa page" 404 a garbage slug produces on Linux (issue #397 AC)."""
+    escape_dir = tmp_path / "wiki" / "entities"
+    escape_dir.mkdir(parents=True, exist_ok=True)
+    outside = escape_dir / "escape-target.md"
+    before = "---\nstatus: draft\n---\n\nnot a qa page.\n"
+    outside.write_text(before, encoding="utf-8")
+
+    resp = edit_client.put(
+        "/qa/..\\entities\\escape-target",
+        json={"question": "q", "body": "b"},
+    )
+
+    assert resp.status_code == 404, resp.text
+    assert outside.read_text(encoding="utf-8") == before
 
 
 def test_route_edit_grounding_failure_returns_422_with_failures(edit_client, tmp_path):

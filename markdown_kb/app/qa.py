@@ -93,6 +93,7 @@ from .schemas import (
     SkippedSlug,
     WikiPageFrontmatter,
 )
+from .slugs import is_bare_slug
 
 # ---------------------------------------------------------------------------
 # Sentinel HTML comment (PRD #78 Q8a — verbatim)
@@ -706,11 +707,19 @@ def promote(slug: str) -> FiledStatus:
         see issue #83 AC), and the preserved ``count``.
 
     Raises:
-        QaPageNotFound: no ``wiki/qa/<slug>.md`` on disk.
+        QaPageNotFound: no ``wiki/qa/<slug>.md`` on disk, OR ``slug`` is not
+            a bare filename component (issue #397 — a FastAPI path segment
+            cannot contain ``/`` but CAN contain ``\\`` / ``:``, which act as
+            separators once joined on Windows; ``slugs.is_bare_slug``
+            rejects these before any filesystem access, same 404 a garbage
+            slug produces on Linux).
         QaPageCorrupt: existing frontmatter has invalid / unparseable
             ``status`` (orphan zombie). The file is left untouched so the
             curator can inspect.
     """
+    if not is_bare_slug(slug):
+        raise QaPageNotFound(f"wiki/qa/{slug}.md not found")
+
     qa_dir = _qa_dir()
     path = qa_dir / f"{slug}.md"
 
@@ -759,25 +768,6 @@ def promote(slug: str) -> FiledStatus:
 # ---------------------------------------------------------------------------
 
 
-def _is_bare_slug(slug: str) -> bool:
-    """True iff ``slug`` is a bare single filename component, so that
-    ``_qa_dir() / f"{slug}.md"`` cannot resolve outside ``wiki/qa/``.
-
-    The single-item endpoints (``/qa/{slug}/promote`` etc.) get this
-    property for free — a FastAPI path segment cannot contain ``/`` — but
-    ``promote_batch``'s slugs arrive in the JSON body with no such
-    guarantee, so the same property is enforced here (both separators are
-    rejected because the repo runs on Windows AND the Linux deploy; ``:``
-    is rejected because a Windows drive-relative slug like ``D:x`` joins
-    OUTSIDE ``qa_dir`` while never appearing in a real slug). CJK slugs are
-    real corpus shapes (``compute_slug`` preserves them) and stay valid —
-    this is a path-shape guard, not a charset allowlist.
-    """
-    if not slug or slug in {".", ".."}:
-        return False
-    return not any(ch in slug for ch in ("/", "\\", ":", "\x00"))
-
-
 def promote_batch(slugs: list[str]) -> QaPromoteBatchResponse:
     """Curator-driven batch promotion: flip every valid slug in ``slugs`` draft -> live.
 
@@ -792,9 +782,10 @@ def promote_batch(slugs: list[str]) -> QaPromoteBatchResponse:
     aborts the batch — non-transactional, ADR-0023):
 
     - slug not a bare filename component      -> skipped, reason="invalid_slug"
-      (separators / parent refs / NUL — see ``_is_bare_slug``; the batch's
-      slugs arrive in the JSON body, so they never got the no-"/" guarantee
-      a FastAPI path segment gives the single-item endpoints)
+      (separators / parent refs / NUL — see ``slugs.is_bare_slug``; the
+      batch's slugs arrive in the JSON body, so they never got the no-"/"
+      guarantee a FastAPI path segment gives the single-item endpoints —
+      those endpoints run the same guard directly, issue #397)
     - missing file                            -> skipped, reason="not_found"
     - frontmatter unparseable                 -> skipped, reason="corrupt_frontmatter"
     - ``status`` not in ``{"draft", "live"}``  -> skipped, reason="invalid_status:<value>"
@@ -832,7 +823,7 @@ def promote_batch(slugs: list[str]) -> QaPromoteBatchResponse:
     qa_dir = _qa_dir()
 
     for slug in slugs:
-        if not _is_bare_slug(slug):
+        if not is_bare_slug(slug):
             skipped.append(SkippedSlug(slug=slug, reason="invalid_slug"))
             continue
 
@@ -997,13 +988,19 @@ def edit(slug: str, question: str, body: str) -> FiledStatus:
         reuse ``promote`` makes of the enum), and the preserved ``count``.
 
     Raises:
-        QaPageNotFound: no ``wiki/qa/<slug>.md`` on disk.
+        QaPageNotFound: no ``wiki/qa/<slug>.md`` on disk, OR ``slug`` is not
+            a bare filename component (issue #397 — see ``promote``'s
+            ``Raises`` entry for why; ``slugs.is_bare_slug`` rejects it
+            before any filesystem access).
         QaPageCorrupt: existing frontmatter has invalid / unparseable
             ``status`` (orphan zombie).
         QaPageLive: existing ``status`` is ``"live"`` — edit refused.
         QaEditRejected: the submitted body failed the grounding re-check
             against its cited Sections; nothing is written.
     """
+    if not is_bare_slug(slug):
+        raise QaPageNotFound(f"wiki/qa/{slug}.md not found")
+
     qa_dir = _qa_dir()
     path = qa_dir / f"{slug}.md"
 
@@ -1128,10 +1125,16 @@ def delete(slug: str) -> DeletedQaPage:
         be parsed).
 
     Raises:
-        QaPageNotFound: no ``wiki/qa/<slug>.md`` on disk (route → 404).
+        QaPageNotFound: no ``wiki/qa/<slug>.md`` on disk (route → 404), OR
+            ``slug`` is not a bare filename component (issue #397 — see
+            ``promote``'s ``Raises`` entry for why; ``slugs.is_bare_slug``
+            rejects it before any filesystem access — also route → 404).
         QaPageLive: existing ``status`` is ``"live"`` — delete refused
             (route → 409).
     """
+    if not is_bare_slug(slug):
+        raise QaPageNotFound(f"wiki/qa/{slug}.md not found")
+
     qa_dir = _qa_dir()
     path = qa_dir / f"{slug}.md"
 
@@ -1269,13 +1272,19 @@ def refile(slug: str) -> RefiledAnswer:
         QaPageNotFound: no ``wiki/qa/<slug>.md`` on disk (checked both at
             the initial read and again before the write — a page deleted by
             a concurrent operation during the re-synthesis round-trip is
-            reported the same way).
+            reported the same way), OR ``slug`` is not a bare filename
+            component (issue #397 — see ``promote``'s ``Raises`` entry for
+            why; ``slugs.is_bare_slug`` rejects it up front, before the
+            initial read).
         QaPageCorrupt: existing frontmatter has invalid/unparseable
             ``status``, or no recorded ``question`` (orphan-visibility —
             surface broken state rather than guessing).
         QaRefileRejected: the fresh re-synthesis failed the Grounding Check;
             nothing is written.
     """
+    if not is_bare_slug(slug):
+        raise QaPageNotFound(f"wiki/qa/{slug}.md not found")
+
     qa_dir = _qa_dir()
     path = qa_dir / f"{slug}.md"
 

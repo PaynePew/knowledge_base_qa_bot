@@ -177,6 +177,65 @@ def test_refile_missing_slug_raises_not_found(tmp_path, monkeypatch):
         refile("no-such-slug")
 
 
+# ---------------------------------------------------------------------------
+# Path-shape guard (issue #397): %5C (backslash) / drive-relative traversal
+# ---------------------------------------------------------------------------
+#
+# A FastAPI ``{slug}`` path segment cannot contain "/" but CAN contain "\\"
+# or ":" (route matching is unaffected), which act as path separators once
+# joined into ``_qa_dir() / f"{slug}.md"`` on Windows. The guard fires
+# before the initial frontmatter read, so no re-synthesis / LLM seam is
+# ever reached for a bad slug.
+
+
+def test_refile_rejects_pathlike_slug_raises_not_found_before_filesystem_touch(
+    tmp_path, monkeypatch
+):
+    from app.qa import QaPageNotFound, refile
+
+    _patch_source_dirs(monkeypatch, tmp_path / "wiki")
+    escape_dir = tmp_path / "wiki" / "entities"
+    escape_dir.mkdir(parents=True, exist_ok=True)
+    outside = escape_dir / "escape-target.md"
+    before = "---\nstatus: live\n---\n\nnot a qa page.\n"
+    outside.write_text(before, encoding="utf-8")
+
+    for bad in (
+        "..\\entities\\escape-target",
+        "../entities/escape-target",
+        "D:drive-relative",
+        "..",
+        ".",
+        "",
+        "nul\x00byte",
+    ):
+        with pytest.raises(QaPageNotFound):
+            refile(bad)
+
+    assert outside.read_text(encoding="utf-8") == before, (
+        "a path-shaped slug must never reach the filesystem"
+    )
+
+
+def test_refile_cjk_slug_is_not_over_rejected(tmp_path, monkeypatch):
+    """Real corpus slugs include CJK — the path-shape guard must not
+    treat them as invalid."""
+    from app.qa import refile
+
+    slug = "你們接受哪些付款方式-fb0f2e"
+    wiki_dir = tmp_path / "wiki"
+    _write_entity(wiki_dir)
+    _write_qa(wiki_dir, slug, status="live")
+    _patch_source_dirs(monkeypatch, wiki_dir)
+    indexer_module.build_index()
+    _stub_passing_llm(monkeypatch)
+
+    result = refile(slug)
+
+    assert result.filed.slug == slug
+    assert result.filed.status == "draft"
+
+
 def test_refile_corrupt_frontmatter_raises_corrupt(tmp_path, monkeypatch):
     from app.qa import QaPageCorrupt, refile
 
@@ -298,6 +357,17 @@ def test_route_refile_missing_slug_returns_404(refile_client, tmp_path, monkeypa
     resp = refile_client.post("/qa/no-such-slug/refile")
 
     assert resp.status_code == 404
+
+
+def test_route_refile_pathlike_slug_returns_404(refile_client, tmp_path, monkeypatch):
+    """``POST /qa/{slug}/refile`` for a backslash-carrying slug returns 404,
+    matching the "no such qa page" 404 a garbage slug produces on Linux
+    (issue #397 AC)."""
+    _patch_source_dirs(monkeypatch, tmp_path / "wiki")
+
+    resp = refile_client.post("/qa/..\\entities\\escape-target/refile")
+
+    assert resp.status_code == 404, resp.text
 
 
 def test_route_refile_grounding_failure_returns_422_and_writes_nothing(
