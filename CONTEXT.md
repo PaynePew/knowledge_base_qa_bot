@@ -31,7 +31,7 @@ A post-LLM validation step performed after the main answer is drafted. A second 
 _Avoid_: Verification (too generic), Fact-check (overloaded with journalism/social-media usage).
 
 **Import**:
-The mechanical operation of converting a raw source file (`.html` or `.txt`) from `raw/` into a normalized Markdown file in `docs/` with provenance frontmatter (`imported_from`, `original_format`, `imported_at`). No LLM calls; format conversion only. Implemented as `POST /import` in `importer.py`. Phase 7 ships `.html` (via `markdownify`) and `.txt` (passthrough). The full pipeline is: `raw/foo.html → POST /import → docs/foo.md → POST /ingest → wiki/<type>/<slug>.md → POST /index → POST /chat`. Import is completely disjoint from Ingest.
+The mechanical operation of converting a raw source file (`.html`, `.txt`, or `.pdf`) from `raw/` into a normalized Markdown file in `docs/` with provenance frontmatter (`imported_from`, `original_format`, `imported_at`). No LLM calls; format conversion only. Implemented as `POST /import` in `importer.py`. Phase 7 ships `.html` (via `markdownify`) and `.txt` (passthrough); the Phase 7 amendment (PRD #414) adds `.pdf` — text-layer extraction via MarkItDown, digital-native PDFs only: a scanned PDF has no text layer and is rejected with a typed failure, never OCR'd (see [[adr-0031]]). The full pipeline is: `raw/foo.html → POST /import → docs/foo.md → POST /ingest → wiki/<type>/<slug>.md → POST /index → POST /chat`. Import is completely disjoint from Ingest.
 _Avoid_: Ingest (Ingest is LLM-driven synthesis from docs/ to wiki/; Import is mechanical format conversion from raw/ to docs/).
 
 **Ingest**:

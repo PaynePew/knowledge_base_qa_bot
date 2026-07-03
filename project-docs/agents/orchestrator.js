@@ -1,6 +1,6 @@
 export const meta = {
   name: 'kb-slice-orchestrator',
-  description: '專案自有 orchestrator（gh-native，零 beads）：plan(GitHub issues / 明確 slices) → 每 issue 並行 build(implement+review 同一 worktree) → 對抗驗證(嚴重度閘門+evidence) → 過閘門即開 PR（Rung 1 預設：body 帶 Closes #N + verify 報告；openPRs:false 退回 Rung 0 只備妥分支；人類永遠負責按下 merge）',
+  description: '專案自有 orchestrator（gh-native，零 beads）：plan(GitHub issues / 明確 slices) → 每 issue 並行 build(implement+review 同一 worktree) → 對抗驗證(嚴重度閘門+evidence) → 過閘門即開 PR（Rung 1 預設：body 帶 Closes #N + verify 報告；openPRs:false 退回 Rung 0 只備妥分支；autoMerge:true 升 Rung 3 — 貼 verify/verdict status 後 gh pr merge --auto，required checks 全綠時 GitHub 自動合併；未授權時人類負責按下 merge）',
   phases: [{ title: 'Plan' }, { title: 'Build' }, { title: 'OpenPRs' }],
 }
 
@@ -35,6 +35,7 @@ const CONFIG = {
   baseBranch  : 'main',
   adversarial : true,       // 對抗驗證開（只擋 critical/high）
   openPRs     : true,       // Rung 1 預設（development-workflow.md auto-merge ladder）：過閘門即由 merge agent 開 PR，body 帶 Closes #N + verify 報告；人類仍負責按 merge。任何 agent 造成的 revert → 降回 Rung 0：傳 openPRs:false（只備妥分支）
+  autoMerge   : false,      // Rung 3（opt-in，只在人類明確授權的 run 傳 true）：開 PR + 貼 verify/verdict status 後排 gh pr merge --auto --merge，required checks（CI 雙平台 + verify/verdict）全綠時由 GitHub 自動合併。前提照 ladder：verifier≠builder（本 workflow 天生滿足）、低風險 slice、絕不繞過任何 check。任何 agent 造成的 revert → 降回 Rung 1
   slices      : null,       // 明確切片清單 [{id,title,branch?}]；給了就用它當來源，完全不碰任何 tracker
   only        : null,       // 只做這些 id（gh 來源時當過濾；配 skipPlan 時當明確來源）
   skipPlan    : false,      // 配 only：跳過 gh 查詢，直接 build
@@ -43,7 +44,7 @@ const CONFIG = {
 }
 const MODELS = { plan:'haiku', build:'sonnet', verify:'opus', merge:'haiku', note:'haiku', ...(_argsObj.models ? _argsObj.models : {}) }
 
-log(`effective config → slices=${CONFIG.slices ? CONFIG.slices.length : 'null'} · only=${JSON.stringify(CONFIG.only)} · adversarial=${CONFIG.adversarial} · openPRs=${CONFIG.openPRs} · base=${CONFIG.baseBranch} · standards=${CONFIG.standards}`)
+log(`effective config → slices=${CONFIG.slices ? CONFIG.slices.length : 'null'} · only=${JSON.stringify(CONFIG.only)} · adversarial=${CONFIG.adversarial} · openPRs=${CONFIG.openPRs} · autoMerge=${CONFIG.autoMerge} · base=${CONFIG.baseBranch} · standards=${CONFIG.standards}`)
 
 const PLAN_SCHEMA = { type:'object', required:['issues'], properties:{
   issues:{ type:'array', items:{ type:'object', required:['id','branch'], properties:{
@@ -96,8 +97,10 @@ ${JSON.stringify(nonBlocking, null, 2).slice(0, 3000)}
 ${GUARDRAILS}
 - 你在共用的主工作樹操作：絕不執行 git stash / git reset / git checkout -- / git clean（主工作樹可能有頂層 session 的未提交工作）。發現未提交變更擋路時，一律 abort 回報，不要「幫忙清理」。你要 push 的分支在它自己的 worktree，主工作樹髒不髒與你的任務無關。
 Rung 2：照 merge.md 步驟 3.5 在 push 後把 verify verdict 貼成 head SHA 的 commit status（context=verify/verdict、state=success、description 用 verdict=${r?.v?.verdict ?? 'pass'}、非阻擋 finding ${nonBlocking.length} 個）——main 的 branch protection 要求這個 check，漏貼 = PR 永遠不能 merge。
-注意：只 push + 開 PR（body 含 Closes #${i.id} + 上述 verify 報告）+ 在 issue 留 PR 連結；絕不自己按 merge、絕不 gh issue close（GitHub 會在人類 merge PR 時自動關）。
-回傳：PR 連結與狀態。`
+${CONFIG.autoMerge
+  ? `Rung 3（本 run 已獲人類明確授權 autoMerge）：開完 PR、貼完 verify/verdict status 後，執行 gh pr merge <PR編號> --auto --merge（GitHub 會在 required checks 全綠時自動合併）。絕不 --admin、絕不繞過或停用任何 branch protection / check；若 --auto 排程失敗（例如 repo 未開 allow_auto_merge），回報原因並讓 PR 保持開啟，不要改用其他合併方式。絕不 gh issue close（merge 後 GitHub 依 Closes #N 自動關）。`
+  : `注意：只 push + 開 PR（body 含 Closes #${i.id} + 上述 verify 報告）+ 在 issue 留 PR 連結；絕不自己按 merge、絕不 gh issue close（GitHub 會在人類 merge PR 時自動關）。`}
+回傳：PR 連結與狀態${CONFIG.autoMerge ? '（含是否已排入 auto-merge）' : ''}。`
 }
 
 // ── ① PLAN：明確 slices / only（零 tracker）優先；否則 gh issue list（GitHub 原生佇列）──
@@ -153,4 +156,6 @@ const prs = await parallel(eligible.map(e => () =>
   agent(mergePrompt(e.issue, e.r), { label:`openpr:${lbl(e.issue)}`, phase:'OpenPRs', model: MODELS.merge })
     .then(out => ({ id: e.issue.id, out })).catch(() => ({ id: e.issue.id, out: null }))))
 return { planned: todo.length, opened: prs.filter(p => p.out).length, blocked, prs,
-         note: 'PR 已開（Closes #N + verify 報告）。頂層 session：驗證真實 artifact → CI 雙綠 → 人類 merge；orchestrator 不自動 merge。' }
+         note: CONFIG.autoMerge
+           ? 'PR 已開並排入 auto-merge（Rung 3：verify/verdict + CI 全綠時 GitHub 自動合併）。頂層 session：驗證真實 artifact，並確認 auto-merge 實際發生（status 沒貼上 = PR 卡住要回報人類）。'
+           : 'PR 已開（Closes #N + verify 報告）。頂層 session：驗證真實 artifact → CI 雙綠 → 人類 merge；orchestrator 不自動 merge。' }
