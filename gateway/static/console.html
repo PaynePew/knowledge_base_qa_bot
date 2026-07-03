@@ -728,6 +728,29 @@
   }
   .fill-import-btn:hover { opacity: .7; }
 
+  /* ── C1 Verify: re-ask (tier-B S8, issue #384, ADR-0027 decision 2) ────
+     Unlike .fill-import-btn above (a navigation that never fetches —
+     ADR-0027 Invariant), this control DOES issue a request (the existing
+     POST /wiki/chat) and re-lints on completion, so it gets the same
+     filled-accent "this executes" treatment as .reingest-btn /
+     .reconcile-btn / .discard-btn rather than the outline navigation
+     style. */
+  .verify-reask-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--accent);
+    color: #fff;
+    border: 0;
+    padding: 4px 10px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .04em;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: opacity .15s ease;
+  }
+  .verify-reask-btn:hover:not(:disabled) { opacity: .82; }
+  .verify-reask-btn:disabled { opacity: .45; cursor: not-allowed; }
+
   /* Persistent context banner shown above the pipeline stepper once a
      "Fill via Import" control is clicked — carries the finding's fields
      (AC: C2 slug + referenced_by + sample_context; C1 sample_raw_queries +
@@ -1948,6 +1971,7 @@ var LINT_CHROME = {
     deleteWorking:       "Deleting…",
     partialOrphanAdvisory: "Partial orphan — a Source still exists. Repair the citation; never delete.",
     fillViaImport:       "Fill via Import",
+    verifyReask:         "Verify: re-ask",
   },
   zh: {
     reingest:        "重新匯入",
@@ -1980,6 +2004,7 @@ var LINT_CHROME = {
     deleteWorking:       "刪除中…",
     partialOrphanAdvisory: "部分孤立 — 仍有 Source 存在，請修正引用，勿刪除。",
     fillViaImport:       "透過匯入補齊",
+    verifyReask:         "驗證：重新提問",
   },
 };
 
@@ -2185,6 +2210,26 @@ function discardRemediationRequest(slug) {
       }
       return null;
     });
+}
+
+/* C1 Verify: re-ask (tier-B S8, issue #384, ADR-0027 decision 2) — the
+   existing POST /wiki/chat, the SAME path a real user asking the same
+   question would hit. Nothing new server-side: a successful answer both
+   proves closure to the human and writes the ``chat`` log entry the
+   server's C1 latest-outcome check reads on the next lint; a re-ask that
+   still fails writes a fresh fallback entry instead, so the client never
+   has to (and does not) decide the outcome itself (§12.5) — it only
+   triggers the call and re-lints, exactly like every other remediation
+   here. */
+function chatVerifyRequest(queryText) {
+  return fetch("/wiki/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query: queryText }),
+  }).then(function(resp) {
+    if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+    return resp.json();
+  });
 }
 
 /* C11 Confirmed orphan-delete (tier-B S5, issue #381, ADR-0025). The 409
@@ -2562,6 +2607,36 @@ function renderLintCard(data, resultEl) {
     return el("div", { class: "lint-row-actions" }, btn, statusMsgEl);
   }
 
+  /* C1 Verify: re-ask (tier-B S8, issue #384, ADR-0027 decision 2) — a
+     second per-row control alongside fillViaImportAction, but this one
+     DOES issue a request: the existing POST /wiki/chat with a sample
+     query from the finding. Always offered on every C1 row, not gated on
+     a prior Fill click — closure can come from a fill, from organic
+     content growth, or from nothing but this click, and the server's
+     latest-outcome check (lint.py) is the only thing that decides whether
+     the row survives the re-lint this triggers (§12.5: the client does
+     not itself judge the outcome). */
+  function verifyReaskAction(finding) {
+    var sample = (finding.sample_raw_queries && finding.sample_raw_queries[0]) ||
+      finding.query_canonical;
+    var btn = el("button", { class: "verify-reask-btn", type: "button",
+      text: LINT_CHROME[consoleLang].verifyReask });
+    var statusMsgEl = el("span", { class: "card-status-msg" });
+    if (!sample) {
+      // Defensive — every real C1 finding has at least one raw query
+      // (it required a hit to cluster in the first place; §12.5 honesty
+      // guard mirrors reingestAction's no-source case).
+      btn.disabled = true;
+      return el("div", { class: "lint-row-actions" }, btn, statusMsgEl);
+    }
+    allButtons.push(btn);
+    btn.addEventListener("click", function() {
+      if (btn.disabled) return;
+      runLintRemediation(chatVerifyRequest(sample), btn, statusMsgEl, resultEl, allButtons);
+    });
+    return el("div", { class: "lint-row-actions" }, btn, statusMsgEl);
+  }
+
   /* "Re-ingest all" batch action — collapses N C6/C3 rows into a single
      POST /ingest {sources, force} call (issue #364; Direct-tier-only,
      ADR-0023 Invariant). Reused for both the C6 check-level button (force
@@ -2681,7 +2756,8 @@ function renderLintCard(data, resultEl) {
     C1: function(i, f) {
       return findingRow(i, f.query_canonical,
         f.reason + " · " + f.hit_count + " hit" + (f.hit_count !== 1 ? "s" : ""),
-        "gap", "label-skipped", fillViaImportAction("C1", f));
+        "gap", "label-skipped",
+        el("div", {}, fillViaImportAction("C1", f), verifyReaskAction(f)));
     },
     C2: function(i, f) {
       return findingRow(i, f.slug,
