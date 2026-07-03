@@ -764,10 +764,10 @@ def promote_batch(slugs: list[str]) -> QaPromoteBatchResponse:
 
     tier-B S6 (issue #382) — the one pre-authorized Direct-tier batch
     endpoint ADR-0023 Consequences deferred ("a batch-promote endpoint,
-    deferred"). ``slugs`` must be the explicit list the operator actually
-    saw rendered in the Curation Queue at click time — never resolved as
-    "all drafts" server-side — so a draft filed after the operator looked is
-    never approved sight-unseen.
+    deferred" — this closes that gap). ``slugs`` must be the explicit list
+    the operator actually saw rendered in the Curation Queue at click time —
+    never resolved as "all drafts" server-side — so a draft filed after the
+    operator looked is never approved sight-unseen.
 
     Per-slug validation, each independent of the others (a bad slug never
     aborts the batch — non-transactional, ADR-0023):
