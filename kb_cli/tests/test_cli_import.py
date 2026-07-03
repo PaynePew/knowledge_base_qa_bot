@@ -4,15 +4,23 @@ AC coverage (issue #227):
   - ``kb import <path>`` drives the deep module; success prints a concise result
   - Any failure exits non-zero with a stderr message and no traceback (ADR-0015)
   - Traversal/invalid path failures exit non-zero with a clear message
-  - PDF (extractor unavailable) exits non-zero with a clear message
+  - A generic ``ImportPathError`` (e.g. an unsupported extension) exits
+    non-zero with a clear message
 
 Uses Typer CliRunner (same pattern as test_cli.py) so no subprocess is spawned.
 Mocking follows the project pattern: we monkeypatch ``import_path`` at the
 ``markdown_kb.app.importer`` module level so no real raw/docs directories are
 written.
+
+AC coverage (issue #415 / ADR-0031): one test near the bottom of this file
+exercises a REAL ``.pdf`` file through ``kb import`` end-to-end (no mocking of
+``import_path``) to prove CLI/MCP parity — see
+``test_kb_import_pdf_real_conversion``.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -167,3 +175,55 @@ def test_kb_import_missing_file_nonzero(tmp_path):
     assert result.exit_code != 0, (
         f"Expected non-zero exit for missing file, got {result.exit_code}\n{result.output}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Parity (issue #415 / ADR-0031): REAL .pdf conversion through the CLI, no
+# mocking of import_path — proves the CLI reaches the same MarkItDown
+# conversion path as the deep module directly.
+# ---------------------------------------------------------------------------
+
+
+def test_kb_import_pdf_real_conversion(monkeypatch, tmp_path):
+    """``kb import <path>.pdf`` runs REAL MarkItDown conversion end-to-end.
+
+    Reuses the committed markdown_kb PDF fixture rather than generating one
+    with ``reportlab`` here — ``reportlab`` is a dev dependency of the
+    ``markdown-kb`` member only (CODING_STANDARD §7), and kb_cli should not
+    take on an undeclared dependency just to author this parity test.
+    """
+    import shutil
+
+    import markdown_kb.app.importer as importer_module
+
+    from kb_cli.main import app
+
+    fixture = (
+        Path(__file__).resolve().parents[2]
+        / "markdown_kb"
+        / "tests"
+        / "fixtures"
+        / "raw_import"
+        / "sample_english.pdf"
+    )
+
+    raw_dir = tmp_path / "raw"
+    docs_dir = tmp_path / "docs"
+    raw_dir.mkdir()
+    docs_dir.mkdir()
+    monkeypatch.setattr(importer_module, "RAW_DIR", raw_dir)
+    monkeypatch.setattr(importer_module, "DOCS_DIR", docs_dir)
+
+    src = tmp_path / "sample_english.pdf"
+    shutil.copy(fixture, src)
+
+    result = runner.invoke(app, ["import", str(src)])
+    assert result.exit_code == 0, f"Expected exit 0, got {result.exit_code}\n{result.output}"
+
+    docs_file = docs_dir / "sample_english.md"
+    assert docs_file.exists(), (
+        f"docs/sample_english.md not written; docs/: {list(docs_dir.iterdir())}"
+    )
+    content = docs_file.read_text(encoding="utf-8")
+    assert "original_format: pdf" in content
+    assert "# Getting Started" in content

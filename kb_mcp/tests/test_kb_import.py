@@ -246,6 +246,48 @@ def test_kb_import_v1_success_html_converts_to_markdown(tmp_import_dirs, tmp_pat
     assert "Title" in text, f"Heading not found in converted output: {text[:300]}"
 
 
+def test_kb_import_v1_success_pdf_converts_to_markdown(tmp_import_dirs, tmp_path):
+    """kb_import_v1 for .pdf runs REAL MarkItDown conversion (issue #415 / ADR-0031).
+
+    Reuses the committed markdown_kb PDF fixture rather than generating one
+    with ``reportlab`` here — ``reportlab`` is a dev dependency of the
+    ``markdown-kb`` member only (CODING_STANDARD §7); kb_mcp should not take
+    on an undeclared dependency just to author this parity test.
+    """
+    import asyncio
+    import shutil
+
+    from kb_mcp.server import mcp
+
+    _raw_dir, docs_dir = tmp_import_dirs
+    fixture = (
+        Path(__file__).resolve().parents[2]
+        / "markdown_kb"
+        / "tests"
+        / "fixtures"
+        / "raw_import"
+        / "sample_english.pdf"
+    )
+    src = tmp_path / "sample_english.pdf"
+    shutil.copy(fixture, src)
+
+    raw = asyncio.run(
+        mcp.call_tool(
+            "kb_import_v1",
+            {"path": str(src)},
+        )
+    )
+
+    assert not _is_error_result(raw), f"Expected success, got isError: {raw}"
+    docs_file = docs_dir / "sample_english.md"
+    assert docs_file.exists(), (
+        f"docs/sample_english.md not written; docs/: {list(docs_dir.iterdir())}"
+    )
+    text = docs_file.read_text(encoding="utf-8")
+    assert "original_format: pdf" in text
+    assert "# Getting Started" in text, f"Heading not found in converted output: {text[:300]}"
+
+
 def test_kb_import_v1_success_payload_includes_source_key(tmp_import_dirs, tmp_path):
     """kb_import_v1 success payload includes 'source' (the docs/ filename)."""
     import asyncio

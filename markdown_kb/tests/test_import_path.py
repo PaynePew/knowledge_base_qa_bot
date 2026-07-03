@@ -6,7 +6,8 @@ AC coverage (issue #227):
   - .html inputs convert correctly (HTML → Markdown)
   - .txt inputs convert correctly (passthrough)
   - .md inputs are recognised as already-canonical (no double conversion)
-  - .pdf inputs surface a clear "extractor not yet available" outcome
+  - .pdf inputs convert via MarkItDown text-layer extraction (issue #415 /
+    ADR-0031 — supersedes the original "extractor not yet available" AC)
   - traversal-unsafe path (.. or separators in basename) is rejected with
     a clear error; nothing is written outside raw/docs/
   - .kb/index.json and wiki/ are not touched (writes only to tmp-redirected
@@ -127,31 +128,36 @@ def test_import_path_md_is_canonical(import_path_env, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# AC-4: .pdf input returns a clear "extractor not yet available" failure
+# AC-4: .pdf input converts via MarkItDown (issue #415 / ADR-0031)
 # ---------------------------------------------------------------------------
 
 
-def test_import_path_pdf_extractor_not_available(import_path_env, tmp_path):
-    """import_path surfaces a clear error for .pdf (extractor not yet implemented)."""
-    from app.importer import ImportPathError, import_path
+def test_import_path_pdf_converts_to_markdown(import_path_env, tmp_path):
+    """import_path stages a .pdf file into raw/ and converts it to a docs/ Source."""
+    from reportlab.pdfgen import canvas
+
+    from app.importer import import_path
 
     src = tmp_path / "document.pdf"
-    src.write_bytes(b"%PDF-1.4 fake pdf content")
+    c = canvas.Canvas(str(src))
+    c.drawString(72, 750, "# Document Title")
+    c.drawString(72, 730, "Some PDF body text.")
+    c.showPage()
+    c.save()
 
-    with pytest.raises(ImportPathError) as exc_info:
-        import_path(src)
+    result = import_path(src)
 
-    msg = str(exc_info.value)
-    assert "pdf" in msg.lower() or "extractor" in msg.lower() or "not" in msg.lower(), (
-        f"Error message must mention PDF or extractor, got: {msg}"
-    )
-
-    # Nothing should be written outside raw/docs/
     raw_dir = import_path_env["raw_dir"]
     docs_dir = import_path_env["docs_dir"]
-    assert not any(raw_dir.iterdir()) or not (raw_dir / "document.pdf").exists() or True
-    # The key invariant: docs/ must not contain a docs/document.md
-    assert not (docs_dir / "document.md").exists(), "docs/ must not be written for unsupported PDF"
+
+    assert (raw_dir / "document.pdf").exists(), "File must be staged into raw/"
+    assert (docs_dir / "document.md").exists(), "Converted docs/*.md must be created"
+    assert result.original_format == "pdf"
+    assert result.status in ("created", "updated")
+
+    content = (docs_dir / "document.md").read_text(encoding="utf-8")
+    assert "# Document Title" in content
+    assert "Some PDF body text." in content
 
 
 # ---------------------------------------------------------------------------

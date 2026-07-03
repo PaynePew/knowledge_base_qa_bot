@@ -221,14 +221,16 @@ def index_cmd() -> None:
 
 @app.command(name="import")
 def import_cmd(
-    path: str = typer.Argument(..., help="Path to the local file to import (.html, .txt, .md)."),
+    path: str = typer.Argument(
+        ..., help="Path to the local file to import (.html, .txt, .md, .pdf)."
+    ),
 ) -> None:
     """Import a local file into the knowledge base.
 
     Stages the file into ``raw/`` under its basename, then converts it to a
     ``docs/`` Source programmatically (HTML → Markdown, txt passthrough,
-    .md recognised as canonical).  PDF is wired but the extractor is not yet
-    available — a clear error is printed instead.
+    .md recognised as canonical, PDF text-layer extraction via MarkItDown —
+    ADR-0031).
 
     Exit codes follow the ADR-0015 CLI contract:
         0   — success
