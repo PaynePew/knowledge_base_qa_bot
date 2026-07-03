@@ -402,11 +402,29 @@ def _format_c6_stale_pages(findings: object, label: str) -> list[str]:
     return lines
 
 
+def _routed_fill_hint(code: str) -> str:
+    """Render a Routed check's navigation hint as plain text (ADR-0027).
+
+    A Routed check (C1/C2, tier-B S7 issue #383) has no draft to approve and
+    no executable action — ``remediation_for``'s ``route`` value is the SAME
+    shared-taxonomy field the Console reads to open its "Fill via Import"
+    control, so the CLI renders the identical route as text instead: there
+    is nothing to click here, only commands to run by hand.
+    """
+    from markdown_kb.app.lint import remediation_for
+
+    route = remediation_for(code).route
+    if route == "import":
+        return "  fill via: kb import <file> && kb ingest [source]"
+    return f"  fill via: {route}"  # pragma: no cover — no other route exists yet
+
+
 def _format_c2_red_links(findings: object, label: str) -> list[str]:
     """C2 Red links lines, or ``[]`` when there are none."""
     if not findings.red_links:  # type: ignore[attr-defined]
         return []
     lines = [f"C2 Red links ({len(findings.red_links)}) — {label}:"]  # type: ignore[attr-defined]
+    lines.append(_routed_fill_hint("C2"))
     for f in findings.red_links:  # type: ignore[attr-defined]
         lines.append(f"  • [[{f.slug}]] — {f.mention_count} mention(s)")
     lines.append("")
@@ -418,6 +436,7 @@ def _format_c1_coverage_gaps(findings: object, label: str) -> list[str]:
     if not findings.coverage_gaps:  # type: ignore[attr-defined]
         return []
     lines = [f"C1 Coverage gaps ({len(findings.coverage_gaps)}) — {label}:"]  # type: ignore[attr-defined]
+    lines.append(_routed_fill_hint("C1"))
     for f in findings.coverage_gaps:  # type: ignore[attr-defined]
         lines.append(f"  • {f.query_canonical} (×{f.hit_count}) — {f.suggested_action}")
     lines.append("")

@@ -1,11 +1,12 @@
 """Unit tests for the Remediation descriptor (issue #363, ADR-0023 tier-A S3).
 
 ``remediation_for`` maps a wired check code to its Remediation tier
-(Direct / Authored / Confirmed / deferred) plus its executable actions — the shared,
-unit-testable source of truth the Operator Console renders per-row buttons
-from (issue #363). This module does not run any check or touch the
-filesystem: it is a pure lookup over ``_REMEDIATION_TAXONOMY``, mirroring
-S1's ``test_lint_axis_taxonomy.py`` style.
+(Direct / Authored / Confirmed / Routed / deferred) plus its executable
+actions — the shared, unit-testable source of truth the Operator Console
+renders per-row buttons from (issue #363). This module does not run any
+check or touch the filesystem: it is a pure lookup over
+``_REMEDIATION_TAXONOMY``, mirroring S1's ``test_lint_axis_taxonomy.py``
+style.
 """
 
 from __future__ import annotations
@@ -33,13 +34,31 @@ class TestRemediationTierClassification:
     def test_direct_tier_checks(self, code):
         assert remediation_for(code).tier == "direct"
 
-    @pytest.mark.parametrize("code", ["C5", "C4", "C1", "C2"])
+    @pytest.mark.parametrize("code", ["C5", "C4"])
     def test_authored_tier_checks_have_no_actions(self, code):
-        """Authored-tier findings (Coherence/Coverage) render disabled/tier-B —
-        no executable action, preserving the per-item human-approval gate."""
+        """Authored-tier findings (Coherence) render disabled/tier-B — no
+        executable action, preserving the per-item human-approval gate."""
         descriptor = remediation_for(code)
         assert descriptor.tier == "authored"
         assert descriptor.actions == ()
+
+    @pytest.mark.parametrize("code", ["C1", "C2"])
+    def test_routed_tier_checks_have_no_actions_but_carry_a_route(self, code):
+        """tier-B S7 (issue #383, ADR-0027): C1/C2 flip authored -> routed.
+        Fill routes through the existing Upload -> Import -> Ingest pipeline,
+        so no draft ever exists for a curator to approve — Routed has no
+        gate and no executable action, unlike Authored it carries a
+        ``route`` instead (the ONE field only Routed descriptors set) so
+        every surface can navigate off the same shared taxonomy value."""
+        descriptor = remediation_for(code)
+        assert descriptor.tier == "routed"
+        assert descriptor.actions == ()
+        assert descriptor.route == "import"
+
+    def test_non_routed_checks_carry_no_route(self):
+        """``route`` is the one field only Routed descriptors set (ADR-0027)."""
+        for code in _ALL_CODES - {"C1", "C2"}:
+            assert remediation_for(code).route is None
 
     def test_c9_is_authored_with_a_refile_action(self):
         """tier-B S4 (issue #380, ADR-0026 decision 1): C9 stale-qa flips

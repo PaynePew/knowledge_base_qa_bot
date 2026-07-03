@@ -384,6 +384,19 @@ def kb_index_v1() -> dict:
     return {"files_indexed": files_indexed, "sections_indexed": sections_indexed}
 
 
+def _routed_fill_hint(route: str | None) -> str:
+    """Render a Routed check's navigation hint as plain text (ADR-0027).
+
+    Mirrors ``kb_cli.main._routed_fill_hint`` (same shared taxonomy, same
+    text) — kept as a small local duplicate rather than a new shared module,
+    since the two surfaces already render tier/route information
+    independently (Console's copy differs in wording too).
+    """
+    if route == "import":
+        return "kb import <file> && kb ingest [source]"
+    return f"route: {route}"  # pragma: no cover — no other route exists yet
+
+
 # ---------------------------------------------------------------------------
 # Tool: kb_lint_v1
 # ---------------------------------------------------------------------------
@@ -418,6 +431,13 @@ def kb_index_v1() -> dict:
         "Filed Answer — gates resolve on human surfaces only, Console or "
         "CLI `kb qa promote|discard` (ADR-0026); report findings to your "
         "human instead of acting on them.\n\n"
+        "  findings.coverage_gaps[] (C1) and findings.red_links[] (C2) each "
+        "additionally carry a 'fill_via' text hint (e.g. 'kb import <file> "
+        "&& kb ingest [source]') — these are Routed findings (ADR-0027): the "
+        "system cannot fix them itself (a coverage gap or red link has no "
+        "Source to ground a draft against), so there is no tool call that "
+        "resolves them either.  Report the finding and the hint to your "
+        "human instead of attempting to synthesise a fix.\n\n"
         "Returns isError=true when the C5 LLM call fails catastrophically:\n"
         "  {code, message} where code is 'LLM_UNAVAILABLE' (retryable) or\n"
         "  'LLM_ERROR' (non-retryable, report message to user).\n"
@@ -468,9 +488,17 @@ def kb_lint_v1(
     tier-B slices editing ``qa.py`` / ``lint.py`` concurrently. No tool
     resolves a Gated remediation from these findings — MCP sees everything
     and approves nothing (ADR-0026).
+
+    C1/C2 Routed navigation hint (tier-B S7, issue #383, ADR-0027): every
+    ``coverage_gaps`` (C1) and ``red_links`` (C2) entry gains a ``fill_via``
+    key — plain text sourced from the SAME shared ``remediation_for(...).
+    route`` the Console's "Fill via Import" control and ``kb lint`` render,
+    since a Routed check has no draft and no gate for a tool to resolve
+    (there is nothing here for an agent to act on directly — report the
+    finding and this hint to the human instead).
     """
     from markdown_kb.app.errors import LLMError
-    from markdown_kb.app.lint import group_findings_by_axis, run_lint
+    from markdown_kb.app.lint import group_findings_by_axis, remediation_for, run_lint
 
     from . import qa_view
 
@@ -510,6 +538,17 @@ def kb_lint_v1(
         stale["path"] = qa_view.display_path(stale["page_slug"])
         page = qa_view.read_qa_page(stale["page_slug"])
         stale["question"] = page.question if page is not None else None
+
+    # Routed (tier-B S7, issue #383, ADR-0027): C1/C2 have no gate-resolving
+    # tool because there is nothing to gate — route the same taxonomy value
+    # `kb lint` renders as text, per finding, so an agent can report it
+    # without re-deriving the hint.
+    coverage_gap_hint = _routed_fill_hint(remediation_for("C1").route)
+    for gap in payload["findings"]["coverage_gaps"]:
+        gap["fill_via"] = coverage_gap_hint
+    red_link_hint = _routed_fill_hint(remediation_for("C2").route)
+    for red_link in payload["findings"]["red_links"]:
+        red_link["fill_via"] = red_link_hint
 
     return payload
 

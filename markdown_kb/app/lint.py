@@ -156,6 +156,21 @@ irreversible operation, not curator-drafted content, so it is not Authored).
 This module still writes nothing: the delete + reindex live in ``pages.py`` /
 ``routes.py``, mirroring how ``qa.refile`` owns C9's write path.
 
+Slice S7 scope (Lint Remediation tier-B — issue #383, ADR-0027)
+-----------------------------------------------------------------
+No new check. C1/C2 flip from Authored to a fourth-and-a-half tier, Routed
+(ADR-0027): the fill for a coverage gap or a red link routes through the
+existing Upload -> Import -> Ingest pipeline, so no draft ever exists for a
+curator to approve — Authored's defining gate would gate nothing.
+``_REMEDIATION_TAXONOMY["C1"]`` and ``["C2"]`` move to
+``RemediationDescriptor("routed", route="import")`` — ``RemediationDescriptor``
+gains a ``route`` field (``None`` for every other tier) so the ONE shared
+taxonomy still drives all three surfaces: Console turns the disabled tier-B
+placeholder into a real "Fill via Import" navigation control (no execution,
+no gate — it commits nothing itself), CLI/MCP render the route as plain text
+("fill via: kb import ..."). This module still runs no new check and writes
+nothing; the fill itself is entirely the existing Import/Ingest machinery.
+
 Read-only invariant
 -------------------
 ``run_lint()`` does NOT modify wiki page frontmatter.  It writes only:
@@ -2348,21 +2363,28 @@ class RemediationAction(NamedTuple):
 class RemediationDescriptor(NamedTuple):
     """A check's Remediation tier plus its executable actions.
 
-    ``actions`` is empty for most ``"authored"`` findings and every
-    ``"deferred"`` one — tier alone drives a Direct-only consumer's disabled
-    tier-B affordance (Authored) or "no control yet" rendering (deferred).
-    C9 is the one Authored exception (tier-B S4, issue #380, ADR-0026): its
-    ``refile`` action carries a real one-click-to-open remediation (the
-    human gate is the downstream Promote, not a preview step here) — see
-    the C9 entry in ``_REMEDIATION_TAXONOMY`` below. C11 is the one
-    Confirmed check with an action (tier-B S5, issue #381, ADR-0024/0025):
-    its ``delete`` action opens a confirmation naming the operation, not a
-    draft-review — Confirmed's human gate is "confirm this happens", never
-    "approve this content".
+    ``actions`` is empty for most ``"authored"`` findings, every ``"routed"``
+    one, and every ``"deferred"`` one — tier alone drives a Direct-only
+    consumer's disabled tier-B affordance (Authored), a navigation control
+    (Routed), or "no control yet" rendering (deferred). C9 is the one
+    Authored exception (tier-B S4, issue #380, ADR-0026): its ``refile``
+    action carries a real one-click-to-open remediation (the human gate is
+    the downstream Promote, not a preview step here) — see the C9 entry in
+    ``_REMEDIATION_TAXONOMY`` below. C11 is the one Confirmed check with an
+    action (tier-B S5, issue #381, ADR-0024/0025): its ``delete`` action
+    opens a confirmation naming the operation, not a draft-review —
+    Confirmed's human gate is "confirm this happens", never "approve this
+    content". ``route`` is set only for Routed checks (C1/C2, tier-B S7,
+    issue #383, ADR-0027) — it names the existing workflow the finding's
+    fill navigates to (currently always ``"import"``); every other tier
+    leaves it ``None``. Routed has no gate and no action to execute: the
+    affordance it drives is pure navigation, so a consumer never mistakes it
+    for something it could batch or approve.
     """
 
-    tier: str  # "direct" | "authored" | "confirmed" | "deferred"
+    tier: str  # "direct" | "authored" | "confirmed" | "routed" | "deferred"
     actions: tuple[RemediationAction, ...] = ()
+    route: str | None = None
 
 
 # code -> RemediationDescriptor. Direct-tier actions wire to the *existing*
@@ -2370,12 +2392,11 @@ class RemediationDescriptor(NamedTuple):
 # POST /ingest, C10 -> DELETE /qa/{slug}, C8 -> POST /qa/{slug}/promote +
 # DELETE /qa/{slug} (rendered by the Curation Queue block, not per-row lint
 # buttons — issue #363 AC "C8 promotion controls remain in the dedicated
-# Curation Queue block, unchanged"). Authored-tier checks C5/C4/C1/C2 get an
-# empty ``actions`` tuple: visible under their axis, never one-click
-# actionable — Authored Remediation always has a curator approval gate
-# (ADR-0023) that these four checks surface as a preview/edit/apply step
-# (reconcile/collision, ADR-0028) or a not-yet-built tier-B affordance
-# (C1/C2). C9 is Authored WITH an action (tier-B S4, issue #380, ADR-0026
+# Curation Queue block, unchanged"). Authored-tier checks C5/C4 get an empty
+# ``actions`` tuple: visible under their axis, never one-click actionable —
+# Authored Remediation always has a curator approval gate (ADR-0023) that
+# these two checks surface as a preview/edit/apply step (reconcile/collision,
+# ADR-0028). C9 is Authored WITH an action (tier-B S4, issue #380, ADR-0026
 # decision 1): its own gate is the *downstream* Promote step on the
 # resulting draft, not a preview here, so ``refile`` wires directly like a
 # Direct action even though the check stays Authored-classified (the
@@ -2387,6 +2408,14 @@ class RemediationDescriptor(NamedTuple):
 # (ADR-0024 Invariant). The action wires unconditionally here; the per-finding
 # full/partial eligibility (``OrphanPageFinding.full``) is what a consumer
 # reads to decide whether to render the delete button or advisory text only.
+# C1/C2 are ``"routed"`` (tier-B S7, issue #383, ADR-0027): fill routes
+# through the existing Upload -> Import -> Ingest pipeline, so no draft ever
+# exists for a curator to approve — Authored's gate would gate nothing.
+# Routed carries no action (there is nothing to execute, only to navigate
+# to) but DOES carry ``route`` — the one field a Routed descriptor sets — so
+# every surface can render the SAME navigation hint off the one shared
+# taxonomy (Console: a real "Fill via Import" control; CLI/MCP: the route as
+# text). ADR-0027 Invariant: a Routed remediation commits nothing itself.
 _REMEDIATION_TAXONOMY: dict[str, RemediationDescriptor] = {
     "C6": RemediationDescriptor("direct", (RemediationAction("reingest", "source"),)),
     "C3": RemediationDescriptor(
@@ -2395,8 +2424,8 @@ _REMEDIATION_TAXONOMY: dict[str, RemediationDescriptor] = {
     "C11": RemediationDescriptor("confirmed", (RemediationAction("delete", "page_slug"),)),
     "C5": RemediationDescriptor("authored"),
     "C4": RemediationDescriptor("authored"),
-    "C1": RemediationDescriptor("authored"),
-    "C2": RemediationDescriptor("authored"),
+    "C1": RemediationDescriptor("routed", route="import"),
+    "C2": RemediationDescriptor("routed", route="import"),
     "C8": RemediationDescriptor(
         "direct",
         (
@@ -2413,10 +2442,11 @@ def remediation_for(code: str) -> RemediationDescriptor:
     """Return the Remediation tier + actions for a wired check code.
 
     Pure lookup into ``_REMEDIATION_TAXONOMY`` — the single source of truth
-    for which checks are Direct / Authored / Confirmed / deferred (ADR-0023 /
-    ADR-0024). ``code`` is one of the ten ``LINT_CHECK_TAXONOMY`` keys (a
-    finding *type*, e.g. ``"C6"`` — the tier/action/target-field/force shape
-    does not vary per finding *instance*, only per check). Raises
+    for which checks are Direct / Authored / Confirmed / Routed / deferred
+    (ADR-0023 / ADR-0024 / ADR-0027). ``code`` is one of the ten
+    ``LINT_CHECK_TAXONOMY`` keys (a finding *type*, e.g. ``"C6"`` — the
+    tier/action/target-field/force shape does not vary per finding
+    *instance*, only per check). Raises
     ``KeyError`` for an unknown code so a typo fails loudly rather than
     silently rendering no Remediation.
     """
