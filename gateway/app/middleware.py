@@ -28,13 +28,18 @@ module only wires guards around them (CODING_STANDARD §2.3).  Single-worker
 model: the semaphores and budget are plain in-process objects (§2.6/§2.7).
 
 Path matching uses the **full mounted path** with any trailing slash stripped
-(``/wiki/chat/`` == ``/wiki/chat``).
+(``/wiki/chat/`` == ``/wiki/chat``).  The one parameterized heavy path,
+``POST /wiki/qa/{slug}/refile`` (ADR-0026 decision 1, issue #380), is
+canonicalised to its ``QA_REFILE_TEMPLATE`` before classification and
+charging — an exact-match set cannot see a per-slug concrete path, and an
+unclassified LLM-calling path bypasses ALL guards (the #376 bug class).
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 
 import openai
@@ -56,10 +61,20 @@ READ_PATHS: frozenset[str] = frozenset(
     }
 )
 
+# Canonical billing/classification key for the one parameterized heavy path.
+# ``qa.refile`` runs a full grounded answer round through the chat pipeline
+# (LLM draft + verify) and demotes a live page in place, so every concrete
+# ``/wiki/qa/<slug>/refile`` must hit the admin guards; ``_canonical_path``
+# collapses them to this template (slug is a single path segment — FastAPI's
+# ``{slug}`` cannot contain ``/``, so the regex cannot under-match).
+QA_REFILE_TEMPLATE = "/wiki/qa/{slug}/refile"
+_QA_REFILE_RE = re.compile(r"^/wiki/qa/[^/]+/refile$")
+
 # Admin / index / mutating paths — gated by the admin semaphore, the budget
 # guard, AND the optional admin-token kill-switch.
 ADMIN_PATHS: frozenset[str] = frozenset(
     {
+        QA_REFILE_TEMPLATE,  # ADR-0026 decision 1: chained re-file — LLM re-synthesis + grounding + demote (issue #380)
         "/rag/index",
         "/wiki/index",
         "/wiki/ingest",
@@ -130,6 +145,20 @@ def _normalise_path(raw_path: str) -> str:
     return raw_path
 
 
+def _canonical_path(raw_path: str) -> str:
+    """Normalise, then collapse a parameterized heavy path to its template key.
+
+    ``/wiki/qa/<slug>/refile`` → ``QA_REFILE_TEMPLATE`` so the exact-match
+    classification sets and the budget table see one stable key per endpoint
+    (also keeps per-slug cardinality out of the budget/log keys). Every other
+    path passes through unchanged.
+    """
+    path = _normalise_path(raw_path)
+    if _QA_REFILE_RE.fullmatch(path):
+        return QA_REFILE_TEMPLATE
+    return path
+
+
 def _bearer_token(scope: Scope) -> str | None:
     """Extract the Bearer token from the ASGI ``Authorization`` header, if any."""
     for key, value in scope.get("headers", []):
@@ -173,7 +202,7 @@ class ProdMiddleware:
             await self.app(scope, receive, send)
             return
 
-        path = _normalise_path(scope.get("path", ""))
+        path = _canonical_path(scope.get("path", ""))
         is_read = path in READ_PATHS
         is_admin = path in ADMIN_PATHS
 
