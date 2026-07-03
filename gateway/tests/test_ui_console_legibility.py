@@ -147,24 +147,28 @@ def test_console_lint_step_has_description():
     )
 
 
-def test_console_promote_line_exact_adr0021_copy():
-    """Promote has the EXACT one-liner mandated by issue #347 / ADR-0021 (AC2).
+def test_console_promote_line_operator_copy():
+    """Promote's one-liner speaks operator language (issue #379 AC3).
 
-    The issue states the Promote line MUST be:
-    'Promote: a curator approves a draft Filed Answer so it becomes retrievable
-    — the human gate of ADR-0020's validated write-back.'
+    Supersedes the #347/ADR-0021 exact-copy pin: issue #379 AC3 says
+    "Replace architect-speak (ADR references) in UI copy", so the visible
+    line now states the observable consequence instead of citing the
+    ADR-0020 human gate. #347's underlying requirement — an always-visible
+    what-it-does one-liner for Promote — still holds and is pinned here.
+    ADR references remain welcome in code comments (not rendered).
     """
     text = _console_text()
     required = "a curator approves a draft Filed Answer so it becomes retrievable"
     assert required in text, (
-        f"Promote one-liner must contain: {required!r} (issue #347 / ADR-0021 AC2)"
+        f"Promote one-liner must contain: {required!r} (issue #347 AC2 / #379 AC3)"
     )
-    assert "ADR-0020" in text, (
-        "Promote one-liner must reference ADR-0020 (issue #347 / ADR-0021 AC2)"
-    )
-    assert "human gate" in text, (
-        "Promote one-liner must say 'human gate' (issue #347 / ADR-0021 AC2)"
-    )
+    descs = re.findall(r'class: "queue-section-desc",\s*\n\s*text: "([^"]*)"', text)
+    assert descs, "queue sections must keep their what-it-does one-liners (#347 AC2)"
+    for desc in descs:
+        assert "ADR" not in desc, (
+            f"rendered queue copy must be operator language, no ADR jargon "
+            f"(issue #379 AC3); got: {desc!r}"
+        )
 
 
 def test_console_discard_step_has_description():

@@ -3325,7 +3325,7 @@ function renderCurationQueue(rootEl, lintData) {
         el("span", { class: "label label-created", text: String(candidates.length) })
       ),
       el("p", { class: "queue-section-desc",
-        text: "Promote: a curator approves a draft Filed Answer so it becomes retrievable — the human gate of ADR-0020's validated write-back. Discard: remove an inert (draft) entry from the queue — refused for live answers (server decides eligibility)." })
+        text: "Promote: a curator approves a draft Filed Answer so it becomes retrievable — the bot starts answering matching questions with it. Discard: remove an inert (draft) entry from the queue — refused for live answers (server decides eligibility)." })
     );
     candidates.forEach(function(f) {
       c8Section.append(buildDraftCard(f));

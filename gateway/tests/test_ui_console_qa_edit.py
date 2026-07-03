@@ -130,14 +130,10 @@ def test_post_promote_message_closes_the_loop_with_observable_consequence():
     )
 
 
-def test_existing_promote_line_copy_untouched():
-    """The section-level Promote/Discard one-liner (pinned by
-    test_ui_console_legibility.py's ADR-0021 exact-copy test) must remain —
-    this slice ADDS new per-card operator-language copy, it does not remove
-    the pre-existing #347/ADR-0021 section description."""
-    text = _console_text()
-    assert "a curator approves a draft Filed Answer so it becomes retrievable" in text
-    assert "ADR-0020" in text
+# (The former test_existing_promote_line_copy_untouched guard is gone: it
+# existed to protect the #347 ADR-0020 wording, which issue #379 AC3
+# deliberately replaced with operator language. The updated pin lives in
+# test_ui_console_legibility.py::test_console_promote_line_operator_copy.)
 
 
 # ---------------------------------------------------------------------------
