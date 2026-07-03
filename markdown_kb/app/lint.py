@@ -123,6 +123,21 @@ field itself (that lives in the follow-up assign-alias endpoint); the
 preserve-across-re-ingest write path lives in ``ingest.py`` /
 ``wiki_writer.py``.
 
+C3 display + reason-split suggested_action (issue #407, ADR-0029 decision 3)
+-----------------------------------------------------------------
+No new check. ``_check_c3_failed_grounding``'s ``suggested_action`` splits by
+``reason`` instead of the previous single undifferentiated template:
+``claim_unsupported`` names the recorded ``unsupported_claims`` (an honest
+"claims not recorded" note when the list is empty — a defensive/legacy
+page) and points at amending the Source, explicitly withholding a bare
+Re-ingest recommendation because re-ingesting feeds the same unchanged
+Source to the same verifier and fails identically; ``verifier_unavailable``
+keeps recommending Re-ingest (a transient failure, not a Source problem).
+The Console (``ROW_RENDERERS["C3"]``) and CLI (``_format_c3_failed_grounding``)
+now render ``unsupported_claims`` too — the Markdown report already did
+(Slice 5-2) — closing the four-surface gap (ADR-0017 parity). Still
+read-only.
+
 Slice S1 scope (Lint Remediation tier-B — issue #376, ADR-0028)
 -----------------------------------------------------------------
 No new check. ``generate_reconcile_draft`` adds a second C5-adjacent LLM
@@ -572,7 +587,11 @@ def _check_c3_failed_grounding(
     3. Skip pages whose ``status`` is not ``"failed_grounding"``.
     4. Build a ``FailedGroundingFinding`` from ``sources[0]``, the nested
        ``grounding_failure`` block (``reason`` + ``unsupported_claims``), and a
-       suggested action.
+       suggested action that splits by ``reason`` (issue #407, ADR-0029
+       decision 3): ``claim_unsupported`` names the unsupported claims and
+       points at amending the Source — never a bare Re-ingest, since the same
+       unchanged Source feeds the same verifier and fails identically;
+       ``verifier_unavailable`` recommends Re-ingest (a transient failure).
     5. Return findings sorted alphabetically by ``page_slug``.
 
     If ``grounding_failure`` is absent or malformed, the finding still records
@@ -606,12 +625,22 @@ def _check_c3_failed_grounding(
             reason = "verifier_unavailable"
             unsupported_claims = []
 
-        suggested_action = (
-            f"Page '{slug}' failed grounding check (reason: {reason}). "
-            f"Review the source '{source_ref}' to confirm the claims are supported, "
-            f"then re-ingest the source to regenerate this page. "
-            f"If the source no longer covers these claims, delete this page."
-        )
+        if reason == "claim_unsupported":
+            if unsupported_claims:
+                does_not_support = f"does not support: {'; '.join(unsupported_claims)}."
+            else:
+                does_not_support = "does not support one or more claims (claims not recorded)."
+            suggested_action = (
+                f"Source '{source_ref}' {does_not_support} "
+                f"Amend the Source (or remove the unsupported claims) and force "
+                f"re-ingest. A plain Re-ingest is not suggested — it re-feeds the "
+                f"same unchanged Source to the same verifier and fails identically."
+            )
+        else:  # verifier_unavailable — a transient failure, not a Source problem
+            suggested_action = (
+                f"Grounding verifier was unavailable while synthesising '{slug}' "
+                f"from source '{source_ref}'. Re-ingest '{source_ref}' to retry."
+            )
 
         findings.append(
             FailedGroundingFinding(
