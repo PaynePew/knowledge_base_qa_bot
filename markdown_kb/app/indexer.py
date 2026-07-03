@@ -639,6 +639,13 @@ def parse_markdown(path: Path, source_id: str | None = None) -> list[Section]:
 def _passes_index_filter(md_file: Path, page_sections: list[Section]) -> bool:
     """Return True iff ``md_file``'s sections may join the BM25 corpus.
 
+    ADR-0029 quarantine (issue #405): regardless of directory, a page whose
+    ``frontmatter.status == "failed_grounding"`` is excluded — machine-verified
+    ungrounded synthesis must never be retrievable/citable. A page with no
+    ``status`` field at all is treated as live (legacy pass-through posture).
+    This check runs before the qa/non-qa split below because quarantine is a
+    corpus-wide invariant, not a qa-only one.
+
     Phase 6 Two-stage curation gate (PRD #78 Q1): pages under ``wiki/qa/`` are
     admitted only when ``frontmatter.status == "live"``. ``status == "draft"``
     is the healthy filed-but-not-promoted state — skipped silently. Every
@@ -648,8 +655,8 @@ def _passes_index_filter(md_file: Path, page_sections: list[Section]) -> bool:
     three-layer orphan-visibility defence (PRD #78 §"Orphan-visibility
     three-layer defence").
 
-    Entity and concept pages bypass the filter entirely so Phase 3 behaviour
-    is preserved without regression.
+    Entity and concept pages otherwise bypass the filter entirely so Phase 3
+    behaviour is preserved without regression.
 
     ``page_sections`` is the result of ``parse_markdown`` for ``md_file``.
     Frontmatter is read off ``page_sections[0].metadata`` (every Section
@@ -662,20 +669,25 @@ def _passes_index_filter(md_file: Path, page_sections: list[Section]) -> bool:
     if not page_sections:
         return False
 
+    # Exclude the system-injected language tag (issue #285) so "did the author
+    # write any YAML frontmatter?" checks below are not fooled by the ``lang``
+    # key every Section now carries.
+    metadata = page_sections[0].metadata
+    author_frontmatter = {k: v for k, v in metadata.items() if k != LANG_METADATA_KEY}
+
+    # ADR-0029 quarantine: applies to every wiki subdir (entities, concepts, qa).
+    if author_frontmatter.get("status") == "failed_grounding":
+        return False
+
     # Non-qa pages (entity, concept) pass through unchanged.
     if md_file.parent.name != "qa":
         return True
 
-    # qa page: gate on frontmatter.status. Exclude the system-injected language
-    # tag (issue #285) so this emptiness check still asks "did the author write
-    # any YAML frontmatter?" — every Section now carries a ``lang`` key, which
-    # must not be mistaken for real frontmatter content.
-    metadata = page_sections[0].metadata
-    author_frontmatter = {k: v for k, v in metadata.items() if k != LANG_METADATA_KEY}
-    # Empty / absent metadata (e.g. frontmatter parse failed, or no frontmatter
-    # at all on a qa page) — parse_markdown already emitted parse_warning when
-    # the YAML was malformed. Skip silently to avoid the double-log noise that
-    # PRD #78 §"Orphan-visibility three-layer defence" explicitly calls out.
+    # qa page: gate on frontmatter.status. Empty / absent metadata (e.g.
+    # frontmatter parse failed, or no frontmatter at all on a qa page) —
+    # parse_markdown already emitted parse_warning when the YAML was
+    # malformed. Skip silently to avoid the double-log noise that PRD #78
+    # §"Orphan-visibility three-layer defence" explicitly calls out.
     if not author_frontmatter:
         return False
     status = author_frontmatter.get("status")
