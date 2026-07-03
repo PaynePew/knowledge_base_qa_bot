@@ -14,7 +14,8 @@ pipeline for one or more Sources:
     5a. concept → one WikiPageDraft per Section (1:N expansion)
     5b. entity  → one WikiPageDraft collapsing the whole Source
     6. Resolve slug collisions across Sources (-2, -3 suffix)
-    7. Preserve `created` timestamp for pages that already exist on disk
+    7. Preserve `created` timestamp and `aliases` (issue #406, ADR-0030 curator
+       field) for pages that already exist on disk
     8. Populate source_hashes frontmatter (Phase 3 amendment #93)
     9. Run grounding verifier on each generated page (Slice #4 — fail-soft)
     10. Delete orphan pages (per-Source scoped) via wiki_writer.delete_orphans
@@ -388,7 +389,8 @@ def _finalise_source_drafts(
     ``_index_lock`` acquire does not block the event loop).
 
     Steps performed (in order):
-    6.  Preserve ``created`` timestamp from any existing wiki page on disk.
+    6.  Preserve ``created`` timestamp AND ``aliases`` (issue #406, ADR-0030
+        curator field) from any existing wiki page on disk.
     7.  Populate ``source_hashes`` frontmatter from the current ingest run.
     9.  Run grounding verifier on each draft (ADR-0004 fail-soft).
     10-11. Under ``_index_lock``: delete orphans, then write pages.
@@ -400,15 +402,25 @@ def _finalise_source_drafts(
         Callers are responsible for emitting those log entries and appending
         ``grounding_failed_slugs`` to ``batch.pages_with_failed_grounding``.
     """
-    # Step 6: Preserve ``created`` timestamp for pages that already exist.
+    # Step 6: Preserve ``created`` timestamp AND ``aliases`` (issue #406,
+    # ADR-0030 curator field — the synthesis draft never carries aliases, so
+    # without this an /ingest re-write would silently wipe a curator-assigned
+    # alias every time; preserve list is `{created, aliases}`).
     drafts_with_preserved_timestamps: list = []
     for draft in drafts:
         subdir_name = "entities" if draft.frontmatter.type == "entity" else "concepts"
         page_path = resolved_wiki_dir / subdir_name / f"{draft.slug}.md"
         existing_fm = read_existing_frontmatter(page_path)
-        if existing_fm is not None and "created" in existing_fm:
-            preserved_fm = draft.frontmatter.model_copy(update={"created": existing_fm["created"]})
-            draft = draft.model_copy(update={"frontmatter": preserved_fm})
+        if existing_fm is not None:
+            preserved_updates: dict = {}
+            if "created" in existing_fm:
+                preserved_updates["created"] = existing_fm["created"]
+            existing_aliases = existing_fm.get("aliases")
+            if isinstance(existing_aliases, list):
+                preserved_updates["aliases"] = [str(a) for a in existing_aliases]
+            if preserved_updates:
+                preserved_fm = draft.frontmatter.model_copy(update=preserved_updates)
+                draft = draft.model_copy(update={"frontmatter": preserved_fm})
         drafts_with_preserved_timestamps.append(draft)
 
     # Step 7: Populate source_hashes in each draft's frontmatter.
