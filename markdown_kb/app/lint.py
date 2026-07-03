@@ -171,6 +171,24 @@ no gate — it commits nothing itself), CLI/MCP render the route as plain text
 ("fill via: kb import ..."). This module still runs no new check and writes
 nothing; the fill itself is entirely the existing Import/Ingest machinery.
 
+Slice S8 scope (Lint Remediation tier-B — issue #384, ADR-0027 decision 2)
+-----------------------------------------------------------------
+No new check, no new state file, no log mutation. ``_check_c1_coverage_gaps``
+now also reads plain ``chat`` log entries (retrieval.py's
+``_write_chat_log``, written on every completed chat) and suppresses a
+cluster once a ``chat`` entry for the same canonical query is newer than the
+cluster's own newest fallback entry — the latest ask succeeded. A fallback
+entry logged after that success re-opens the cluster on the next parse
+(whole-log reading, no persisted resolution marker). This sharpens C1's
+meaning from "queries that ever failed" to "queries whose latest outcome is
+still a failure", and incidentally fixes organic healing: a gap answered by
+later content growth stops nagging with no fill required. The report's C1
+section gains one explanatory line so a disappearing cluster reads as
+"latest ask succeeded", not as a mystery or a log-rotation artefact. The
+Console pairs this with a user-triggered "Verify: re-ask" control (one
+``POST /chat`` with a sample query) that both proves closure to the human
+and writes the resolving ``chat`` entry this check reads.
+
 Read-only invariant
 -------------------
 ``run_lint()`` does NOT modify wiki page frontmatter.  It writes only:
@@ -1007,6 +1025,14 @@ _C1_KINDS = frozenset({"chat_fallback", "chat_grounding_fallback"})
 # Reason values that C1 handles explicitly
 _C1_HANDLED_REASONS = frozenset({"retrieval_empty", "below_threshold", "claim_unsupported"})
 
+# Success-signal kind for latest-outcome resolution (ADR-0027 decision 2,
+# tier-B S8, issue #384). Every completed chat writes exactly one of these
+# (retrieval.py's ``_write_chat_log``) after the fallback kinds above have
+# already had their chance to fire, so a ``chat`` entry newer than a
+# cluster's newest fallback entry proves the latest ask for that query
+# succeeded.
+_CHAT_SUCCESS_KIND = "chat"
+
 
 def _canonicalise(q: str) -> str:
     """Return the canonical cluster key for a query string.
@@ -1062,6 +1088,18 @@ def _check_c1_coverage_gaps(log_path: Path) -> list[CoverageGapFinding]:
     KB_LINT_MIN_HITS`` are excluded from the returned list.  Read at function
     entry (not at module load) to mirror the ``KB_SCORE_THRESHOLD`` pattern.
 
+    Latest-outcome resolution (ADR-0027 decision 2, tier-B S8, issue #384):
+    a cluster is **suppressed** (excluded from the returned list) when a
+    plain ``chat`` log entry (retrieval.py's ``_write_chat_log``, written on
+    every completed chat) for the SAME canonical query is newer than the
+    cluster's own newest fallback entry — the latest ask for that query
+    succeeded, whether via a curator's fill or organic content growth. A
+    fallback entry newer than that success re-opens the cluster on the next
+    parse (no state is persisted between runs; this re-derives from the
+    whole log every time, per the read-only invariant). This changes C1's
+    meaning from "queries that ever failed" to "queries whose latest outcome
+    is still a failure".
+
     Counter semantics:
     - ``malformed_lines``: lines that are in a C1 kind but whose structure
       could not be parsed (missing query field, regex non-match, parse exception).
@@ -1086,6 +1124,13 @@ def _check_c1_coverage_gaps(log_path: Path) -> list[CoverageGapFinding]:
     #              "top_section": str|None, "cited_pages": list[str]|None}
     clusters: dict[tuple[str, Any], dict[str, Any]] = {}
 
+    # Newest ``chat`` (success) timestamp seen per canonical query — the
+    # latest-outcome signal (ADR-0027 decision 2). ISO-8601 timestamps from
+    # ``logger.log_event`` are fixed-width UTC, so plain string comparison
+    # orders them correctly (same assumption the existing first_seen/
+    # last_seen sort already relies on).
+    chat_last_seen: dict[str, str] = {}
+
     malformed_lines = 0
     out_of_scope_reasons = 0
 
@@ -1107,6 +1152,20 @@ def _check_c1_coverage_gaps(log_path: Path) -> list[CoverageGapFinding]:
         ts = m.group("ts")
         kind = m.group("kind")
         summary = m.group("summary")
+
+        if kind == _CHAT_SUCCESS_KIND:
+            # A bare ``chat`` entry proves the latest ask succeeded (it is
+            # only ever written after the fallback-logging gates have
+            # already passed — see retrieval.py's ``_write_chat_log``).
+            # Malformed chat lines are not a C1 parse failure (that counter
+            # only tracks the fallback kinds this check exists to detect) —
+            # skip silently.
+            qm = _SUMMARY_QUERY_RE.match(summary)
+            if qm:
+                canonical_chat = _canonicalise(qm.group("query"))
+                if ts > chat_last_seen.get(canonical_chat, ""):
+                    chat_last_seen[canonical_chat] = ts
+            continue
 
         if kind not in _C1_KINDS:
             continue
@@ -1192,6 +1251,15 @@ def _check_c1_coverage_gaps(log_path: Path) -> list[CoverageGapFinding]:
         timestamps = sorted(entry["timestamps"])
         first_seen = timestamps[0] if timestamps else ""
         last_seen = timestamps[-1] if timestamps else ""
+
+        # Latest-outcome resolution (ADR-0027 decision 2): a chat success
+        # strictly newer than this cluster's newest fallback entry means the
+        # latest ask for this query resolved — suppress the finding. A
+        # fallback entry logged after that success already moved last_seen
+        # past it, so the cluster correctly stays open (re-opened).
+        newest_chat = chat_last_seen.get(canonical)
+        if newest_chat is not None and newest_chat > last_seen:
+            continue
 
         ts_ = entry["top_section"]
         cp = entry["cited_pages"]
@@ -2577,6 +2645,15 @@ def _render_c1_coverage_gaps(findings: LintFindings) -> list[str]:
     """C1 Coverage gaps — always rendered (empty-section convention)."""
     n_c1 = len(findings.coverage_gaps)
     lines: list[str] = [_check_heading("C1", f"Coverage gaps ({n_c1} findings)"), ""]
+    # Latest-outcome semantics (ADR-0027 decision 2, issue #384): a cluster
+    # disappearing between runs means the latest ask for that query
+    # succeeded, not that the log was truncated or the gap was forgotten.
+    lines.append(
+        "_Resolution is latest-outcome: a cluster clears once the most "
+        "recent ask for its query succeeds (fill, organic content growth, "
+        "or Verify: re-ask) — a later failure re-opens it._"
+    )
+    lines.append("")
     if not findings.coverage_gaps:
         lines.append("_No coverage gaps found._")
         lines.append("")

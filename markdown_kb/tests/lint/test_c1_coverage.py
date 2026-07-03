@@ -18,6 +18,17 @@ AC coverage (issue #69):
   - Malformed lines count is logged as lint_check_error if > 0
   - run_lint() integrates C1 into LintResponse.findings.coverage_gaps
 
+AC coverage (tier-B S8, issue #384, ADR-0027 decision 2 — latest-outcome resolution):
+  - A failure-only cluster still surfaces (no chat success on record)
+  - A cluster with a later ``chat`` success for the same canonical query is
+    suppressed (excluded from findings)
+  - A fallback logged after that success re-opens the cluster
+  - Canonicalisation matches between ``chat`` and fallback entries for the
+    same query, including the 60-char truncation both loggers apply
+  - Organic healing: a later successful ask suppresses without any import
+  - A success for a different canonical query never suppresses an unrelated cluster
+  - The check itself never writes to the log (read-only invariant)
+
 All tests are hermetic (no OPENAI_API_KEY required).
 """
 
@@ -674,3 +685,224 @@ class TestRunLintC1Integration:
         result = run_lint(**lint_env)
         # 1 C1 finding + 1 C11 finding = 2 total
         assert result.summary.total_findings == 2
+
+
+# ---------------------------------------------------------------------------
+# Latest-outcome resolution (tier-B S8, issue #384, ADR-0027 decision 2)
+# ---------------------------------------------------------------------------
+
+
+class TestC1LatestOutcomeResolution:
+    def test_failure_only_cluster_still_surfaces(self, lint_env, monkeypatch):
+        """No later chat success on record — the cluster is unaffected."""
+        monkeypatch.delenv("KB_LINT_MIN_HITS", raising=False)
+        log_path = lint_env["log_path"]
+        _write_log(
+            log_path,
+            [
+                _fallback_line(
+                    "2026-07-01T10:00:00.000000Z",
+                    "chat_fallback",
+                    '"what is the refund window" reason=retrieval_empty top_score=0.0',
+                ),
+            ],
+        )
+        from app.lint import _check_c1_coverage_gaps
+
+        findings = _check_c1_coverage_gaps(log_path)
+        assert len(findings) == 1
+        assert findings[0].query_canonical == "what is the refund window"
+
+    def test_failure_then_success_suppresses_the_cluster(self, lint_env, monkeypatch):
+        """A ``chat`` entry newer than the cluster's newest fallback entry
+        proves the latest ask succeeded — the cluster is suppressed."""
+        monkeypatch.delenv("KB_LINT_MIN_HITS", raising=False)
+        log_path = lint_env["log_path"]
+        _write_log(
+            log_path,
+            [
+                _fallback_line(
+                    "2026-07-01T10:00:00.000000Z",
+                    "chat_fallback",
+                    '"what is the refund window" reason=retrieval_empty top_score=0.0',
+                ),
+                _fallback_line(
+                    "2026-07-01T11:00:00.000000Z",
+                    "chat",
+                    '"what is the refund window" top=refunds#window:0.81',
+                ),
+            ],
+        )
+        from app.lint import _check_c1_coverage_gaps
+
+        findings = _check_c1_coverage_gaps(log_path)
+        assert findings == []
+
+    def test_failure_success_failure_reopens_the_cluster(self, lint_env, monkeypatch):
+        """A fallback logged AFTER a success re-opens the cluster on the next
+        parse — the success no longer covers the latest outcome."""
+        monkeypatch.delenv("KB_LINT_MIN_HITS", raising=False)
+        log_path = lint_env["log_path"]
+        _write_log(
+            log_path,
+            [
+                _fallback_line(
+                    "2026-07-01T10:00:00.000000Z",
+                    "chat_fallback",
+                    '"what is the refund window" reason=retrieval_empty top_score=0.0',
+                ),
+                _fallback_line(
+                    "2026-07-01T11:00:00.000000Z",
+                    "chat",
+                    '"what is the refund window" top=refunds#window:0.81',
+                ),
+                _fallback_line(
+                    "2026-07-01T12:00:00.000000Z",
+                    "chat_fallback",
+                    '"what is the refund window" reason=retrieval_empty top_score=0.0',
+                ),
+            ],
+        )
+        from app.lint import _check_c1_coverage_gaps
+
+        findings = _check_c1_coverage_gaps(log_path)
+        assert len(findings) == 1
+        f = findings[0]
+        assert f.query_canonical == "what is the refund window"
+        assert f.hit_count == 2
+        assert f.last_seen == "2026-07-01T12:00:00.000000Z"
+
+    def test_canonicalisation_matches_between_chat_and_fallback_with_truncation(
+        self, lint_env, monkeypatch
+    ):
+        """Both loggers truncate the raw query to 60 chars before writing
+        (retrieval.py). A success and a failure sharing that truncated
+        prefix must canonicalise identically so the success can suppress
+        the failure cluster (AC: canonicalisation parity, incl. truncation)."""
+        monkeypatch.delenv("KB_LINT_MIN_HITS", raising=False)
+        log_path = lint_env["log_path"]
+        long_query = "How do I cancel my subscription and get a refund for the unused month"
+        truncated = long_query[:60]
+        assert len(truncated) == 60  # sanity: the fixture actually exercises truncation
+        _write_log(
+            log_path,
+            [
+                _fallback_line(
+                    "2026-07-01T10:00:00.000000Z",
+                    "chat_fallback",
+                    f'"{truncated}" reason=retrieval_empty top_score=0.0',
+                ),
+                _fallback_line(
+                    "2026-07-01T11:00:00.000000Z",
+                    "chat",
+                    f'"{truncated.lower()}" top=billing#cancel:0.77',
+                ),
+            ],
+        )
+        from app.lint import _check_c1_coverage_gaps
+
+        findings = _check_c1_coverage_gaps(log_path)
+        assert findings == []
+
+    def test_organic_healing_suppresses_without_any_fill(self, lint_env, monkeypatch):
+        """A later ask that succeeds because content grew on its own — no
+        import, no fill — still suppresses the cluster (ADR-0027 AC)."""
+        monkeypatch.delenv("KB_LINT_MIN_HITS", raising=False)
+        log_path = lint_env["log_path"]
+        _write_log(
+            log_path,
+            [
+                _fallback_line(
+                    "2026-07-01T10:00:00.000000Z",
+                    "chat_fallback",
+                    '"how long does shipping take" reason=below_threshold top_score=0.3 top_section=shipping#eta',
+                ),
+                _fallback_line(
+                    "2026-07-01T11:00:00.000000Z",
+                    "chat",
+                    '"how long does shipping take" top=shipping#eta:0.91',
+                ),
+            ],
+        )
+        from app.lint import _check_c1_coverage_gaps
+
+        findings = _check_c1_coverage_gaps(log_path)
+        assert findings == []
+
+    def test_success_for_a_different_query_does_not_suppress(self, lint_env, monkeypatch):
+        """A chat success only suppresses clusters for the SAME canonical
+        query — no cross-query bleed into an unrelated cluster."""
+        monkeypatch.delenv("KB_LINT_MIN_HITS", raising=False)
+        log_path = lint_env["log_path"]
+        _write_log(
+            log_path,
+            [
+                _fallback_line(
+                    "2026-07-01T10:00:00.000000Z",
+                    "chat_fallback",
+                    '"what is the refund window" reason=retrieval_empty top_score=0.0',
+                ),
+                _fallback_line(
+                    "2026-07-01T11:00:00.000000Z",
+                    "chat",
+                    '"unrelated question about shipping" top=shipping#eta:0.9',
+                ),
+            ],
+        )
+        from app.lint import _check_c1_coverage_gaps
+
+        findings = _check_c1_coverage_gaps(log_path)
+        assert len(findings) == 1
+        assert findings[0].query_canonical == "what is the refund window"
+
+    def test_check_writes_nothing_to_the_log(self, lint_env, monkeypatch):
+        """Read-only invariant (AC): resolving a cluster via a chat success
+        never appends anything to the log itself."""
+        monkeypatch.delenv("KB_LINT_MIN_HITS", raising=False)
+        log_path = lint_env["log_path"]
+        _write_log(
+            log_path,
+            [
+                _fallback_line(
+                    "2026-07-01T10:00:00.000000Z",
+                    "chat_fallback",
+                    '"what is the refund window" reason=retrieval_empty top_score=0.0',
+                ),
+                _fallback_line(
+                    "2026-07-01T11:00:00.000000Z",
+                    "chat",
+                    '"what is the refund window" top=refunds#window:0.81',
+                ),
+            ],
+        )
+        before = log_path.read_text(encoding="utf-8")
+        from app.lint import _check_c1_coverage_gaps
+
+        _check_c1_coverage_gaps(log_path)
+        after = log_path.read_text(encoding="utf-8")
+        assert before == after
+
+    def test_run_lint_c1_reflects_latest_outcome_end_to_end(self, lint_env, monkeypatch):
+        """run_lint() end-to-end: a resolved gap is absent from
+        findings.coverage_gaps (not just the unit-level check function)."""
+        monkeypatch.delenv("KB_LINT_MIN_HITS", raising=False)
+        log_path = lint_env["log_path"]
+        _write_log(
+            log_path,
+            [
+                _fallback_line(
+                    "2026-07-01T10:00:00.000000Z",
+                    "chat_fallback",
+                    '"what is the refund window" reason=retrieval_empty top_score=0.0',
+                ),
+                _fallback_line(
+                    "2026-07-01T11:00:00.000000Z",
+                    "chat",
+                    '"what is the refund window" top=refunds#window:0.81',
+                ),
+            ],
+        )
+        from app.lint import run_lint
+
+        result = run_lint(**lint_env)
+        assert result.findings.coverage_gaps == []
