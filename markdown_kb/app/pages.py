@@ -36,10 +36,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ._paths import DOCS_DIR, is_bare_slug
+from ._paths import DOCS_DIR
 from .indexer import _index_lock
 from .lint import check_full_orphan
 from .logger import log_event
+from .slugs import is_bare_slug
 from .wiki_writer import read_existing_frontmatter
 
 # ---------------------------------------------------------------------------
@@ -91,7 +92,7 @@ def _find_page_path(slug: str, wiki_dir: Path) -> Path:
     subdir itself (ADR-0025: "Slug resolved server-side").
 
     Rejects a path-shaped ``slug`` (separators, ``..``, a Windows drive
-    prefix, NUL) up front via ``_paths.is_bare_slug``, before either
+    prefix, NUL) up front via ``slugs.is_bare_slug``, before either
     candidate join is even built — issue #397: a FastAPI ``{slug}`` path
     segment cannot contain ``/`` but CAN contain ``\\`` / ``:``, which join
     OUTSIDE ``wiki_dir`` on Windows. Raises the same ``PageNotFound`` a

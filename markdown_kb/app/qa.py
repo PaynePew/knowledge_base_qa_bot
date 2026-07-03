@@ -81,7 +81,6 @@ from typing import Any
 
 import yaml
 
-from ._paths import is_bare_slug
 from .atomic import write_text_atomic
 from .grounding import CitableContent, GroundingOutcome
 from .indexer import parse_markdown, slugify
@@ -94,6 +93,7 @@ from .schemas import (
     SkippedSlug,
     WikiPageFrontmatter,
 )
+from .slugs import is_bare_slug
 
 # ---------------------------------------------------------------------------
 # Sentinel HTML comment (PRD #78 Q8a — verbatim)
@@ -710,7 +710,7 @@ def promote(slug: str) -> FiledStatus:
         QaPageNotFound: no ``wiki/qa/<slug>.md`` on disk, OR ``slug`` is not
             a bare filename component (issue #397 — a FastAPI path segment
             cannot contain ``/`` but CAN contain ``\\`` / ``:``, which act as
-            separators once joined on Windows; ``_paths.is_bare_slug``
+            separators once joined on Windows; ``slugs.is_bare_slug``
             rejects these before any filesystem access, same 404 a garbage
             slug produces on Linux).
         QaPageCorrupt: existing frontmatter has invalid / unparseable
@@ -782,7 +782,7 @@ def promote_batch(slugs: list[str]) -> QaPromoteBatchResponse:
     aborts the batch — non-transactional, ADR-0023):
 
     - slug not a bare filename component      -> skipped, reason="invalid_slug"
-      (separators / parent refs / NUL — see ``_paths.is_bare_slug``; the
+      (separators / parent refs / NUL — see ``slugs.is_bare_slug``; the
       batch's slugs arrive in the JSON body, so they never got the no-"/"
       guarantee a FastAPI path segment gives the single-item endpoints —
       those endpoints run the same guard directly, issue #397)
@@ -990,7 +990,7 @@ def edit(slug: str, question: str, body: str) -> FiledStatus:
     Raises:
         QaPageNotFound: no ``wiki/qa/<slug>.md`` on disk, OR ``slug`` is not
             a bare filename component (issue #397 — see ``promote``'s
-            ``Raises`` entry for why; ``_paths.is_bare_slug`` rejects it
+            ``Raises`` entry for why; ``slugs.is_bare_slug`` rejects it
             before any filesystem access).
         QaPageCorrupt: existing frontmatter has invalid / unparseable
             ``status`` (orphan zombie).
@@ -1127,7 +1127,7 @@ def delete(slug: str) -> DeletedQaPage:
     Raises:
         QaPageNotFound: no ``wiki/qa/<slug>.md`` on disk (route → 404), OR
             ``slug`` is not a bare filename component (issue #397 — see
-            ``promote``'s ``Raises`` entry for why; ``_paths.is_bare_slug``
+            ``promote``'s ``Raises`` entry for why; ``slugs.is_bare_slug``
             rejects it before any filesystem access — also route → 404).
         QaPageLive: existing ``status`` is ``"live"`` — delete refused
             (route → 409).
@@ -1274,7 +1274,7 @@ def refile(slug: str) -> RefiledAnswer:
             a concurrent operation during the re-synthesis round-trip is
             reported the same way), OR ``slug`` is not a bare filename
             component (issue #397 — see ``promote``'s ``Raises`` entry for
-            why; ``_paths.is_bare_slug`` rejects it up front, before the
+            why; ``slugs.is_bare_slug`` rejects it up front, before the
             initial read).
         QaPageCorrupt: existing frontmatter has invalid/unparseable
             ``status``, or no recorded ``question`` (orphan-visibility —

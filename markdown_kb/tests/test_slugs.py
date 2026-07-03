@@ -1,4 +1,4 @@
-"""Tests for ``markdown_kb.app._paths.is_bare_slug`` — the shared path-shape guard.
+"""Tests for ``markdown_kb.app.slugs.is_bare_slug`` — the shared path-shape guard.
 
 Issue #397: a FastAPI ``{slug}`` path segment cannot contain ``/`` (route
 matching rejects that for free) but CAN contain ``\\`` or a bare ``:`` —
@@ -9,20 +9,20 @@ drive-relative path), so ``is_bare_slug`` rejects them the same way
 regardless of whether the slug arrived via a path param or a JSON body.
 
 This predicate originated as ``qa._is_bare_slug`` (issue #382,
-``promote_batch``) and moved to ``_paths.py`` once ``pages.py`` needed the
-same guard (CODING_STANDARD §2.4 escalation: "the moment a second package
-needs the same ``_private`` symbol, promote it to the owner's public API").
-Every call site (``qa.promote`` / ``qa.delete`` / ``qa.edit`` /
-``qa.refile`` / ``qa.promote_batch`` / ``pages.delete_full_orphan``) is
-covered by its own endpoint-level tests; this file tests the ONE shared
-implementation directly and exhaustively.
+``promote_batch``) and moved to its own ``slugs.py`` module once
+``pages.py`` needed the same guard (CODING_STANDARD §2.4 escalation: "the
+moment a second package needs the same ``_private`` symbol, promote it to
+the owner's public API"). Every call site (``qa.promote`` / ``qa.delete`` /
+``qa.edit`` / ``qa.refile`` / ``qa.promote_batch`` /
+``pages.delete_full_orphan``) is covered by its own endpoint-level tests;
+this file tests the ONE shared implementation directly and exhaustively.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from app._paths import is_bare_slug
+from app.slugs import is_bare_slug
 
 # ---------------------------------------------------------------------------
 # Rejected shapes
