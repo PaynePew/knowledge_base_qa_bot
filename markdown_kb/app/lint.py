@@ -422,26 +422,18 @@ def _read_frontmatter_sources(page_path: Path) -> list[str]:
 
     Returns an empty list if the page has no frontmatter, the frontmatter
     cannot be parsed, or the ``sources`` field is absent/empty.
+
+    Delegates to ``_parse_frontmatter`` (fence-*line* scanning) rather than
+    requiring the file to *start* with ``---``: real ``/ingest``-produced
+    entities/concepts pages open with a sentinel HTML comment before the
+    fence, so a ``startswith("---")`` reader returned ``[]`` for every real
+    page and C11 could never fire on the actual corpus — the same byte-shape
+    bug that once made C8/C9/C10 skip every real Filed Answer (see
+    ``_parse_frontmatter``'s docstring). Found live when tier-B S5 made C11
+    executable (issue #381).
     """
-    try:
-        text = page_path.read_text(encoding="utf-8")
-    except OSError:
-        return []
-
-    if not text.startswith("---"):
-        return []
-
-    # Extract frontmatter block between first --- and second ---
-    parts = text.split("---", 2)
-    if len(parts) < 3:
-        return []
-
-    try:
-        fm = yaml.safe_load(parts[1])
-    except yaml.YAMLError:
-        return []
-
-    if not isinstance(fm, dict):
+    fm = _parse_frontmatter(page_path)
+    if fm is None:
         return []
 
     sources = fm.get("sources", [])
