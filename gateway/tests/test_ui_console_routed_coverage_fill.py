@@ -141,6 +141,21 @@ def test_context_text_carries_c1_fields():
     assert "finding.hit_count" in body
 
 
+def test_context_text_leads_with_the_import_instruction():
+    """Issue #400: the banner is an instruction, not a slug label — the slug
+    (C2) / query (C1) stays visible as supporting detail, not the headline."""
+    text = _console_text()
+    body = _function_body(text, "coverageFillContextText")
+    c2_branch = body.split('code === "C2"')[1] if 'code === "C2"' in body else body
+    c1_branch = body.split("// C1")[1] if "// C1" in body else body
+    assert 'return "Import a Source' in c2_branch, (
+        f"C2 banner text must lead with the import instruction: {c2_branch}"
+    )
+    assert 'return "Import a Source' in c1_branch, (
+        f"C1 banner text must lead with the import instruction: {c1_branch}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Honest-miss report path (ADR-0027 decision 3)
 # ---------------------------------------------------------------------------

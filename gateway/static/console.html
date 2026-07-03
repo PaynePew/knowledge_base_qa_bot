@@ -2053,18 +2053,24 @@ var lastCoverageFillOutcome = null;
 
 /* Context text carrying the finding's own fields into the banner (AC: C2
    needs slug + referenced_by + sample_context; C1 needs sample_raw_queries +
-   hit_count). Pure string shaping over server-computed fields (§12.5). */
+   hit_count). Leads with the import instruction (issue #400) — the missing
+   page name is supporting detail for the honest-miss check, not the
+   headline; the operator's actionable brief is what to import. Dynamic
+   per-finding text stays English, mirroring lint.py's suggested_action
+   convention — only structural chrome (button labels) is bilingual via
+   LINT_CHROME. Pure string shaping over server-computed fields (§12.5). */
 function coverageFillContextText(code, finding) {
   if (code === "C2") {
     var refs = (finding.referenced_by || []).join(", ") || "(none)";
-    var ctx = finding.sample_context ? " — “" + finding.sample_context + "”" : "";
-    return "Fill via Import — red link [[" + finding.slug + "]]: referenced by " + refs + ctx;
+    var ctx = finding.sample_context || "(no captured context)";
+    return "Import a Source document that covers “" + ctx + "” (mentioned by " +
+      refs + " as [[" + finding.slug + "]])";
   }
   // C1
   var samples = (finding.sample_raw_queries || []).join("; ") || "(none)";
   var hits = finding.hit_count != null ? finding.hit_count : 0;
-  return "Fill via Import — coverage gap \"" + finding.query_canonical + "\": " +
-    hits + " hit" + (hits !== 1 ? "s" : "") + " · sample queries: " + samples;
+  return "Import a Source that answers: \"" + finding.query_canonical + "\" (" +
+    hits + " failed ask" + (hits !== 1 ? "s" : "") + "; samples: " + samples + ")";
 }
 
 /* Shows the persistent context banner above the pipeline and scrolls it
