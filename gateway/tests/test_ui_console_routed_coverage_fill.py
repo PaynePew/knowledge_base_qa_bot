@@ -198,6 +198,35 @@ def test_render_lint_card_shows_and_clears_the_one_shot_outcome_banner():
     )
 
 
+def test_honest_miss_requires_an_ingest_run_since_the_fill():
+    """The miss message must never fire off a lint with no intervening
+    Ingest run — it would claim "imported and ingested" when nothing was,
+    and could name a PRIOR run's pages. The pending fill survives such a
+    lint (banner stays up) instead of being consumed with a false report."""
+    text = _console_text()
+    body = _function_body(text, "checkCoverageFillOutcome")
+    guard_pos = body.find("ingestRunCounter === fill.ingestRunsAtFill")
+    message_pos = body.find("lastCoverageFillOutcome")
+    assert guard_pos != -1, "checkCoverageFillOutcome must guard on an ingest-since-fill check"
+    assert message_pos != -1
+    assert guard_pos < message_pos, "the ingest-since-fill guard must precede the miss message"
+
+
+def test_fill_action_snapshots_the_ingest_generation():
+    """fillViaImportAction must record ingestRunCounter at click time so the
+    outcome check can tell a post-fill ingest from a stale prior one."""
+    text = _console_text()
+    body = _function_body(text, "fillViaImportAction")
+    assert "ingestRunsAtFill" in body
+    assert "ingestRunCounter" in body
+
+
+def test_ingest_batches_bump_the_ingest_run_counter():
+    text = _console_text()
+    body = _function_body(text, "runIngestBatches")
+    assert "ingestRunCounter" in body
+
+
 # ---------------------------------------------------------------------------
 # No new innerHTML (§12.4)
 # ---------------------------------------------------------------------------

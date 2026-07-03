@@ -1690,6 +1690,7 @@ function runIngestBatches(sourceNames, resultEl, setStepBusy) {
           lastIngestedPageSlugs.push(p.split(/[/\\]/).pop().replace(/\.md$/, ""));
         });
       });
+      ingestRunCounter += 1;
       resultEl.replaceChildren(renderIngestCard(combined, null));
       return;
     }
@@ -1999,17 +2000,27 @@ var LINT_CHROME = {
    own rules, triggered by the operator's own clicks on those steps.
    ============================================================ */
 
-/* {code, target} of the C1/C2 finding a "Fill via Import" click is
-   currently tracking, or null. target is the red-link slug (C2) or the
-   canonical query (C1) — the identity checkCoverageFillOutcome re-checks
-   for on the next lint. One pending fill at a time (matches the pipeline
-   stepper itself being a single shared flow, not per-finding). */
+/* {code, target, ingestRunsAtFill} of the C1/C2 finding a "Fill via
+   Import" click is currently tracking, or null. target is the red-link
+   slug (C2) or the canonical query (C1) — the identity
+   checkCoverageFillOutcome re-checks for on the next lint.
+   ingestRunsAtFill snapshots ingestRunCounter at click time so the
+   outcome check can tell whether an Ingest actually completed after the
+   click. One pending fill at a time (matches the pipeline stepper itself
+   being a single shared flow, not per-finding). */
 var pendingCoverageFill = null;
 
 /* Bare page slugs (no dir, no .md) written by the MOST RECENT Ingest run —
    feeds the honest-miss report ("imported and ingested — new pages A, B —
    but [[slug]] is still unresolved."). Populated by runIngestBatches. */
 var lastIngestedPageSlugs = [];
+
+/* Counts completed Ingest runs. The honest-miss report may only say
+   "imported and ingested" when this moved past the pending fill's
+   ingestRunsAtFill snapshot — i.e. an Ingest genuinely completed after
+   the Fill click, so lastIngestedPageSlugs holds THAT fill's pages, not
+   a prior run's (or nothing at all). */
+var ingestRunCounter = 0;
 
 /* One-shot outcome text for the NEXT renderLintCard, mirroring
    lastBatchSummary's pattern exactly (set here, read-and-cleared there). */
@@ -2063,6 +2074,7 @@ function fillViaImportAction(code, finding) {
     pendingCoverageFill = {
       code: code,
       target: code === "C2" ? finding.slug : finding.query_canonical,
+      ingestRunsAtFill: ingestRunCounter,
     };
     showCoverageFillBanner(code, finding);
   });
@@ -2071,24 +2083,39 @@ function fillViaImportAction(code, finding) {
 
 /* Runs on every post-fill re-lint (both the Lint step's own Run and the
    Direct-remediation auto-relint call this before renderLintCard) — checks
-   whether a pending C2 fill actually resolved its red link. One-shot:
-   pendingCoverageFill is always consumed here, whether the outcome is a
-   silent resolve (the finding disappearing IS the story — PRD #373 story
-   28) or the honest-miss message below (ADR-0027 decision 3). C1 has no
-   closure signal in this slice (tier-B S8, issue #384, ships latest-outcome
-   + Verify: re-ask) — a pending C1 fill just clears quietly. */
+   whether a pending C2 fill actually resolved its red link. One-shot once
+   there IS an outcome: consumed on a silent resolve (the finding
+   disappearing IS the story — PRD #373 story 28), on the honest-miss
+   message below (ADR-0027 decision 3), or on C1's quiet clear (its
+   closure signal ships in tier-B S8, issue #384: latest-outcome +
+   Verify: re-ask). A re-lint with NO Ingest completed since the Fill
+   click has no outcome to report — the fill stays pending and the banner
+   stays up, so the miss message can never claim an import that never
+   happened nor name a prior run's pages. */
 function checkCoverageFillOutcome(lintData) {
   if (!pendingCoverageFill) return;
   var fill = pendingCoverageFill;
-  pendingCoverageFill = null;
-  hideCoverageFillBanner();
 
-  if (fill.code !== "C2") return;
+  if (fill.code !== "C2") {
+    pendingCoverageFill = null;
+    hideCoverageFillBanner();
+    return;
+  }
 
   var redLinks = (lintData.findings && lintData.findings.red_links) || [];
   var stillPresent = redLinks.some(function(f) { return f.slug === fill.target; });
-  if (!stillPresent) return; // resolved — the finding disappearing IS the story
+  if (!stillPresent) {
+    pendingCoverageFill = null;
+    hideCoverageFillBanner();
+    return; // resolved — the finding disappearing IS the story
+  }
 
+  /* Still unresolved — but only an Ingest that completed AFTER the Fill
+     click makes this a fill outcome; otherwise keep waiting. */
+  if (ingestRunCounter === fill.ingestRunsAtFill) return;
+
+  pendingCoverageFill = null;
+  hideCoverageFillBanner();
   var newPages = lastIngestedPageSlugs.length > 0 ? lastIngestedPageSlugs.join(", ") : "none";
   lastCoverageFillOutcome =
     "Fill via Import: imported and ingested — new pages: " + newPages +
