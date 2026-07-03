@@ -1,6 +1,6 @@
-"""Shared slug-safety helpers (CODING_STANDARD §2.4).
+"""Shared slug-safety and link-resolution helpers (CODING_STANDARD §2.4).
 
-Public surface: ``is_bare_slug``.
+Public surface: ``is_bare_slug``, ``build_alias_resolution_map``.
 
 This is the canonical home for the path-shape guard originally written as
 ``qa._is_bare_slug`` for ``qa.promote_batch``'s body-supplied slugs (issue
@@ -12,9 +12,29 @@ privately again." Mirrors ``atomic.py``'s pattern for a small, non-domain
 technical helper shared across modules (no Ousterhout depth label — this
 module wires no larger subsystem together, it just centralises one
 predicate two callers need identically).
+
+Issue #406 (ADR-0030) adds ``build_alias_resolution_map`` — the single
+shared link-layer resolver every wikilink-resolution consumer (``lint.py``'s
+C2 red-link check and ``find_inbound_references``; a future linkify surface)
+must use, per ADR-0030's Invariant "every consumer of wikilink resolution
+uses the shared resolver; no surface builds its own slug set." Its home is
+this module (not ``lint.py``) because the resolver is not itself a lint
+check — it is a link-layer primitive several unrelated call sites share,
+matching this module's existing "small, non-domain technical helper" role.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
+
+from .wiki_writer import read_existing_frontmatter
+
+# Wiki subdirectories that hold alias-eligible (entity/concept) pages.
+# ``wiki/qa/`` Filed Answers are deliberately excluded — ADR-0030's "target
+# page" is always an entity/concept synthesis page, never a Filed Answer.
+# TODO: consolidate ("entities", "concepts") with ADR-0006 SOURCE_DIRS
+# string-name companion — see the same TODO already left in lint.py.
+_ALIAS_ELIGIBLE_SUBDIRS: tuple[str, ...] = ("entities", "concepts")
 
 
 def is_bare_slug(slug: str) -> bool:
@@ -35,3 +55,74 @@ def is_bare_slug(slug: str) -> bool:
     if not slug or slug in {".", ".."}:
         return False
     return not any(ch in slug for ch in ("/", "\\", ":", "\x00"))
+
+
+def build_alias_resolution_map(wiki_dir: Path) -> dict[str, str]:
+    """Build the ADR-0030 link-layer resolution map: existing slugs UNION
+    aliases -> canonical slug.
+
+    Scans every ``entities/`` and ``concepts/`` page's frontmatter. Every
+    real page slug maps to itself; every non-blank ``aliases:`` entry maps
+    to that page's slug, EXCEPT when the resolution is ambiguous:
+
+    - **A real page slug always wins over a colliding alias.** If some page
+      declares an alias equal to another page's actual slug, the alias is
+      simply dropped — the real page's self-mapping is authoritative and is
+      never overridden.
+    - **An alias-vs-alias tie** (two or more pages independently claim the
+      SAME alias, and no real page owns that slug) **breaks
+      lexicographically by canonical slug** — the lowest-sorted slug wins,
+      so resolution is deterministic regardless of filesystem iteration
+      order (ADR-0030 decision 4).
+
+    This is the ONE shared resolver every wikilink-resolution consumer must
+    call (ADR-0030 Invariant) — ``lint._check_c2_red_links`` (a link is red
+    iff unresolvable here) and ``lint.find_inbound_references`` (an
+    alias-mediated ``[[link]]`` is a real inbound reference) both use it
+    instead of building their own slug set.
+
+    Args:
+        wiki_dir: Root wiki directory (``entities/`` and ``concepts/`` are
+            read from beneath it; missing subdirectories are skipped).
+
+    Returns:
+        Dict mapping every resolvable key (real slug or alias) to its
+        canonical (real) target slug.
+    """
+    real_slugs: set[str] = set()
+    for subdir_name in _ALIAS_ELIGIBLE_SUBDIRS:
+        subdir = wiki_dir / subdir_name
+        if not subdir.exists():
+            continue
+        for page_path in subdir.glob("*.md"):
+            real_slugs.add(page_path.stem)
+
+    # alias -> best canonical slug claimed so far (lexicographically lowest).
+    alias_claims: dict[str, str] = {}
+    for subdir_name in _ALIAS_ELIGIBLE_SUBDIRS:
+        subdir = wiki_dir / subdir_name
+        if not subdir.exists():
+            continue
+        for page_path in sorted(subdir.glob("*.md")):
+            canonical = page_path.stem
+            fm = read_existing_frontmatter(page_path)
+            if fm is None:
+                continue
+            raw_aliases = fm.get("aliases", [])
+            if not isinstance(raw_aliases, list):
+                continue
+            for raw_alias in raw_aliases:
+                alias = str(raw_alias).strip()
+                if not alias or alias in real_slugs:
+                    # Blank entry, or a real page slug always wins (decision 4).
+                    continue
+                existing = alias_claims.get(alias)
+                if existing is None or canonical < existing:
+                    alias_claims[alias] = canonical
+
+    resolution: dict[str, str] = {slug: slug for slug in real_slugs}
+    for alias, canonical in alias_claims.items():
+        # `alias not in real_slugs` already guaranteed above, so this never
+        # overwrites a real page's self-mapping.
+        resolution[alias] = canonical
+    return resolution

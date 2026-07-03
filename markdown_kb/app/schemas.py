@@ -1,4 +1,4 @@
-"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``CitationRef``, ``FiledStatus``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``, ``CoverageGapFinding``, ``PagePairFinding``, ``PromotionCandidateFinding``, ``QaStalenessFinding``, ``InvalidQaSchemaFinding``, ``QaEditRequest``, ``QaRefileResponse``, ``SkippedSlug``, ``QaPromoteBatchRequest``, ``QaPromoteBatchResponse``, ``ImportRequest``, ``ImportSourceResultSchema``, ``ImportFailureSchema``, ``ImportResponse``, ``ReconcileDraft``, ``ReconcileGenerateRequest``, ``ReconcileGenerateResponse``, ``ReconcileApplyRequest``, ``ReconcileApplyResponse``, ``CollisionMergeDraft``, ``CollisionPageDraft``, ``CollisionDifferentiateDraft``, ``CollisionMergeGenerateRequest``, ``CollisionMergeGenerateResponse``, ``CollisionMergeApplyRequest``, ``InboundReference``, ``CollisionMergeApplyResponse``, ``CollisionDifferentiateGenerateRequest``, ``CollisionDifferentiateGenerateResponse``, ``CollisionDifferentiateApplyRequest``, ``CollisionDifferentiateApplyResponse``).
+"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``CitationRef``, ``FiledStatus``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``, ``CoverageGapFinding``, ``PagePairFinding``, ``PromotionCandidateFinding``, ``QaStalenessFinding``, ``InvalidQaSchemaFinding``, ``AliasCollisionFinding``, ``QaEditRequest``, ``QaRefileResponse``, ``SkippedSlug``, ``QaPromoteBatchRequest``, ``QaPromoteBatchResponse``, ``ImportRequest``, ``ImportSourceResultSchema``, ``ImportFailureSchema``, ``ImportResponse``, ``ReconcileDraft``, ``ReconcileGenerateRequest``, ``ReconcileGenerateResponse``, ``ReconcileApplyRequest``, ``ReconcileApplyResponse``, ``CollisionMergeDraft``, ``CollisionPageDraft``, ``CollisionDifferentiateDraft``, ``CollisionMergeGenerateRequest``, ``CollisionMergeGenerateResponse``, ``CollisionMergeApplyRequest``, ``InboundReference``, ``CollisionMergeApplyResponse``, ``CollisionDifferentiateGenerateRequest``, ``CollisionDifferentiateGenerateResponse``, ``CollisionDifferentiateApplyRequest``, ``CollisionDifferentiateApplyResponse``).
 
 Pydantic request/response models for the FastAPI routes. No domain logic."""
 
@@ -254,6 +254,15 @@ class WikiPageFrontmatter(BaseModel):
       ``/ingest`` for hash-skip idempotency.
       Empty dict (default) means "drift state unknown" — do NOT skip on
       empty source_hashes; this is the legacy state for Phase 6 pages.
+
+    Issue #406 (ADR-0030):
+    - ``aliases`` is the 9th field, a curator-owned list of alternate slugs
+      that resolve a ``[[wikilink]]`` to this page (entities/concepts pages
+      only — never populated by the LLM synthesis draft). ``/ingest``'s
+      page-overwrite preserves it across re-ingest, exactly like ``created``
+      (ADR-0030 Invariant: preserve list is ``{created, aliases}``). Aliases
+      are link-layer only — they never enter the Section Index (BM25) or the
+      dense arm (ADR-0030 Invariant).
     """
 
     id: str
@@ -273,6 +282,10 @@ class WikiPageFrontmatter(BaseModel):
     # Default factory returns empty dict = "drift state unknown" (legacy Phase 6
     # pages have no source_hashes; /ingest must NOT skip on empty source_hashes).
     source_hashes: dict[str, dict[str, str | None]] = Field(default_factory=dict)
+    # Issue #406 (ADR-0030): 9th field — curator-owned alias list, entities/
+    # concepts pages only. Default empty list so every existing construction
+    # site (templates.py, tests) keeps working unmodified.
+    aliases: list[str] = Field(default_factory=list)
 
 
 class WikiPageDraft(BaseModel):
@@ -650,6 +663,37 @@ class InvalidQaSchemaFinding(BaseModel):
     offending_value: str
 
 
+class AliasCollisionFinding(BaseModel):
+    """C12 alias-collision finding (issue #406, ADR-0030, Coherence axis).
+
+    Two collision shapes, both keyed on a single alias string:
+
+    - ``kind == "alias_vs_slug"`` — ``alias`` matches an existing page's real
+      slug. ``slug_owner`` is that real page (equal to ``alias``); resolution
+      is unambiguous (a real page slug always wins over an alias per the
+      shared resolver, ``slugs.build_alias_resolution_map``).
+    - ``kind == "alias_vs_alias"`` — two or more pages independently claim
+      the SAME alias and no real page owns that slug. ``slug_owner`` is
+      ``None``; the shared resolver's tie-break (lexicographically-first
+      canonical slug) decides ``resolved_to``.
+
+    ``claimed_by`` lists every page (sorted, deduplicated) whose frontmatter
+    declares this alias — usually one entry for ``alias_vs_slug``, at
+    least two for ``alias_vs_alias``. ``resolved_to`` mirrors what the shared
+    resolver actually returns for ``alias`` right now, so a curator can see
+    the current (deterministic) resolution while deciding whether to edit
+    frontmatter to remove the collision (Direct remediation — no endpoint
+    exists yet in this foundation slice; see ``_REMEDIATION_TAXONOMY["C12"]``).
+    """
+
+    kind: Literal["alias_vs_slug", "alias_vs_alias"]
+    alias: str
+    claimed_by: list[str]
+    slug_owner: str | None = None
+    resolved_to: str
+    suggested_action: str
+
+
 class LintFindings(BaseModel):
     """Container for all check findings.
 
@@ -660,6 +704,8 @@ class LintFindings(BaseModel):
     Slice 5-5 adds ``page_pairs`` (C5).
     Slice 6-5 (Phase 5 amendment) adds ``promotion_candidates`` (C8),
     ``stale_filed_answers`` (C9), and ``invalid_qa_schemas`` (C10).
+    Issue #406 (ADR-0030) adds ``alias_collisions`` (C12; C7 is skipped and
+    stays unassigned).
     """
 
     orphans: list[OrphanPageFinding] = []
@@ -672,6 +718,7 @@ class LintFindings(BaseModel):
     promotion_candidates: list[PromotionCandidateFinding] = []
     stale_filed_answers: list[QaStalenessFinding] = []
     invalid_qa_schemas: list[InvalidQaSchemaFinding] = []
+    alias_collisions: list[AliasCollisionFinding] = []
 
 
 class LintSummary(BaseModel):

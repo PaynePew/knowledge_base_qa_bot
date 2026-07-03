@@ -391,6 +391,22 @@ def _format_c4_slug_collisions(findings: object, label: str) -> list[str]:
     return lines
 
 
+def _format_c12_alias_collisions(findings: object, label: str) -> list[str]:
+    """C12 Alias collisions lines, or ``[]`` when there are none (issue #406)."""
+    if not findings.alias_collisions:  # type: ignore[attr-defined]
+        return []
+    lines = [
+        f"C12 Alias collisions ({len(findings.alias_collisions)}) — {label}:"  # type: ignore[attr-defined]
+    ]
+    for f in findings.alias_collisions:  # type: ignore[attr-defined]
+        claimed_by = ", ".join(f.claimed_by)
+        lines.append(
+            f"  • {f.alias} [{f.kind}] claimed by {claimed_by} — resolves to {f.resolved_to}"
+        )
+    lines.append("")
+    return lines
+
+
 def _format_c6_stale_pages(findings: object, label: str) -> list[str]:
     """C6 Stale pages lines, or ``[]`` when there are none."""
     if not findings.stale_pages:  # type: ignore[attr-defined]
@@ -534,6 +550,7 @@ _LINT_CHECK_FORMATTERS: dict[str, Callable[[object, str], list[str]]] = {
     "C11": _format_c11_orphans,
     "C3": _format_c3_failed_grounding,
     "C4": _format_c4_slug_collisions,
+    "C12": _format_c12_alias_collisions,
     "C6": _format_c6_stale_pages,
     "C2": _format_c2_red_links,
     "C1": _format_c1_coverage_gaps,

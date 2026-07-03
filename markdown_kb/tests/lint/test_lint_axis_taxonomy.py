@@ -8,6 +8,14 @@ plus the stable axis order Freshness -> Coherence -> Coverage -> Lifecycle
 (CONTEXT.md "Lint Axis" / ADR-0023). ``group_findings_by_axis`` is a pure data
 transform — it does not run any check, so these tests build ``LintFindings``
 directly rather than exercising ``run_lint``.
+
+Issue #406 (ADR-0030) amendment
+--------------------------------
+Adds the eleventh wired check, C12 alias-collision (Coherence axis; C7 is
+skipped and stays unassigned) — CONTEXT.md's "Lint Axis" entry already
+documents Coherence as "C5 contradiction, C4 collision, C12 alias-collision"
+(2026-07-03 grill), so the fixtures below are updated to match the taxonomy's
+now-permanent eleven-entry shape rather than the ten it had at S1.
 """
 
 from __future__ import annotations
@@ -35,6 +43,7 @@ _EXPECTED_AXIS_BY_CODE = {
     "C11": "Freshness",
     "C5": "Coherence",
     "C4": "Coherence",
+    "C12": "Coherence",
     "C1": "Coverage",
     "C2": "Coverage",
     "C8": "Lifecycle",
@@ -49,6 +58,7 @@ _EXPECTED_LABEL_BY_CODE = {
     "C11": "orphan",
     "C5": "contradiction",
     "C4": "collision",
+    "C12": "alias-collision",
     "C1": "coverage-gap",
     "C2": "red-link",
     "C8": "promotion",
@@ -96,7 +106,7 @@ class TestGroupFindingsByAxis:
         groups = group_findings_by_axis(LintFindings())
         codes_by_axis = {g.axis: [meta.code for meta, _findings in g.checks] for g in groups}
         assert codes_by_axis["Freshness"] == ["C6", "C3", "C11"]
-        assert codes_by_axis["Coherence"] == ["C5", "C4"]
+        assert codes_by_axis["Coherence"] == ["C5", "C4", "C12"]
         assert codes_by_axis["Coverage"] == ["C1", "C2"]
         assert codes_by_axis["Lifecycle"] == ["C8", "C10", "C9"]
         for group in groups:
