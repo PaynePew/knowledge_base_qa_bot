@@ -24,8 +24,9 @@ Pipeline per source file:
        ADR-0032, issue #426) decides routing FIRST: text present → MarkItDown
        text-layer extraction (ADR-0031) unchanged, binary bytes bypass the
        UTF-8 decode step, no heading inference of our own; text absent →
-       ``transcriber.transcribe_pdf_bytes`` (model-assisted, ADR-0032) when
-       configured, else the typed ``NoTextLayer`` failure. The mechanical
+       ``transcriber.transcribe_pdf_bytes_concurrent`` (model-assisted,
+       process-wide bounded pool — ADR-0032, issue #459) when configured,
+       else the typed ``NoTextLayer`` failure. The mechanical
        ``.pdf`` branch's extracted body additionally passes through
        deterministic Kangxi-radical codepoint normalization (issue #425,
        ``kangxi_normalize.py``) — ``.html``/``.txt``/``.md`` passthrough
@@ -810,7 +811,12 @@ def _process_one_source(
             # failure now names Transcribe and the missing prerequisite.
             if transcriber_module.transcribe_available():
                 try:
-                    md_body, transcribe_model = transcriber_module.transcribe_pdf_bytes(raw_bytes)
+                    # Process-wide bounded concurrent pool (issue #459) — this
+                    # auto-route is exactly the path that measured 30+ minutes
+                    # (and an OOM) on a 63-page scanned PDF sequentially.
+                    md_body, transcribe_model = transcriber_module.transcribe_pdf_bytes_concurrent(
+                        raw_bytes
+                    )
                 except transcriber_module.TranscribePageLimitExceeded as exc:
                     failure = ImportFailure(
                         raw_path=str(raw_path),

@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``transcribe_available``, ``probe_has_text_layer``, ``transcribe_pdf_bytes``, ``transcribe_source``, ``transcribe_path``, ``get_transcribe_llm``, ``set_page_budget_hook``, ``get_page_budget_hook``, ``TranscribeSourceResult``, ``TranscribePathError``, ``TranscribeUnavailable``, ``TranscribePageLimitExceeded``, ``TranscribeBudgetExceeded``, ``TranscribeError``.
+"""Deep module per Ousterhout. Public surface: ``transcribe_available``, ``probe_has_text_layer``, ``transcribe_pdf_bytes``, ``transcribe_pdf_bytes_concurrent``, ``transcribe_source``, ``transcribe_path``, ``get_transcribe_llm``, ``set_page_budget_hook``, ``get_page_budget_hook``, ``TranscribeSourceResult``, ``TranscribePathError``, ``TranscribeUnavailable``, ``TranscribePageLimitExceeded``, ``TranscribeBudgetExceeded``, ``TranscribeError``.
 
 Transcribe — model-assisted PDF conversion (issue #426, ADR-0032). Sits
 beside ``importer.py`` as the second ``raw/`` -> ``docs/`` converter:
@@ -50,28 +50,53 @@ the default test suite / CI's dummy-key session (see ``.github/workflows/ci.yml`
 never attempts a live network call from the probe-routing path
 (CODING_STANDARD §6.3 — the LLM getter is not the only live network seam).
 
-Budget hook (issue #460): ``transcribe_pdf_bytes`` calls an optional
-module-level hook with the PDF's page count immediately after the
-``KB_TRANSCRIBE_MAX_PAGES`` check and BEFORE any page is rasterized or sent
-to the vision model. markdown_kb has no dependency on ``gateway`` (ADR-0002's
-one-way Stack boundary), so it cannot charge the Gateway's per-UTC-day USD
-budget ledger itself; ``set_page_budget_hook`` is the inversion point the
-Gateway composition root (``gateway/app/main.py``) wires at startup so both
-Transcribe entries — the ``/wiki/import`` auto-route and the forced
-``/wiki/transcribe`` — charge the SAME shared ledger per page, and a hook
-that raises ``TranscribeBudgetExceeded`` rejects the file before any vision
-call spends real money (reserve-before-spend). Standalone callers (kb_cli,
-kb_mcp, bare markdown_kb) never install a hook, so the default ``None``
-means unmetered, uncapped behaviour there — unchanged from before this hook
-existed.
+Budget hook (issue #460): both ``transcribe_pdf_bytes`` and
+``transcribe_pdf_bytes_concurrent`` call an optional module-level hook with
+the PDF's page count immediately after the ``KB_TRANSCRIBE_MAX_PAGES`` check
+and BEFORE any page is rasterized or sent to the vision model. markdown_kb
+has no dependency on ``gateway`` (ADR-0002's one-way Stack boundary), so it
+cannot charge the Gateway's per-UTC-day USD budget ledger itself;
+``set_page_budget_hook`` is the inversion point the Gateway composition root
+(``gateway/app/main.py``) wires at startup so both Transcribe entries — the
+``/wiki/import`` auto-route and the forced ``/wiki/transcribe`` — charge the
+SAME shared ledger per page, and a hook that raises
+``TranscribeBudgetExceeded`` rejects the file before any vision call spends
+real money (reserve-before-spend). Standalone callers (kb_cli, kb_mcp, bare
+markdown_kb) never install a hook, so the default ``None`` means unmetered,
+uncapped behaviour there — unchanged from before this hook existed.
+
+Responsiveness (issue #459): a large scanned PDF measured 30+ minutes on the
+strictly-sequential path (OOM'd the demo container before finishing). Two
+independent fixes:
+
+  * ``get_transcribe_llm`` pins ``reasoning_effort="minimal"`` — gpt-5-mini is
+    a reasoning model; the OCR-shaped transcription task needs none of that
+    "thinking" (measured ~5x faster, identical output).
+  * ``transcribe_pdf_bytes_concurrent`` fans page rendering+transcription out
+    across a PROCESS-WIDE bounded worker pool (``KB_TRANSCRIBE_CONCURRENCY``,
+    default 16) instead of one page at a time. It is a separate function from
+    ``transcribe_pdf_bytes`` (kept sequential, unchanged) rather than a
+    behavioural change to it, because the two have different, deliberately
+    incompatible memory shapes: strictly-sequential holds at most ONE
+    rendered page image at a time (issue #456's guarantee, still exactly
+    true for ``transcribe_pdf_bytes``); the concurrent pool holds at most
+    ``KB_TRANSCRIBE_CONCURRENCY`` images at a time (bounded and tunable, but
+    necessarily > 1 whenever concurrency > 1). ``_force_transcribe`` (hence
+    ``transcribe_source`` / ``transcribe_path`` / ``POST /transcribe`` / ``kb
+    transcribe``) and ``importer._process_one_source``'s auto-route both call
+    the concurrent version — that is where the real 63-page-scan pain lives.
+    Both entries into the concurrent pool honour the SAME budget hook as the
+    sequential path (issue #460 invariant preserved across the speedup).
 """
 
 from __future__ import annotations
 
 import base64
+import concurrent.futures
 import hashlib
 import io
 import os
+import threading
 import time
 import unicodedata
 from collections.abc import Callable
@@ -258,15 +283,29 @@ def get_transcribe_llm() -> ChatOpenAI:
 
     Model resolution delegates to ``_transcribe_model_name``. Pinned to
     ``temperature=0`` for faithful, reproducible transcription (ADR-0032:
-    "convert form only"). ``max_retries`` gives the bounded-retry-then-fail
-    behaviour the AC requires without a hand-rolled retry loop (ADR-0005
-    borrowing rationale).
+    "convert form only"), and ``reasoning_effort="minimal"`` (issue #459) —
+    the default model (gpt-5-mini) is a reasoning model that otherwise
+    "thinks" before transcribing, pure overhead for a faithful-copy task
+    (measured ~5x slower at default reasoning, byte-identical output at
+    minimal). ``max_retries`` gives the bounded-retry-then-fail behaviour the
+    AC requires without a hand-rolled retry loop (ADR-0005 borrowing
+    rationale).
+
+    ``temperature=0`` + ``reasoning_effort="minimal"`` together are safe:
+    langchain-openai's own ``validate_temperature`` model validator already
+    drops ``temperature`` for gpt-5 (non-chat) models whenever
+    ``reasoning_effort`` is anything other than ``"none"`` (verified against
+    the installed langchain-openai — see ``ChatOpenAI.validate_temperature``),
+    so there is no ctor-time or call-time conflict to guard against here; for
+    any non-gpt-5 model swapped in via ``OPENAI_TRANSCRIBE_MODEL`` the
+    ``temperature=0`` pin still applies normally.
     """
     global _transcribe_llm
     if _transcribe_llm is None:
         _transcribe_llm = ChatOpenAI(
             model=_transcribe_model_name(),
             temperature=0,
+            reasoning_effort="minimal",
             timeout=60,
             max_retries=int(os.getenv("KB_TRANSCRIBE_MAX_RETRIES", "3")),
         )
@@ -359,6 +398,144 @@ def transcribe_pdf_bytes(raw_bytes: bytes) -> tuple[str, str]:
     return normalize_kangxi_radicals(assembled), _transcribe_model_name()
 
 
+# ---------------------------------------------------------------------------
+# Process-wide bounded page-worker pool (issue #459)
+# ---------------------------------------------------------------------------
+
+_DEFAULT_PAGE_CONCURRENCY = 16
+
+
+def _page_concurrency() -> int:
+    """Max concurrent in-flight page-transcription calls, process-wide.
+
+    Override with ``KB_TRANSCRIBE_CONCURRENCY``; default
+    ``_DEFAULT_PAGE_CONCURRENCY`` (16). Read once, at module import, into the
+    module-level ``_page_semaphore`` below — mirrors
+    ``gateway/app/middleware.py``'s ``admin_sem``/``read_sem`` idiom ("read
+    once at import so tests can drain/restore them") rather than
+    ``ingest.py``'s per-call semaphore, deliberately: two concurrent
+    ``/transcribe`` or ``/import`` requests must share ONE process-wide cap,
+    not each get their own N-worker pool (2 requests x N workers would
+    compound past the cap and OOM the box — the failure mode this issue
+    exists to avoid). A restart is required for an env change to take effect,
+    same limitation as ``get_transcribe_llm``'s singleton.
+    """
+    raw = os.getenv("KB_TRANSCRIBE_CONCURRENCY")
+    if raw is None:
+        return _DEFAULT_PAGE_CONCURRENCY
+    try:
+        value = int(raw)
+    except ValueError:
+        return _DEFAULT_PAGE_CONCURRENCY
+    return value if value > 0 else _DEFAULT_PAGE_CONCURRENCY
+
+
+# Process-wide (not per-call) semaphore — see _page_concurrency docstring.
+# BoundedSemaphore catches an accidental over-release (a programming error).
+_page_semaphore = threading.BoundedSemaphore(_page_concurrency())
+
+
+def transcribe_pdf_bytes_concurrent(
+    raw_bytes: bytes,
+    *,
+    on_page_done: Callable[[int, int], None] | None = None,
+) -> tuple[str, str]:
+    """Transcribe PDF bytes via a PROCESS-WIDE bounded concurrent page pool (issue #459).
+
+    Same contract as ``transcribe_pdf_bytes`` (page-count guard before any
+    model call, bounded-retry-then-fail per page, all-blank assembly failure,
+    Kangxi normalization, page order preserved in the assembled output) —
+    the difference is pages are rendered and transcribed CONCURRENTLY across
+    ``_page_semaphore`` (``KB_TRANSCRIBE_CONCURRENCY``, default 16) instead of
+    strictly one at a time. A 63-page scan that took 30+ minutes sequentially
+    (and OOM'd the demo container before finishing) completes in well under a
+    minute at concurrency 16+ (measured).
+
+    Each page opens its OWN ``pdfium.PdfDocument(raw_bytes)`` instead of
+    sharing one across worker threads — pypdfium2 is not thread-safe; a
+    shared ``PdfDocument`` raises "Failed to load page" under concurrent
+    access (see ``_render_and_transcribe_page_isolated``). The document (and
+    its rendered image) is released before returning, so peak memory is
+    O(concurrency) — bounded and tunable — rather than O(page count), which
+    is what keeps this a genuine fix and not a reversion to the pre-#456 bug.
+
+    ``on_page_done``, if given, is called exactly once per completed page —
+    ``on_page_done(pages_done, page_count)`` — regardless of completion
+    order. This is the progress data source for a pollable job status field
+    (issue #459 AC4; see ``transcribe_jobs.py``).
+
+    Raises:
+        TranscribePageLimitExceeded: page count > ``KB_TRANSCRIBE_MAX_PAGES``.
+        TranscribeBudgetExceeded: the installed page-budget hook rejected
+            this page count (issue #460), same as the sequential
+            ``transcribe_pdf_bytes``; never raised when no hook is set.
+        TranscribeError: a page failed after the LLM wrapper's bounded retry,
+            or every page transcribed empty (assembly failure).
+    """
+    max_pages = int(os.getenv("KB_TRANSCRIBE_MAX_PAGES", str(_DEFAULT_MAX_PAGES)))
+
+    pdf = pdfium.PdfDocument(raw_bytes)
+    try:
+        page_count = len(pdf)
+    finally:
+        pdf.close()
+    if page_count > max_pages:
+        raise TranscribePageLimitExceeded(
+            f"PDF has {page_count} page(s), exceeding KB_TRANSCRIBE_MAX_PAGES={max_pages}"
+        )
+    if _page_budget_hook is not None:
+        _page_budget_hook(page_count)
+
+    page_bodies: list[str | None] = [None] * page_count
+    pages_done = 0
+    progress_lock = threading.Lock()
+
+    def _worker(page_index: int) -> None:
+        nonlocal pages_done
+        with _page_semaphore:
+            page_bodies[page_index] = _render_and_transcribe_page_isolated(raw_bytes, page_index)
+        if on_page_done is not None:
+            with progress_lock:
+                pages_done += 1
+                done_snapshot = pages_done
+            on_page_done(done_snapshot, page_count)
+
+    if page_count > 0:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=page_count) as executor:
+            futures = [executor.submit(_worker, i) for i in range(page_count)]
+            # Checked in page-index order (not completion order): re-raises
+            # whichever exception belongs to the LOWEST-index failed page —
+            # the executor's own __exit__ still blocks for every other
+            # in-flight page before this call returns (no leaked threads).
+            for future in futures:
+                future.result()
+
+    assembled = "\n\n".join(body for body in page_bodies if body)
+    if not assembled.strip():
+        raise TranscribeError(
+            f"Transcription produced no content across {page_count} page(s); assembly failed."
+        )
+    return normalize_kangxi_radicals(assembled), _transcribe_model_name()
+
+
+def _render_and_transcribe_page_isolated(raw_bytes: bytes, page_index: int) -> str:
+    """Render page ``page_index`` from an INDEPENDENT ``PdfDocument`` and transcribe it.
+
+    pypdfium2 is not thread-safe: multiple worker threads rendering pages
+    from ONE shared ``PdfDocument`` raise "Failed to load page" (issue #459,
+    measured). Each call here opens its own document instead, so concurrent
+    workers never touch shared pypdfium2 state. The document is closed (and
+    the rendered PNG goes out of scope after transcription) before this
+    function returns, so nothing outlives one page's worth of work.
+    """
+    pdf = pdfium.PdfDocument(raw_bytes)
+    try:
+        page_png = _render_page_png(pdf[page_index])
+    finally:
+        pdf.close()
+    return _transcribe_one_page(page_png, page_index + 1)
+
+
 def _render_and_transcribe_page(pdf: pdfium.PdfDocument, page_index: int) -> str:
     """Render one page to PNG and transcribe it, then let the image go out of scope.
 
@@ -413,13 +590,21 @@ def _transcribe_one_page(page_png: bytes, page_num: int) -> str:
 # ---------------------------------------------------------------------------
 
 
-def transcribe_source(source_filter: str) -> TranscribeSourceResult:
+def transcribe_source(
+    source_filter: str,
+    *,
+    on_page_done: Callable[[int, int], None] | None = None,
+) -> TranscribeSourceResult:
     """Force-transcribe one named file already staged under ``raw/``.
 
     Mirrors ``importer._resolve_single_source``'s validation chain (path
     format, filename, extension, existence) but accepts only ``.pdf`` — used
     by ``POST /transcribe`` (ADR-0032 designed-PDF escape hatch: bypasses the
     probe, always transcribes).
+
+    ``on_page_done``, if given, is passed straight through to
+    ``transcribe_pdf_bytes_concurrent`` (issue #459 AC4) — used by
+    ``transcribe_jobs.py`` to update a pollable job's progress as pages land.
 
     Raises ``TranscribePathError`` for any validation, availability, or
     conversion failure. Emits ``transcribe_batch_started`` /
@@ -432,7 +617,7 @@ def transcribe_source(source_filter: str) -> TranscribeSourceResult:
 
     try:
         raw_path = _resolve_pdf_source(source_filter)
-        result = _force_transcribe(raw_path)
+        result = _force_transcribe(raw_path, on_page_done=on_page_done)
     except TranscribePathError as exc:
         log_event(
             "transcribe_error",
@@ -577,8 +762,17 @@ def _resolve_pdf_source(source_filter: str) -> Path:
     return raw_path
 
 
-def _force_transcribe(raw_path: Path) -> TranscribeSourceResult:
+def _force_transcribe(
+    raw_path: Path,
+    *,
+    on_page_done: Callable[[int, int], None] | None = None,
+) -> TranscribeSourceResult:
     """Run the hash-skip + transcribe + write pipeline for a resolved raw/ PDF path.
+
+    Uses ``transcribe_pdf_bytes_concurrent`` (issue #459) — the process-wide
+    bounded pool, not the strictly-sequential ``transcribe_pdf_bytes`` — since
+    this is the force-entry path a curator or the async batch job would use
+    for exactly the large scans that need the speedup.
 
     Raises ``TranscribePathError`` for availability / page-limit / model
     failures. No partial ``docs/`` write on any failure path.
@@ -621,7 +815,7 @@ def _force_transcribe(raw_path: Path) -> TranscribeSourceResult:
         )
 
     try:
-        md_body, model_name = transcribe_pdf_bytes(raw_bytes)
+        md_body, model_name = transcribe_pdf_bytes_concurrent(raw_bytes, on_page_done=on_page_done)
     except TranscribePageLimitExceeded as exc:
         raise TranscribePathError(str(exc)[:200], error_type="TranscribePageLimitExceeded") from exc
     except TranscribeBudgetExceeded as exc:

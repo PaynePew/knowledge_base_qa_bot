@@ -1,4 +1,4 @@
-"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``CitationRef``, ``FiledStatus``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``, ``CoverageGapFinding``, ``PagePairFinding``, ``PromotionCandidateFinding``, ``QaStalenessFinding``, ``InvalidQaSchemaFinding``, ``AliasCollisionFinding``, ``AliasAssignRequest``, ``QaEditRequest``, ``QaRefileResponse``, ``SkippedSlug``, ``QaPromoteBatchRequest``, ``QaPromoteBatchResponse``, ``ImportRequest``, ``ImportSourceResultSchema``, ``ImportFailureSchema``, ``ImportResponse``, ``ReconcileDraft``, ``ReconcileGenerateRequest``, ``ReconcileGenerateResponse``, ``ReconcileApplyRequest``, ``ReconcileApplyResponse``, ``CollisionMergeDraft``, ``CollisionPageDraft``, ``CollisionDifferentiateDraft``, ``CollisionMergeGenerateRequest``, ``CollisionMergeGenerateResponse``, ``CollisionMergeApplyRequest``, ``InboundReference``, ``CollisionMergeApplyResponse``, ``CollisionDifferentiateGenerateRequest``, ``CollisionDifferentiateGenerateResponse``, ``CollisionDifferentiateApplyRequest``, ``CollisionDifferentiateApplyResponse``, ``TranscribeRequest``, ``TranscribeResponse``).
+"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``CitationRef``, ``FiledStatus``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``, ``CoverageGapFinding``, ``PagePairFinding``, ``PromotionCandidateFinding``, ``QaStalenessFinding``, ``InvalidQaSchemaFinding``, ``AliasCollisionFinding``, ``AliasAssignRequest``, ``QaEditRequest``, ``QaRefileResponse``, ``SkippedSlug``, ``QaPromoteBatchRequest``, ``QaPromoteBatchResponse``, ``ImportRequest``, ``ImportSourceResultSchema``, ``ImportFailureSchema``, ``ImportResponse``, ``ReconcileDraft``, ``ReconcileGenerateRequest``, ``ReconcileGenerateResponse``, ``ReconcileApplyRequest``, ``ReconcileApplyResponse``, ``CollisionMergeDraft``, ``CollisionPageDraft``, ``CollisionDifferentiateDraft``, ``CollisionMergeGenerateRequest``, ``CollisionMergeGenerateResponse``, ``CollisionMergeApplyRequest``, ``InboundReference``, ``CollisionMergeApplyResponse``, ``CollisionDifferentiateGenerateRequest``, ``CollisionDifferentiateGenerateResponse``, ``CollisionDifferentiateApplyRequest``, ``CollisionDifferentiateApplyResponse``, ``TranscribeRequest``, ``TranscribeResponse``, ``TranscribeBatchRequest``, ``TranscribeBatchSubmitResponse``, ``TranscribeJobResultSchema``, ``TranscribeJobStatusResponse``).
 
 Pydantic request/response models for the FastAPI routes. No domain logic."""
 
@@ -1138,3 +1138,59 @@ class TranscribeResponse(BaseModel):
     transcribe_model: str
     status: Literal["created", "updated", "skipped"]
     origin: Literal["transcribed"] = "transcribed"
+
+
+# ---------------------------------------------------------------------------
+# /transcribe/batch + /transcribe/jobs schemas (issue #459 AC5)
+# ---------------------------------------------------------------------------
+
+
+class TranscribeBatchRequest(BaseModel):
+    """Request body for POST /transcribe/batch.
+
+    ``sources`` names one or more files already staged under ``raw/`` (same
+    per-file contract as ``TranscribeRequest.source``). Unlike ``POST
+    /transcribe`` this returns immediately with a job id — see
+    ``TranscribeBatchSubmitResponse`` — instead of blocking for the whole
+    batch's duration (issue #459 item 5).
+    """
+
+    sources: list[str]
+
+
+class TranscribeBatchSubmitResponse(BaseModel):
+    """Response body for POST /transcribe/batch — the submitted job id."""
+
+    job_id: str
+
+
+class TranscribeJobResultSchema(BaseModel):
+    """Per-source outcome inside a TranscribeJobStatusResponse.
+
+    Mirrors ``transcribe_jobs.TranscribeJobResult``. ``error_type`` /
+    ``error_message`` are populated only when ``status == "failed"``.
+    """
+
+    source: str
+    status: Literal["created", "updated", "skipped", "failed"]
+    docs_path: str | None = None
+    error_type: str | None = None
+    error_message: str | None = None
+
+
+class TranscribeJobStatusResponse(BaseModel):
+    """Response body for GET /transcribe/jobs/{job_id}.
+
+    ``pages_done`` / ``pages_total`` track pages across the WHOLE batch
+    (issue #459 AC4) — the data source for a Console progress bar (#447).
+    ``pages_total`` grows incrementally as each source's own page count is
+    discovered; a freshly submitted job (before any source has started
+    reporting) may show ``pages_total == 0``.
+    """
+
+    job_id: str
+    status: Literal["submitted", "working", "completed", "failed"]
+    pages_done: int
+    pages_total: int
+    results: list[TranscribeJobResultSchema] = []
+    error: str | None = None
