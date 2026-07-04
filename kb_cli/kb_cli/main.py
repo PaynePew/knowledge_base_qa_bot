@@ -29,6 +29,12 @@ shape, not the search-result shape that ``kb_mcp.normalizer`` maps for the MCP
 / ``promote`` / ``discard``, mirroring the Operator Console's gate semantics
 (promote reindexes; discard refuses a live page).  This is deliberately a CLI
 capability with **no MCP equivalent**: gates resolve on human surfaces only.
+
+``kb alias add <alias> <page-slug>`` (issue #409 / ADR-0030 decision 3) is a
+thin sub-command wrapping ``markdown_kb.app.pages.add_alias`` — Direct-class,
+never batches, no reindex (aliases never enter BM25). Same human-surfaces-only
+rationale as ``kb qa``: no MCP equivalent (MCP sees aliases via lint/read
+visibility, writes none).
 """
 
 from __future__ import annotations
@@ -847,6 +853,69 @@ def qa_discard_cmd(
         raise typer.Exit(code=1) from None
 
     typer.echo(f"Discarded {result.slug} (was status={result.prev_status}).")
+
+
+# ---------------------------------------------------------------------------
+# kb alias (issue #409 / ADR-0030 decision 3) — thin wrapper over
+# markdown_kb.app.pages.add_alias, one of the two human-surface entry points
+# (Console's C2 picker + honest-miss offer is the other) that share the same
+# POST /pages/{slug}/aliases endpoint's domain logic. Deliberately a CLI
+# capability with NO MCP equivalent — MCP sees aliases (lint/read visibility)
+# but writes none (ADR-0030 Invariant), mirroring the ``kb qa`` group's own
+# human-surfaces-only rationale above.
+# ---------------------------------------------------------------------------
+
+alias_app = typer.Typer(
+    name="alias",
+    help=(
+        "Assign an alias to an existing entities/concepts page (ADR-0030). "
+        "Direct-class, human-surfaces-only — no MCP equivalent."
+    ),
+    add_completion=False,
+)
+app.add_typer(alias_app, name="alias")
+
+
+@alias_app.command(name="add")
+def alias_add_cmd(
+    alias: str = typer.Argument(..., help="The alias to assign (e.g. an unresolved [[wikilink]])."),
+    page_slug: str = typer.Argument(..., help="The existing entities/concepts page slug to alias."),
+) -> None:
+    """Assign ``alias`` to ``page_slug`` (wraps ``POST /pages/{slug}/aliases``).
+
+    Mirrors ``markdown_kb.app.pages.add_alias``: no LLM, never batches
+    (ADR-0030 Invariant), idempotent (re-assigning an alias the page already
+    owns is a no-op). No reindex — aliases never enter the BM25 corpus
+    (ADR-0030 Invariant), so there is nothing to reindex afterward.
+
+    Exit codes follow the ADR-0015 CLI contract: 0 on success, 1 on any
+    refusal (page not found, corrupt frontmatter, blank alias, or a
+    collision with an existing page slug / another page's alias — the
+    error message names the conflicting owner, mirroring the HTTP 409).
+    """
+    from markdown_kb.app import pages as pages_module
+
+    try:
+        pages_module.add_alias(page_slug, alias)
+    except pages_module.PageNotFound:
+        typer.echo(
+            f"Error: wiki page '{page_slug}' not found under entities/ or concepts/.", err=True
+        )
+        raise typer.Exit(code=1) from None
+    except pages_module.PageCorrupt as exc:
+        typer.echo(f"Error: wiki page '{page_slug}' has corrupt frontmatter: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+    except pages_module.InvalidAlias as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+    except pages_module.AliasCollision as exc:
+        typer.echo(
+            f"Error: alias '{exc.alias}' already resolves to page '{exc.owner}'; assign refused.",
+            err=True,
+        )
+        raise typer.Exit(code=1) from None
+
+    typer.echo(f"Assigned alias '{alias}' to page '{page_slug}'.")
 
 
 # ---------------------------------------------------------------------------

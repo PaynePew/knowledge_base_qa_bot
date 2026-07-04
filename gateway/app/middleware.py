@@ -28,14 +28,16 @@ module only wires guards around them (CODING_STANDARD §2.3).  Single-worker
 model: the semaphores and budget are plain in-process objects (§2.6/§2.7).
 
 Path matching uses the **full mounted path** with any trailing slash stripped
-(``/wiki/chat/`` == ``/wiki/chat``).  Two parameterized heavy paths are
+(``/wiki/chat/`` == ``/wiki/chat``).  Three parameterized heavy paths are
 canonicalised before classification and charging — an exact-match set
 cannot see a per-slug concrete path, and an unclassified path bypasses ALL
 guards (the #376 bug class): ``POST /wiki/qa/{slug}/refile`` (ADR-0026
-decision 1, issue #380) to ``QA_REFILE_TEMPLATE``, and ``DELETE
-/wiki/pages/{slug}`` (ADR-0025, issue #381) to ``PAGES_DELETE_TEMPLATE`` —
-the latter calls no LLM (Confirmed Remediation, ADR-0024 Invariant) but
-still mutates the live corpus, so it stays admin-semaphore + kill-switch
+decision 1, issue #380) to ``QA_REFILE_TEMPLATE``, ``DELETE
+/wiki/pages/{slug}`` (ADR-0025, issue #381) to ``PAGES_DELETE_TEMPLATE``,
+and ``POST /wiki/pages/{slug}/aliases`` (ADR-0030 decision 3, issue #409) to
+``ALIAS_ASSIGN_TEMPLATE`` — the latter two call no LLM (Confirmed
+Remediation / Direct-class assign-alias, ADR-0024/ADR-0030 Invariants) but
+still mutate the live corpus, so they stay admin-semaphore + kill-switch
 gated even at a $0.00 budget estimate. ``POST /wiki/qa/promote-batch``
 (ADR-0023, issue #382) needs no such canonicalisation — the path carries no
 slug — but is classified as ``ADMIN_PATHS`` for the same reason as the
@@ -86,6 +88,16 @@ _QA_REFILE_RE = re.compile(r"^/wiki/qa/[^/]+/refile$")
 PAGES_DELETE_TEMPLATE = "/wiki/pages/{slug}"
 _PAGES_DELETE_RE = re.compile(r"^/wiki/pages/(?!reconcile$)[^/]+$")
 
+# Canonical billing/classification key for the assign-alias path (ADR-0030
+# decision 3, issue #409). Excludes "reconcile"/"collision" as the slug
+# segment, mirroring PAGES_DELETE_TEMPLATE's own exclusion, so a hypothetical
+# page slug of exactly that name can never be confused with the (distinctly
+# classified) reconcile/collision sub-routes — those never carry a further
+# "/aliases" segment today, but the same defensive shape keeps this pattern
+# honest if that ever changes.
+ALIAS_ASSIGN_TEMPLATE = "/wiki/pages/{slug}/aliases"
+_ALIAS_ASSIGN_RE = re.compile(r"^/wiki/pages/(?!reconcile$|collision$)[^/]+/aliases$")
+
 # Admin / index / mutating paths — gated by the admin semaphore, the budget
 # guard, AND the optional admin-token kill-switch.
 ADMIN_PATHS: frozenset[str] = frozenset(
@@ -106,6 +118,7 @@ ADMIN_PATHS: frozenset[str] = frozenset(
         "/wiki/pages/collision/differentiate/apply",  # ADR-0028: grounding re-check + N-page rewrite + reindex (issue #378)
         PAGES_DELETE_TEMPLATE,  # ADR-0025: C11 Confirmed orphan-delete — no LLM, still a live-corpus mutation (issue #381)
         "/wiki/qa/promote-batch",  # ADR-0023: Direct-tier batch promote — no LLM, still a live-corpus mutation (issue #382)
+        ALIAS_ASSIGN_TEMPLATE,  # ADR-0030 decision 3: Direct-tier assign-alias — no LLM, still a live-corpus mutation (issue #409)
     }
 )
 
@@ -166,15 +179,18 @@ def _normalise_path(raw_path: str) -> str:
 def _canonical_path(raw_path: str) -> str:
     """Normalise, then collapse a parameterized heavy path to its template key.
 
-    ``/wiki/qa/<slug>/refile`` → ``QA_REFILE_TEMPLATE`` and
-    ``/wiki/pages/<slug>`` → ``PAGES_DELETE_TEMPLATE`` so the exact-match
-    classification sets and the budget table see one stable key per endpoint
-    (also keeps per-slug cardinality out of the budget/log keys). Every other
-    path passes through unchanged.
+    ``/wiki/qa/<slug>/refile`` → ``QA_REFILE_TEMPLATE``,
+    ``/wiki/pages/<slug>`` → ``PAGES_DELETE_TEMPLATE``, and
+    ``/wiki/pages/<slug>/aliases`` → ``ALIAS_ASSIGN_TEMPLATE`` so the
+    exact-match classification sets and the budget table see one stable key
+    per endpoint (also keeps per-slug cardinality out of the budget/log
+    keys). Every other path passes through unchanged.
     """
     path = _normalise_path(raw_path)
     if _QA_REFILE_RE.fullmatch(path):
         return QA_REFILE_TEMPLATE
+    if _ALIAS_ASSIGN_RE.fullmatch(path):
+        return ALIAS_ASSIGN_TEMPLATE
     if _PAGES_DELETE_RE.fullmatch(path):
         return PAGES_DELETE_TEMPLATE
     return path

@@ -1,9 +1,17 @@
-"""Deep module per Ousterhout. Public surface: ``delete_full_orphan``, ``PageNotFound``, ``PageCorrupt``, ``PageNotFullOrphan``.
+"""Deep module per Ousterhout. Public surface: ``delete_full_orphan``, ``add_alias``, ``PageNotFound``, ``PageCorrupt``, ``PageNotFullOrphan``, ``InvalidAlias``, ``AliasCollision``.
 
 C11 Confirmed Remediation (tier-B S5, issue #381, ADR-0024/0025) — the first
 delete of a corpus-resident wiki page. ``DELETE /pages/{slug}`` (routes.py)
 wraps ``delete_full_orphan`` (CODING_STANDARD §2.3: all business logic lives
 here, the route stays a shallow HTTP<->exception mapper).
+
+Issue #409 (ADR-0030 decision 3) adds ``add_alias`` — the Direct-class,
+human-surfaces-only assign-alias operation. ``POST /pages/{slug}/aliases``
+(routes.py) wraps it the same way. No LLM, never batches (ADR-0030
+Invariant), and its collision check reuses the SAME shared resolver
+(``slugs.build_alias_resolution_map``) C2 and C12 already consult (ADR-0030
+Invariant: "every consumer of wikilink resolution uses the shared
+resolver").
 
 Predicate (ADR-0025, the only condition under which a live page may be
 deleted): the page is a **full orphan** — its ``sources`` frontmatter is
@@ -36,12 +44,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+
 from ._paths import DOCS_DIR
+from .atomic import write_text_atomic
 from .indexer import _index_lock
 from .lint import check_full_orphan
 from .logger import log_event
-from .slugs import is_bare_slug
-from .wiki_writer import read_existing_frontmatter
+from .slugs import build_alias_resolution_map, is_bare_slug
+from .wiki_writer import read_existing_frontmatter, read_page_parts
 
 # ---------------------------------------------------------------------------
 # Exceptions
@@ -66,6 +77,27 @@ class PageNotFullOrphan(Exception):
     Source, a partial orphan (some citations still resolve), or a page with
     an empty ``sources`` list (ADR-0025: "sources non-empty and every
     citation missing")."""
+
+
+class InvalidAlias(Exception):
+    """Raised when the requested alias is blank/whitespace-only (route ->
+    422) — issue #409. A blank alias would be silently dropped by
+    ``slugs.build_alias_resolution_map`` (it skips blank entries), so
+    accepting one here would report success for an assignment that resolves
+    nothing."""
+
+
+class AliasCollision(Exception):
+    """Raised when ``alias`` already resolves (via the shared resolver) to a
+    DIFFERENT page than the one that just requested it — either a real page
+    slug, or another page's own alias (route -> 409, issue #409, ADR-0030
+    decision 3: "409 with the conflicting owner named — consistent with C12
+    semantics"). Nothing is written."""
+
+    def __init__(self, alias: str, owner: str) -> None:
+        self.alias = alias
+        self.owner = owner
+        super().__init__(f"alias {alias!r} already resolves to page {owner!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -152,3 +184,87 @@ def delete_full_orphan(
 
         path.unlink()
         log_event("orphan_page_deleted", f"slug={slug}")
+
+
+# ---------------------------------------------------------------------------
+# Assign-alias (issue #409, ADR-0030 decision 3)
+# ---------------------------------------------------------------------------
+
+
+def add_alias(
+    slug: str,
+    alias: str,
+    *,
+    wiki_dir: Path | None = None,
+) -> None:
+    """Assign ``alias`` to the entities/concepts page ``slug``.
+
+    Direct-class curator mutation (ADR-0030 decision 3): no LLM involved,
+    never batches (ADR-0030 Invariant), reversible via a frontmatter
+    hand-edit. Surgical frontmatter-only rewrite — ``wiki_writer.
+    read_page_parts`` splits the page into prefix/frontmatter/suffix so the
+    sentinel comment, heading, body, and citation line are preserved
+    byte-for-byte; only the parsed frontmatter dict's ``aliases`` list is
+    mutated and the whole dict is re-serialised (mirrors ``qa.
+    _flip_draft_to_live``'s "rebuild the whole frontmatter, never
+    surgically string-splice" convention, applied here to the raw parsed
+    dict rather than a typed model — reconstructing a ``WikiPageFrontmatter``
+    would force restating every optional field this endpoint never touches).
+
+    The collision check reuses the SAME shared resolver C2 and C12 already
+    consult (``slugs.build_alias_resolution_map``, ADR-0030 Invariant:
+    "every consumer of wikilink resolution uses the shared resolver"),
+    computed BEFORE the write so it reflects the corpus's current state,
+    not the file about to change.
+
+    Idempotent: re-assigning an alias the page already owns is a no-op
+    (success, no rewrite) — it is not "another page's alias", so it is not
+    a collision.
+
+    Args:
+        slug:     Target entities/concepts page slug.
+        alias:    The alias to assign.
+        wiki_dir: Root wiki directory. Defaults to ``indexer.WIKI_DIR``.
+
+    Raises:
+        PageNotFound: ``slug`` does not resolve to an entities/concepts
+            page, OR ``slug`` is not a bare filename component (issue #397
+            — see ``_find_page_path``; rejected before any filesystem
+            access).
+        PageCorrupt: the page exists but its frontmatter cannot be parsed.
+        InvalidAlias: ``alias`` is blank / whitespace-only.
+        AliasCollision: ``alias`` already resolves (via the shared
+            resolver) to a DIFFERENT page — a real page slug or another
+            page's alias. Nothing is written.
+    """
+    alias = alias.strip()
+    if not alias:
+        raise InvalidAlias("alias must not be blank")
+
+    resolved_wiki = _resolve_wiki_dir(wiki_dir)
+
+    with _index_lock:
+        path = _find_page_path(slug, resolved_wiki)
+
+        parts = read_page_parts(path)
+        if parts is None:
+            raise PageCorrupt(slug)
+        prefix, fm, suffix = parts
+
+        existing_aliases = fm.get("aliases") or []
+        if not isinstance(existing_aliases, list):
+            existing_aliases = []
+        if alias in existing_aliases:
+            return  # already assigned to this page — idempotent no-op
+
+        resolution = build_alias_resolution_map(resolved_wiki)
+        owner = resolution.get(alias)
+        if owner is not None:
+            raise AliasCollision(alias, owner)
+
+        fm["aliases"] = [*existing_aliases, alias]
+        fm_text = yaml.dump(fm, default_flow_style=False, allow_unicode=True)
+        if not fm_text.endswith("\n"):
+            fm_text += "\n"
+        write_text_atomic(path, prefix + fm_text + suffix)
+        log_event("alias_assigned", f"slug={slug} alias={alias}")

@@ -5,7 +5,7 @@ HTTP wiring for /health, /index, /chat, /qa/{slug}/promote,
 /lint, /import, /pages/reconcile, /pages/reconcile/apply,
 /pages/collision/merge, /pages/collision/merge/apply,
 /pages/collision/differentiate, /pages/collision/differentiate/apply,
-/pages/{slug} (DELETE). No domain logic."""
+/pages/{slug} (DELETE), /pages/{slug}/aliases (POST). No domain logic."""
 
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ from .ingest import ingest_sources
 from .lint import run_lint
 from .retrieval import query
 from .schemas import (
+    AliasAssignRequest,
     ChatRequest,
     ChatResponse,
     CollisionDifferentiateApplyRequest,
@@ -852,3 +853,58 @@ def delete_page(slug: str) -> None:
 
     # ADR-0025 Invariant: a successful delete triggers exactly one BM25 reindex.
     build_index()
+
+
+# ---------------------------------------------------------------------------
+# /pages/{slug}/aliases — assign-alias (issue #409, ADR-0030 decision 3)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/pages/{slug}/aliases", status_code=204)
+def assign_alias(slug: str, request: AliasAssignRequest) -> None:
+    """Curator endpoint: assign an alias to an existing entities/concepts page.
+
+    issue #409 / ADR-0030 decision 3. Direct class (no LLM, no batch — ADR-0030
+    Invariant): the human authors the mapping in the very gesture. Two Console
+    entry points share this one endpoint (the C2 red-link "Assign Alias"
+    picker and the post-fill honest-miss offer) plus ``kb alias add`` (CLI).
+    No MCP write tool exists for this operation (ADR-0030 Invariant).
+
+    Shallow wrapper around ``pages.add_alias`` (CODING_STANDARD §2.3 — all
+    domain logic lives in ``pages.py``). No reindex here — aliases never
+    enter the BM25 corpus (ADR-0030 Invariant), so there is nothing to
+    reindex; the Console's own re-lint (client-side, ``include_c5=false``)
+    is what refreshes the C2/C12 findings.
+
+    Exception mapping:
+
+    - ``PageNotFound``    → ``404`` (slug has never been written, or was
+      deleted by a concurrent operation)
+    - ``PageCorrupt``     → ``500`` (orphan-visibility — surface broken
+      state rather than silently acting on it)
+    - ``InvalidAlias``    → ``422`` (blank/whitespace-only alias)
+    - ``AliasCollision``  → ``409`` naming the conflicting owner (ADR-0030
+      decision 3: "409 with the conflicting owner named — consistent with
+      C12 semantics"). Nothing is written.
+
+    Returns HTTP 204 No Content on success (mirrors ``DELETE /pages/{slug}``).
+    """
+    try:
+        pages_module.add_alias(slug, request.alias)
+    except pages_module.PageNotFound as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"wiki page '{slug}' not found under entities/ or concepts/",
+        ) from exc
+    except pages_module.PageCorrupt as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"wiki page '{slug}' has corrupt frontmatter: {exc}",
+        ) from exc
+    except pages_module.InvalidAlias as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except pages_module.AliasCollision as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"alias '{exc.alias}' already resolves to page '{exc.owner}'",
+        ) from exc

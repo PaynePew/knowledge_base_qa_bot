@@ -213,6 +213,16 @@ Authorized by GitHub issue #381 (tier-B S5) and [ADR-0025](adr/0025-delete-live-
 
 ---
 
+## `/pages/{slug}/aliases` route (issue #409)
+
+Authorized by GitHub issue #409 and [ADR-0030](adr/0030-alias-frontmatter-link-layer-resolver-linkify.md) decision 3.
+
+| Kind | When fired | Summary template |
+|---|---|---|
+| `alias_assigned` | `pages.add_alias()` successfully assigned a new alias to an entities/concepts page's frontmatter. Only fires on an actual write — the idempotent no-op path (alias already assigned to this page) and every refusal (`PageNotFound` 404, `PageCorrupt` 500, `InvalidAlias` 422, `AliasCollision` 409) do not emit a log entry (mirrors `orphan_page_deleted`'s "only fires on success" convention). | `slug=<slug> alias=<alias>` |
+
+---
+
 ## Vector RAG (Stack B)
 
 Authorized by GitHub issue #103 (Phase 8 Slice 3). Stack B stays decoupled from
