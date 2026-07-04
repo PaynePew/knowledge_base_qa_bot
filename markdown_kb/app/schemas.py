@@ -711,6 +711,34 @@ class AliasAssignRequest(BaseModel):
     alias: str
 
 
+class ResolutionMapResponse(BaseModel):
+    """Response body for ``GET /pages/resolution-map`` (issue #410, ADR-0030
+    decision 5).
+
+    The read-only view every linkify client (Console ``/read/file`` viewer,
+    reader chat answer bodies, chat-side citation viewer) consults to render
+    ``[[wikilinks]]`` as navigation. Both fields derive from the SAME shared
+    resolver (``slugs.build_alias_resolution_map`` — ADR-0030 Invariant), so
+    "does this resolve" can never disagree with what C2 reports for the same
+    corpus.
+
+    ``slugs``: every real entities/concepts page slug -> its wiki-relative
+    path (e.g. ``"wiki/entities/acme-shop.md"``). Carrying the relpath (not
+    just the bare slug) lets a client navigate to a resolved page WITHOUT
+    ever constructing a wiki path from a bare slug itself — the client-side
+    convention CODING_STANDARD §12.5 already establishes for citation links
+    (``source.path`` is server-supplied), extended here to wikilinks.
+
+    ``aliases``: every alias -> its canonical (real) slug — a key into
+    ``slugs`` for the target's relpath. ``[[slug|display]]`` pipe syntax
+    resolves on the slug part; the client renders the display part
+    regardless of whether resolution succeeds.
+    """
+
+    slugs: dict[str, str]
+    aliases: dict[str, str]
+
+
 class LintFindings(BaseModel):
     """Container for all check findings.
 

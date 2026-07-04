@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``delete_full_orphan``, ``add_alias``, ``PageNotFound``, ``PageCorrupt``, ``PageNotFullOrphan``, ``InvalidAlias``, ``AliasCollision``.
+"""Deep module per Ousterhout. Public surface: ``delete_full_orphan``, ``add_alias``, ``get_resolution_map``, ``PageNotFound``, ``PageCorrupt``, ``PageNotFullOrphan``, ``InvalidAlias``, ``AliasCollision``.
 
 C11 Confirmed Remediation (tier-B S5, issue #381, ADR-0024/0025) — the first
 delete of a corpus-resident wiki page. ``DELETE /pages/{slug}`` (routes.py)
@@ -38,6 +38,14 @@ Concurrency: the read-predicate-check-delete sequence runs under
 so a concurrent ``run_lint()`` sweep — which holds the same lock for its
 full read pass — never observes a half-deleted page, and the predicate is
 re-verified against a state a concurrent ``/ingest`` cannot be mutating.
+
+Issue #410 (ADR-0030 decision 5) adds ``get_resolution_map`` — the read-only
+composition behind ``GET /pages/resolution-map``, consumed by every linkify
+client (Console viewer, reader chat, chat-side citation viewer). No lock: a
+pure read of the SAME shared resolver (``slugs.build_alias_resolution_map``)
+every other consumer uses, plus a page-location lookup
+(``slugs.build_slug_paths``) so a client never constructs a wiki path from a
+bare slug itself.
 """
 
 from __future__ import annotations
@@ -51,7 +59,8 @@ from .atomic import write_text_atomic
 from .indexer import _index_lock
 from .lint import check_full_orphan
 from .logger import log_event
-from .slugs import build_alias_resolution_map, is_bare_slug
+from .schemas import ResolutionMapResponse
+from .slugs import build_alias_resolution_map, build_slug_paths, is_bare_slug
 from .wiki_writer import read_existing_frontmatter, read_page_parts
 
 # ---------------------------------------------------------------------------
@@ -268,3 +277,40 @@ def add_alias(
             fm_text += "\n"
         write_text_atomic(path, prefix + fm_text + suffix)
         log_event("alias_assigned", f"slug={slug} alias={alias}")
+
+
+# ---------------------------------------------------------------------------
+# Resolution map (issue #410, ADR-0030 decision 5)
+# ---------------------------------------------------------------------------
+
+
+def get_resolution_map(*, wiki_dir: Path | None = None) -> ResolutionMapResponse:
+    """Build the ADR-0030 linkify resolution-map view for ``GET
+    /pages/resolution-map``.
+
+    Read-only, no lock: this is presentation data derived from two pure
+    reads — ``slugs.build_alias_resolution_map`` (the SAME shared resolver
+    C2 and ``add_alias`` already consult; ADR-0030 Invariant: one resolver,
+    every consumer) and ``slugs.build_slug_paths`` (a page-location lookup,
+    not a resolution decision). A client sees at worst a moment-stale map
+    under a concurrent write, never a torn one — each underlying page read
+    is independent.
+
+    Args:
+        wiki_dir: Root wiki directory. Defaults to ``indexer.WIKI_DIR``.
+
+    Returns:
+        ``ResolutionMapResponse`` with ``slugs`` (real slug -> wiki-relative
+        path) and ``aliases`` (alias -> canonical slug, a key into ``slugs``).
+    """
+    resolved_wiki = _resolve_wiki_dir(wiki_dir)
+
+    resolution = build_alias_resolution_map(resolved_wiki)
+    slug_paths = build_slug_paths(resolved_wiki)
+    # Every non-self entry in the shared resolver's flat map IS an alias by
+    # construction (a real slug always maps to itself — see
+    # build_alias_resolution_map's docstring) — this partitions its output,
+    # it does not make an independent resolvability judgement.
+    aliases = {alias: canonical for alias, canonical in resolution.items() if alias != canonical}
+
+    return ResolutionMapResponse(slugs=slug_paths, aliases=aliases)
