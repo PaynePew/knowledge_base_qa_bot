@@ -367,14 +367,25 @@ def _format_c11_orphans(findings: object, label: str) -> list[str]:
 
 
 def _format_c3_failed_grounding(findings: object, label: str) -> list[str]:
-    """C3 Failed grounding lines, or ``[]`` when there are none."""
+    """C3 Failed grounding lines, or ``[]`` when there are none.
+
+    Renders ``unsupported_claims`` alongside ``reason`` (issue #407,
+    ADR-0017 four-surface parity — the Markdown report already did this in
+    Slice 5-2). An empty claims list (``verifier_unavailable``, or a
+    defensive/legacy page) degrades to an honest "(claims not recorded)"
+    note rather than a blank line.
+    """
     if not findings.failed_grounding:  # type: ignore[attr-defined]
         return []
     lines = [
         f"C3 Failed grounding ({len(findings.failed_grounding)}) — {label}:"  # type: ignore[attr-defined]
     ]
     for f in findings.failed_grounding:  # type: ignore[attr-defined]
-        lines.append(f"  • {f.page_slug} (reason: {f.reason}) — {f.suggested_action}")
+        claims = (
+            "; ".join(f.unsupported_claims) if f.unsupported_claims else "(claims not recorded)"
+        )
+        lines.append(f"  • {f.page_slug} (reason: {f.reason}) — claims: {claims}")
+        lines.append(f"      {f.suggested_action}")
     lines.append("")
     return lines
 

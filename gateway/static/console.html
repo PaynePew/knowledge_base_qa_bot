@@ -1979,6 +1979,7 @@ var LINT_CHROME = {
     partialOrphanAdvisory: "Partial orphan — a Source still exists. Repair the citation; never delete.",
     fillViaImport:       "Fill via Import",
     verifyReask:         "Verify: re-ask",
+    claimsNotRecorded:   "Claims not recorded.",
   },
   zh: {
     reingest:        "重新匯入",
@@ -2012,6 +2013,7 @@ var LINT_CHROME = {
     partialOrphanAdvisory: "部分孤立 — 仍有 Source 存在，請修正引用，勿刪除。",
     fillViaImport:       "透過匯入補齊",
     verifyReask:         "驗證：重新提問",
+    claimsNotRecorded:   "未記錄相關聲明。",
   },
 };
 
@@ -2737,6 +2739,20 @@ function renderLintCard(data, resultEl) {
     return el("div", { class: "lint-row-actions" }, btn, statusMsgEl);
   }
 
+  /* C3's unsupported-claims cell (issue #407, ADR-0017 four-surface parity
+     — the Markdown report already rendered this in Slice 5-2). Kept as a
+     helper (not inlined in ROW_RENDERERS) so the bilingual "not recorded"
+     note can live in the one shared LINT_CHROME home (mirrors
+     reingestAction's noSource pattern above) without per-finding raw
+     fields being wrapped in LINT_CHROME (issue #365 invariant — see
+     ROW_RENDERERS below). Empty ``unsupported_claims`` degrades gracefully
+     to an honest note instead of a blank cell (e.g. verifier_unavailable,
+     which never carries claims, or a defensive/legacy page). */
+  function c3ClaimsSummary(f) {
+    var claims = f.unsupported_claims || [];
+    return claims.length > 0 ? claims.join("; ") : LINT_CHROME[consoleLang].claimsNotRecorded;
+  }
+
   /* Per-check row renderers, keyed by code — driven by the axis loop below.
      C8 and C9 render no actionsEl here: both checks' real actions live in
      the dedicated Curation Queue block instead — C8's Promote/Discard
@@ -2753,7 +2769,7 @@ function renderLintCard(data, resultEl) {
         "stale", "label-updated", reingestAction(f.source, false));
     },
     C3: function(i, f) {
-      return findingRow(i, f.page_slug, f.reason,
+      return findingRow(i, f.page_slug, f.reason + " — " + c3ClaimsSummary(f),
         "grounding", "label-failed", reingestAction(f.source, true));
     },
     C5: function(i, f) {

@@ -427,7 +427,11 @@ class FailedGroundingFinding(BaseModel):
     (LLM call itself failed).
     ``unsupported_claims`` is populated only for ``claim_unsupported``; empty for
     ``verifier_unavailable`` (no claims were extracted when the verifier failed).
-    ``suggested_action`` suggests Source review and re-ingest OR page deletion.
+    ``suggested_action`` splits by ``reason`` (issue #407, ADR-0029 decision 3):
+    ``claim_unsupported`` names the unsupported claims and points at amending the
+    Source — never a bare Re-ingest, since the same unchanged Source feeds the
+    same verifier and fails identically; ``verifier_unavailable`` recommends
+    Re-ingest (a transient failure, not a Source problem).
     """
 
     page_slug: str
