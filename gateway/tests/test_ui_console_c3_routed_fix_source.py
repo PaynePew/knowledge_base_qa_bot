@@ -131,10 +131,20 @@ def test_context_banner_element_exists_and_hidden_by_default():
 
 
 def test_banner_text_carries_filename_and_claims():
+    """fixSourceBannerText is a top-level function (called from the
+    fixSourceAction click handler, not from inside renderLintCard's
+    closure), so it must compute the claims summary itself rather than
+    reach for c3ClaimsSummary — a private helper scoped inside
+    renderLintCard that is NOT visible here (would be a ReferenceError at
+    click time)."""
     text = _console_text()
     body = _function_body(text, "fixSourceBannerText")
     assert "c3SourceFilename(finding)" in body
-    assert "c3ClaimsSummary(finding)" in body
+    assert "finding.unsupported_claims" in body
+    assert "c3ClaimsSummary" not in body, (
+        "fixSourceBannerText must not call renderLintCard's private "
+        "c3ClaimsSummary helper — it is out of scope from top level"
+    )
 
 
 def test_banner_offers_a_view_source_control_wired_to_read_file():

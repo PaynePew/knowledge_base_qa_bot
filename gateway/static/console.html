@@ -2285,11 +2285,18 @@ function c3SourceFilename(finding) {
 /* Banner text carrying the finding's context (AC: Source filename +
    unsupported_claims) into the existing Upload -> Re-ingest -> Lint flow.
    Dynamic per-finding text stays English (mirrors coverageFillContextText's
-   convention above) — only the View Source button label is bilingual via
-   LINT_CHROME. Pure string shaping over server-computed fields (§12.5). */
+   convention above) — only the "not recorded" fallback is bilingual via
+   LINT_CHROME. Pure string shaping over server-computed fields (§12.5).
+   Inlines the same two-line claims-join c3ClaimsSummary (inside
+   renderLintCard's closure) computes, rather than reaching across function
+   scope — this function is called from a top-level click handler
+   (fixSourceAction, via ROW_RENDERERS.C3), not from inside renderLintCard
+   itself, so it cannot see renderLintCard's local helpers. */
 function fixSourceBannerText(finding) {
+  var claims = finding.unsupported_claims || [];
+  var claimsText = claims.length > 0 ? claims.join("; ") : LINT_CHROME[consoleLang].claimsNotRecorded;
   return "Fix the Source: docs/" + c3SourceFilename(finding) +
-    " — unsupported claims: " + c3ClaimsSummary(finding);
+    " — unsupported claims: " + claimsText;
 }
 
 /* Shows the persistent context banner above the pipeline and scrolls it
