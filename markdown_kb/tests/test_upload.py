@@ -1,7 +1,7 @@
 """Hermetic unit tests for the Upload deep module (markdown_kb.app.upload).
 
-AC coverage (issue #169 — Phase 15 S1):
-  - Extension routing: .html/.txt land in raw/, .md lands in docs/
+AC coverage (issue #169 — Phase 15 S1; issue #417 — PDF added to the allow-list):
+  - Extension routing: .html/.txt/.pdf land in raw/, .md lands in docs/
   - Type rejection: unsupported extensions return status=rejected with reason
   - Size limit enforcement: files > MAX_UPLOAD_BYTES are rejected
   - Traversal-safe filename: '..' and absolute paths are rejected
@@ -113,16 +113,43 @@ def test_md_file_lands_in_docs(upload_env):
     assert (docs_dir / "policy.md").exists()
 
 
+def test_pdf_file_lands_in_raw(upload_env):
+    """.pdf files are staged to raw/ as an Import candidate (issue #417, ADR-0011).
+
+    Upload only stages the bytes; Import (not exercised here) does the
+    PDF→Markdown conversion (ADR-0031).
+    """
+    from app.upload import upload_files
+
+    raw_dir = upload_env["raw_dir"]
+
+    files = [("policy.pdf", b"%PDF-1.4 fake content")]
+    batch = upload_files(files)
+
+    assert len(batch.results) == 1
+    result = batch.results[0]
+    assert result.status == "written"
+    assert "raw" in result.target_dir
+    assert (raw_dir / "policy.pdf").exists()
+    # Bytes are staged verbatim — Upload never converts (ADR-0011).
+    assert (raw_dir / "policy.pdf").read_bytes() == b"%PDF-1.4 fake content"
+
+
 # ---------------------------------------------------------------------------
 # Type rejection tests
 # ---------------------------------------------------------------------------
 
 
 def test_unsupported_extension_rejected(upload_env):
-    """Files with extensions not in the allow-list are rejected."""
+    """Files with extensions not in the allow-list are rejected.
+
+    Note: .pdf was the example extension here prior to issue #417 (ADR-0011),
+    which added .pdf to the Upload allow-list. .pptx now exercises the same
+    AC — an extension genuinely outside the supported set.
+    """
     from app.upload import upload_files
 
-    files = [("report.pdf", b"%PDF-1.4")]
+    files = [("report.pptx", b"PK\x03\x04")]
     batch = upload_files(files)
 
     assert len(batch.results) == 1
@@ -242,14 +269,19 @@ def test_clean_filename_accepted(upload_env):
 
 
 def test_batch_result_has_per_file_entry(upload_env):
-    """Each file in the batch has its own result entry."""
+    """Each file in the batch has its own result entry.
+
+    Note: the 4th (rejected) file was .pdf prior to issue #417 (ADR-0011),
+    which added .pdf to the allow-list; .pptx now exercises the same
+    unsupported-extension AC.
+    """
     from app.upload import upload_files
 
     files = [
         ("a.html", b"<h1>A</h1>"),
         ("b.txt", b"B content"),
         ("c.md", b"# C\n"),
-        ("d.pdf", b"%PDF"),  # rejected
+        ("d.pptx", b"PK\x03\x04"),  # rejected
     ]
     batch = upload_files(files)
 
@@ -259,7 +291,7 @@ def test_batch_result_has_per_file_entry(upload_env):
     assert statuses["a.html"] == "written"
     assert statuses["b.txt"] == "written"
     assert statuses["c.md"] == "written"
-    assert statuses["d.pdf"] == "rejected"
+    assert statuses["d.pptx"] == "rejected"
 
 
 def test_rejected_result_has_reason(upload_env):

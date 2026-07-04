@@ -1582,9 +1582,9 @@ function renderUploadCard(results) {
 
     if (r.status === "written") {
       /* .md routes straight to docs/ (final Source — it SKIPS the Import step);
-         .html/.txt land in raw/ and still need Import to convert. Make that
-         distinction explicit so a user who uploaded a .md sees it succeeded
-         here, instead of looking for it (in vain) on the Import card. */
+         .html/.txt/.pdf land in raw/ and still need Import to convert. Make
+         that distinction explicit so a user who uploaded a .md sees it
+         succeeded here, instead of looking for it (in vain) on the Import card. */
       var lastSeg = r.target_dir ? r.target_dir.split(/[/\\]/).filter(Boolean).pop() : "";
       if (lastSeg === "docs") {
         labelText = "in docs";
@@ -3908,7 +3908,7 @@ function markIndexDone() {
 /* ── Upload step body builder ─────────────────────────────── */
 function buildUploadBody(resultEl) {
   /* File input (hidden) */
-  var fileInput = el("input", { type: "file", multiple: "", accept: ".html,.txt,.md", style: "display:none" });
+  var fileInput = el("input", { type: "file", multiple: "", accept: ".html,.txt,.md,.pdf", style: "display:none" });
   var uploadBusy = false;
 
   function setUploadBusy(v) {
@@ -3957,7 +3957,7 @@ function buildUploadBody(resultEl) {
       el("br"),
       "or click to select files"
     ),
-    el("div", { class: "drop-ext", text: "Accepts .html · .txt · .md — max 10 MB each" }),
+    el("div", { class: "drop-ext", text: "Accepts .html · .txt · .md · .pdf — max 10 MB each. HTML/TXT/PDF stage into the inbox; run Import to convert. MD lands straight in docs/." }),
     dropBtn,
     fileInput
   );
@@ -3997,7 +3997,7 @@ var STEP_DEFS = [
   {
     id: "upload",
     label: "Upload",
-    desc: "Upload: stage source files for processing — entry point; .md goes to docs/, HTML/TXT needs Import.",
+    desc: "Upload: stage source files for processing — entry point; .md goes to docs/, HTML/TXT/PDF needs Import.",
     buildBody: function(resultEl) {
       return buildUploadBody(resultEl);
     },

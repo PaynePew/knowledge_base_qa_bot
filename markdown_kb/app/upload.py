@@ -3,10 +3,14 @@
 Upload staging — browser bytes → raw/ or docs/.
 
 Provides ``upload_files(files) -> UploadBatchResult`` which validates each file
-(type allow-list ``.html``/``.txt``/``.md``, size limit, traversal-safe filename),
-routes by extension (``.html``/``.txt`` → ``raw/``, ``.md`` → ``docs/``), writes
-atomically, emits ``upload_*`` Wiki Log events, and returns a structured per-file
-result.
+(type allow-list ``.html``/``.txt``/``.md``/``.pdf``, size limit, traversal-safe
+filename), routes by extension (``.html``/``.txt``/``.pdf`` → ``raw/``, ``.md``
+→ ``docs/``), writes atomically, emits ``upload_*`` Wiki Log events, and returns
+a structured per-file result.
+
+``.pdf`` is staged as an Import candidate exactly like ``.html``/``.txt`` (issue
+#417, PRD #414): Upload never converts, it only stages the bytes — Import
+(``POST /import``) does the PDF→Markdown extraction (ADR-0031).
 
 Per ADR-0011, Upload is a system boundary: all untrusted-input validation lives
 here. ``/import`` is UNCHANGED — Upload only stages bytes; Import converts.
@@ -51,9 +55,13 @@ RAW_DIR: Path = _REPO_ROOT / "raw"
 MAX_UPLOAD_BYTES: int = 10 * 1024 * 1024  # 10 MB
 
 # Allowed file extensions and their target directories (ADR-0011).
+# ``.pdf`` routes to raw/ like ``.html``/``.txt`` — an Import candidate, not a
+# final Source (issue #417, PRD #414); Upload stages bytes only and never
+# converts.
 _ALLOWED_EXTENSIONS: dict[str, str] = {
     ".html": "raw",
     ".txt": "raw",
+    ".pdf": "raw",
     ".md": "docs",
 }
 

@@ -390,13 +390,13 @@ async def upload(files: list[UploadFile]) -> UploadBatchResultSchema:
     unchanged and still converts ``raw/`` → ``docs/``.
 
     Routing:
-      ``.html`` / ``.txt``  →  ``raw/``   (then Import converts to ``docs/``)
-      ``.md``               →  ``docs/``  (already canonical Markdown)
-      Other extensions      →  rejected with reason
+      ``.html`` / ``.txt`` / ``.pdf``  →  ``raw/``   (then Import converts to ``docs/``)
+      ``.md``                          →  ``docs/``  (already canonical Markdown)
+      Other extensions                 →  rejected with reason
 
     Validation (system boundary — all untrusted-input checks live here):
       - Traversal-safe filename (no ``..``, no path separators, no bidi chars)
-      - Type allow-list (``.html`` / ``.txt`` / ``.md``)
+      - Type allow-list (``.html`` / ``.txt`` / ``.md`` / ``.pdf``)
       - Size limit (10 MB per file)
 
     Always returns HTTP 200.  Per-file failures (rejections, errors) are
