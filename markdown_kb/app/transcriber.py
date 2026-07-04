@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``transcribe_available``, ``probe_has_text_layer``, ``transcribe_pdf_bytes``, ``transcribe_source``, ``transcribe_path``, ``get_transcribe_llm``, ``set_page_budget_hook``, ``TranscribeSourceResult``, ``TranscribePathError``, ``TranscribeUnavailable``, ``TranscribePageLimitExceeded``, ``TranscribeBudgetExceeded``, ``TranscribeError``.
+"""Deep module per Ousterhout. Public surface: ``transcribe_available``, ``probe_has_text_layer``, ``transcribe_pdf_bytes``, ``transcribe_source``, ``transcribe_path``, ``get_transcribe_llm``, ``set_page_budget_hook``, ``get_page_budget_hook``, ``TranscribeSourceResult``, ``TranscribePathError``, ``TranscribeUnavailable``, ``TranscribePageLimitExceeded``, ``TranscribeBudgetExceeded``, ``TranscribeError``.
 
 Transcribe — model-assisted PDF conversion (issue #426, ADR-0032). Sits
 beside ``importer.py`` as the second ``raw/`` -> ``docs/`` converter:
@@ -57,8 +57,8 @@ to the vision model. markdown_kb has no dependency on ``gateway`` (ADR-0002's
 one-way Stack boundary), so it cannot charge the Gateway's per-UTC-day USD
 budget ledger itself; ``set_page_budget_hook`` is the inversion point the
 Gateway composition root (``gateway/app/main.py``) wires at startup so both
-Transcribe entries -- the ``/wiki/import`` auto-route and the forced
-``/wiki/transcribe`` -- charge the SAME shared ledger per page, and a hook
+Transcribe entries — the ``/wiki/import`` auto-route and the forced
+``/wiki/transcribe`` — charge the SAME shared ledger per page, and a hook
 that raises ``TranscribeBudgetExceeded`` rejects the file before any vision
 call spends real money (reserve-before-spend). Standalone callers (kb_cli,
 kb_mcp, bare markdown_kb) never install a hook, so the default ``None``
@@ -292,6 +292,18 @@ def set_page_budget_hook(hook: Callable[[int], None] | None) -> None:
     """
     global _page_budget_hook
     _page_budget_hook = hook
+
+
+def get_page_budget_hook() -> Callable[[int], None] | None:
+    """Return the currently-installed page-budget hook, or ``None`` if unset.
+
+    Symmetric public counterpart to ``set_page_budget_hook`` (CODING_STANDARD
+    §2.4 — no reaching into another module's private ``_page_budget_hook``
+    state from outside this module; a caller that needs to introspect or
+    drive the installed hook, e.g. the Gateway's own tests, uses this getter
+    instead).
+    """
+    return _page_budget_hook
 
 
 # ---------------------------------------------------------------------------

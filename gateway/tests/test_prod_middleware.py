@@ -344,7 +344,7 @@ def test_main_registers_transcribe_budget_hook(monkeypatch):
     _fresh_app()
     from markdown_kb.app import transcriber as transcriber_mod
 
-    assert transcriber_mod._page_budget_hook is not None
+    assert transcriber_mod.get_page_budget_hook() is not None
 
 
 def test_transcribe_budget_hook_charges_ledger_then_trips_cap(monkeypatch):
@@ -362,7 +362,7 @@ def test_transcribe_budget_hook_charges_ledger_then_trips_cap(monkeypatch):
 
     import gateway.app.budget as budget_mod
 
-    hook = transcriber_mod._page_budget_hook
+    hook = transcriber_mod.get_page_budget_hook()
     assert hook is not None
 
     before = budget_mod.budget.day_total()

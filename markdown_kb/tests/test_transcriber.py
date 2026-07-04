@@ -292,8 +292,9 @@ def test_no_hook_installed_is_unmetered_and_uncapped(monkeypatch):
     assert fake_llm.call_count == 1
 
 
-def test_set_page_budget_hook_installs_and_clears(monkeypatch):
-    """The public setter installs a hook, and installing None clears it."""
+def test_set_page_budget_hook_installs_and_clears():
+    """The public setter installs a hook (round-tripped via the public getter),
+    and installing None clears it."""
     import app.transcriber as transcriber_module
 
     calls: list[int] = []
@@ -303,10 +304,10 @@ def test_set_page_budget_hook_installs_and_clears(monkeypatch):
 
     transcriber_module.set_page_budget_hook(_hook)
     try:
-        assert transcriber_module._page_budget_hook is _hook
+        assert transcriber_module.get_page_budget_hook() is _hook
     finally:
         transcriber_module.set_page_budget_hook(None)
-    assert transcriber_module._page_budget_hook is None
+    assert transcriber_module.get_page_budget_hook() is None
 
 
 # ---------------------------------------------------------------------------
