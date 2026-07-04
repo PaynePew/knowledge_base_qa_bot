@@ -503,8 +503,12 @@ def transcribe_pdf_bytes_concurrent(
     if page_count > 0:
         with concurrent.futures.ThreadPoolExecutor(max_workers=page_count) as executor:
             futures = [executor.submit(_worker, i) for i in range(page_count)]
+            # Checked in page-index order (not completion order): re-raises
+            # whichever exception belongs to the LOWEST-index failed page —
+            # the executor's own __exit__ still blocks for every other
+            # in-flight page before this call returns (no leaked threads).
             for future in futures:
-                future.result()  # re-raises the first worker exception, if any
+                future.result()
 
     assembled = "\n\n".join(body for body in page_bodies if body)
     if not assembled.strip():
