@@ -57,6 +57,20 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # Ship the tracked compose file BEFORE compose up (issue #451). The box
+      # copy at /opt/ask-wiki-rag/ used to be a static snapshot no step ever
+      # refreshed, so `environment:` changes merged to main (e.g. #448 warmup,
+      # #450 Transcribe flags) silently never reached the service. reset.yml
+      # composes from the same path and inherits whatever this step last shipped.
+      - name: Ship docker-compose.prod.yml to the box
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: docker-compose.prod.yml
+          target: /opt/ask-wiki-rag/
+
       - name: Deploy over SSH and smoke /healthz
         uses: appleboy/ssh-action@v1
         with:
