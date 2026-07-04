@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``run_lint``, ``_check_c11_orphan``, ``check_full_orphan``, ``_check_c3_failed_grounding``, ``_check_c4a_slug_collision``, ``_check_c6_stale``, ``_check_c2_red_links``, ``_check_c1_coverage_gaps``, ``_canonicalise``, ``_candidate_pairs``, ``_judge_page_pair``, ``_check_c5_page_pair``, ``_load_wiki_pages``, ``get_lint_llm``, ``generate_reconcile_draft``, ``find_inbound_references``, ``generate_collision_merge_draft``, ``generate_collision_differentiate_draft``, ``_check_c8_promotion_candidates``, ``_check_c9_qa_staleness``, ``_check_c10_qa_schema_validity``, ``_check_c12_alias_collision``, ``group_findings_by_axis``, ``LINT_CHECK_TAXONOMY``, ``LINT_AXIS_ORDER``, ``LINT_AXIS_LABEL_ZH``, ``remediation_for``, ``RemediationDescriptor``, ``RemediationAction``, ``DIFFERENTIATE_SENTINEL_TEMPLATE``.
+"""Deep module per Ousterhout. Public surface: ``run_lint``, ``_check_c11_orphan``, ``check_full_orphan``, ``_check_c3_failed_grounding``, ``_check_c4a_slug_collision``, ``_check_c6_stale``, ``_check_c2_red_links``, ``_check_c1_coverage_gaps``, ``_canonicalise``, ``_candidate_pairs``, ``_judge_page_pair``, ``_check_c5_page_pair``, ``_load_wiki_pages``, ``get_lint_llm``, ``generate_reconcile_draft``, ``find_inbound_references``, ``generate_collision_merge_draft``, ``generate_collision_differentiate_draft``, ``_check_c8_promotion_candidates``, ``_check_c9_qa_staleness``, ``_check_c10_qa_schema_validity``, ``_check_c12_alias_collision``, ``group_findings_by_axis``, ``LINT_CHECK_TAXONOMY``, ``LINT_AXIS_ORDER``, ``LINT_AXIS_LABEL_ZH``, ``remediation_for``, ``RemediationDescriptor``, ``RemediationAction``, ``DIFFERENTIATE_SENTINEL_TEMPLATE``, ``_c5_verdict_cache_path``, ``_load_c5_verdict_cache``, ``_write_c5_verdict_cache``.
 
 Lint orchestrator — POST /lint health check for the wiki.
 
@@ -250,11 +250,49 @@ Source" control, ``kb lint``, and ``kb_lint_v1`` all read off this SAME
 shared taxonomy value (ADR-0017 parity) — commits nothing itself, mirroring
 the C1/C2 Routed Invariant.
 
+Slice scope (issue #446 — C5 content-hash verdict cache)
+-----------------------------------------------------------------
+No new check. C5 verdicts are a pure function of the two judged pages'
+*content* (frontmatter is irrelevant to the LLM's judgement), so
+``_check_c5_page_pair`` now keys each verdict on the SHA-256 hash of each
+page's body (the same frontmatter-stripped text ``_load_wiki_pages`` already
+produces) rather than re-judging every candidate pair on every audit. A
+cache hit reuses the stored ``PagePairFinding`` verbatim (remapped onto the
+current slug pair) with zero LLM calls; a page whose body is unchanged since
+the last audit therefore never re-costs a call, while editing either page of
+a pair changes that page's hash and re-judges only the pairs containing it —
+every other cached pair is untouched. The cache lives at
+``.kb/c5_verdict_cache.json`` (``_c5_verdict_cache_path``), colocated with
+the other runtime KB state (``.kb/index.json``); like that state it is
+gitignored and ephemeral — a missing file is a cold-start cache miss, never
+an error, and it repopulates from scratch on the next audit after a
+``.kb/`` reset. A corrupt (unparseable / non-object) cache file DOES raise
+(CODING_STANDARD §4.1 fail-fast on persistent-state corruption), but that
+raise is caught by ``run_lint``'s existing per-check continue-on-error
+wrapper — exactly like a C5 LLM outage — so a bad cache file degrades to
+"C5 skipped this run, recorded in ``check_errors['c5']``", never a full
+lint failure or a silently-wrong read. An individual STALE cache entry
+(e.g. left over from a since-changed ``PagePairFinding`` schema) is instead
+treated as an ordinary cache miss — re-judging one pair is a safe degrade
+with the exact same outcome as a cold cache, so one incompatible entry
+cannot poison every other cached verdict. The cache is rebuilt fresh each
+run from exactly the pairs judged this run (hits and misses alike); pairs
+that fall out of candidacy are dropped rather than accumulating forever.
+Metrics: ``_c5_cache_hit_counter`` (reused verdicts, zero LLM calls) joins
+the existing ``_c5_llm_call_counter``, which now counts only actual cache
+*misses* — so ``LintSummary.cost_usd`` reflects real spend, not the
+pre-cache count of every judged pair. Both are surfaced in the
+``lint_completed`` log line (visible cache hit/miss + cost accounting, per
+the issue's AC) without extending ``LintSummary`` or any CLI/MCP/Console
+renderer — out of this slice's scope, per its AC wording ("visible in
+logs").
+
 Read-only invariant
 -------------------
-``run_lint()`` does NOT modify wiki page frontmatter.  It writes only:
-  - ``wiki/lint-report.md``   (Generated index artifact, gitignored)
-  - ``wiki/log.md``           (Runtime trace, append-only)
+``run_lint()`` does NOT modify wiki page frontmatter.  It writes:
+  - ``wiki/lint-report.md``        (Generated index artifact, gitignored)
+  - ``wiki/log.md``                (Runtime trace, append-only)
+  - ``.kb/c5_verdict_cache.json``  (C5 verdict cache, ephemeral, gitignored — issue #446)
 
 Concurrency
 -----------
@@ -282,13 +320,14 @@ Check execution order (cheapest to most expensive)
 10. C10 qa-schema-validity (read qa frontmatter)
 11. C5 page-pair LLM (F1∪F3 filter + LLM) — most expensive last
 
-Authorised by PRD #65 (Phase 5), GitHub issue #66 (Slice 5-1), GitHub issue #67 (Slice 5-2), GitHub issue #68 (Slice 5-3), GitHub issue #69 (Slice 5-4), GitHub issue #70 (Slice 5-5), PRD #78 (Phase 6), GitHub issue #82 (Slice 6-5 Phase 5 amendment), ADR-0023 (Lint Remediation Direct vs Authored), PRD #359 (Lint Remediation tier-A), GitHub issue #361 (Slice S1 — Lint Axis taxonomy), GitHub issue #363 (Slice S3 — Console axis grouping + per-row Direct Remediation + auto-relint), GitHub issue #365 (Slice S5 — Console zh/en language toggle), and GitHub issue #408 (C3 Routed fix-the-Source flow, ADR-0029).
+Authorised by PRD #65 (Phase 5), GitHub issue #66 (Slice 5-1), GitHub issue #67 (Slice 5-2), GitHub issue #68 (Slice 5-3), GitHub issue #69 (Slice 5-4), GitHub issue #70 (Slice 5-5), PRD #78 (Phase 6), GitHub issue #82 (Slice 6-5 Phase 5 amendment), ADR-0023 (Lint Remediation Direct vs Authored), PRD #359 (Lint Remediation tier-A), GitHub issue #361 (Slice S1 — Lint Axis taxonomy), GitHub issue #363 (Slice S3 — Console axis grouping + per-row Direct Remediation + auto-relint), GitHub issue #365 (Slice S5 — Console zh/en language toggle), GitHub issue #408 (C3 Routed fix-the-Source flow, ADR-0029), and GitHub issue #446 (C5 content-hash verdict cache).
 """
 
 from __future__ import annotations
 
 import datetime
 import hashlib
+import json
 import os
 import re
 import string
@@ -335,16 +374,23 @@ _lint_llm = None
 # _check_c5_page_pair can write them and run_lint can read-then-reset, without a
 # global statement (consistent with existing module-level patterns). Index 0
 # holds the current value; run_lint reads and resets both after C5 runs.
-#   _c5_llm_call_counter — pairs actually sent to the LLM judge (== judged count, ≤ cap)
-#   _c5_capped_counter   — candidate pairs NOT judged because they fell below the cap
-#   _c5_pair_errors      — per-pair error strings accumulated during this run; run_lint
-#                          reads and resets, then writes to check_errors["c5"] so the
-#                          continue-on-error per-pair failures surface in the SUCCESS
-#                          payload (server.py docstring / ADR-0016 contract).
+#   _c5_llm_call_counter   — pairs actually sent to the LLM judge this run (cache
+#                            MISSES only, ≤ cap — issue #446 repurposes this from
+#                            "every judged pair" to "every judged pair not served
+#                            from the verdict cache", so LintSummary.cost_usd
+#                            reflects real spend).
+#   _c5_capped_counter     — candidate pairs NOT judged because they fell below the cap
+#   _c5_cache_hit_counter  — judged pairs reused from the content-hash verdict cache
+#                            this run (zero LLM calls — issue #446).
+#   _c5_pair_errors        — per-pair error strings accumulated during this run; run_lint
+#                            reads and resets, then writes to check_errors["c5"] so the
+#                            continue-on-error per-pair failures surface in the SUCCESS
+#                            payload (server.py docstring / ADR-0016 contract).
 # Counting happens once in _check_c5_page_pair (not per-call inside
 # _judge_page_pair) so the bounded-concurrency judge has no shared-counter race.
 _c5_llm_call_counter: list[int] = [0]
 _c5_capped_counter: list[int] = [0]
+_c5_cache_hit_counter: list[int] = [0]
 _c5_pair_errors: list[str] = []
 
 
@@ -2100,6 +2146,78 @@ def generate_collision_differentiate_draft(
     return draft
 
 
+# ---------------------------------------------------------------------------
+# C5 verdict cache — content-hash keyed, skips unchanged page pairs (#446)
+# ---------------------------------------------------------------------------
+
+_C5_CACHE_FILENAME = "c5_verdict_cache.json"
+
+
+def _c5_verdict_cache_path(wiki_dir: Path) -> Path:
+    """Return the C5 verdict cache path for a given ``wiki_dir``.
+
+    Derived from ``wiki_dir``'s parent (the repo root in production — the
+    sibling of ``wiki/`` and ``.kb/index.json`` — or the tmp root in tests)
+    rather than a separate module-level constant. Every existing call site
+    already redirects ``wiki_dir`` to a tmp path for hermetic tests (see
+    ``markdown_kb/tests/lint/conftest.py``), so this derivation gets a
+    hermetic, collision-free cache location for free, with no additional
+    monkeypatch plumbing required.
+    """
+    return wiki_dir.parent / ".kb" / _C5_CACHE_FILENAME
+
+
+def _c5_content_hash(body: str) -> str:
+    """SHA-256 of a wiki page body — the content C5 verdicts are a pure function of.
+
+    Hashes the frontmatter-stripped ``body`` (the same text ``_load_wiki_pages``
+    feeds to the LLM judge), not the raw file text, so a frontmatter-only change
+    (e.g. ``updated`` bumped by a re-ingest with identical prose) does not
+    invalidate a cached verdict — only a change to the judged content does.
+    """
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def _c5_cache_key(body_a: str, body_b: str) -> str:
+    """Cache key for a judged pair: its two content hashes, in call order.
+
+    Callers always pass ``body_a``/``body_b`` for the already slug-canonical
+    ``(slug_a, slug_b)`` pair (``slug_a <= slug_b`` — the same ordering
+    ``_candidate_pairs`` establishes), so the key is stable across runs for
+    the same two pages regardless of content changes elsewhere in the wiki.
+    """
+    return f"{_c5_content_hash(body_a)}:{_c5_content_hash(body_b)}"
+
+
+def _load_c5_verdict_cache(cache_path: Path) -> dict[str, dict]:
+    """Load the C5 verdict cache from disk.
+
+    Returns ``{}`` when the file does not exist — a cold cache is the
+    expected steady state right after a ``.kb/`` reset (issue #446's
+    ephemeral-cache framing), not an error.
+
+    A corrupt file (unparseable JSON, or JSON that is not an object) still
+    raises — CODING_STANDARD §4.1 fail-fast on persistent-state corruption,
+    mirroring ``indexer.load_index_json``. The caller is ``_check_c5_page_pair``,
+    itself wrapped by ``run_lint``'s existing per-check continue-on-error
+    handler, so this degrades to "C5 skipped this run, recorded in
+    check_errors['c5']" rather than a full lint failure or a silently-empty
+    (and therefore silently-wrong-cost) cache read.
+    """
+    if not cache_path.exists():
+        return {}
+    payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"C5 verdict cache at {cache_path} is not a JSON object")
+    return payload
+
+
+def _write_c5_verdict_cache(cache_path: Path, cache: dict[str, dict]) -> None:
+    """Persist the C5 verdict cache atomically (CODING_STANDARD §2.6)."""
+    payload = json.dumps(cache, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
+    write_text_atomic(cache_path, payload)
+
+
 def _check_c5_page_pair(
     wiki_dir: Path,
 ) -> list[PagePairFinding]:
@@ -2113,14 +2231,17 @@ def _check_c5_page_pair(
        pre-filter (issue #194). Pairs below the cap are NOT judged; their count
        is recorded in ``_c5_capped_counter`` so the report can surface them as
        "not judged (capped)" rather than dropping them silently.
-    4. Judge the surviving pairs via ``_judge_page_pair``.
+    4. Content-hash verdict cache (issue #446): a judged pair whose two bodies'
+       SHA-256 hashes match a stored verdict reuses it with zero LLM calls;
+       everything else falls through to ``_judge_page_pair``.
     5. Filter out findings with severity == "none".
     6. Continue-on-error: if the LLM raises for a pair, log the pair skipped
        and retain prior findings.
 
     Records C5 run metrics for ``run_lint`` (read-then-reset there):
-    ``_c5_llm_call_counter`` (judged == LLM calls) and ``_c5_capped_counter``
-    (candidates not judged because they fell below the cap).
+    ``_c5_llm_call_counter`` (actual LLM calls == cache misses, ≤ cap),
+    ``_c5_capped_counter`` (candidates not judged because they fell below the
+    cap), and ``_c5_cache_hit_counter`` (judged pairs reused from the cache).
 
     Returns findings sorted by severity order (direct → tension → duplicate),
     then alphabetically by page_a slug. The sort makes output order independent
@@ -2143,7 +2264,6 @@ def _check_c5_page_pair(
 
     # Record metrics up front so they reflect intent even if judging is empty.
     _c5_capped_counter[0] = len(capped_pairs)
-    _c5_llm_call_counter[0] = len(judged_pairs)
 
     findings: list[PagePairFinding] = []
     errors: list[str] = []
@@ -2151,20 +2271,66 @@ def _check_c5_page_pair(
     # Reset the module-level per-pair error accumulator for this run.
     _c5_pair_errors.clear()
 
+    # --- Content-hash verdict cache (issue #446) ---
+    # A corrupt cache file raises here (fail-fast, §4.1); run_lint's per-check
+    # continue-on-error wrapper is the safety net (see _load_c5_verdict_cache).
+    cache_path = _c5_verdict_cache_path(wiki_dir)
+    cache = _load_c5_verdict_cache(cache_path)
+
+    # Computed once per pair and reused below (cache lookup, then either the
+    # hit path or the fresh_cache write after judging) so a pair's content
+    # hash is never recomputed.
+    pair_keys: dict[tuple[str, str], str] = {
+        (slug_a, slug_b): _c5_cache_key(pages[slug_a]["body"], pages[slug_b]["body"])
+        for slug_a, slug_b in judged_pairs
+    }
+
+    fresh_cache: dict[str, dict] = {}
+    to_judge: list[tuple[str, str]] = []
+    cache_hits = 0
+
+    for pair in judged_pairs:
+        slug_a, slug_b = pair
+        key = pair_keys[pair]
+        cached_entry = cache.get(key)
+        finding: PagePairFinding | None = None
+        if isinstance(cached_entry, dict):
+            try:
+                finding = PagePairFinding(**{**cached_entry, "page_a": slug_a, "page_b": slug_b})
+            except (TypeError, ValueError):
+                # Stale/incompatible entry (e.g. the schema evolved since it was
+                # written) — treat as a miss rather than poisoning the whole
+                # cache file; re-judging one pair is a safe degrade with the
+                # exact same outcome as a cold cache.
+                finding = None
+        if finding is not None:
+            cache_hits += 1
+            fresh_cache[key] = finding.model_dump()
+            if finding.severity != "none":
+                findings.append(finding)
+        else:
+            to_judge.append(pair)
+
+    _c5_llm_call_counter[0] = len(to_judge)
+    _c5_cache_hit_counter[0] = cache_hits
+
     def _judge(pair: tuple[str, str]) -> PagePairFinding:
         slug_a, slug_b = pair
         return _judge_page_pair(slug_a, pages[slug_a]["body"], slug_b, pages[slug_b]["body"])
 
-    # Bounded concurrency: the surviving (≤cap) calls are network-bound LLM
-    # round-trips, so a small thread pool cuts wall-time without unbounded fan-out.
-    # Continue-on-error is per-pair: one failed judge never sinks the others.
-    if judged_pairs:
-        with ThreadPoolExecutor(max_workers=min(concurrency, len(judged_pairs))) as executor:
-            future_to_pair = {executor.submit(_judge, pair): pair for pair in judged_pairs}
+    # Bounded concurrency: the surviving (≤cap, cache-miss) calls are
+    # network-bound LLM round-trips, so a small thread pool cuts wall-time
+    # without unbounded fan-out. Continue-on-error is per-pair: one failed
+    # judge never sinks the others.
+    if to_judge:
+        with ThreadPoolExecutor(max_workers=min(concurrency, len(to_judge))) as executor:
+            future_to_pair = {executor.submit(_judge, pair): pair for pair in to_judge}
             for future in as_completed(future_to_pair):
-                slug_a, slug_b = future_to_pair[future]
+                pair = future_to_pair[future]
+                slug_a, slug_b = pair
                 try:
                     finding = future.result()
+                    fresh_cache[pair_keys[pair]] = finding.model_dump()
                     if finding.severity != "none":
                         findings.append(finding)
                 except Exception as exc:  # noqa: BLE001
@@ -2179,6 +2345,19 @@ def _check_c5_page_pair(
         log_event(
             "lint_check_error",
             f"check=c5 pairs_failed={len(errors)} first_error={errors[0][:200]}",
+        )
+
+    # Persist the rebuilt cache: exactly this run's judged pairs (hits and
+    # fresh misses alike), so a pair that fell out of candidacy is dropped
+    # rather than accumulating forever. A write failure is non-fatal (the
+    # findings above were already computed) — logged, not raised, so a full
+    # audit's results are never discarded over an ephemeral-cache write hiccup.
+    try:
+        _write_c5_verdict_cache(cache_path, fresh_cache)
+    except OSError as exc:
+        log_event(
+            "lint_check_error",
+            f"check=c5_cache exc={type(exc).__name__}: {exc}",
         )
 
     # Sort: severity order, then alphabetical by page_a
@@ -3322,21 +3501,27 @@ def run_lint(
         llm_calls: int = 0
         cost_usd: float = 0.0
         c5_pairs_capped: int = 0
+        c5_cache_hits: int = 0
         if include_c5:
             try:
                 page_pairs = _check_c5_page_pair(resolved_wiki)
                 # _check_c5_page_pair records exact run metrics in module-level
-                # counters (one LLM call per judged pair, capped at
-                # KB_LINT_C5_MAX_PAIRS): llm_calls is the judged count and
-                # c5_pairs_capped the not-judged remainder. Read then reset both
-                # so a later run in the same process starts clean.
+                # counters: llm_calls is the judged-and-NOT-cached count (actual
+                # LLM calls, issue #446), c5_pairs_capped the not-judged
+                # (below-cap) remainder, and c5_cache_hits the judged pairs
+                # reused from the content-hash verdict cache with zero LLM
+                # calls. Read then reset all three so a later run in the same
+                # process starts clean.
                 llm_calls = _c5_llm_call_counter[0]
                 c5_pairs_capped = _c5_capped_counter[0]
+                c5_cache_hits = _c5_cache_hit_counter[0]
                 # gpt-4o-mini pricing (2025): $0.15/1M input tokens, $0.60/1M output tokens.
                 # Rough estimate ~500 input + 150 output tokens/call ≈ $0.000165/call.
+                # llm_calls already excludes cache hits, so this reflects real spend.
                 cost_usd = round(llm_calls * 0.000165, 6)
                 _c5_llm_call_counter[0] = 0
                 _c5_capped_counter[0] = 0
+                _c5_cache_hit_counter[0] = 0
                 # Per-pair LLM errors are caught inside _check_c5_page_pair
                 # (continue-on-error) but surfaced here in check_errors["c5"]
                 # so the SUCCESS payload reflects the partial failure.
@@ -3409,7 +3594,8 @@ def run_lint(
     by_check_str = ",".join(f"{k}:{v}" for k, v in findings_by_check.items())
     log_event(
         "lint_completed",
-        f"findings={total} by_check={by_check_str} llm_calls={llm_calls} cost_usd={cost_usd:.6f} errors={len(check_errors)}",
+        f"findings={total} by_check={by_check_str} llm_calls={llm_calls} cost_usd={cost_usd:.6f} "
+        f"c5_cache_hits={c5_cache_hits} errors={len(check_errors)}",
         log_path=resolved_log,
     )
 

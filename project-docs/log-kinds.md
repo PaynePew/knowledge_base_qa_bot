@@ -193,13 +193,13 @@ three kinds here; the emitters arrive across slices 6-1 / 6-2 / 6-3.
 
 ## `/lint` route
 
-Authorized by GitHub issue #65 (Phase 5 PRD) and issue #66 (Slice 5-1).
+Authorized by GitHub issue #65 (Phase 5 PRD), issue #66 (Slice 5-1), and issue #446 (C5 content-hash verdict cache).
 
 | Kind | When fired | Summary template |
 |---|---|---|
 | `lint_started` | `run_lint()` enters | _(no payload beyond timestamp)_ |
-| `lint_completed` | `run_lint()` exits (including when some checks failed) | `findings=N by_check=c11:A,c3:B,c4a:C,c6:D,c2:E,c1:F,c5:G llm_calls=K cost_usd=X errors=M` |
-| `lint_check_error` | An individual check raises (continue-on-error; other checks still run) | `check=<name> exc=<ExcClass>: <msg>` |
+| `lint_completed` | `run_lint()` exits (including when some checks failed) | `findings=N by_check=c11:A,c3:B,c4a:C,c6:D,c2:E,c1:F,c5:G llm_calls=K cost_usd=X c5_cache_hits=H errors=M` — `llm_calls` counts only actual C5 cache MISSES (issue #446); `c5_cache_hits` is the judged pairs reused from `.kb/c5_verdict_cache.json` with zero LLM calls, so `cost_usd` reflects real spend, not the pre-cache judged-pair count. |
+| `lint_check_error` | An individual check raises (continue-on-error; other checks still run); also fired (non-fatally) when the C5 verdict cache write fails | `check=<name> exc=<ExcClass>: <msg>` — `<name>` is `c5_cache` for a cache write failure (issue #446), distinct from `c5` (the LLM judging check itself) |
 
 No per-finding log entries — findings live in `wiki/lint-report.md` as the source of truth (deliberate noise reduction, per PRD #65 Implementation Decision §Wiki Log entries).
 
