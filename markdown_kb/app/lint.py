@@ -231,6 +231,25 @@ Console pairs this with a user-triggered "Verify: re-ask" control (one
 ``POST /chat`` with a sample query) that both proves closure to the human
 and writes the resolving ``chat`` entry this check reads.
 
+Slice scope (Lint Remediation tier-B — issue #408, ADR-0029 decisions 2-4)
+-----------------------------------------------------------------
+No new check. C3 is the first finding carrying **two** remediation classes at
+once: its executable Direct ``reingest_retry`` action stays wired unchanged
+(``verifier_unavailable`` is a transient failure Re-ingest genuinely fixes),
+but ``claim_unsupported`` — C3's dominant failure mode — has no mechanical
+fix at all: the missing ingredient (what the Source *should* say) is
+knowledge only the human can supply, exactly the Routed definition
+(ADR-0027). Rather than repurpose the ``route`` field (which every existing
+consumer, including a pre-existing unit test, reads as "this check's ONE
+tier is Routed"), ``RemediationDescriptor`` gains a SEPARATE
+``secondary_route`` field so a check can carry an additional Routed
+navigation on top of its primary tier without ambiguity: C3 stays
+``tier="direct"`` (the Direct action is still real and still wired) and
+``secondary_route="fix-source"`` names the navigation the Console's "Fix
+Source" control, ``kb lint``, and ``kb_lint_v1`` all read off this SAME
+shared taxonomy value (ADR-0017 parity) — commits nothing itself, mirroring
+the C1/C2 Routed Invariant.
+
 Read-only invariant
 -------------------
 ``run_lint()`` does NOT modify wiki page frontmatter.  It writes only:
@@ -263,7 +282,7 @@ Check execution order (cheapest to most expensive)
 10. C10 qa-schema-validity (read qa frontmatter)
 11. C5 page-pair LLM (F1∪F3 filter + LLM) — most expensive last
 
-Authorised by PRD #65 (Phase 5), GitHub issue #66 (Slice 5-1), GitHub issue #67 (Slice 5-2), GitHub issue #68 (Slice 5-3), GitHub issue #69 (Slice 5-4), GitHub issue #70 (Slice 5-5), PRD #78 (Phase 6), GitHub issue #82 (Slice 6-5 Phase 5 amendment), ADR-0023 (Lint Remediation Direct vs Authored), PRD #359 (Lint Remediation tier-A), GitHub issue #361 (Slice S1 — Lint Axis taxonomy), GitHub issue #363 (Slice S3 — Console axis grouping + per-row Direct Remediation + auto-relint), and GitHub issue #365 (Slice S5 — Console zh/en language toggle).
+Authorised by PRD #65 (Phase 5), GitHub issue #66 (Slice 5-1), GitHub issue #67 (Slice 5-2), GitHub issue #68 (Slice 5-3), GitHub issue #69 (Slice 5-4), GitHub issue #70 (Slice 5-5), PRD #78 (Phase 6), GitHub issue #82 (Slice 6-5 Phase 5 amendment), ADR-0023 (Lint Remediation Direct vs Authored), PRD #359 (Lint Remediation tier-A), GitHub issue #361 (Slice S1 — Lint Axis taxonomy), GitHub issue #363 (Slice S3 — Console axis grouping + per-row Direct Remediation + auto-relint), GitHub issue #365 (Slice S5 — Console zh/en language toggle), and GitHub issue #408 (C3 Routed fix-the-Source flow, ADR-0029).
 """
 
 from __future__ import annotations
@@ -2657,11 +2676,23 @@ class RemediationDescriptor(NamedTuple):
     leaves it ``None``. Routed has no gate and no action to execute: the
     affordance it drives is pure navigation, so a consumer never mistakes it
     for something it could batch or approve.
+
+    ``secondary_route`` (issue #408, ADR-0029) is the one field a check sets
+    when it belongs to TWO remediation classes at once instead of one —
+    today only C3: its primary tier stays ``"direct"`` (the executable
+    ``reingest_retry`` action is unaffected), but ``claim_unsupported``'s
+    real fix — amending what the Source says — is knowledge only the human
+    can supply, so C3 ALSO carries a Routed navigation alongside its Direct
+    action. Kept as a field distinct from ``route`` (rather than reusing it)
+    so ``route`` stays the unambiguous "this check's ONE tier IS Routed"
+    signal for every existing C1/C2-only consumer; ``None`` for every check
+    that is not C3.
     """
 
     tier: str  # "direct" | "authored" | "confirmed" | "routed" | "deferred"
     actions: tuple[RemediationAction, ...] = ()
     route: str | None = None
+    secondary_route: str | None = None
 
 
 # code -> RemediationDescriptor. Direct-tier actions wire to the *existing*
@@ -2701,10 +2732,22 @@ class RemediationDescriptor(NamedTuple):
 # surface, no UI"). A follow-up slice adds the real ``RemediationAction``
 # once that endpoint exists — until then this entry only classifies the
 # tier and supplies the zh/en label via the shared taxonomy.
+# C3 (issue #408, ADR-0029 decisions 2-4) is the first entry carrying TWO
+# remediation classes: it stays ``"direct"`` (the ``reingest_retry`` action
+# below is unaffected — ``verifier_unavailable`` is a transient failure
+# Re-ingest genuinely fixes) AND sets ``secondary_route="fix-source"`` — for
+# ``claim_unsupported``, the real fix (what the Source should say) is
+# knowledge only the human can supply, exactly the Routed definition
+# (ADR-0027), so the Console's "Fix Source" control, ``kb lint``, and
+# ``kb_lint_v1`` all navigate to the SAME existing Upload -> Re-ingest ->
+# Lint machinery this taxonomy already names elsewhere, per finding — it
+# commits nothing itself (ADR-0029 Invariant).
 _REMEDIATION_TAXONOMY: dict[str, RemediationDescriptor] = {
     "C6": RemediationDescriptor("direct", (RemediationAction("reingest", "source"),)),
     "C3": RemediationDescriptor(
-        "direct", (RemediationAction("reingest_retry", "source", force=True),)
+        "direct",
+        (RemediationAction("reingest_retry", "source", force=True),),
+        secondary_route="fix-source",
     ),
     "C11": RemediationDescriptor("confirmed", (RemediationAction("delete", "page_slug"),)),
     "C5": RemediationDescriptor("authored"),
