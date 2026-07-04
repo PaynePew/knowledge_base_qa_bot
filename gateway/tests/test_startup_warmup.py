@@ -88,6 +88,7 @@ def test_warm_openai_clients_calls_every_client_when_enabled(monkeypatch):
 
 
 def test_warm_hybrid_indexes_calls_ensure_indexes_loaded(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-457")
     calls: list[int] = []
     monkeypatch.setattr(warmup_module, "_ensure_hybrid_indexes_loaded", lambda: calls.append(1))
 
@@ -96,21 +97,39 @@ def test_warm_hybrid_indexes_calls_ensure_indexes_loaded(monkeypatch):
     assert calls == [1]
 
 
-def test_warm_hybrid_indexes_swallows_failure_and_logs_it(monkeypatch, tmp_path):
-    """A failing index load must never block Gateway startup (best-effort)."""
+def test_warm_hybrid_indexes_skips_and_logs_when_key_absent(monkeypatch, tmp_path):
+    """Issue #457 AC1/AC3: a keyless boot SKIPS the hybrid warmup (does not even
+    attempt the index load) and logs ``status=skipped`` — the boot stays green.
+    """
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     log_path = tmp_path / "gateway" / "log.md"
     monkeypatch.setattr(gateway_logger, "LOG_PATH", log_path)
+
+    calls: list[int] = []
+    monkeypatch.setattr(warmup_module, "_ensure_hybrid_indexes_loaded", lambda: calls.append(1))
+
+    warmup_module.warm_hybrid_indexes()  # must not raise
+
+    assert calls == [], "keyless boot must not attempt the index load at all"
+    text = log_path.read_text(encoding="utf-8")
+    assert "startup_warmup" in text
+    assert "target=hybrid_dense_index status=skipped reason=no_openai_api_key" in text
+
+
+def test_warm_hybrid_indexes_propagates_failure_when_key_present(monkeypatch):
+    """Issue #457 AC2: with a key present, a seed-load failure PROPAGATES —
+    it is no longer caught and logged, so the Gateway boot fails fast instead
+    of reporting healthy on a broken hybrid stack.
+    """
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-457")
 
     def _raise() -> None:
         raise RuntimeError("boom")
 
     monkeypatch.setattr(warmup_module, "_ensure_hybrid_indexes_loaded", _raise)
 
-    warmup_module.warm_hybrid_indexes()  # must not raise
-
-    text = log_path.read_text(encoding="utf-8")
-    assert "startup_warmup" in text
-    assert "target=hybrid_dense_index status=failed exc=RuntimeError" in text
+    with pytest.raises(RuntimeError, match="boom"):
+        warmup_module.warm_hybrid_indexes()
 
 
 # ---------------------------------------------------------------------------
@@ -170,8 +189,12 @@ def cold_gateway_env(tmp_path, monkeypatch):
     Hybrid: build + persist a REAL dense index (offline fake embeddings) over
     one synthetic Section, then clear the in-memory ``vectorstore`` to
     simulate a fresh process — the ONLY way it can come back is the Gateway
-    lifespan's ``warm_hybrid_indexes()`` under test.
+    lifespan's ``warm_hybrid_indexes()`` under test. ``OPENAI_API_KEY`` is set
+    to a dummy value so the warmup actually runs deterministically (issue
+    #457 gates it on key presence) regardless of whatever the host machine's
+    own ``.env`` does or does not set.
     """
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-457-cold-gateway")
     monkeypatch.setattr(mk_logger, "LOG_PATH", tmp_path / "wiki" / "log.md")
     monkeypatch.setattr(mk_indexer, "INDEX_PATH", tmp_path / ".kb" / "index.json")
     monkeypatch.setattr(mk_indexer, "WIKI_DIR", tmp_path / "wiki")
@@ -217,6 +240,39 @@ def test_cold_gateway_warms_hybrid_dense_index_on_startup(cold_gateway_env):
             "hybrid_kb's dense index must be populated by the Gateway lifespan "
             "alone — no /chat or /hybrid/index call was made"
         )
+
+
+def test_cold_gateway_fails_boot_on_corrupt_hybrid_seed_when_key_present(tmp_path, monkeypatch):
+    """Issue #457 AC2: a key is present AND the committed hybrid dense seed is
+    corrupt (present ``.kb/hybrid_dense/`` dir, missing ``metadata.json`` —
+    ``load_dense_index``'s own documented fail-fast trigger) -> the Gateway
+    lifespan raises and ``TestClient`` never finishes entering, so the process
+    never reaches ``yield`` and never reports healthy — closing the gap where
+    this used to boot "healthy" and 500 on the first real ``stack=hybrid``
+    query instead.
+    """
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-457-corrupt-seed")
+    monkeypatch.setattr(mk_logger, "LOG_PATH", tmp_path / "wiki" / "log.md")
+    monkeypatch.setattr(mk_indexer, "INDEX_PATH", tmp_path / ".kb" / "index.json")
+    monkeypatch.setattr(mk_indexer, "WIKI_DIR", tmp_path / "wiki")
+
+    monkeypatch.setattr(vr_indexer, "FAISS_INDEX_DIR", tmp_path / ".kb" / "faiss_index")
+    monkeypatch.setattr(vr_logger, "LOG_PATH", tmp_path / "vector_rag" / "log.md")
+    monkeypatch.setattr(vr_indexer, "get_embeddings", lambda: _FakeEmbeddings())
+
+    monkeypatch.setattr(hk_logger, "LOG_PATH", tmp_path / "hybrid_kb" / "log.md")
+    corrupt_dense_dir = tmp_path / ".kb" / "hybrid_dense"
+    corrupt_dense_dir.mkdir(parents=True)  # present dir, no metadata.json -> fail-fast
+    monkeypatch.setattr(dense_index, "DENSE_INDEX_DIR", corrupt_dense_dir)
+    monkeypatch.setattr(dense_index, "get_embeddings", lambda: _FakeEmbeddings())
+    dense_index.vectorstore = None
+
+    from gateway.app.main import app as gateway_app
+
+    with pytest.raises(RuntimeError, match="metadata.json"), TestClient(gateway_app):
+        pass
+
+    dense_index.vectorstore = None
 
 
 @pytest.fixture()
