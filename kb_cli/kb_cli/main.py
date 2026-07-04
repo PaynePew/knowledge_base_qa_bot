@@ -35,6 +35,10 @@ thin sub-command wrapping ``markdown_kb.app.pages.add_alias`` — Direct-class,
 never batches, no reindex (aliases never enter BM25). Same human-surfaces-only
 rationale as ``kb qa``: no MCP equivalent (MCP sees aliases via lint/read
 visibility, writes none).
+
+``kb transcribe <path>`` (issue #426 / ADR-0032) force-transcribes a local
+PDF via the model-assisted Transcribe converter, bypassing the text-layer
+probe ``kb import`` applies automatically — the designed-PDF escape hatch.
 """
 
 from __future__ import annotations
@@ -262,6 +266,51 @@ def import_cmd(
     typer.echo(
         f"Imported: {input_path.name} → docs/{docs_basename} "
         f"[{result.original_format}] status={result.status}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: kb transcribe <path>
+# ---------------------------------------------------------------------------
+
+
+@app.command(name="transcribe")
+def transcribe_cmd(
+    path: str = typer.Argument(..., help="Path to the local PDF file to force-transcribe."),
+) -> None:
+    """Force-transcribe a local PDF into the knowledge base (issue #426, ADR-0032).
+
+    Stages the file into ``raw/`` under its basename, then runs the
+    model-assisted Transcribe conversion unconditionally — bypassing the
+    text-layer probe ``kb import`` applies automatically. Use this for a
+    digital-native PDF whose mechanical extraction came out degraded (the
+    designed-PDF escape hatch), or any PDF you want re-converted via the
+    vision model regardless of what the probe would decide.
+
+    Exit codes follow the ADR-0015 CLI contract:
+        0   — success
+        1   — transcription failure (invalid file, unavailable, page limit,
+              model failure)
+        2   — bad CLI usage (missing argument, etc.)
+    """
+    from pathlib import Path
+
+    from markdown_kb.app.transcriber import TranscribePathError, transcribe_path
+
+    input_path = Path(path)
+    try:
+        result = transcribe_path(input_path)
+    except TranscribePathError as exc:
+        typer.echo(f"Error [{exc.error_type}]: {exc.message}", err=True)
+        raise typer.Exit(code=1) from None
+    except OSError as exc:
+        typer.echo(f"Error [IOError]: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+
+    docs_basename = Path(result.docs_path).name
+    typer.echo(
+        f"Transcribed: {input_path.name} → docs/{docs_basename} "
+        f"[model={result.transcribe_model}] status={result.status}"
     )
 
 

@@ -2,7 +2,7 @@
 
 HTTP wiring for /health, /index, /chat, /qa/{slug}/promote,
 /qa/promote-batch, /qa/{slug} (DELETE, PUT), /qa/{slug}/refile, /ingest,
-/lint, /import, /pages/reconcile, /pages/reconcile/apply,
+/lint, /import, /transcribe, /pages/reconcile, /pages/reconcile/apply,
 /pages/collision/merge, /pages/collision/merge/apply,
 /pages/collision/differentiate, /pages/collision/differentiate/apply,
 /pages/{slug} (DELETE), /pages/{slug}/aliases (POST),
@@ -55,7 +55,11 @@ from .schemas import (
     ReconcileGenerateRequest,
     ReconcileGenerateResponse,
     ResolutionMapResponse,
+    TranscribeRequest,
+    TranscribeResponse,
 )
+from .transcriber import TranscribePathError
+from .transcriber import transcribe_source as run_transcribe
 
 router = APIRouter()
 
@@ -479,6 +483,58 @@ def import_raw(req: ImportRequest | None = None) -> ImportResponse:
             )
             for f in batch.failed_sources
         ],
+    )
+
+
+# ---------------------------------------------------------------------------
+# /transcribe — Transcribe force entry (issue #426, ADR-0032)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/transcribe", response_model=TranscribeResponse)
+def transcribe_raw(req: TranscribeRequest) -> TranscribeResponse:
+    """Force-transcribe one named file already staged under ``raw/``.
+
+    issue #426 / ADR-0032: the designed-PDF escape hatch — bypasses the
+    text-layer probe that ``POST /import`` applies automatically, always
+    running the model-assisted conversion. Single-source only, no batch mode
+    (mirrors the CLI's ``kb transcribe <path>``, which stages a local file
+    into ``raw/`` first and then calls the same underlying deep-module
+    function this route calls).
+
+    Shallow wrapper around ``transcriber.transcribe_source`` (CODING_STANDARD
+    §2.3 — all domain logic lives in ``transcriber.py``).
+
+    Raises:
+        HTTP 400: invalid filename / source path / unsupported extension
+            (Transcribe only handles ``.pdf``).
+        HTTP 404: the named file does not exist under ``raw/``.
+        HTTP 413: the PDF's page count exceeds ``KB_TRANSCRIBE_MAX_PAGES``.
+        HTTP 500: a page failed transcription after bounded retry, or an
+            atomic-write ``IOError``.
+        HTTP 503: Transcribe is unavailable (missing ``OPENAI_API_KEY`` or
+            ``KB_TRANSCRIBE_ENABLED`` not set).
+    """
+    try:
+        result = run_transcribe(req.source)
+    except TranscribePathError as exc:
+        status_map = {
+            "FileNotFoundError": 404,
+            "InvalidFilename": 400,
+            "InvalidSourcePath": 400,
+            "UnsupportedExtension": 400,
+            "TranscribeUnavailable": 503,
+            "TranscribePageLimitExceeded": 413,
+        }
+        status_code = status_map.get(exc.error_type, 500)
+        raise HTTPException(status_code=status_code, detail=exc.message) from exc
+
+    return TranscribeResponse(
+        raw_path=result.raw_path,
+        docs_path=result.docs_path,
+        content_sha256=result.content_sha256,
+        transcribe_model=result.transcribe_model,
+        status=result.status,
     )
 
 

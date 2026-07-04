@@ -40,6 +40,18 @@ Regenerates six KB-scale PDFs under ``raw_import/``:
   with a simple (non-CID) font whose ``/ToUnicode`` CMap is fully
   hand-specified, so pdfminer's text extraction returns exactly the planted
   codepoints regardless of what the (irrelevant, never-rendered) glyphs are.
+- ``transcribe_scanned_cjk.pdf`` — issue #426 / ADR-0032: the ONE fixture
+  backing Transcribe's single authorised ``@pytest.mark.live`` smoke test.
+  Traditional Chinese text (same body as ``sample_cjk.pdf``, so the two read
+  as a matched pair: one real text layer, one scanned proxy of the same
+  content) is rasterized to a Pillow image via a real installed CJK TrueType
+  font (``kaiu.ttf`` / DFKai-SB, Traditional Chinese) and embedded as a page
+  image with NO drawn text — pdfplumber's text-layer probe (ADR-0032) reports
+  no text layer, exactly like ``image_only.pdf``, but the pixels are
+  legible Chinese instead of a blank rectangle, so the live vision-model
+  smoke test has real content to transcribe and assert readable CJK output
+  against. Font-rendering happens only in this generator (dev-only, run
+  once); the committed PDF has no runtime font dependency at all.
 
 Headings are literal ``#`` / ``##`` characters drawn as ordinary page text.
 MarkItDown's PDF converter does no font-size-based heading inference (plain
@@ -55,7 +67,7 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from reportlab.lib.pdfencrypt import StandardEncryption
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
@@ -143,6 +155,54 @@ def _write_image_only_fixture(path: Path) -> None:
 
     c = canvas.Canvas(str(path))
     c.drawImage(ImageReader(buf), 72, 600, width=400, height=200)
+    c.showPage()
+    c.save()
+
+
+# Candidate CJK TrueType font paths, tried in order. Windows ships Traditional
+# Chinese fonts under System32\Fonts; other OSes are not required to generate
+# fixtures locally since the PDF byte output is committed (dev-only tooling).
+_CJK_FONT_CANDIDATES = [
+    r"C:\Windows\Fonts\kaiu.ttf",
+    r"C:\Windows\Fonts\msjh.ttc",
+    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+    "/System/Library/Fonts/PingFang.ttc",
+]
+
+
+def _find_cjk_font(size: int) -> ImageFont.FreeTypeFont:
+    """Return the first usable CJK TrueType font at ``size``, or raise."""
+    for candidate in _CJK_FONT_CANDIDATES:
+        if Path(candidate).exists():
+            return ImageFont.truetype(candidate, size)
+    raise RuntimeError(
+        "No CJK TrueType font found among candidates; install one or add its "
+        "path to _CJK_FONT_CANDIDATES to regenerate transcribe_scanned_cjk.pdf."
+    )
+
+
+def _write_transcribe_scanned_cjk_fixture(path: Path) -> None:
+    """Write the scanned-PDF proxy backing Transcribe's one live smoke test.
+
+    Same body text as ``sample_cjk.pdf`` (the refund-policy Traditional
+    Chinese passage), but rasterized to a Pillow image via a real CJK font
+    and embedded with no drawn text — pdfplumber's probe (ADR-0032) reports
+    no text layer, routing this to Transcribe, and the vision model has
+    legible Chinese pixels to transcribe.
+    """
+    font = _find_cjk_font(28)
+    image = Image.new("RGB", (900, 260), color=(255, 255, 255))
+    draw = ImageDraw.Draw(image)
+    y = 20
+    for line in _CJK_LINES:
+        draw.text((20, y), line, font=font, fill=(0, 0, 0))
+        y += 46
+    buf = io.BytesIO()
+    image.save(buf, format="PNG")
+    buf.seek(0)
+
+    c = canvas.Canvas(str(path))
+    c.drawImage(ImageReader(buf), 72, 500, width=450, height=130)
     c.showPage()
     c.save()
 
@@ -314,6 +374,7 @@ def main() -> None:
         "encrypted": _FIXTURES_DIR / "encrypted.pdf",
         "corrupt": _FIXTURES_DIR / "corrupt.pdf",
         "kangxi_contamination": _FIXTURES_DIR / "kangxi_contamination.pdf",
+        "transcribe_scanned_cjk": _FIXTURES_DIR / "transcribe_scanned_cjk.pdf",
     }
 
     _write_english_fixture(paths["english"])
@@ -322,6 +383,7 @@ def main() -> None:
     _write_encrypted_fixture(paths["encrypted"])
     _write_corrupt_fixture(paths["corrupt"])
     _write_kangxi_contamination_fixture(paths["kangxi_contamination"])
+    _write_transcribe_scanned_cjk_fixture(paths["transcribe_scanned_cjk"])
 
     for p in paths.values():
         print(f"Wrote {p} ({p.stat().st_size} bytes)")

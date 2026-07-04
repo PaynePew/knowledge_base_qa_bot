@@ -1823,6 +1823,9 @@ dependencies = [
     { name = "markitdown", extra = ["pdf"] },
     { name = "openai" },
     { name = "pdfminer-six" },
+    { name = "pdfplumber" },
+    { name = "pillow" },
+    { name = "pypdfium2" },
     { name = "python-dotenv" },
     { name = "uvicorn" },
 ]
@@ -1843,6 +1846,9 @@ requires-dist = [
     { name = "markitdown", extras = ["pdf"], specifier = ">=0.1.6" },
     { name = "openai", specifier = "==2.38.0" },
     { name = "pdfminer-six", specifier = "==20260107" },
+    { name = "pdfplumber", specifier = ">=0.11.10" },
+    { name = "pillow", specifier = ">=12.2.0" },
+    { name = "pypdfium2", specifier = ">=5.11.0" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "uvicorn", specifier = "==0.34.0" },
 ]

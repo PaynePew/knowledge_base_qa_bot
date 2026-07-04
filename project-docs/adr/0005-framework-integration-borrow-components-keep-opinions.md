@@ -44,6 +44,7 @@ We chose partial borrowing because the project's value is in its *opinions* (the
 | `vector_rag/app/retrieval.py` | `ChatOpenAI.invoke` (answer synthesis) | `vector_rag` `POST /chat` | `vector_rag/tests/test_chat_live.py` |
 | `hybrid_kb/app/query.py` | `ChatOpenAI.invoke` (answer synthesis) | `hybrid_kb` `query()` (Hybrid Stack C; CLI `--stack hybrid`) | `hybrid_kb/tests/test_query_live.py` |
 | `gateway/app/query_rewriting.py` | `ChatOpenAI.with_structured_output` (Query Rewriting) | `POST /chat/stream` turn 2+ (gateway-level; both stacks) | `gateway/tests/test_query_rewriting.py::test_rewrite_query_live` |
+| `markdown_kb/app/transcriber.py` | `ChatOpenAI.invoke` (per-page vision transcription) | `markdown_kb` `POST /transcribe`, `kb transcribe`, and probe-routed auto-transcription inside `POST /import` / `kb import` (ADR-0032) | `markdown_kb/tests/test_transcribe_live.py` |
 
 vector_rag's `/chat` + embeddings is the surface added by issue #103 (Phase 8 Slice 3). It adopts `markdown_kb`'s `grounding.py` unchanged through the `CitableContent` Protocol (ADR-0004 Q9) rather than owning a second verifier, so it adds no new structured-output call site. The single PRD-authorised `@pytest.mark.live` test for this surface lives in `vector_rag/tests/test_chat_live.py`.
 

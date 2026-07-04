@@ -13,6 +13,9 @@ dependencies = [
     "markdownify>=0.11",
     "markitdown[pdf]>=0.1.6",
     "pdfminer-six==20260107",
+    "pdfplumber>=0.11.10",
+    "pypdfium2>=5.11.0",
+    "pillow>=12.2.0",
 ]
 
 [tool.uv]
