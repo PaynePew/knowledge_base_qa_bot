@@ -12,7 +12,7 @@ When your parcel reaches the selected store, you receive an SMS notification. Pa
 
 ## Item Restrictions
 
-Items over **5 kg** or exceeding size limits are not eligible for convenience store pickup; the option is hidden automatically at checkout.
+Items over **5 kg**, or with any side longer than **45 cm** (oversized), are not eligible for convenience store pickup; the option is hidden automatically at checkout.
 
 ## Cash on Delivery
 

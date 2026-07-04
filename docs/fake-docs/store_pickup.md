@@ -12,7 +12,7 @@ Orders are usually ready within **2 hours** of payment (during store opening hou
 
 ## Hold Period
 
-Orders are held for **3 days**. Unclaimed orders are cancelled automatically with a **full refund**.
+Orders are held for **3 days (calendar days)** from the ready-for-pickup notification. Unclaimed orders are cancelled automatically with a **full refund**, returned to the original payment method within the standard refund timeline of **5-7 business days**.
 
 ## What to Bring
 

@@ -4,7 +4,7 @@ This document covers reporting and resolving damaged or defective deliveries.
 
 ## Reporting Deadline & Method
 
-If an item arrives damaged or defective, report it within **48 hours** via **My Orders → Report a problem**, attaching photos of the item and the outer packaging.
+If an item arrives damaged or defective, report it within **48 hours** via **My Orders → Report a problem**, attaching photos of the item and the outer packaging; the photos must clearly show the damage.
 
 ## Resolution Options
 
@@ -15,7 +15,7 @@ Once the report is approved, choose one:
 
 ## Replacement Timing
 
-Replacements are dispatched within **3 business days** of approval.
+Replacements are dispatched within **3 business days** of approval (measured to dispatch, not delivery).
 
 ## Difference from Regular Returns
 

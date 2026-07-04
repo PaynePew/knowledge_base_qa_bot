@@ -4,7 +4,7 @@ This document describes the payment methods ACME Shop accepts and their limits.
 
 ## Credit Cards
 
-**VISA, MasterCard, and JCB** are accepted for single payments.
+**VISA, MasterCard, and JCB** are accepted, either as a single payment or in installments for qualifying orders (see "Credit Card Installments").
 
 ## Credit Card Installments
 

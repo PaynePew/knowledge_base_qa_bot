@@ -28,6 +28,8 @@ ACME Shop charges **no restocking fee on any product category**.
 
 ## Non-Refundable Items
 
+The following items are not eligible for refund or return:
+
 - Downloaded digital content (e-books, software keys).
 - Customized products (engraving, printing).
 - Opened food or hygiene products.

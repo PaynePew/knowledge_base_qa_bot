@@ -10,7 +10,7 @@ Standard shipping costs **NT$80**; orders of **NT$1,000 or more** ship **free**.
 
 ## Express Delivery
 
-Express delivery to main-island addresses arrives **1–2 business days** after dispatch and costs **NT$150**. Orders must be placed and paid **before 14:00** the same day. Oversized or fragile items are not eligible; the checkout page automatically shows the available options.
+Express delivery to main-island addresses arrives **1–2 business days** after dispatch and costs **NT$150**. Orders must be placed and paid **before 14:00** the same day. Oversized or fragile items are not eligible; the checkout page automatically shows whether express delivery is available for each item.
 
 ## Dispatch Time
 
