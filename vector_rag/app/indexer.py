@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``Chunk``, ``build_index``, ``search``, ``save_vector_index``, ``load_vector_index``, ``DOCS_DIR``, ``FAISS_INDEX_DIR``.
+"""Deep module per Ousterhout. Public surface: ``Chunk``, ``build_index``, ``search``, ``save_vector_index``, ``load_vector_index``, ``warm_embeddings_client``, ``DOCS_DIR``, ``FAISS_INDEX_DIR``.
 
 Vector RAG (Stack B) retrieval core — heading-aware sectioning, recursive
 character chunking, FAISS search, and on-disk index persistence.
@@ -149,6 +149,29 @@ def get_embeddings() -> OpenAIEmbeddings:
             max_retries=1,
         )
     return _embeddings
+
+
+def warm_embeddings_client() -> None:
+    """Fire one tiny embedding call to prime the embeddings client's connection (issue #439).
+
+    Cold-start fix: the first REAL query-time embedding call otherwise pays
+    ``OpenAIEmbeddings`` client construction + TLS handshake + first-connection
+    latency on top of the actual embed. Opt-in — called only from Gateway
+    startup behind ``KB_WARMUP_PING`` (see ``gateway/app/warmup.py``).
+
+    Best-effort: any failure (auth, quota, network) is caught and logged, never
+    raised — a failed ping degrades to the pre-issue-#439 behaviour (the client
+    still lazily constructs + connects on the next real call) and never blocks
+    Gateway startup.
+    """
+    try:
+        get_embeddings().embed_query("hi")
+        log_event("startup_warmup", "client=rag_embeddings status=ok")
+    except Exception as exc:
+        log_event(
+            "startup_warmup",
+            f"client=rag_embeddings status=failed exc={type(exc).__name__}",
+        )
 
 
 # ---------------------------------------------------------------------------

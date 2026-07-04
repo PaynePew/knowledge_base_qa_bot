@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``Section`` (re-export), ``build_index``, ``search``, ``search_with_distance``, ``save_dense_index``, ``load_dense_index``, ``DENSE_INDEX_DIR``, ``EMBEDDING_MODEL``.
+"""Deep module per Ousterhout. Public surface: ``Section`` (re-export), ``build_index``, ``search``, ``search_with_distance``, ``save_dense_index``, ``load_dense_index``, ``warm_embeddings_client``, ``DENSE_INDEX_DIR``, ``EMBEDDING_MODEL``.
 
 Hybrid Retrieval (Stack C) — dense-over-wiki Section index (slice S1, ADR-0018).
 
@@ -89,6 +89,7 @@ __all__ = [
     "search_with_distance",
     "save_dense_index",
     "load_dense_index",
+    "warm_embeddings_client",
     "DENSE_INDEX_DIR",
     "EMBEDDING_MODEL",
 ]
@@ -144,6 +145,28 @@ def get_embeddings() -> OpenAIEmbeddings:
             max_retries=1,
         )
     return _embeddings
+
+
+def warm_embeddings_client() -> None:
+    """Fire one tiny embedding call to prime the embeddings client's connection (issue #439).
+
+    Mirrors ``vector_rag.app.indexer.warm_embeddings_client`` for Stack C's own
+    embeddings singleton. Opt-in — called only from Gateway startup behind
+    ``KB_WARMUP_PING`` (see ``gateway/app/warmup.py``).
+
+    Best-effort: any failure (auth, quota, network) is caught and logged, never
+    raised — a failed ping degrades to the pre-issue-#439 behaviour (the client
+    still lazily constructs + connects on the next real call) and never blocks
+    Gateway startup.
+    """
+    try:
+        get_embeddings().embed_query("hi")
+        log_event("startup_warmup", "client=hybrid_embeddings status=ok")
+    except Exception as exc:
+        log_event(
+            "startup_warmup",
+            f"client=hybrid_embeddings status=failed exc={type(exc).__name__}",
+        )
 
 
 # ---------------------------------------------------------------------------

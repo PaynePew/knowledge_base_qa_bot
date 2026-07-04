@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``query``, ``stream_query``, ``get_llm``, ``CANNOT_CONFIRM_PHRASE``, ``ensure_indexes_loaded``.
+"""Deep module per Ousterhout. Public surface: ``query``, ``stream_query``, ``get_llm``, ``warm_llm_client``, ``CANNOT_CONFIRM_PHRASE``, ``ensure_indexes_loaded``.
 
 Hybrid Retrieval (Stack C) query path — slice S3 (ADR-0018 / #313) + the
 streaming variant ``stream_query`` (slice S4 / #314) the Gateway dispatches to
@@ -67,6 +67,7 @@ __all__ = [
     "query",
     "stream_query",
     "get_llm",
+    "warm_llm_client",
     "CANNOT_CONFIRM_PHRASE",
     "ensure_indexes_loaded",
 ]
@@ -97,6 +98,30 @@ def get_llm() -> ChatOpenAI:
             max_retries=1,
         )
     return _llm
+
+
+def warm_llm_client() -> None:
+    """Fire one tiny ping at the answer LLM client to prime its connection (issue #439).
+
+    Mirrors ``markdown_kb.app.retrieval.warm_llm_client`` / ``vector_rag.app.
+    retrieval.warm_llm_client`` for Stack C's own LLM singleton. Opt-in —
+    called only from Gateway startup behind ``KB_WARMUP_PING`` (see
+    ``gateway/app/warmup.py``). ``max_tokens=1`` keeps the completion itself a
+    few tokens; the reply is discarded.
+
+    Best-effort: any failure (auth, quota, network) is caught and logged, never
+    raised — a failed ping degrades to the pre-issue-#439 behaviour (the client
+    still lazily constructs + connects on the next real call) and never blocks
+    Gateway startup.
+    """
+    try:
+        get_llm().invoke("Hi", max_tokens=1)
+        log_event("startup_warmup", "client=hybrid_llm status=ok")
+    except Exception as exc:
+        log_event(
+            "startup_warmup",
+            f"client=hybrid_llm status=failed exc={type(exc).__name__}",
+        )
 
 
 # ---------------------------------------------------------------------------

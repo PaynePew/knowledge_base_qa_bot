@@ -49,11 +49,13 @@ from vector_rag.app.main import app as _rag_app  # noqa: E402
 
 from .middleware import ProdMiddleware, read_saturated  # noqa: E402
 from .routes import router  # noqa: E402
+from .warmup import warm_hybrid_indexes, warm_openai_clients  # noqa: E402
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Run the mounted sub-apps' own lifespans (issue #398).
+    """Run the mounted sub-apps' own lifespans (issue #398) plus the Hybrid /
+    OpenAI-client warmup (issue #439).
 
     Starlette's ``app.mount()`` wires a sub-app in as a plain ASGI callable —
     it does NOT forward the top-level ``lifespan.startup`` / ``lifespan.shutdown``
@@ -69,10 +71,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     needed here. The per-route lazy-load fallbacks in each sub-app's
     ``retrieval.py`` stay in place as a second line of defence (e.g. for a
     freshly-deployed box with no persisted index yet).
+
+    ``hybrid_kb`` ships no sub-app of its own (library-only — see
+    ``routes.py``'s ``/hybrid/index`` route), so it never joined the above
+    lifespan-propagation fix; ``warm_hybrid_indexes()`` closes that gap
+    (unconditional, token-free). ``warm_openai_clients()`` is the opt-in
+    per-client connection-priming ping (``KB_WARMUP_PING``, default off — see
+    ``gateway/app/warmup.py``). Both run AFTER the sub-app lifespans (BM25 is
+    already warm by then) and BEFORE ``yield``, so uvicorn — and therefore the
+    edge — does not consider the process ready until warmup has run.
     """
     async with AsyncExitStack() as stack:
         await stack.enter_async_context(_wiki_app.router.lifespan_context(_wiki_app))
         await stack.enter_async_context(_rag_app.router.lifespan_context(_rag_app))
+        warm_hybrid_indexes()
+        warm_openai_clients()
         yield
 
 
