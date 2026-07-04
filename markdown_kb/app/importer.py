@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``import_sources``, ``import_path``, ``ImportBatchResult``, ``ImportSourceResult``, ``ImportFailure``, ``ImportPathError``.
+"""Deep module per Ousterhout. Public surface: ``import_sources``, ``import_path``, ``ImportBatchResult``, ``ImportSourceResult``, ``ImportFailure``, ``ImportPathError``, ``validate_filename``, ``read_frontmatter_sha256``, ``render_output``.
 
 Multi-Format Import coordinator — raw/ → docs/ format-conversion pipeline.
 
@@ -20,20 +20,27 @@ Pipeline per source file:
        no disk write).  Emit ``import_skipped`` Wiki Log event.
     5. Convert: ``.html`` → markdownify with semantic whitelist + strip list;
        ``.txt`` / ``.md`` → passthrough (no heading inference); ``.pdf`` →
-       MarkItDown text-layer extraction (ADR-0031) — binary bytes bypass the
-       UTF-8 decode step; no heading inference of our own, headings are
-       whatever literal ``#`` text the extractor emits. The ``.pdf`` branch's
-       extracted body additionally passes through deterministic Kangxi-radical
-       codepoint normalization (issue #425, ``kangxi_normalize.py``) —
-       ``.html``/``.txt``/``.md`` passthrough paths are not normalized, since
-       only PDF extraction manufactures these codepoints.
+       a deterministic text-layer probe (``transcriber.probe_has_text_layer``,
+       ADR-0032, issue #426) decides routing FIRST: text present → MarkItDown
+       text-layer extraction (ADR-0031) unchanged, binary bytes bypass the
+       UTF-8 decode step, no heading inference of our own; text absent →
+       ``transcriber.transcribe_pdf_bytes`` (model-assisted, ADR-0032) when
+       configured, else the typed ``NoTextLayer`` failure. The mechanical
+       ``.pdf`` branch's extracted body additionally passes through
+       deterministic Kangxi-radical codepoint normalization (issue #425,
+       ``kangxi_normalize.py``) — ``.html``/``.txt``/``.md`` passthrough
+       paths are not normalized, since only PDF extraction manufactures
+       these codepoints. Transcribe's output is Kangxi-normalized inside
+       ``transcriber.py`` itself (defense in depth).
     6. Render output: YAML frontmatter (imported_from, original_format,
-       imported_at, content_sha256) + converted body.
+       imported_at, content_sha256) + converted body. A Transcribe success
+       additionally carries ``origin: transcribed`` + ``transcribe_model``.
     7. Atomic write: tempfile in same dir + ``os.replace`` + cleanup on
        exception (CODING_STANDARD §2.6).
     8. Emit Wiki Log events: ``import_batch_started``, ``import_source``
-       (per success — ``status=created`` for fresh, ``status=updated`` for
-       hash-drift overwrite), ``import_skipped`` (per hash-match),
+       (per mechanical success — ``status=created`` for fresh, ``status=updated``
+       for hash-drift overwrite) or ``transcribe_source`` (per auto-routed
+       Transcribe success), ``import_skipped`` (per hash-match),
        ``import_error`` (per failure), ``import_batch_completed``.
 
 Status values for ImportSourceResult:
@@ -56,13 +63,22 @@ and issue #416 (EncryptedPdf)):
     - ``MarkdownifyError``       — markdownify internal exception
     - ``FilenameCollision``      — two batch files map to same docs basename
     - ``IOError``                — atomic-write OS failure
-    - ``NoTextLayer``            — PDF extraction yielded an empty/whitespace
-      body (deterministic scanned-PDF detector); curator must OCR externally
-      and re-import
+    - ``NoTextLayer``            — the probe found no text layer AND Transcribe
+      is unavailable (missing key / feature off; ADR-0032), OR (rare, belt-and-
+      suspenders) the probe found text but MarkItDown's own extraction still
+      came back empty; curator must OCR externally, re-import, or configure
+      Transcribe
     - ``PdfExtractionError``     — MarkItDown internal exception (corrupt PDF)
     - ``EncryptedPdf``           — password-protected PDF (pdfminer's
       ``PDFEncryptionError``/``PDFPasswordIncorrect`` on open); curator must
       supply a decrypted copy and re-import
+
+Two more typed failures surface here when a text-less PDF auto-routes to
+Transcribe (ADR-0032, issue #426) and the model-assisted conversion itself
+fails — see ``transcriber.py`` for the full contract:
+    - ``TranscribePageLimitExceeded`` — page count exceeds ``KB_TRANSCRIBE_MAX_PAGES``
+    - ``TranscribeError``             — a page failed after bounded retry, or
+      assembly failed; no partial ``docs/`` write
 
 Continue-on-error: one failing source does not abort the batch.
 
@@ -720,49 +736,110 @@ def _process_one_source(
     # Binary-format branch (ADR-0031): PDF bytes bypass the UTF-8 decode step
     # entirely — the SHA-256 hash-skip chain above already operated on raw
     # bytes, so idempotency and drift-overwrite semantics are unaffected.
-    if fmt == "pdf":
-        try:
-            md_body = _convert_pdf_to_markdown(raw_bytes)
-        except _EncryptedPdfError:
-            # EncryptedPdf (issue #416): distinguished from the catch-all
-            # PdfExtractionError below because the fix is different — the
-            # curator must supply a decrypted copy, not a valid/repaired file.
-            failure = ImportFailure(
-                raw_path=str(raw_path),
-                error_type="EncryptedPdf",
-                error_message=(
-                    f"{basename} is password-protected/encrypted; Import performs "
-                    "no decryption. Supply a decrypted copy and re-import."
-                )[:200],
-            )
-            result.failed_sources.append(failure)
-            _emit_import_error(failure)
-            return
-        except Exception as exc:
-            failure = ImportFailure(
-                raw_path=str(raw_path),
-                error_type="PdfExtractionError",
-                error_message=str(exc)[:200],
-            )
-            result.failed_sources.append(failure)
-            _emit_import_error(failure)
-            return
+    transcribe_model: str | None = None
 
-        # NoTextLayer: deterministic scanned-PDF detector. An empty/whitespace
-        # extraction is not itself an exception, so it is checked separately
-        # from the PdfExtractionError try/except above.
-        if not md_body.strip():
-            failure = ImportFailure(
-                raw_path=str(raw_path),
-                error_type="NoTextLayer",
-                error_message=(
-                    f"No extractable text layer in {basename} (scanned/image-only "
-                    "PDF?). Run OCR externally and re-import the result."
-                )[:200],
-            )
-            result.failed_sources.append(failure)
-            _emit_import_error(failure)
-            return
+    if fmt == "pdf":
+        # Function-scope import breaks the importer<->transcriber cycle:
+        # transcriber.py imports importer's validate_filename /
+        # read_frontmatter_sha256 / render_output at module level (ADR-0032
+        # shared provenance conventions), so importer.py must import
+        # transcriber lazily here instead of at module top.
+        from . import transcriber as transcriber_module
+
+        # ADR-0032: a cheap deterministic probe decides mechanical vs.
+        # Transcribe routing BEFORE any extraction or model call. If the
+        # probe itself cannot determine (encrypted/corrupt PDF raises),
+        # fall through to the mechanical path unchanged — its own
+        # EncryptedPdf/PdfExtractionError handling below independently
+        # classifies the same underlying failure.
+        try:
+            has_text_layer = transcriber_module.probe_has_text_layer(raw_bytes)
+        except Exception:
+            has_text_layer = True
+
+        if has_text_layer:
+            try:
+                md_body = _convert_pdf_to_markdown(raw_bytes)
+            except _EncryptedPdfError:
+                # EncryptedPdf (issue #416): distinguished from the catch-all
+                # PdfExtractionError below because the fix is different — the
+                # curator must supply a decrypted copy, not a valid/repaired file.
+                failure = ImportFailure(
+                    raw_path=str(raw_path),
+                    error_type="EncryptedPdf",
+                    error_message=(
+                        f"{basename} is password-protected/encrypted; Import performs "
+                        "no decryption. Supply a decrypted copy and re-import."
+                    )[:200],
+                )
+                result.failed_sources.append(failure)
+                _emit_import_error(failure)
+                return
+            except Exception as exc:
+                failure = ImportFailure(
+                    raw_path=str(raw_path),
+                    error_type="PdfExtractionError",
+                    error_message=str(exc)[:200],
+                )
+                result.failed_sources.append(failure)
+                _emit_import_error(failure)
+                return
+
+            # NoTextLayer: belt-and-suspenders. The probe already routes a
+            # truly text-less PDF to the branch below; this residual check
+            # only fires if pdfplumber (probe) and MarkItDown (extractor)
+            # disagree at the margin — still refuses to write an empty Source.
+            if not md_body.strip():
+                failure = ImportFailure(
+                    raw_path=str(raw_path),
+                    error_type="NoTextLayer",
+                    error_message=(
+                        f"No extractable text layer in {basename} (scanned/image-only "
+                        "PDF?). Run OCR externally and re-import the result."
+                    )[:200],
+                )
+                result.failed_sources.append(failure)
+                _emit_import_error(failure)
+                return
+        else:
+            # ADR-0032 routing point: no text layer per the probe. Auto-route
+            # to Transcribe when configured; otherwise the NoTextLayer
+            # failure now names Transcribe and the missing prerequisite.
+            if transcriber_module.transcribe_available():
+                try:
+                    md_body, transcribe_model = transcriber_module.transcribe_pdf_bytes(raw_bytes)
+                except transcriber_module.TranscribePageLimitExceeded as exc:
+                    failure = ImportFailure(
+                        raw_path=str(raw_path),
+                        error_type="TranscribePageLimitExceeded",
+                        error_message=str(exc)[:200],
+                    )
+                    result.failed_sources.append(failure)
+                    _emit_import_error(failure)
+                    return
+                except transcriber_module.TranscribeError as exc:
+                    failure = ImportFailure(
+                        raw_path=str(raw_path),
+                        error_type="TranscribeError",
+                        error_message=str(exc)[:200],
+                    )
+                    result.failed_sources.append(failure)
+                    _emit_import_error(failure)
+                    return
+            else:
+                failure = ImportFailure(
+                    raw_path=str(raw_path),
+                    error_type="NoTextLayer",
+                    error_message=(
+                        f"No extractable text layer in {basename} (scanned/image-only "
+                        "PDF?). Run OCR externally and re-import, or configure "
+                        "Transcribe (OPENAI_API_KEY + KB_TRANSCRIBE_ENABLED) to "
+                        "auto-convert scans."
+                    )[:200],
+                )
+                result.failed_sources.append(failure)
+                _emit_import_error(failure)
+                return
     else:
         # Decode UTF-8 — UnicodeDecodeError for non-UTF-8 raw bytes.
         try:
@@ -790,8 +867,18 @@ def _process_one_source(
             _emit_import_error(failure)
             return
 
-    # Build full output with frontmatter (incl. content_sha256 — slice 7-3)
-    output = _render_output(md_body, raw_path, fmt, content_sha256)
+    # Build full output with frontmatter (incl. content_sha256 — slice 7-3).
+    # ADR-0032: a probe-routed Transcribe success carries origin/transcribe_model
+    # provenance in addition to the standard envelope; every other format
+    # passes transcribe_model=None and _render_output adds nothing extra.
+    output = _render_output(
+        md_body,
+        raw_path,
+        fmt,
+        content_sha256,
+        origin="transcribed" if transcribe_model is not None else None,
+        transcribe_model=transcribe_model,
+    )
 
     # Atomic write — IOError for os.replace failure
     try:
@@ -806,10 +893,16 @@ def _process_one_source(
         _emit_import_error(failure)
         return
 
-    log_event(
-        "import_source",
-        f"source={basename} docs={docs_filename} format={fmt}",
-    )
+    if transcribe_model is not None:
+        log_event(
+            "transcribe_source",
+            f"source={basename} docs={docs_filename} model={transcribe_model} status={status}",
+        )
+    else:
+        log_event(
+            "import_source",
+            f"source={basename} docs={docs_filename} format={fmt}",
+        )
 
     result.imported_sources.append(
         ImportSourceResult(
@@ -981,11 +1074,19 @@ def _render_output(
     raw_path: Path,
     fmt: Literal["html", "txt", "md", "pdf"],
     content_sha256: str,
+    *,
+    origin: str | None = None,
+    transcribe_model: str | None = None,
 ) -> str:
     """Build the full docs/*.md content: YAML frontmatter + converted body.
 
     Frontmatter fields: imported_from, original_format, imported_at, content_sha256.
     ``content_sha256`` is the hex SHA-256 of the raw bytes (slice 7-3).
+
+    ``origin`` / ``transcribe_model`` (ADR-0032, issue #426) are optional
+    provenance fields appended after the standard envelope when a Transcribe
+    conversion produced ``md_body`` — ``None`` (the default) emits neither
+    line, so every existing Import caller's output is byte-identical.
     """
     # Compute relative raw path for the frontmatter (relative to REPO_ROOT)
     try:
@@ -1002,9 +1103,49 @@ def _render_output(
         f"original_format: {fmt}\n"
         f"imported_at: '{ts}'\n"
         f"content_sha256: {content_sha256}\n"
-        f"---\n"
     )
+    if origin is not None:
+        frontmatter += f"origin: {origin}\n"
+    if transcribe_model is not None:
+        frontmatter += f"transcribe_model: {transcribe_model}\n"
+    frontmatter += "---\n"
     return frontmatter + "\n" + md_body + "\n"
+
+
+# ---------------------------------------------------------------------------
+# Public wrappers shared with transcriber.py (ADR-0032)
+# ---------------------------------------------------------------------------
+# transcriber.py is a sibling module in this same package that reuses these
+# three conventions (filename validation, hash-skip frontmatter read, output
+# rendering) rather than duplicating them. Per CODING_STANDARD §2.4 ("no
+# reaching into private state of another module"), the underscore-prefixed
+# originals stay untouched (existing tests reach into `_validate_filename`
+# directly) and each gets a thin public alias here instead.
+
+
+def validate_filename(basename: str, raw_path_str: str) -> ImportFailure | None:
+    """Public alias for ``_validate_filename`` — see that function for the rules."""
+    return _validate_filename(basename, raw_path_str)
+
+
+def read_frontmatter_sha256(docs_path: Path) -> str | None:
+    """Public alias for ``_read_frontmatter_sha256`` — see that function for the contract."""
+    return _read_frontmatter_sha256(docs_path)
+
+
+def render_output(
+    md_body: str,
+    raw_path: Path,
+    fmt: Literal["html", "txt", "md", "pdf"],
+    content_sha256: str,
+    *,
+    origin: str | None = None,
+    transcribe_model: str | None = None,
+) -> str:
+    """Public alias for ``_render_output`` — see that function for the frontmatter contract."""
+    return _render_output(
+        md_body, raw_path, fmt, content_sha256, origin=origin, transcribe_model=transcribe_model
+    )
 
 
 def _atomic_write(content: str, target: Path) -> None:

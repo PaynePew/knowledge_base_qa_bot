@@ -121,6 +121,22 @@ Full enumeration landed with slice 7-2 (#91); PDF-specific modes added by issue 
 
 ---
 
+## `/transcribe` route + probe-routed Transcribe successes (issue #426, ADR-0032)
+
+Authorized by GitHub issue #426 and [ADR-0032](adr/0032-transcribe-model-assisted-pdf-conversion.md). Mirrors the `import_*` family in shape (`transcriber.py` owns these emitters): `transcribe_batch_started`/`transcribe_batch_completed` bracket one call to `transcribe_source` (single-source only — Transcribe has no batch mode), and `transcribe_source`/`transcribe_skipped`/`transcribe_error` mirror `import_source`/`import_skipped`/`import_error` per-file. A text-less PDF auto-routed to Transcribe from `POST /import` / `kb import` / batch `import_sources` also emits `transcribe_source` (not `import_source`) for its per-file success line, so the log distinguishes model-derived conversions from mechanical ones regardless of entry point — `import_batch_started`/`import_batch_completed` still bracket that call unchanged (one batch, mixed mechanical + transcribed successes).
+
+| Kind | When fired | Summary template |
+|---|---|---|
+| `transcribe_batch_started` | Start of a `transcribe_source()` call (force entry: `POST /transcribe`, `kb transcribe`) | `mode=single source=<filename>` |
+| `transcribe_source` | One PDF successfully transcribed to `docs/<basename>.md` — fired both by the force entry and by probe-routed auto-transcription inside `import_sources`/`import_path` | `source=<basename> docs=<docs_filename> model=<transcribe_model> status=<created\|updated>` |
+| `transcribe_batch_completed` | End of a `transcribe_source()` call; emitted even on failure | `transcribed=<0\|1> skipped=<0\|1> failed=<0\|1> duration_ms=N` |
+| `transcribe_skipped` | Re-transcribe no-op when `content_sha256` matches existing docs frontmatter | `raw=<raw_path> docs=<docs_path> content_sha256=<hex>` |
+| `transcribe_error` | The force entry failed at any stage (validation, availability, page limit, model failure) | `raw=<raw_path> error_type=<one of TranscribeUnavailable\|TranscribePageLimitExceeded\|TranscribeError\|the reused Import validation types> error_message=<truncated≤200>` |
+
+Auto-routed failures (a text-less PDF that fails `TranscribePageLimitExceeded` / `TranscribeError` while `import_sources`/`import_path` is processing it) are logged as `import_error` with that `error_type`, not `transcribe_error` — they are still failures of the `/import` batch/call, not of a `transcribe_source()` call. The unavailable case (Transcribe not configured) stays `NoTextLayer` under `import_error`, per the updated message contract (ADR-0032).
+
+---
+
 ## `/upload` route (Phase 15 Operator Console)
 
 Authorized by GitHub issue #168 (Phase 15 PRD) + [ADR-0011](adr/0011-upload-separate-from-import.md). Slice S1 (#169) introduces all five kinds below. Upload is a system boundary: it stages dropped browser bytes onto the server (`.html`/`.txt` → `raw/`, `.md` → `docs/`) and never converts (Import stays unchanged). `filename` and `reason` fields are rendered via `repr()` so embedded quotes/spaces stay unambiguous in the grep-able log line.

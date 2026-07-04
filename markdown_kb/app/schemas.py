@@ -1,4 +1,4 @@
-"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``CitationRef``, ``FiledStatus``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``, ``CoverageGapFinding``, ``PagePairFinding``, ``PromotionCandidateFinding``, ``QaStalenessFinding``, ``InvalidQaSchemaFinding``, ``AliasCollisionFinding``, ``AliasAssignRequest``, ``QaEditRequest``, ``QaRefileResponse``, ``SkippedSlug``, ``QaPromoteBatchRequest``, ``QaPromoteBatchResponse``, ``ImportRequest``, ``ImportSourceResultSchema``, ``ImportFailureSchema``, ``ImportResponse``, ``ReconcileDraft``, ``ReconcileGenerateRequest``, ``ReconcileGenerateResponse``, ``ReconcileApplyRequest``, ``ReconcileApplyResponse``, ``CollisionMergeDraft``, ``CollisionPageDraft``, ``CollisionDifferentiateDraft``, ``CollisionMergeGenerateRequest``, ``CollisionMergeGenerateResponse``, ``CollisionMergeApplyRequest``, ``InboundReference``, ``CollisionMergeApplyResponse``, ``CollisionDifferentiateGenerateRequest``, ``CollisionDifferentiateGenerateResponse``, ``CollisionDifferentiateApplyRequest``, ``CollisionDifferentiateApplyResponse``).
+"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``CitationRef``, ``FiledStatus``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``, ``CoverageGapFinding``, ``PagePairFinding``, ``PromotionCandidateFinding``, ``QaStalenessFinding``, ``InvalidQaSchemaFinding``, ``AliasCollisionFinding``, ``AliasAssignRequest``, ``QaEditRequest``, ``QaRefileResponse``, ``SkippedSlug``, ``QaPromoteBatchRequest``, ``QaPromoteBatchResponse``, ``ImportRequest``, ``ImportSourceResultSchema``, ``ImportFailureSchema``, ``ImportResponse``, ``ReconcileDraft``, ``ReconcileGenerateRequest``, ``ReconcileGenerateResponse``, ``ReconcileApplyRequest``, ``ReconcileApplyResponse``, ``CollisionMergeDraft``, ``CollisionPageDraft``, ``CollisionDifferentiateDraft``, ``CollisionMergeGenerateRequest``, ``CollisionMergeGenerateResponse``, ``CollisionMergeApplyRequest``, ``InboundReference``, ``CollisionMergeApplyResponse``, ``CollisionDifferentiateGenerateRequest``, ``CollisionDifferentiateGenerateResponse``, ``CollisionDifferentiateApplyRequest``, ``CollisionDifferentiateApplyResponse``, ``TranscribeRequest``, ``TranscribeResponse``).
 
 Pydantic request/response models for the FastAPI routes. No domain logic."""
 
@@ -1102,3 +1102,39 @@ class ImportResponse(BaseModel):
     imported_sources: list[ImportSourceResultSchema]
     skipped_sources: list[ImportSourceResultSchema] = []
     failed_sources: list[ImportFailureSchema] = []
+
+
+# ---------------------------------------------------------------------------
+# /transcribe schemas (issue #426, ADR-0032)
+# ---------------------------------------------------------------------------
+
+
+class TranscribeRequest(BaseModel):
+    """Request body for POST /transcribe.
+
+    ``source`` is the bare filename (or relative sub-path) within ``raw/``
+    (e.g. ``"scanned_manual.pdf"``) — single-source only, no batch mode.
+    Force-transcribes exactly this PDF, bypassing the text-layer probe
+    (ADR-0032 designed-PDF escape hatch: a curator-forced re-conversion of a
+    digital-native PDF that extracted degraded through the mechanical path).
+    """
+
+    source: str
+
+
+class TranscribeResponse(BaseModel):
+    """Response body for POST /transcribe.
+
+    Mirrors ``ImportSourceResultSchema`` in shape plus the Transcribe-specific
+    ``origin`` / ``transcribe_model`` provenance fields (ADR-0032). On
+    ``status="skipped"`` (hash-match no-op), ``transcribe_model`` reports the
+    currently configured model, not necessarily the model that produced the
+    existing file.
+    """
+
+    raw_path: str
+    docs_path: str
+    content_sha256: str
+    transcribe_model: str
+    status: Literal["created", "updated", "skipped"]
+    origin: Literal["transcribed"] = "transcribed"
