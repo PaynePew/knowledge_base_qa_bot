@@ -767,6 +767,48 @@ def test_concurrent_each_page_opens_an_independent_pdf_document(monkeypatch):
     assert sorted(seen_indices) == list(range(page_count))
 
 
+def test_concurrent_pdfium_renders_never_overlap_across_threads(monkeypatch):
+    """Regression guard for issue #468: pypdfium2/PDFium is not thread-safe at
+    the library level — per-worker-thread ``PdfDocument`` isolation (issue
+    #459) was NOT sufficient on its own, since two threads each rendering
+    from their OWN independent document still raced and segfaulted. Asserts
+    that ``_render_page_png`` — the actual pypdfium2 render call, guarded by
+    ``_pdfium_lock`` — is never in flight on more than one thread at once,
+    even while ``_page_semaphore`` lets every page's (thread-safe) LLM call
+    run fully in parallel. A slow, artificially-delayed fake render makes an
+    overlap observable if the lock were ever removed or narrowed.
+    """
+    import app.transcriber as transcriber_module
+
+    monkeypatch.setattr(transcriber_module, "_page_semaphore", threading.BoundedSemaphore(8))
+
+    current = [0]
+    peak = [0]
+    counter_lock = threading.Lock()
+
+    def _fake_render_page_png(_page: object) -> bytes:
+        with counter_lock:
+            current[0] += 1
+            peak[0] = max(peak[0], current[0])
+        time.sleep(0.02)
+        with counter_lock:
+            current[0] -= 1
+        return b"fake-rendered-page-png"
+
+    monkeypatch.setattr(transcriber_module, "_render_page_png", _fake_render_page_png)
+
+    fake_llm = _OrderAwarePageLLM()
+    monkeypatch.setattr(transcriber_module, "get_transcribe_llm", lambda: fake_llm)
+
+    raw_bytes = _blank_multi_page_pdf_bytes(8)
+    transcriber_module.transcribe_pdf_bytes_concurrent(raw_bytes)
+
+    assert peak[0] == 1, (
+        f"expected pypdfium2 render calls to never overlap across threads "
+        f"(PDFium is not thread-safe, issue #468), observed peak={peak[0]} concurrent"
+    )
+
+
 def test_concurrent_progress_callback_invoked_per_page(monkeypatch):
     import app.transcriber as transcriber_module
 
