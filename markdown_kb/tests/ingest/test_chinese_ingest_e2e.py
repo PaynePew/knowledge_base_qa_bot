@@ -97,11 +97,11 @@ def _make_language_aware_fake_llm(
 # Fixture
 # ---------------------------------------------------------------------------
 
-# The committed Chinese demo Source lives at docs/demo-zh/退款政策.md.
-# We resolve it relative to this test file to stay machine-agnostic.
+# The committed Chinese demo Source lives at docs/demo-zh/退款與退貨.md
+# (corpus v2, #440). We resolve it relative to this test file to stay machine-agnostic.
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEMO_ZH_DIR = _REPO_ROOT / "docs" / "demo-zh"
-_CHINESE_SOURCE_NAME = "退款政策.md"
+_CHINESE_SOURCE_NAME = "退款與退貨.md"
 
 # Minimal English source (inline, no dependency on frozen fixture files)
 _ENGLISH_SOURCE_CONTENT = """\
