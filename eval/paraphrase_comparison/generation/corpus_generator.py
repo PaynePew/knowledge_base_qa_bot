@@ -120,38 +120,41 @@ DOC_SPECS: tuple[DocSpec, ...] = (
     # -----------------------------------------------------------------------
     # Entity sources (excluded from Gold Section pool)
     # -----------------------------------------------------------------------
+    # Corpus v2 (issue #440): the pool below mirrors the hand-authored curated
+    # corpus written from project-docs/demo-corpus/FACTS.md. Docs are authored,
+    # not generated; this plan is kept in sync so the name-consistency and
+    # Gold-Section-count guards keep protecting the eval input pool.
     DocSpec(
         basename="acme_shop_about.md",
-        title="Acme Shop",
+        title="About ACME Shop",
         is_entity=True,
         sections=(
             SectionSpec(
-                "Company History", "Brief history of Acme Shop's founding and growth."
+                "Background", "Founding year, headquarters, and market focus."
             ),
             SectionSpec(
-                "Mission", "Acme Shop's mission statement and core principles."
+                "Retail Stores", "The three physical store locations."
             ),
             SectionSpec(
-                "Team Summary",
-                "Key members of the Acme Shop leadership and founding team.",
+                "Product Mix",
+                "Share of the ACME Basics private label vs distributed brands.",
             ),
-            SectionSpec(
-                "Locations", "Where Acme Shop warehouses and offices are located."
-            ),
-            SectionSpec("Contact", "How customers and press can contact Acme Shop."),
         ),
     ),
     DocSpec(
         basename="warranty.md",
-        title="Warranty",
+        title="Product Warranty",
         is_entity=True,
         sections=(
             SectionSpec(
-                "Coverage Period",
-                "What is covered and for how long under the standard warranty.",
+                "Warranty Periods",
+                "Warranty length for electronics vs the ACME Basics private label.",
             ),
             SectionSpec(
-                "Warranty Claim", "Steps a customer follows to file a warranty claim."
+                "Filing a Claim", "Steps and turnaround for a warranty claim."
+            ),
+            SectionSpec(
+                "Exclusions", "What voids warranty coverage and the paid-repair path."
             ),
         ),
     ),
@@ -159,141 +162,28 @@ DOC_SPECS: tuple[DocSpec, ...] = (
     # Concept sources (Gold Section pool)
     # -----------------------------------------------------------------------
     DocSpec(
-        basename="account_management.md",
-        title="Account Management",
+        basename="contact_support.md",
+        title="Contact Support",
         sections=(
-            SectionSpec("Password Reset", "How to reset a forgotten account password."),
-            SectionSpec(
-                "Update Email Address", "How to change the email address on an account."
-            ),
-            SectionSpec("Close Account", "How to permanently close an account."),
+            SectionSpec("Channels", "Live chat, email, and phone support channels."),
+            SectionSpec("Service Hours", "Weekday and Saturday service windows."),
+            SectionSpec("Response Time", "Email SLA and live-chat response behavior."),
         ),
     ),
     DocSpec(
-        basename="account_security.md",
-        title="Account Security",
+        basename="account_management_security.md",
+        title="Account Management & Security",
         sections=(
+            SectionSpec("Registration", "Email, Google, and LINE sign-up methods."),
+            SectionSpec("Password Rules", "Minimum length and character classes."),
             SectionSpec(
-                "Two-Factor Authentication",
-                "Setting up and using two-factor authentication.",
+                "Two-Step Verification", "SMS and authenticator-app second factors."
             ),
             SectionSpec(
-                "Suspicious Activity",
-                "What happens when suspicious login activity is detected.",
+                "Login Protection", "Failed-attempt lockout threshold and duration."
             ),
             SectionSpec(
-                "Managing Trusted Devices", "How to view and remove trusted devices."
-            ),
-        ),
-    ),
-    DocSpec(
-        basename="bulk_orders.md",
-        title="Bulk Orders",
-        sections=(
-            SectionSpec(
-                "Eligibility and Minimum Order",
-                "Who qualifies for bulk orders and the minimum quantity required.",
-            ),
-            SectionSpec(
-                "Volume Discounts", "Discount tiers based on quantity ordered."
-            ),
-            SectionSpec(
-                "Fulfilment and Lead Times",
-                "How bulk orders are shipped and expected lead times.",
-            ),
-        ),
-    ),
-    DocSpec(
-        basename="customer_support.md",
-        title="Customer Support",
-        sections=(
-            SectionSpec(
-                "Contact Channels",
-                "Ways to reach the support team: chat, email, and phone.",
-            ),
-            SectionSpec(
-                "Escalation Process",
-                "How unresolved issues are escalated to specialist teams.",
-            ),
-            SectionSpec(
-                "Self-Service Resources",
-                "The help centre, FAQs, and virtual assistant.",
-            ),
-        ),
-    ),
-    DocSpec(
-        basename="damaged_items.md",
-        title="Damaged Items",
-        sections=(
-            SectionSpec(
-                "Reporting Damage",
-                "How to report a damaged delivery within the reporting window.",
-            ),
-            SectionSpec(
-                "Replacement Process", "What happens after a damage report is approved."
-            ),
-        ),
-    ),
-    DocSpec(
-        basename="gift_cards.md",
-        title="Gift Cards",
-        sections=(
-            SectionSpec(
-                "Purchase and Delivery",
-                "How to buy digital and physical gift cards and when they are delivered.",
-            ),
-            SectionSpec(
-                "Redeeming a Gift Card", "How to apply a gift card balance at checkout."
-            ),
-            SectionSpec("Lost Gift Cards", "Policy for replacing a lost gift card."),
-        ),
-    ),
-    DocSpec(
-        basename="international_shipping.md",
-        title="International Shipping",
-        sections=(
-            SectionSpec(
-                "Supported Countries",
-                "Which countries Acme Shop ships to and how to check.",
-            ),
-            SectionSpec(
-                "Customs and Duties",
-                "How import duties and taxes are handled for international orders.",
-            ),
-            SectionSpec(
-                "International Delivery Times",
-                "Expected transit times for international shipments.",
-            ),
-        ),
-    ),
-    DocSpec(
-        basename="loyalty_program.md",
-        title="Loyalty Program",
-        sections=(
-            SectionSpec("Earning Points", "How customers earn Acme Rewards points."),
-            SectionSpec(
-                "Redeeming Points", "How to redeem points for account credits."
-            ),
-            SectionSpec(
-                "Membership Tiers", "The three loyalty tiers and their benefits."
-            ),
-        ),
-    ),
-    DocSpec(
-        basename="order_management.md",
-        title="Order Management",
-        sections=(
-            SectionSpec("Cancel an Order", "How and when an order can be cancelled."),
-            SectionSpec(
-                "Change Shipping Address",
-                "How to update a shipping address before the order ships.",
-            ),
-            SectionSpec(
-                "Combine Orders", "How to merge two separate orders into one shipment."
-            ),
-            SectionSpec(
-                "Backordered Items",
-                "What happens when an item in an order is backordered.",
+                "Account Deletion", "Grace period and cancellation of deletion."
             ),
         ),
     ),
@@ -301,117 +191,152 @@ DOC_SPECS: tuple[DocSpec, ...] = (
         basename="payment_methods.md",
         title="Payment Methods",
         sections=(
-            SectionSpec("Accepted Cards", "Which payment methods Acme Shop accepts."),
+            SectionSpec("Credit Cards", "Accepted card networks for single payment."),
             SectionSpec(
-                "Payment Authorization", "How payment is authorised and captured."
+                "Credit Card Installments",
+                "Installment plans, minimum order, and interest rates.",
+            ),
+            SectionSpec("Mobile Payments", "Supported mobile wallets."),
+            SectionSpec(
+                "Convenience Store Payment Codes",
+                "Per-order limit and payment deadline for store codes.",
             ),
             SectionSpec(
-                "Failed Payments",
-                "What happens when a payment is declined and how to resolve it.",
+                "Cash on Delivery", "Eligibility, per-order limit, and handling fee."
             ),
+            SectionSpec("Not Accepted", "Payment methods ACME Shop does not accept."),
         ),
     ),
     DocSpec(
-        basename="price_matching.md",
-        title="Price Matching",
+        basename="shipping_delivery.md",
+        title="Shipping & Delivery",
         sections=(
             SectionSpec(
-                "Price Match Eligibility",
-                "Conditions under which Acme Shop will match a competitor's price.",
+                "Standard Shipping",
+                "Domestic delivery times, fee, and free-shipping threshold.",
             ),
             SectionSpec(
-                "Requesting a Price Match",
-                "How to submit a price-match request and the time limit.",
+                "Express Delivery", "Express timing, fee, cutoff, and exclusions."
             ),
+            SectionSpec("Dispatch Time", "Time from payment to dispatch."),
+            SectionSpec("Tracking", "Tracking notifications and update timing."),
         ),
     ),
     DocSpec(
-        basename="product_care.md",
-        title="Product Care",
+        basename="convenience_store_pickup.md",
+        title="Convenience Store Pickup",
         sections=(
+            SectionSpec("Fee", "Pickup fee and the shared free-shipping threshold."),
             SectionSpec(
-                "Cleaning Instructions", "How to clean Acme Shop products safely."
+                "Pickup Flow & Deadline", "SMS notification and the 7-day hold."
             ),
+            SectionSpec("Item Restrictions", "Weight and size limits."),
             SectionSpec(
-                "Storage Guidelines",
-                "Proper storage conditions to extend product life.",
+                "Cash on Delivery", "Combining store pickup with cash on delivery."
             ),
-            SectionSpec(
-                "Warranty Implications", "How improper care affects warranty coverage."
-            ),
-        ),
-    ),
-    DocSpec(
-        basename="product_information.md",
-        title="Product Information",
-        sections=(
-            SectionSpec(
-                "Stock Availability",
-                "How to check whether a product is in stock and set up restock alerts.",
-            ),
-            SectionSpec(
-                "Product Reviews", "How customer reviews are collected and displayed."
-            ),
-            SectionSpec(
-                "Size Guide",
-                "How to use Acme Shop's sizing charts to find the right fit.",
-            ),
-        ),
-    ),
-    DocSpec(
-        basename="promo_codes.md",
-        title="Promo Codes",
-        sections=(
-            SectionSpec(
-                "Applying a Code", "How to apply a promotional code at checkout."
-            ),
-            SectionSpec(
-                "Stacking Rules",
-                "Which combinations of promotional codes are permitted.",
-            ),
-        ),
-    ),
-    DocSpec(
-        basename="returns_policy.md",
-        title="Returns Policy",
-        sections=(
-            SectionSpec(
-                "Return Window",
-                "How long customers have to return an item and the conditions required.",
-            ),
-            SectionSpec(
-                "Refund Processing Time",
-                "How long refunds take after a return is received.",
-            ),
-            SectionSpec(
-                "Restocking Fee",
-                "Which items carry a restocking fee and the percentage charged.",
-            ),
-        ),
-    ),
-    DocSpec(
-        basename="shipping_options.md",
-        title="Shipping Options",
-        sections=(
-            SectionSpec("Standard Delivery", "Standard delivery timelines and costs."),
-            SectionSpec(
-                "Expedited Delivery", "Expedited and next-day delivery options."
-            ),
-            SectionSpec("Order Tracking", "How customers track their shipments."),
         ),
     ),
     DocSpec(
         basename="store_pickup.md",
         title="Store Pickup",
         sections=(
+            SectionSpec("Locations", "Which stores offer free in-store pickup."),
+            SectionSpec("Timing", "Ready-for-pickup timing after payment."),
+            SectionSpec("Hold Period", "Hold duration and auto-cancellation."),
+            SectionSpec("What to Bring", "Required barcode, ID, and proxy pickup."),
+        ),
+    ),
+    DocSpec(
+        basename="international_shipping.md",
+        title="International Shipping",
+        sections=(
+            SectionSpec("Destinations", "Countries and regions ACME ships to."),
+            SectionSpec("Delivery Times", "Business-day ranges for Asia and North America."),
+            SectionSpec("Fees", "Starting fees by region; no free shipping."),
+            SectionSpec("Duties & Taxes", "DDU terms — recipient pays duties."),
+            SectionSpec("Excluded Items", "Liquids and battery products excluded."),
+        ),
+    ),
+    DocSpec(
+        basename="order_management.md",
+        title="Order Management",
+        sections=(
             SectionSpec(
-                "Buy Online Pick Up In Store",
-                "How to place an order for in-store pickup.",
+                "Cancelling an Order", "Self-service cancellation before dispatch."
             ),
             SectionSpec(
-                "Pickup Identification",
-                "What identification is needed to collect an order.",
+                "Modifying an Order", "Address and payment-method change windows."
             ),
+            SectionSpec(
+                "Order History & Invoices", "Retention period and e-invoice download."
+            ),
+        ),
+    ),
+    DocSpec(
+        basename="refunds_returns.md",
+        title="Refunds & Returns",
+        sections=(
+            SectionSpec("Refund Window", "The 14-day post-delivery request window."),
+            SectionSpec("Conditions", "Unused condition, packaging, proof of purchase."),
+            SectionSpec("Process", "Request steps, review time, and refund timing."),
+            SectionSpec(
+                "Return Shipping", "Who pays return shipping; no restocking fee."
+            ),
+            SectionSpec("Non-Refundable Items", "Digital, customized, opened items."),
+        ),
+    ),
+    DocSpec(
+        basename="damaged_items.md",
+        title="Damaged Items",
+        sections=(
+            SectionSpec(
+                "Reporting Deadline & Method", "48-hour photo report via My Orders."
+            ),
+            SectionSpec(
+                "Resolution Options", "Free replacement or full refund choices."
+            ),
+            SectionSpec("Replacement Timing", "Dispatch timing after approval."),
+            SectionSpec(
+                "Difference from Regular Returns",
+                "Exemptions from normal return conditions.",
+            ),
+        ),
+    ),
+    DocSpec(
+        basename="membership_points.md",
+        title="Membership & Reward Points",
+        sections=(
+            SectionSpec("Earning Points", "Earn rate, eligible amounts, credit timing."),
+            SectionSpec("Redeeming Points", "Redemption rate and per-order cap."),
+            SectionSpec("Expiry", "12-month validity and balance lookup."),
+            SectionSpec("Referrals", "Referral bonus conditions."),
+            SectionSpec("Restrictions", "No cash-out, no transfer, refund clawback."),
+            SectionSpec("Membership Tiers", "Member, Gold, and Platinum tiers."),
+        ),
+    ),
+    DocSpec(
+        basename="gift_cards.md",
+        title="Gift Cards",
+        sections=(
+            SectionSpec(
+                "Denominations & Delivery", "Digital denominations and email delivery."
+            ),
+            SectionSpec("Validity", "No expiry under Taiwan voucher rules."),
+            SectionSpec(
+                "Gift Cards and Reward Points",
+                "Point earning rules when buying vs paying with gift cards.",
+            ),
+            SectionSpec("Restrictions", "No refund, no cash-out, balance handling."),
+        ),
+    ),
+    DocSpec(
+        basename="promo_codes.md",
+        title="Promo Codes",
+        sections=(
+            SectionSpec("How to Use", "Applying a code at checkout."),
+            SectionSpec("Rules", "One code per order; stacking with points."),
+            SectionSpec("Exclusions", "Gift cards and on-sale items."),
+            SectionSpec("Expiry", "Expired codes are not reissued."),
         ),
     ),
     DocSpec(
@@ -419,17 +344,14 @@ DOC_SPECS: tuple[DocSpec, ...] = (
         title="Subscription Orders",
         sections=(
             SectionSpec(
-                "Setting Up a Subscription",
-                "How to enrol a product in auto-replenishment.",
+                "Eligible Items & Cycles", "Consumables and 30/60/90-day cycles."
             ),
             SectionSpec(
-                "Managing a Subscription",
-                "How to pause, skip, or cancel a subscription.",
+                "Subscription Benefits", "Per-cycle discount and free shipping."
             ),
-            SectionSpec(
-                "Subscription Pricing Changes",
-                "How price changes affect active subscriptions.",
-            ),
+            SectionSpec("Pausing", "Pause limit and the 24-hour cutoff."),
+            SectionSpec("Cancelling", "Cancellation cutoff and prorated refunds."),
+            SectionSpec("Reactivating", "Current-price reactivation."),
         ),
     ),
 )

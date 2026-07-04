@@ -1,23 +1,30 @@
 # Payment Methods
 
-## Accepted Cards
+This document describes the payment methods ACME Shop accepts and their limits.
 
-At Acme Shop, we strive to make your shopping experience as seamless as possible by offering a variety of payment options to meet your needs. We currently accept major credit cards including Visa, MasterCard, American Express, and Discover. Using these cards, you can easily complete your purchase with a few simple steps. During the checkout process, you will be prompted to enter your card details, including the card number, expiration date, and security code. Once submitted, our secure payment processor will handle your transaction swiftly, ensuring your information is protected. 
+## Credit Cards
 
-While we do not charge additional fees for using credit cards, it's important to note that your card issuer may impose certain fees, such as foreign transaction fees if you are purchasing from outside the United States. Transactions are typically processed immediately, though it may take a few business days for the charge to appear on your statement. In rare cases, a transaction might be declined by your card issuer due to insufficient funds, exceeding your credit limit, or other restrictions. If this occurs, we recommend checking with your card issuer for further details. Additionally, ensure that your billing address matches the one on file with your card issuer to avoid any disruptions during the payment process. At Acme Shop, we are committed to providing a safe and convenient shopping experience for all our customers.
+**VISA, MasterCard, and JCB** are accepted for single payments.
 
-## Payment Authorization
+## Credit Card Installments
 
-When you make a purchase on Acme Shop, the payment authorization process is a crucial step to ensure the transaction goes smoothly. Initially, when you submit your order, Acme Shop sends a request to your bank or card issuer to verify the payment details and check if sufficient funds are available. This step is known as authorization. During authorization, your bank temporarily reserves the purchase amount, but no funds are actually transferred to Acme Shop at this point. This authorization hold typically lasts for 3 to 7 business days, depending on your bank's policies.
+Orders of **NT$3,000 or more** qualify for installment payments over **3, 6, or 12 installments**:
 
-Once your order is processed and ready for shipment, Acme Shop captures the funds. Capturing is the process of transferring the reserved amount from your account to Acme Shop, completing the payment transaction. If your order is canceled before shipment or if there are any issues, the hold on your funds will be released according to your bank's timeline, usually within the same 3 to 7 business days. There are no additional fees from Acme Shop for authorization and capturing; however, it's advisable to check with your bank for any applicable policies or fees they might impose.
+- 3 and 6 installments: **interest-free**.
+- 12 installments: **5% annual interest**.
 
-In some cases, such as pre-orders or custom orders, the authorization hold may be extended if the item isn't ready to ship immediately. If you're using a debit card, be mindful that the hold will affect your available balance until the hold is released or the funds are captured. Should you encounter any issues or discrepancies during this process, our customer support team is available to assist you in resolving them promptly.
+## Mobile Payments
 
-## Failed Payments
+**Apple Pay** and **Google Pay** are supported.
 
-When a payment is declined at Acme Shop, it typically means that your bank or payment provider has rejected the transaction. Common reasons for declined payments include insufficient funds, incorrect card details, expired cards, or security concerns triggered by unusual spending patterns. When this occurs, you will receive an immediate notification on our website or app, along with a prompt to review your payment information. We recommend double-checking your credit or debit card details, ensuring that your billing address matches the one on file with your bank, and confirming that your card is still valid.
+## Convenience Store Payment Codes
 
-To resolve a declined payment, you can attempt the transaction again after verifying the above details. If the issue persists, contact your bank or card issuer to understand the specific reason for the decline. In some cases, banks may place a hold on your account for security purposes, requiring you to authorize the transaction before it can proceed. If your payment method is still not accepted, consider using an alternative payment option available on Acme Shop, such as PayPal or another credit card. There are no fees from Acme Shop for declined payments, but your bank might charge you based on their policies.
+Per-order limit of **NT$20,000**, payable within **3 days**; unpaid orders are cancelled automatically after the deadline.
 
-For situations where your order is time-sensitive, such as limited-stock items or special promotions, we recommend resolving payment issues as quickly as possible. Orders are not confirmed until payment is successfully processed, and any items in your cart are not reserved during this time. If you continue to face difficulties, our customer support team is available 24/7 to assist you with any payment-related inquiries.
+## Cash on Delivery
+
+Available only for **convenience store pickup orders on the main island**, with a per-order limit of **NT$20,000** and a **NT$30** handling fee.
+
+## Not Accepted
+
+Bank transfers, checks, and foreign-currency payments are not accepted.

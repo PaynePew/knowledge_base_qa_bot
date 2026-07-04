@@ -1,37 +1,21 @@
-# Acme Shop
+# About ACME Shop
 
-## Company History
+This document covers ACME Shop's background, retail locations, and product mix.
 
-Acme Shop was founded in 2005 by Jane Doe and John Smith, who were inspired by their shared passion for innovative products and exceptional customer service. The company began as a small online venture operating from a garage in San Francisco, with a modest inventory of unique, handcrafted items. Both founders were committed to creating an online shopping experience that was not only convenient but also personalized, setting Acme Shop apart from other e-commerce platforms of the time. 
+## Background
 
-Over the years, Acme Shop has experienced significant growth, fueled by its dedication to quality and customer satisfaction. By 2010, the company had expanded its product range to include electronics, home goods, and apparel, catering to a broader audience. This expansion was supported by strategic investments in technology and logistics, allowing Acme Shop to offer fast, reliable shipping and seamless online transactions. In 2015, Acme Shop opened its first brick-and-mortar store in New York City, offering customers the option to experience products in person. Today, Acme Shop is a leading e-commerce platform with a global presence, recognized for its innovative approach and commitment to sustainability, including eco-friendly packaging and a robust program for recycling and product donations.
+ACME Shop was founded in **2015** and is headquartered in Taipei. It is an online shopping platform focused on home & living goods and consumer electronics accessories.
 
-## Mission
+## Retail Stores
 
-At Acme Shop, our mission is to revolutionize the online shopping experience by offering exceptional products and unparalleled customer service. We strive to provide a diverse range of high-quality goods that cater to the varied needs and preferences of our customers. Our commitment to excellence is reflected in every aspect of our operations, from sourcing sustainable products to ensuring efficient delivery. Our goal is to create a seamless and enjoyable shopping journey for every customer, every time.
+ACME Shop operates **3 physical stores**:
 
-Core to our mission are our guiding principles: customer satisfaction, integrity, innovation, and sustainability. We prioritize customer satisfaction by implementing a user-friendly platform, offering 24/7 customer support, and providing transparent return policies. Integrity is at the heart of our business practices, as we engage in fair trade and maintain honest communications with our customers and partners. Innovation drives us to continuously enhance our website and adopt the latest technologies to streamline the shopping process. Lastly, we are dedicated to sustainability by choosing eco-friendly packaging and supporting brands that share our commitment to environmental responsibility.
+- Taipei Xinyi
+- Taichung Xitun
+- Kaohsiung Dream Mall
 
-We understand that our customers have questions about product availability, shipping times, and return policies. At Acme Shop, standard shipping typically takes 5-7 business days, with expedited options available for an additional fee. We offer a 30-day return policy on most items, with eligibility conditions clearly outlined on our website. Our dedicated customer service team is always ready to assist with any inquiries or concerns, ensuring that your shopping experience with Acme Shop is nothing short of exceptional.
+All three stores support in-store pickup; see "Store Pickup" for details.
 
-## Team Summary
+## Product Mix
 
-At Acme Shop, our leadership team is composed of experienced professionals who drive our mission to deliver exceptional online retail experiences. Leading the charge is our CEO, Jane Doe, who co-founded Acme Shop in 2015. With over 20 years of experience in e-commerce and a background in digital marketing, Jane has been instrumental in growing Acme Shop from a small startup to a leading online marketplace. Her strategic vision and commitment to innovation ensure that our customers receive the best products and services.
-
-Supporting Jane is our COO, John Smith, who joined Acme Shop in 2017. With a keen eye for operational efficiency and a passion for customer satisfaction, John oversees daily operations, ensuring our processes run smoothly. His previous roles in logistics and supply chain management have equipped him with the skills needed to streamline our shipping and fulfillment services. John's leadership ensures that customers receive their orders promptly and accurately, with most shipments delivered within a standard timeframe of 3-5 business days.
-
-Also integral to our team is our CTO, Sarah Lee, who has been with Acme Shop since its inception. An expert in technology solutions, Sarah leads our tech team in developing user-friendly platforms and secure transaction systems. Her focus on cyber-security and user experience guarantees that our customers enjoy a seamless and safe shopping experience. If you have any questions or need assistance, our leadership team and dedicated support staff are always ready to help, ensuring that your experience with Acme Shop is nothing short of excellent.
-
-## Locations
-
-Acme Shop is committed to providing efficient service and prompt delivery to our customers worldwide, thanks to our strategically located warehouses and offices. Our primary warehouse is situated in Dallas, Texas, which serves as the central hub for our distribution network across North America. This location allows us to efficiently manage and ship orders throughout the United States within 3 to 5 business days. For our customers on the West Coast, we also operate a secondary warehouse in Los Angeles, California, which helps expedite delivery times to the region.
-
-In addition to our U.S. locations, Acme Shop has a significant international presence. We have warehouses in Rotterdam, Netherlands, and Singapore to cater to our European and Asian customers, respectively. Orders from these locations typically arrive within 5 to 7 business days, depending on customs clearance and local postal services. Our offices in London, UK, and Sydney, Australia, handle regional customer service and business operations, ensuring that we maintain a high level of customer satisfaction across different time zones.
-
-We do not charge additional fees for shipping from international warehouses; however, customers should be aware of potential customs duties and taxes applicable in their country. Our team is dedicated to providing clear tracking information and support throughout the delivery process, ensuring a seamless shopping experience no matter where you are located.
-
-## Contact
-
-If you need to get in touch with Acme Shop, we offer several convenient options to ensure your inquiries are addressed promptly. For customer service, you can reach our dedicated support team via email at support@acmeshop.com or by calling our toll-free number, 1-800-555-ACME, available Monday through Friday, 8:00 AM to 8:00 PM EST. Our team strives to respond to all email inquiries within 24 hours, though response times may vary during peak shopping seasons. When contacting us, please have your order number handy to help us assist you more efficiently. For immediate assistance, our live chat feature on the Acme Shop website is available during business hours and connects you directly with a customer service representative.
-
-If you are a member of the press seeking information about Acme Shop, please direct your inquiries to our Public Relations department at press@acmeshop.com. Our PR team is ready to assist with media requests, press releases, and interview opportunities. Please include the nature of your inquiry, publication details, and any deadlines in your email to ensure a timely response. While we aim to reply within 48 hours, please allow additional time during major product launches or promotional events. Note that Acme Shop does not charge fees for media inquiries; however, all requests are subject to review and approval based on our media policy.
+The private label **ACME Basics** accounts for roughly 30% of the catalog, focused on high value-for-money essentials; the remaining 70% are distributed brands. ACME Basics products carry a longer warranty — see "Product Warranty".

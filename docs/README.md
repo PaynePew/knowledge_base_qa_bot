@@ -6,16 +6,24 @@ Markdown Source files for the knowledge base.
 
 ```
 docs/
-  fake-docs/      # Synthetic Source pool (demo KB + Phase 8 eval input)
+  fake-docs/      # Curated EN Source pool (demo KB + Phase 8 eval input)
+  demo-zh/        # Curated zh-TW Source pool (1:1 topic parity with fake-docs)
   account_help.md # Three hermetic fixture files used by test suites
   refund_policy.md
   shipping_faq.md
 ```
 
-`docs/fake-docs/` is the single synthetic Source pool shared by the runtime
-demo KB (`POST /ingest` from the root) and the Phase 8 Paraphrase Comparison
-eval. The Phase 8 eval freezes a snapshot of this directory into
-`eval/paraphrase_comparison/corpus/` at run time so the committed eval report
+`docs/fake-docs/` (EN) and `docs/demo-zh/` (zh-TW) form the **corpus v2**
+demo pool (issue #440): 16 topics per language, hand-authored from the
+canonical fact sheet `project-docs/demo-corpus/FACTS.md`. Every statement in
+these files traces to an `F-*` fact entry — do not add or change a fact here
+without updating FACTS.md first. The plan is mirrored in
+`eval/paraphrase_comparison/generation/corpus_generator.py` (`DOC_SPECS`),
+whose tests enforce name consistency and the ≥50 Gold Sections floor.
+
+The pre-v2 generated corpus is preserved at the git tag `full-fake-corpus`.
+The Phase 8 eval freezes a snapshot of `docs/fake-docs/` into
+`eval/paraphrase_comparison/corpus/` at run time, so the committed eval report
 stays reproducible even when demo content is later edited.
 
 The three root-level fixture files (`account_help.md`, `refund_policy.md`,

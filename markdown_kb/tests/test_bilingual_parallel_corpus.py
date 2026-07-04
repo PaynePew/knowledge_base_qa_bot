@@ -89,7 +89,8 @@ def test_source_level_one_to_one_parity():
     assert len(en) == len(zh), (
         f"EN/ZH Source counts must match for 1:1 parity: {len(en)} EN vs {len(zh)} ZH"
     )
-    assert len(zh) >= 20, f"expected the full parallel ZH corpus (>=20 Sources), got {len(zh)}"
+    # Corpus v2 (#440): the curated FACTS.md-driven pool is 16 topics per language.
+    assert len(zh) >= 16, f"expected the full parallel ZH corpus (>=16 Sources), got {len(zh)}"
 
 
 def test_baked_seed_is_genuinely_bilingual(baked_index):
