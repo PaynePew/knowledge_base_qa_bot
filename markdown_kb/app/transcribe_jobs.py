@@ -44,6 +44,7 @@ import asyncio
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Literal
 from uuid import uuid4
 
 from .transcriber import TranscribePathError
@@ -67,7 +68,7 @@ class TranscribeJobResult:
     """
 
     source: str
-    status: str  # "created" | "updated" | "skipped" | "failed"
+    status: Literal["created", "updated", "skipped", "failed"]
     docs_path: str | None = None
     error_type: str | None = None
     error_message: str | None = None
@@ -94,7 +95,7 @@ class TranscribeJob:
     """
 
     job_id: str
-    status: str = "submitted"
+    status: Literal["submitted", "working", "completed", "failed"] = "submitted"
     pages_done: int = 0
     pages_total: int = 0
     results: list[TranscribeJobResult] = field(default_factory=list)

@@ -1172,7 +1172,7 @@ class TranscribeJobResultSchema(BaseModel):
     """
 
     source: str
-    status: str
+    status: Literal["created", "updated", "skipped", "failed"]
     docs_path: str | None = None
     error_type: str | None = None
     error_message: str | None = None
