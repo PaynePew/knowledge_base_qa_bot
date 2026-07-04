@@ -2040,6 +2040,19 @@ var LINT_CHECK_META = {
   C9:  { label: "stale-qa",         tier: "authored",  findingsKey: "stale_filed_answers" },
 };
 
+/* issue #438: C8/C9/C10 already had their real Promote/Discard/Re-file
+   controls living exclusively in the dedicated Curation Queue block (see
+   the LINT_CHECK_META comment above). Before this slice the Lint card's
+   Lifecycle axis ALSO rendered a button-less row per finding for these
+   three checks — pure duplication of the same finding shown twice on one
+   page. This set drives the axis-loop branch (renderLintCard below) that
+   replaces those per-item rows with a single count + pointer line
+   (queueCountLine). Their ROW_RENDERERS entries stay defined unchanged —
+   existing structural tests (test_ui_console_lint_remediation.py) pin
+   their exact no-action shape — they are simply never invoked for these
+   three codes now. */
+var QUEUE_OWNED_LIFECYCLE_CHECKS = { C8: true, C9: true, C10: true };
+
 /* ============================================================
    zh/en Console header language toggle (issue #365, ADR-0023 tier-A S5)
 
@@ -2136,6 +2149,7 @@ var LINT_CHROME = {
     c3GiveUpSuffix:      " and this page becomes a C11 full orphan, removable via Confirmed delete.",
     assignAlias:           "Assign Alias",
     assignAliasChoosePage: "Choose a page…",
+    seeCurationQueue:      "see Curation Queue below",
   },
   zh: {
     reingest:        "重新匯入",
@@ -2176,6 +2190,7 @@ var LINT_CHROME = {
     c3GiveUpSuffix:      " 後此頁轉為 C11 full orphan,可用 Confirmed delete 移除。",
     assignAlias:           "指派別名",
     assignAliasChoosePage: "選擇頁面…",
+    seeCurationQueue:      "詳見下方 Curation Queue",
   },
 };
 
@@ -2843,6 +2858,26 @@ function renderLintCard(data, resultEl) {
     );
   }
 
+  /* Helper: emit a check group heading for a Curation-Queue-owned check
+     (C8/C9/C10, issue #438, QUEUE_OWNED_LIFECYCLE_CHECKS above) — same
+     "CODE label (count)" shape as checkHead, plus a trailing pointer
+     sentence naming the Curation Queue section, and (deliberately) NO
+     per-item rows below it. batchBtnEl (optional) still renders flush
+     right — C10's "Discard all" is a bulk action, not a per-finding
+     duplicate, so it is unaffected by this slice. "Curation Queue" itself
+     stays the literal English proper noun in both languages, matching
+     renderCurationQueue's own header text (never localized, issue #365
+     scope was chrome strings owned by THIS file only). */
+  function queueCountLine(code, count, batchBtnEl) {
+    var meta = LINT_CHECK_META[code];
+    var label = consoleLang === "zh" ? LINT_CHECK_LABEL_ZH[code] : meta.label;
+    var pointer = LINT_CHROME[consoleLang].seeCurationQueue;
+    return el("div", { class: "lint-group-head" },
+      el("span", { text: code + " " + label + " (" + count + ") — " + pointer }),
+      batchBtnEl || null
+    );
+  }
+
   /* Helper: emit one finding row. actionsEl (optional) is appended inside
      the body cell, below the id/crumb text, so the existing 3-column .rec
      grid used by every other result card stays untouched. */
@@ -3283,6 +3318,17 @@ function renderLintCard(data, resultEl) {
         var c10Slugs = dedupeSlugList(items);
         if (c10Slugs.length > 0) checkBatchBtnEl = discardAllAction(c10Slugs);
       }
+
+      /* issue #438: C8/C9/C10 findings render exactly once on the page —
+         in the Curation Queue. Skip the per-item ROW_RENDERERS loop for
+         these three and push a single count + pointer line instead
+         (C10's "Discard all" batch button, if any, still rides along on
+         that one line — a bulk action is not a per-finding duplicate). */
+      if (QUEUE_OWNED_LIFECYCLE_CHECKS[code]) {
+        axisBody.push(queueCountLine(code, items.length, checkBatchBtnEl));
+        return;
+      }
+
       axisBody.push(checkHead(code, items.length, checkBatchBtnEl));
       items.forEach(function(item, i) { axisBody.push(ROW_RENDERERS[code](i + 1, item)); });
 
