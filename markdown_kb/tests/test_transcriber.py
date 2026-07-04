@@ -17,8 +17,11 @@ CODING_STANDARD §6.3 — never the deep-module entry points themselves.
 
 from __future__ import annotations
 
+import gc
+import io
 from pathlib import Path
 
+import pypdfium2 as pdfium
 import pytest
 import yaml
 
@@ -164,6 +167,73 @@ def test_transcribe_pdf_bytes_all_blank_pages_raises_transcribe_error(monkeypatc
     raw_bytes = (FIXTURES / "transcribe_scanned_cjk.pdf").read_bytes()
     with pytest.raises(transcriber_module.TranscribeError):
         transcriber_module.transcribe_pdf_bytes(raw_bytes)
+
+
+def _blank_multi_page_pdf_bytes(page_count: int) -> bytes:
+    """Build a minimal in-memory multi-page PDF (no fixture file needed)."""
+    pdf = pdfium.PdfDocument.new()
+    for _ in range(page_count):
+        pdf.new_page(200, 200)
+    buf = io.BytesIO()
+    pdf.save(buf)
+    pdf.close()
+    return buf.getvalue()
+
+
+class _TrackedImage(bytes):
+    """A ``bytes`` subclass that counts how many instances are alive at once.
+
+    CPython drops an object's refcount to zero (triggering ``__del__``)
+    as soon as its last reference is gone — so ``max_live`` across a run
+    is an exact, deterministic measure of peak concurrently-alive images,
+    with no reliance on GC timing.
+    """
+
+    live = 0
+    max_live = 0
+
+    def __init__(self, _data: bytes) -> None:
+        super().__init__()
+        type(self).live += 1
+        type(self).max_live = max(type(self).max_live, type(self).live)
+
+    def __del__(self) -> None:
+        type(self).live -= 1
+
+
+def test_transcribe_pdf_bytes_streams_one_page_image_at_a_time(monkeypatch):
+    """Regression test for #456: streaming must not hold >1 rendered page image.
+
+    Tracks live rendered-image instances through a monkeypatched
+    ``_render_page_png`` across a multi-page PDF. The pre-#456 implementation
+    rasterized every page into ``page_images`` upfront, so ``max_live`` would
+    equal ``page_count``; the fix must keep it at 1.
+    """
+    import app.transcriber as transcriber_module
+
+    _TrackedImage.live = 0
+    _TrackedImage.max_live = 0
+
+    def fake_render(_page: object) -> bytes:
+        return _TrackedImage(b"fake-rendered-page-png")
+
+    monkeypatch.setattr(transcriber_module, "_render_page_png", fake_render)
+
+    fake_llm = FakeTranscribeLLM()
+    monkeypatch.setattr(transcriber_module, "get_transcribe_llm", lambda: fake_llm)
+
+    page_count = 5
+    raw_bytes = _blank_multi_page_pdf_bytes(page_count)
+
+    transcriber_module.transcribe_pdf_bytes(raw_bytes)
+
+    gc.collect()
+    assert fake_llm.call_count == page_count
+    assert _TrackedImage.max_live == 1, (
+        "at most one rendered page image may be alive at a time; "
+        f"observed {_TrackedImage.max_live} concurrently alive"
+    )
+    assert _TrackedImage.live == 0, "no rendered page image should outlive transcribe_pdf_bytes"
 
 
 # ---------------------------------------------------------------------------

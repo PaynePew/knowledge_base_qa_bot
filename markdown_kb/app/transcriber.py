@@ -19,12 +19,14 @@ Pipeline (force entry — ``transcribe_source`` / ``transcribe_path``):
        checked before any model call.
     4. Page-count guard (``KB_TRANSCRIBE_MAX_PAGES``, default 50) -> typed
        ``TranscribePageLimitExceeded``, checked before any model call.
-    5. Rasterize each page (pypdfium2) and transcribe it via the vision model
-       under a faithful-transcription prompt (form only — no summarization,
-       no synthesis, no completion). A page that still fails after the
-       ``ChatOpenAI`` wrapper's bounded retry fails the WHOLE file (typed
-       ``TranscribeError``) with no partial write (atomicity, mirrors
-       Import's atomic-write convention).
+    5. Rasterize and transcribe pages one at a time, in order (pypdfium2 render
+       -> vision model under a faithful-transcription prompt — form only, no
+       summarization, no synthesis, no completion). Each page's rendered
+       image is released before the next page is rasterized, so peak memory
+       is O(one page) rather than O(page count) (issue #456). A page that
+       still fails after the ``ChatOpenAI`` wrapper's bounded retry fails the
+       WHOLE file (typed ``TranscribeError``) with no partial write
+       (atomicity, mirrors Import's atomic-write convention).
     6. Assemble page bodies, pass through ``kangxi_normalize`` (issue #425)
        as defense in depth, and render the standard provenance envelope
        (``imported_from``, ``original_format: pdf``, ``imported_at``,
@@ -256,8 +258,10 @@ def transcribe_pdf_bytes(raw_bytes: bytes) -> tuple[str, str]:
 
     Assumes the caller has already confirmed ``transcribe_available()``.
     Checks the page count against ``KB_TRANSCRIBE_MAX_PAGES`` (default 50)
-    BEFORE any model call, then rasterizes and transcribes each page in
-    order, joining page bodies with a blank line.
+    BEFORE any model call, then rasterizes and transcribes each page
+    page-at-a-time (issue #456) — page i's rendered image is released before
+    page i+1 is rasterized, so peak memory is O(one page) instead of
+    O(page count). Page bodies are joined with a blank line, in order.
 
     Returns ``(assembled_markdown, model_name)``. ``assembled_markdown`` has
     already passed through ``normalize_kangxi_radicals`` (issue #425, defense
@@ -279,17 +283,28 @@ def transcribe_pdf_bytes(raw_bytes: bytes) -> tuple[str, str]:
             raise TranscribePageLimitExceeded(
                 f"PDF has {page_count} page(s), exceeding KB_TRANSCRIBE_MAX_PAGES={max_pages}"
             )
-        page_images = [_render_page_png(pdf[i]) for i in range(page_count)]
+        page_bodies = [_render_and_transcribe_page(pdf, i) for i in range(page_count)]
     finally:
         pdf.close()
 
-    page_bodies = [_transcribe_one_page(img, i + 1) for i, img in enumerate(page_images)]
     assembled = "\n\n".join(body for body in page_bodies if body)
     if not assembled.strip():
         raise TranscribeError(
             f"Transcription produced no content across {page_count} page(s); assembly failed."
         )
     return normalize_kangxi_radicals(assembled), _transcribe_model_name()
+
+
+def _render_and_transcribe_page(pdf: pdfium.PdfDocument, page_index: int) -> str:
+    """Render one page to PNG and transcribe it, then let the image go out of scope.
+
+    The rendered PNG bytes live only inside this function's frame — they are
+    dropped when this call returns, before the caller renders the next page
+    (issue #456). This is what keeps ``transcribe_pdf_bytes`` from holding
+    more than one page image in memory at a time.
+    """
+    page_png = _render_page_png(pdf[page_index])
+    return _transcribe_one_page(page_png, page_index + 1)
 
 
 def _render_page_png(page: pdfium.PdfPage) -> bytes:
