@@ -16,6 +16,15 @@ services:
     mem_limit: 512m
     cpus: "0.5"
     env_file: .env.prod
+    environment:
+      # ACCEPTED DEVIATION from the reset workflow's "zero OpenAI tokens at
+      # boot" default (issue #439): fires one tiny embeddings + one tiny LLM
+      # ping per distinct OpenAI client at every startup/reset, priming
+      # connections so the first real /chat per stack is not the one paying
+      # cold-client latency. A few tokens per boot; see .env.example and
+      # .github/workflows/reset.yml for the full tradeoff. Committed here
+      # (not .env.prod) so the deviation is visible in version control.
+      - KB_WARMUP_PING=true
     networks:
       - default
       - edge

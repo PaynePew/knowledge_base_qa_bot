@@ -3,9 +3,18 @@
 # Recreating the container from the SAME baked image discards its ephemeral
 # writable layer, returning it to the pre-ingested / pre-indexed seed. There is
 # NO pull and NO rebuild here, so the seed is exactly the image that is already
-# on the box -> the reset costs ZERO OpenAI tokens (nothing ingests or indexes
-# at boot). This workflow only force-recreates the single `ask-wiki-rag`
+# on the box -> the reset costs ZERO OpenAI tokens by default (nothing ingests
+# or indexes at boot; loading the committed BM25/FAISS/hybrid-dense seeds is a
+# pure disk read). This workflow only force-recreates the single `ask-wiki-rag`
 # service and smokes /healthz.
+#
+# ACCEPTED DEVIATION (issue #439): prod compose sets `KB_WARMUP_PING=true`, so
+# every reset now also fires one tiny embeddings + one tiny LLM ping per
+# distinct OpenAI client (a few tokens total) to prime connections and close
+# the post-reset `/chat` cold start. This is a deliberate, small, bounded
+# token cost traded for eliminating first-request latency after every reset;
+# unset the flag in `docker-compose.prod.yml` to restore the strict
+# zero-token boot.
 name: reset
 
 on:
@@ -48,7 +57,9 @@ jobs:
             # zero blast radius to the scheduler / qrcode tenants.
             docker compose -p ask-wiki-rag -f docker-compose.prod.yml up -d --force-recreate ask-wiki-rag
             # /healthz smoke via python (python:3.11-slim has NO curl). Retry to
-            # let uvicorn + the langchain/faiss imports finish starting.
+            # let uvicorn + the langchain/faiss imports AND the Gateway startup
+            # warmup (hybrid dense index + optional client pings, issue #439)
+            # finish before treating a slow-starting box as unhealthy.
             for i in $(seq 1 10); do
               if docker compose -p ask-wiki-rag -f docker-compose.prod.yml exec -T ask-wiki-rag \
                    python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz', timeout=5).status == 200 else 1)"; then
