@@ -2,11 +2,11 @@
 
 HTTP wiring for /health, /index, /chat, /qa/{slug}/promote,
 /qa/promote-batch, /qa/{slug} (DELETE, PUT), /qa/{slug}/refile, /ingest,
-/lint, /import, /transcribe, /pages/reconcile, /pages/reconcile/apply,
-/pages/collision/merge, /pages/collision/merge/apply,
-/pages/collision/differentiate, /pages/collision/differentiate/apply,
-/pages/{slug} (DELETE), /pages/{slug}/aliases (POST),
-/pages/resolution-map (GET). No domain logic."""
+/lint, /import, /transcribe, /transcribe/batch, /transcribe/jobs/{job_id},
+/pages/reconcile, /pages/reconcile/apply, /pages/collision/merge,
+/pages/collision/merge/apply, /pages/collision/differentiate,
+/pages/collision/differentiate/apply, /pages/{slug} (DELETE),
+/pages/{slug}/aliases (POST), /pages/resolution-map (GET). No domain logic."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from . import indexer as _indexer
 from . import pages as pages_module
 from . import qa as qa_module
 from . import reconcile as reconcile_module
+from . import transcribe_jobs
 from .errors import LLMError
 from .importer import ImportBatchResult
 from .importer import import_sources as run_import
@@ -55,6 +56,10 @@ from .schemas import (
     ReconcileGenerateRequest,
     ReconcileGenerateResponse,
     ResolutionMapResponse,
+    TranscribeBatchRequest,
+    TranscribeBatchSubmitResponse,
+    TranscribeJobResultSchema,
+    TranscribeJobStatusResponse,
     TranscribeRequest,
     TranscribeResponse,
 )
@@ -539,6 +544,72 @@ def transcribe_raw(req: TranscribeRequest) -> TranscribeResponse:
         content_sha256=result.content_sha256,
         transcribe_model=result.transcribe_model,
         status=result.status,
+    )
+
+
+# ---------------------------------------------------------------------------
+# /transcribe/batch + /transcribe/jobs/{job_id} — async submit/poll (issue #459 AC5)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/transcribe/batch", response_model=TranscribeBatchSubmitResponse)
+async def transcribe_batch(req: TranscribeBatchRequest) -> TranscribeBatchSubmitResponse:
+    """Submit a batch of named raw/ PDFs for background force-transcription.
+
+    issue #459 item 5: a batch of large scans run one after another (mirrors
+    ``import_sources``) can take minutes — long enough to blow an HTTP
+    client's connection window even with per-PDF page concurrency. This
+    returns a job id IMMEDIATELY; the background task keeps running
+    independent of the client connection, and each source lands in
+    ``docs/`` (origin: transcribed) exactly as a synchronous ``POST
+    /transcribe`` call would. Poll ``GET /transcribe/jobs/{job_id}`` for
+    progress and, eventually, per-source results.
+
+    Shallow wrapper around ``transcribe_jobs.submit_batch`` (CODING_STANDARD
+    §2.3 — all domain logic lives in ``transcribe_jobs.py`` /
+    ``transcriber.py``). Always returns HTTP 200 — per-source validation and
+    conversion failures are recorded in the job's ``results`` once it
+    completes, not raised here (mirrors ``POST /import``'s always-200
+    contract for batch failures).
+    """
+    job = transcribe_jobs.submit_batch(req.sources)
+    return TranscribeBatchSubmitResponse(job_id=job.job_id)
+
+
+@router.get("/transcribe/jobs/{job_id}", response_model=TranscribeJobStatusResponse)
+async def get_transcribe_job(job_id: str) -> TranscribeJobStatusResponse:
+    """Poll a background Transcribe batch's status, progress, and results.
+
+    issue #459 AC4: ``pages_done`` / ``pages_total`` track pages across the
+    WHOLE batch, updated as each PDF's pages complete — the data source for
+    a Console progress bar (#447).
+
+    Shallow wrapper around ``transcribe_jobs.status`` (CODING_STANDARD §2.3).
+
+    Raises:
+        HTTP 404: no job with this id (never submitted, or the process
+            restarted — the registry is in-memory only).
+    """
+    job = transcribe_jobs.status(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"transcribe job not found: {job_id}")
+
+    return TranscribeJobStatusResponse(
+        job_id=job.job_id,
+        status=job.status,  # type: ignore[arg-type]
+        pages_done=job.pages_done,
+        pages_total=job.pages_total,
+        results=[
+            TranscribeJobResultSchema(
+                source=r.source,
+                status=r.status,
+                docs_path=r.docs_path,
+                error_type=r.error_type,
+                error_message=r.error_message,
+            )
+            for r in job.results
+        ],
+        error=job.error,
     )
 
 

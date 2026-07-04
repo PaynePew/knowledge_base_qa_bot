@@ -19,6 +19,9 @@ from __future__ import annotations
 
 import gc
 import io
+import re
+import threading
+import time
 from pathlib import Path
 
 import pypdfium2 as pdfium
@@ -532,3 +535,247 @@ def test_transcribe_source_emits_batch_and_source_log_events(transcribe_env, mon
     lines = LOG_PATH.read_text(encoding="utf-8").splitlines()
     kinds = [line.split("|")[0].split("] ")[-1].strip() for line in lines if line.startswith("##")]
     assert kinds == ["transcribe_batch_started", "transcribe_source", "transcribe_batch_completed"]
+
+
+# ---------------------------------------------------------------------------
+# get_transcribe_llm() — minimal reasoning effort (issue #459 AC1)
+# ---------------------------------------------------------------------------
+
+
+def test_get_transcribe_llm_uses_minimal_reasoning_effort(monkeypatch):
+    """The singleton must be built with reasoning_effort='minimal' (issue #459).
+
+    No live call: ChatOpenAI's constructor only validates config (mirrors
+    test_llm_determinism.py's ``test_draft_llm_pinned_to_temperature_zero``).
+    """
+    import app.transcriber as transcriber_module
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-reasoning")
+    monkeypatch.setattr(transcriber_module, "_transcribe_llm", None)
+
+    llm = transcriber_module.get_transcribe_llm()
+
+    assert llm.reasoning_effort == "minimal"
+
+
+# ---------------------------------------------------------------------------
+# transcribe_pdf_bytes_concurrent() — process-wide bounded pool (issue #459)
+# ---------------------------------------------------------------------------
+
+
+class _OrderAwarePageLLM:
+    """Fake LLM whose response encodes the page number the caller asked for.
+
+    Extracts "page N" from the HumanMessage text part so tests can verify
+    page-order preservation regardless of completion order. ``delays`` maps
+    page_num -> seconds to sleep before responding (default 0), letting a
+    test make an EARLIER page finish LATER than a later page — if the
+    implementation assembled by completion order instead of index order,
+    that would flip the output order and the test would catch it.
+    """
+
+    def __init__(self, delays: dict[int, float] | None = None, raise_on_page: int | None = None):
+        self.delays = delays or {}
+        self.raise_on_page = raise_on_page
+        self.call_count = 0
+        self._lock = threading.Lock()
+
+    def invoke(self, messages):
+        text = messages[-1].content[0]["text"]
+        page_num = int(re.search(r"page (\d+)", text).group(1))
+        with self._lock:
+            self.call_count += 1
+        time.sleep(self.delays.get(page_num, 0.0))
+        if self.raise_on_page == page_num:
+            raise RuntimeError(f"simulated failure on page {page_num}")
+        return FakeLLMResponse(content=f"# Page {page_num}")
+
+
+def test_concurrent_page_limit_exceeded_before_any_model_call(monkeypatch):
+    import app.transcriber as transcriber_module
+
+    fake_llm = _OrderAwarePageLLM()
+    monkeypatch.setattr(transcriber_module, "get_transcribe_llm", lambda: fake_llm)
+    monkeypatch.setenv("KB_TRANSCRIBE_MAX_PAGES", "0")
+
+    raw_bytes = (FIXTURES / "transcribe_scanned_cjk.pdf").read_bytes()
+    with pytest.raises(transcriber_module.TranscribePageLimitExceeded):
+        transcriber_module.transcribe_pdf_bytes_concurrent(raw_bytes)
+
+    assert fake_llm.call_count == 0, "Page-cap guard must reject before any model call"
+
+
+def test_concurrent_preserves_page_order_regardless_of_completion_order(monkeypatch):
+    """Page 0 finishes LAST (longest delay); assembled output must still be in order."""
+    import app.transcriber as transcriber_module
+
+    page_count = 5
+    # Page 0 sleeps longest, page (page_count - 1) sleeps none -> completion
+    # order is the REVERSE of page order if the semaphore lets them all run.
+    delays = {i + 1: (page_count - i) * 0.02 for i in range(page_count)}
+    fake_llm = _OrderAwarePageLLM(delays=delays)
+    monkeypatch.setattr(transcriber_module, "get_transcribe_llm", lambda: fake_llm)
+
+    raw_bytes = _blank_multi_page_pdf_bytes(page_count)
+    body, _model = transcriber_module.transcribe_pdf_bytes_concurrent(raw_bytes)
+
+    expected = "\n\n".join(f"# Page {i + 1}" for i in range(page_count))
+    assert body == expected, f"pages must assemble in index order, got: {body!r}"
+    assert fake_llm.call_count == page_count
+
+
+def test_concurrent_page_failure_raises_transcribe_error(monkeypatch):
+    import app.transcriber as transcriber_module
+
+    fake_llm = _OrderAwarePageLLM(raise_on_page=2)
+    monkeypatch.setattr(transcriber_module, "get_transcribe_llm", lambda: fake_llm)
+
+    raw_bytes = _blank_multi_page_pdf_bytes(3)
+    with pytest.raises(transcriber_module.TranscribeError):
+        transcriber_module.transcribe_pdf_bytes_concurrent(raw_bytes)
+
+
+def test_concurrent_all_blank_pages_raises_transcribe_error(monkeypatch):
+    import app.transcriber as transcriber_module
+
+    class _BlankLLM:
+        def invoke(self, _messages):
+            return FakeLLMResponse(content="")
+
+    monkeypatch.setattr(transcriber_module, "get_transcribe_llm", lambda: _BlankLLM())
+
+    raw_bytes = _blank_multi_page_pdf_bytes(3)
+    with pytest.raises(transcriber_module.TranscribeError):
+        transcriber_module.transcribe_pdf_bytes_concurrent(raw_bytes)
+
+
+def test_concurrent_respects_process_wide_semaphore(monkeypatch):
+    """KB_TRANSCRIBE_CONCURRENCY (via the module-level semaphore) bounds peak concurrency."""
+    import app.transcriber as transcriber_module
+
+    monkeypatch.setattr(transcriber_module, "_page_semaphore", threading.BoundedSemaphore(2))
+
+    peak = [0]
+    current = [0]
+    lock = threading.Lock()
+
+    class _TrackedLLM:
+        def invoke(self, _messages):
+            with lock:
+                current[0] += 1
+                peak[0] = max(peak[0], current[0])
+            time.sleep(0.03)
+            with lock:
+                current[0] -= 1
+            return FakeLLMResponse(content="# page")
+
+    monkeypatch.setattr(transcriber_module, "get_transcribe_llm", lambda: _TrackedLLM())
+
+    raw_bytes = _blank_multi_page_pdf_bytes(6)
+    transcriber_module.transcribe_pdf_bytes_concurrent(raw_bytes)
+
+    assert peak[0] <= 2, f"expected peak concurrency <= 2, got {peak[0]}"
+    assert peak[0] > 1, "test is meaningless if pages never actually overlapped"
+
+
+def test_concurrent_runs_pages_in_parallel_wall_clock(monkeypatch):
+    """8 pages at 50ms each complete well under the 400ms serial bound."""
+    import app.transcriber as transcriber_module
+
+    monkeypatch.setattr(transcriber_module, "_page_semaphore", threading.BoundedSemaphore(8))
+
+    class _SlowLLM:
+        def invoke(self, _messages):
+            time.sleep(0.05)
+            return FakeLLMResponse(content="# page")
+
+    monkeypatch.setattr(transcriber_module, "get_transcribe_llm", lambda: _SlowLLM())
+
+    raw_bytes = _blank_multi_page_pdf_bytes(8)
+    start = time.monotonic()
+    transcriber_module.transcribe_pdf_bytes_concurrent(raw_bytes)
+    elapsed = time.monotonic() - start
+
+    assert elapsed < 0.35, (
+        f"expected concurrent wall-clock < 0.35s (8 pages at 50ms, concurrency=8), "
+        f"got {elapsed:.3f}s"
+    )
+
+
+def test_concurrent_each_page_opens_an_independent_pdf_document(monkeypatch):
+    """Each page render goes through the isolated per-page helper, not a shared document.
+
+    Regression guard for the pypdfium2 cross-thread "Failed to load page"
+    failure mode (issue #459): asserts the concurrent driver calls
+    ``_render_and_transcribe_page_isolated(raw_bytes, page_index)`` — which
+    opens its OWN ``PdfDocument`` — exactly once per page, rather than
+    sharing one open document across workers.
+    """
+    import app.transcriber as transcriber_module
+
+    page_count = 4
+    seen_indices: list[int] = []
+    lock = threading.Lock()
+
+    def _fake_isolated(raw_bytes: bytes, page_index: int) -> str:
+        assert isinstance(raw_bytes, bytes)
+        with lock:
+            seen_indices.append(page_index)
+        return f"# Page {page_index + 1}"
+
+    monkeypatch.setattr(transcriber_module, "_render_and_transcribe_page_isolated", _fake_isolated)
+
+    raw_bytes = _blank_multi_page_pdf_bytes(page_count)
+    transcriber_module.transcribe_pdf_bytes_concurrent(raw_bytes)
+
+    assert sorted(seen_indices) == list(range(page_count))
+
+
+def test_concurrent_progress_callback_invoked_per_page(monkeypatch):
+    import app.transcriber as transcriber_module
+
+    fake_llm = _OrderAwarePageLLM()
+    monkeypatch.setattr(transcriber_module, "get_transcribe_llm", lambda: fake_llm)
+
+    page_count = 4
+    raw_bytes = _blank_multi_page_pdf_bytes(page_count)
+
+    progress_calls: list[tuple[int, int]] = []
+    lock = threading.Lock()
+
+    def _on_page_done(done: int, total: int) -> None:
+        with lock:
+            progress_calls.append((done, total))
+
+    transcriber_module.transcribe_pdf_bytes_concurrent(raw_bytes, on_page_done=_on_page_done)
+
+    assert len(progress_calls) == page_count
+    assert all(total == page_count for _done, total in progress_calls)
+    assert sorted(done for done, _total in progress_calls) == list(range(1, page_count + 1)), (
+        "each page must be counted exactly once, 1..page_count"
+    )
+
+
+# ---------------------------------------------------------------------------
+# _force_transcribe / transcribe_source use the concurrent pool (issue #459)
+# ---------------------------------------------------------------------------
+
+
+def test_transcribe_source_uses_concurrent_path_and_forwards_progress(transcribe_env, monkeypatch):
+    """transcribe_source's on_page_done reaches the concurrent driver end to end."""
+    import app.transcriber as transcriber_module
+
+    fake_llm = FakeTranscribeLLM(body="# 退款政策\n經由 concurrent pool 轉錄。")
+    monkeypatch.setattr(transcriber_module, "get_transcribe_llm", lambda: fake_llm)
+
+    (transcribe_env["raw_dir"] / "sample_english.pdf").write_bytes(
+        (FIXTURES / "sample_english.pdf").read_bytes()
+    )
+
+    progress_calls: list[tuple[int, int]] = []
+    result = transcriber_module.transcribe_source(
+        "sample_english.pdf", on_page_done=lambda done, total: progress_calls.append((done, total))
+    )
+
+    assert result.status == "created"
+    assert progress_calls == [(1, 1)], "single-page fixture must report exactly one page done/total"
