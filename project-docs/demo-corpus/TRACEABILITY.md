@@ -21,6 +21,14 @@
 | 促銷代碼 | 促銷代碼.md | promo_codes.md | F-PRO-01…03 |
 | 訂閱訂單 | 訂閱訂單.md | subscription_orders.md | F-SUB-01…05 |
 
+Root 測試 fixture 三檔（EN only，摘要版，與主語料同事實）：
+
+| 檔案（docs/ 根目錄） | F-IDs |
+|---|---|
+| account_help.md | F-ACC-02…05 |
+| refund_policy.md | F-ORD-01、F-RET-03/04/06、F-GIF-04 |
+| shipping_faq.md | F-SHP-01/02/03/05 |
+
 備註：
 
 - EN entity 檔沿用 legacy basenames（`acme_shop_about.md`、`warranty.md`）——`CORPUS_ENTITY_SOURCES`（corpus_generator.py 與 sampling.py）及其測試把這兩個名字寫死，沿用可零改動。

@@ -2,12 +2,12 @@
 
 ## Standard Shipping
 
-Standard shipping usually takes 3-5 business days after the order leaves the warehouse.
+Standard shipping to the Taiwan main island takes 3-5 business days after dispatch and costs NT$80. Orders of NT$1,000 or more ship free. Outlying islands take an additional 1-3 business days.
 
-## Expedited Shipping
+## Express Delivery
 
-Expedited shipping usually takes 1-2 business days. Expedited shipping fees are not refundable after the package has shipped.
+Express delivery arrives 1-2 business days after dispatch on the main island and costs NT$150. Orders must be placed and paid before 14:00 the same day; oversized or fragile items are not eligible.
 
 ## Tracking Number
 
-Customers receive a tracking number by email after the warehouse creates the shipping label.
+Customers receive an email with the tracking number after dispatch. Tracking data updates within 24 hours of dispatch.
