@@ -2244,6 +2244,12 @@ var LINT_CHROME = {
     viewSource:          "View Source",
     c3GiveUpPrefix:      "If this Source should not produce a wiki page: remove docs/",
     c3GiveUpSuffix:      " and this page becomes a C11 full orphan, removable via Confirmed delete.",
+    /* issue #445: the finding's source_resolution is "missing"/"ambiguous"
+       when the cited basename cannot be resolved to exactly one file under
+       docs/ — rendered distinctly instead of guessing a "docs/" + basename
+       path that may 404. {basename} is replaced with the raw citation. */
+    c3SourceMissing:     "Source “{basename}” not found under docs/ — it may have been renamed or removed.",
+    c3SourceAmbiguous:   "Multiple files named “{basename}” exist under docs/ in different folders — resolve manually.",
     assignAlias:           "Assign Alias",
     assignAliasChoosePage: "Choose a page…",
     seeCurationQueue:      "see Curation Queue below",
@@ -2299,6 +2305,8 @@ var LINT_CHROME = {
     viewSource:          "檢視 Source",
     c3GiveUpPrefix:      "若此 Source 不該產生 wiki 頁:移除 docs/",
     c3GiveUpSuffix:      " 後此頁轉為 C11 full orphan,可用 Confirmed delete 移除。",
+    c3SourceMissing:     "在 docs/ 底下找不到「{basename}」— 可能已被重新命名或移除。",
+    c3SourceAmbiguous:   "docs/ 底下有多個資料夾都有同名的「{basename}」— 請手動確認。",
     assignAlias:           "指派別名",
     assignAliasChoosePage: "選擇頁面…",
     seeCurationQueue:      "詳見下方 Curation Queue",
@@ -2491,26 +2499,46 @@ var pendingFixSource = null;
 
 /* Bare Source filename a C3 finding cites, stripped of any #section anchor
    (FailedGroundingFinding.source may carry one, e.g. "policy.md#refunds") —
-   there is no file at that anchor path; the Source itself lives at
-   docs/<filename>. */
+   used only for display fallbacks (missing/ambiguous). The real repo-relative
+   path to open is finding.source_path (see c3SourceLabel below), never a
+   client-built "docs/<filename>" guess (issue #445 — that guess 404'd for
+   Sources nested under a docs/ subdirectory). */
 function c3SourceFilename(finding) {
   return (finding.source || "").split("#")[0];
+}
+
+/* Renders the finding's resolved Source location for display, honoring the
+   three distinct source_resolution states the backend computes at lint time
+   (issue #445): "resolved" shows the real repo-relative source_path;
+   "missing"/"ambiguous" show a distinct, bilingual explanation instead of a
+   guessed path — the client never reconstructs "docs/" + basename itself
+   (§12.5, no business logic in the client). */
+function c3SourceLabel(finding) {
+  if (finding.source_resolution === "resolved" && finding.source_path) {
+    return finding.source_path;
+  }
+  var chrome = LINT_CHROME[consoleLang];
+  var template = finding.source_resolution === "ambiguous"
+    ? chrome.c3SourceAmbiguous
+    : chrome.c3SourceMissing;
+  return template.replace("{basename}", c3SourceFilename(finding));
 }
 
 /* Banner text carrying the finding's context (AC: Source filename +
    unsupported_claims) into the existing Upload -> Re-ingest -> Lint flow.
    Dynamic per-finding text stays English (mirrors coverageFillContextText's
-   convention above) — only the "not recorded" fallback is bilingual via
-   LINT_CHROME. Pure string shaping over server-computed fields (§12.5).
-   Inlines the same two-line claims-join c3ClaimsSummary (inside
-   renderLintCard's closure) computes, rather than reaching across function
-   scope — this function is called from a top-level click handler
-   (fixSourceAction, via ROW_RENDERERS.C3), not from inside renderLintCard
-   itself, so it cannot see renderLintCard's local helpers. */
+   convention above) — only the "not recorded" fallback and the
+   missing/ambiguous source labels are bilingual via LINT_CHROME. Pure string
+   shaping over server-computed fields (§12.5). Inlines the same two-line
+   claims-join c3ClaimsSummary (inside renderLintCard's closure) computes,
+   rather than reaching across function scope — this function is called from
+   a top-level click handler (fixSourceAction, via ROW_RENDERERS.C3), not from
+   inside renderLintCard itself, so it cannot see renderLintCard's local
+   helpers. */
 function fixSourceBannerText(finding) {
   var claims = finding.unsupported_claims || [];
   var claimsText = claims.length > 0 ? claims.join("; ") : LINT_CHROME[consoleLang].claimsNotRecorded;
-  return "Fix the Source: docs/" + c3SourceFilename(finding) +
+  return "Fix the Source: " + c3SourceLabel(finding) +
     " — unsupported claims: " + claimsText;
 }
 
@@ -2518,27 +2546,34 @@ function fixSourceBannerText(finding) {
    into view — the operator still has to edit the file, re-upload, and
    click Re-ingest (retry) by hand; this only carries context and offers a
    read-only view of the current Source (AC: a /read/file view link), it
-   does not start anything itself. */
+   does not start anything itself. View Source is wired to the finding's own
+   resolved source_path (never a client-built "docs/" + basename guess —
+   issue #445) and disabled outright when resolution is missing/ambiguous:
+   there is no real path to open, so offering the button would be a false
+   affordance (§12.5 "honest, not alarmist"). */
 function showFixSourceBanner(finding) {
   var banner = document.getElementById("fix-source-banner");
   if (banner) {
-    var filename = c3SourceFilename(finding);
     var viewBtn = el("button", { class: "view-source-btn", type: "button",
       text: LINT_CHROME[consoleLang].viewSource });
     /* Notice slot next to the button (issue #444) — a failing open is
        visible right where the operator clicked, not only in the resource
        browser's file viewer further down the page. */
     var viewStatusEl = el("span", { class: "card-status-msg" });
-    viewBtn.addEventListener("click", function() {
-      viewStatusEl.textContent = "";
-      viewStatusEl.className = "card-status-msg";
-      openFile("docs/" + filename, filename, {
-        onError: function(message) {
-          viewStatusEl.textContent = "Failed: " + message;
-          viewStatusEl.className = "card-status-msg err";
-        }
+    if (finding.source_resolution === "resolved" && finding.source_path) {
+      viewBtn.addEventListener("click", function() {
+        viewStatusEl.textContent = "";
+        viewStatusEl.className = "card-status-msg";
+        openFile(finding.source_path, c3SourceFilename(finding), {
+          onError: function(message) {
+            viewStatusEl.textContent = "Failed: " + message;
+            viewStatusEl.className = "card-status-msg err";
+          }
+        });
       });
-    });
+    } else {
+      viewBtn.disabled = true;
+    }
     banner.replaceChildren(
       el("span", { text: fixSourceBannerText(finding) }),
       viewBtn,

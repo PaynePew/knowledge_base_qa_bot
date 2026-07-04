@@ -66,7 +66,8 @@ class TestC3ReasonSplitSuggestedAction:
 
         from app.lint import _check_c3_failed_grounding
 
-        findings = _check_c3_failed_grounding(wiki_dir)
+        docs_dir = lint_env["docs_dir"]
+        findings = _check_c3_failed_grounding(wiki_dir, docs_dir)
         assert "The refund window is 90 days." in findings[0].suggested_action
 
     def test_claim_unsupported_does_not_recommend_bare_reingest(self, lint_env):
@@ -84,7 +85,8 @@ class TestC3ReasonSplitSuggestedAction:
 
         from app.lint import _check_c3_failed_grounding
 
-        findings = _check_c3_failed_grounding(wiki_dir)
+        docs_dir = lint_env["docs_dir"]
+        findings = _check_c3_failed_grounding(wiki_dir, docs_dir)
         action = findings[0].suggested_action
         assert "not suggested" in action.lower() or "plain re-ingest" in action.lower(), (
             f"suggested_action must explicitly withhold a bare Re-ingest recommendation: {action!r}"
@@ -106,7 +108,8 @@ class TestC3ReasonSplitSuggestedAction:
 
         from app.lint import _check_c3_failed_grounding
 
-        findings = _check_c3_failed_grounding(wiki_dir)
+        docs_dir = lint_env["docs_dir"]
+        findings = _check_c3_failed_grounding(wiki_dir, docs_dir)
         assert findings[0].unsupported_claims == []
         assert "not recorded" in findings[0].suggested_action.lower()
 
@@ -124,7 +127,8 @@ class TestC3ReasonSplitSuggestedAction:
 
         from app.lint import _check_c3_failed_grounding
 
-        findings = _check_c3_failed_grounding(wiki_dir)
+        docs_dir = lint_env["docs_dir"]
+        findings = _check_c3_failed_grounding(wiki_dir, docs_dir)
         action_lower = findings[0].suggested_action.lower()
         assert "re-ingest" in action_lower
         assert "source.md#sec" in findings[0].suggested_action

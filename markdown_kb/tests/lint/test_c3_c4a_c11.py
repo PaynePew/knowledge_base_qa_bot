@@ -102,7 +102,8 @@ class TestC3FailedGrounding:
 
         from app.lint import _check_c3_failed_grounding
 
-        findings = _check_c3_failed_grounding(wiki_dir)
+        docs_dir = lint_env["docs_dir"]
+        findings = _check_c3_failed_grounding(wiki_dir, docs_dir)
         assert findings == []
 
     def test_failed_grounding_page_produces_finding(self, lint_env):
@@ -118,7 +119,8 @@ class TestC3FailedGrounding:
 
         from app.lint import _check_c3_failed_grounding
 
-        findings = _check_c3_failed_grounding(wiki_dir)
+        docs_dir = lint_env["docs_dir"]
+        findings = _check_c3_failed_grounding(wiki_dir, docs_dir)
         assert len(findings) == 1
         f = findings[0]
         assert f.page_slug == "broken-page"
@@ -140,7 +142,8 @@ class TestC3FailedGrounding:
 
         from app.lint import _check_c3_failed_grounding
 
-        findings = _check_c3_failed_grounding(wiki_dir)
+        docs_dir = lint_env["docs_dir"]
+        findings = _check_c3_failed_grounding(wiki_dir, docs_dir)
         assert len(findings) == 1
         assert findings[0].reason == "verifier_unavailable"
         assert findings[0].unsupported_claims == []
@@ -154,7 +157,8 @@ class TestC3FailedGrounding:
 
         from app.lint import _check_c3_failed_grounding
 
-        findings = _check_c3_failed_grounding(wiki_dir)
+        docs_dir = lint_env["docs_dir"]
+        findings = _check_c3_failed_grounding(wiki_dir, docs_dir)
         slugs = [f.page_slug for f in findings]
         assert slugs == sorted(slugs)
 
@@ -169,7 +173,8 @@ class TestC3FailedGrounding:
 
         from app.lint import _check_c3_failed_grounding
 
-        findings = _check_c3_failed_grounding(wiki_dir)
+        docs_dir = lint_env["docs_dir"]
+        findings = _check_c3_failed_grounding(wiki_dir, docs_dir)
         assert findings[0].source == "first_source.md#section"
 
     def test_live_pages_not_included_in_c3(self, lint_env):
@@ -180,7 +185,8 @@ class TestC3FailedGrounding:
 
         from app.lint import _check_c3_failed_grounding
 
-        findings = _check_c3_failed_grounding(wiki_dir)
+        docs_dir = lint_env["docs_dir"]
+        findings = _check_c3_failed_grounding(wiki_dir, docs_dir)
         assert len(findings) == 1
         assert findings[0].page_slug == "failed-page"
 
@@ -192,7 +198,8 @@ class TestC3FailedGrounding:
 
         from app.lint import _check_c3_failed_grounding
 
-        findings = _check_c3_failed_grounding(wiki_dir)
+        docs_dir = lint_env["docs_dir"]
+        findings = _check_c3_failed_grounding(wiki_dir, docs_dir)
         slugs = [f.page_slug for f in findings]
         assert "entity-failed" in slugs
         assert "concept-failed" in slugs
@@ -206,7 +213,8 @@ class TestC3FailedGrounding:
 
         from app.lint import _check_c3_failed_grounding
 
-        findings = _check_c3_failed_grounding(wiki_dir)
+        docs_dir = lint_env["docs_dir"]
+        findings = _check_c3_failed_grounding(wiki_dir, docs_dir)
         action_lower = findings[0].suggested_action.lower()
         has_review_or_reingest = any(w in action_lower for w in ("review", "re-ingest", "reingest"))
         has_delete_or_delete = any(w in action_lower for w in ("delete", "remove"))

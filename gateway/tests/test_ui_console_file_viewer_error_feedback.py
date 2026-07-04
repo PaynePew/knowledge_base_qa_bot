@@ -204,12 +204,14 @@ def test_show_fix_source_banner_still_never_fetches_directly():
     assert "fetch(" not in body
 
 
-def test_show_fix_source_banner_still_calls_open_file_with_docs_path():
+def test_show_fix_source_banner_still_calls_open_file_with_resolved_source_path():
+    """issue #445: the hardcoded "docs/" + basename guess is gone — the
+    button opens the finding's own server-resolved source_path."""
     text = _console_text()
     body = _function_body(text, "showFixSourceBanner")
     assert "view-source-btn" in body
     assert "openFile(" in body
-    assert '"docs/"' in body
+    assert "openFile(finding.source_path" in body
 
 
 # ---------------------------------------------------------------------------

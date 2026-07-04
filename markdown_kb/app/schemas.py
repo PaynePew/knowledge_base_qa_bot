@@ -432,10 +432,27 @@ class FailedGroundingFinding(BaseModel):
     Source — never a bare Re-ingest, since the same unchanged Source feeds the
     same verifier and fails identically; ``verifier_unavailable`` recommends
     Re-ingest (a transient failure, not a Source problem).
+
+    ``source_path`` / ``source_resolution`` (issue #445) resolve ``source``'s
+    bare basename against the real docs tree at lint time, replacing the
+    Console's former ``"docs/" + basename`` guess — which 404'd whenever the
+    cited Source lived in a nested ``docs/`` subdirectory (ingest discovers
+    nested Sources but records only the filename):
+    - ``"resolved"``: exactly one file under ``docs/`` matches the basename;
+      ``source_path`` is the repo-relative path (e.g.
+      ``"docs/fake-docs/product_care.md"``).
+    - ``"missing"``: no file matches (or the citation has no basename at
+      all); ``source_path`` is ``None``.
+    - ``"ambiguous"``: two or more files share the basename in different
+      subdirectories; ``source_path`` is ``None`` — never guessed, so the
+      Console can render this state distinctly instead of silently picking
+      one of the candidates.
     """
 
     page_slug: str
     source: str
+    source_path: str | None = None
+    source_resolution: Literal["resolved", "missing", "ambiguous"] = "missing"
     reason: Literal["claim_unsupported", "verifier_unavailable"]
     unsupported_claims: list[str] = []
     suggested_action: str
