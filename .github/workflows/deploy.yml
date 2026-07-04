@@ -80,6 +80,13 @@ jobs:
           script: |
             set -euo pipefail
             cd /opt/ask-wiki-rag
+            # Reclaim disk BEFORE pull (issue #453): every deploy leaves the
+            # superseded image's layers behind and the small VPS fills up
+            # (2026-07-04: pull died with "no space left on device"). -a prunes
+            # all images not used by a container; the running service's image
+            # is in use so in-place rollback stays possible until `up -d`
+            # switches over.
+            docker image prune -af
             docker compose -p ask-wiki-rag -f docker-compose.prod.yml pull
             docker compose -p ask-wiki-rag -f docker-compose.prod.yml up -d ask-wiki-rag
             # /healthz smoke via python (python:3.11-slim has NO curl). Retry to
