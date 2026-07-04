@@ -1080,6 +1080,41 @@
   .reconcile-cancel-btn:hover:not(:disabled) { border-color: var(--ink-3); }
   .reconcile-error { color: var(--fail); }
 
+  /* ── C5 conflict panel (issue #443) — surfaces the LLM's own evidence
+     (page_a_claim / page_b_claim / summary / suggested_action) wherever a
+     C5 finding appears: the finding row AND the Reconcile modal, above the
+     editable drafts. Shared by both via c5ConflictPanel(). */
+  .c5-conflict-panel {
+    margin: 8px 0 14px;
+    padding: 10px 12px;
+    background: var(--bg);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .c5-conflict-row { font-size: 12.5px; color: var(--ink-2); line-height: 1.5; }
+  .c5-conflict-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .03em;
+    color: var(--ink-3);
+    margin-right: 5px;
+  }
+  .c5-expand-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    margin-left: 4px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    color: var(--accent);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+  }
+
   /* ── C4 collision dual resolution (tier-B S2, issue #378, ADR-0028) ──
      Both real Gated affordances. Reuses every .reconcile-* modal/column
      class above (the shape is identical: old-vs-editable preview + apply). */
@@ -2192,6 +2227,13 @@ var LINT_CHROME = {
        environment already wiped (periodic reset, or another tab's action) —
        self-heal instead of surfacing the raw HTTP 404. */
     staleDraftGone:        "This draft no longer exists — the demo environment resets periodically. Refreshing the queue…",
+    /* issue #443: C5 conflict panel labels (structural chrome only — the
+       claim/summary/suggested_action VALUES stay untranslated dynamic
+       text per the issue #365 convention). */
+    c5Summary:             "Summary:",
+    c5SuggestedAction:     "Suggested action:",
+    c5Expand:              "Show more",
+    c5Collapse:            "Show less",
   },
   zh: {
     reingest:        "重新匯入",
@@ -2235,6 +2277,10 @@ var LINT_CHROME = {
     seeCurationQueue:      "詳見下方 Curation Queue",
     deepAudit:             "深度稽核（C5）",
     staleDraftGone:        "此草稿已不存在 — 展示環境會定期重置。正在重新整理佇列…",
+    c5Summary:             "摘要:",
+    c5SuggestedAction:     "建議動作:",
+    c5Expand:              "顯示更多",
+    c5Collapse:            "顯示較少",
   },
 };
 
@@ -2827,6 +2873,77 @@ function runLintRemediation(requestPromise, btn, statusMsgEl, resultEl, siblingB
    control on Routed-tier findings (C1/C2, ADR-0027). ``resultEl`` is the
    Lint step's own result container — passed through so a remediation
    button's success handler can re-render this same card in place. */
+
+/* ── C5 conflict evidence (issue #443) ───────────────────────────────────
+   The C5 judge (schemas.py PagePairFinding) already emits the exact
+   evidence a curator needs: page_a_claim / page_b_claim (direct quotes),
+   summary, and suggested_action. Before this slice the console only showed
+   the two slugs + severity + summary.slice(0, 80) — silently dropping the
+   claims and the suggested_action entirely. c5ConflictPanel() renders all
+   four fields once, reused by BOTH the C5 finding row (ROW_RENDERERS.C5,
+   nested inside renderLintCard below) and the Reconcile modal
+   (renderReconcilePreview, a separate top-level function) so the operator
+   sees the identical evidence in both places.
+
+   Top-level (not nested in renderLintCard) because renderReconcilePreview
+   needs it too and cannot see renderLintCard's closure locals. Passing the
+   full finding from the row to the modal has to go through a lookup map
+   (c5FindingByPair) rather than an extra function argument: the existing
+   structural test (test_ui_console_reconcile.py) pins the literal call
+   ``reconcileAction(f.page_a, f.page_b)`` inside ROW_RENDERERS.C5, so that
+   call site's argument list cannot grow. */
+var c5FindingByPair = {};
+
+// Long quotes/summaries collapse to a preview with an explicit toggle —
+// never a silent slice(0, N) that just discards the rest of the string.
+var C5_COLLAPSE_AT = 160;
+
+function collapsibleSpan(fullText) {
+  var text = fullText || "";
+  if (text.length <= C5_COLLAPSE_AT) return el("span", { text: text });
+  var expanded = false;
+  var short = text.slice(0, C5_COLLAPSE_AT) + "…";
+  var textEl = el("span", { text: short });
+  var toggleBtn = el("button", { class: "c5-expand-btn", type: "button",
+    text: LINT_CHROME[consoleLang].c5Expand });
+  toggleBtn.addEventListener("click", function() {
+    expanded = !expanded;
+    textEl.textContent = expanded ? text : short;
+    toggleBtn.textContent = expanded
+      ? LINT_CHROME[consoleLang].c5Collapse
+      : LINT_CHROME[consoleLang].c5Expand;
+  });
+  return el("span", { class: "c5-collapsible" }, textEl, toggleBtn);
+}
+
+// One "label: quoted-or-plain text [toggle]" line. `quote` wraps the value
+// in curly quotes for the two direct-quote claims (not the summary/action).
+function c5ConflictLine(labelText, text, quote) {
+  var row = el("div", { class: "c5-conflict-row" },
+    el("span", { class: "c5-conflict-label", text: labelText })
+  );
+  if (quote) row.append(document.createTextNode("“"));
+  row.append(collapsibleSpan(text));
+  if (quote) row.append(document.createTextNode("”"));
+  return row;
+}
+
+/* Both quoted claims (attributed to their own page slug), the full summary,
+   and the suggested action — the AC-required evidence set, end to end.
+   `actionsEl` (optional) is appended last, e.g. the row's real Reconcile
+   button; the modal calls this with no second argument. */
+function c5ConflictPanel(f, actionsEl) {
+  var chrome = LINT_CHROME[consoleLang];
+  var panel = el("div", { class: "c5-conflict-panel" },
+    c5ConflictLine(f.page_a + ":", f.page_a_claim, true),
+    c5ConflictLine(f.page_b + ":", f.page_b_claim, true),
+    c5ConflictLine(chrome.c5Summary, f.summary, false),
+    c5ConflictLine(chrome.c5SuggestedAction, f.suggested_action, false)
+  );
+  if (actionsEl) panel.append(actionsEl);
+  return panel;
+}
+
 function renderLintCard(data, resultEl) {
   var summary  = data.summary  || {};
   var findings = data.findings || {};
@@ -2855,6 +2972,12 @@ function renderLintCard(data, resultEl) {
      one-shot banners below so coverageFillOutcomeBanner's honest-miss
      offer buttons (issue #409) can push onto it too. */
   var allButtons = [];
+
+  /* Repopulated below by ROW_RENDERERS.C5 for THIS render only (issue #443)
+     — reconcileAction (nested here) looks a finding up by page-pair key so
+     it can hand the full claim/summary/suggested_action evidence to the
+     Reconcile modal without changing its own locked call signature. */
+  c5FindingByPair = {};
 
   /* Batch-remediation summary banner (issue #364) — one-shot: cleared
      immediately after being shown so it does not linger across an
@@ -2961,7 +3084,9 @@ function renderLintCard(data, resultEl) {
     allButtons.push(btn);
     btn.addEventListener("click", function() {
       if (btn.disabled || remediationInFlight) return;
-      openReconcileModal(pageA, pageB, resultEl, allButtons);
+      // issue #443: hand the full C5 finding (claims/summary/suggested_action)
+      // to the modal via the page-pair lookup — see c5FindingByPair above.
+      openReconcileModal(pageA, pageB, resultEl, allButtons, c5FindingByPair[pageA + "::" + pageB]);
     });
     return el("div", { class: "lint-row-actions" }, btn);
   }
@@ -3285,10 +3410,11 @@ function renderLintCard(data, resultEl) {
         el("div", {}, reingestAction(f.source, true), fixSourceAction(f), c3GiveUpNote(f)));
     },
     C5: function(i, f) {
+      c5FindingByPair[f.page_a + "::" + f.page_b] = f;
       return findingRow(i, f.page_a + " / " + f.page_b,
-        f.severity + ": " + (f.summary || "").slice(0, 80),
+        null,
         f.severity, f.severity === "direct" ? "label-failed" : "label-updated",
-        reconcileAction(f.page_a, f.page_b));
+        c5ConflictPanel(f, reconcileAction(f.page_a, f.page_b)));
     },
     C4: function(i, f) {
       return findingRow(i, f.base_slug, (f.pages_in_group || []).join(", "),
@@ -3492,7 +3618,7 @@ function openDeleteOrphanConfirm(slug, resultEl, siblingButtons) {
    preview in a modal overlay appended to document.body (outside the Lint
    card so a later card re-render never disturbs an open modal). Closed via
    the Cancel/Close button or a backdrop click. */
-function openReconcileModal(pageA, pageB, resultEl, siblingButtons) {
+function openReconcileModal(pageA, pageB, resultEl, siblingButtons, finding) {
   var overlay = el("div", { class: "reconcile-overlay" });
   var modal = el("div", { class: "reconcile-modal" },
     el("div", { class: "reconcile-modal-head" }, el("span", { text: "Reconcile: " + pageA + " / " + pageB })),
@@ -3516,7 +3642,7 @@ function openReconcileModal(pageA, pageB, resultEl, siblingButtons) {
       if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
       return resp.json();
     })
-    .then(function(data) { renderReconcilePreview(modal, data, resultEl, closeModal, siblingButtons); })
+    .then(function(data) { renderReconcilePreview(modal, data, resultEl, closeModal, siblingButtons, finding); })
     .catch(function(err) {
       modal.replaceChildren(
         el("div", { class: "reconcile-modal-head" }, el("span", { text: "Reconcile — error" })),
@@ -3540,7 +3666,15 @@ function openReconcileModal(pageA, pageB, resultEl, siblingButtons) {
    full Lint. ``siblingButtons`` (issue #364's shared in-flight-guard list)
    is disabled for the duration of the apply request — same no-double-submit
    guarantee every other remediation on the card already gets. */
-function renderReconcilePreview(modal, data, resultEl, closeModal, siblingButtons) {
+function renderReconcilePreview(modal, data, resultEl, closeModal, siblingButtons, finding) {
+  // issue #443: the conflict panel (both quoted claims, full summary,
+  // suggested_action) rendered above the editable drafts — same evidence,
+  // same shared c5ConflictPanel() as the C5 finding row. `finding` is the
+  // full C5 finding looked up by page-pair (reconcileAction, above); it is
+  // never fetched from the server — reconcile/generate's own response
+  // (`data`) carries no claim fields (schemas.py ReconcileGenerateResponse).
+  var conflictPanelEl = finding ? c5ConflictPanel(finding) : null;
+
   var textareaA = el("textarea", { class: "reconcile-textarea", rows: "8" });
   textareaA.value = data.content_a;
   var textareaB = el("textarea", { class: "reconcile-textarea", rows: "8" });
@@ -3632,6 +3766,7 @@ function renderReconcilePreview(modal, data, resultEl, closeModal, siblingButton
   modal.replaceChildren(
     el("div", { class: "reconcile-modal-head" }, el("span", { text: "Reconcile: " + data.page_a + " / " + data.page_b })),
     el("div", { class: "reconcile-modal-body" },
+      conflictPanelEl,
       groundingEl,
       el("div", { class: "reconcile-columns" },
         el("div", { class: "reconcile-col" },
