@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``write_pages_for_source``, ``read_existing_frontmatter``, ``delete_orphans``, ``resolve_slug_collision``.
+"""Deep module per Ousterhout. Public surface: ``write_pages_for_source``, ``read_existing_frontmatter``, ``read_page_parts``, ``delete_orphans``, ``resolve_slug_collision``.
 
 Wiki page writer for ingest-produced synthesis pages.
 
@@ -246,6 +246,49 @@ def read_existing_frontmatter(path: Path) -> dict | None:
     if not isinstance(parsed, dict):
         return None
     return parsed
+
+
+def read_page_parts(path: Path) -> tuple[str, dict, str] | None:
+    """Split an existing wiki page into ``(prefix, frontmatter_dict, suffix)``.
+
+    ``prefix`` is every line up to and including the opening ``---`` fence
+    (sentinel comment + blank line, verbatim); ``suffix`` is every line from
+    the closing ``---`` fence onward (heading, body, citation line,
+    verbatim). A caller that needs to rewrite ONLY the frontmatter block —
+    e.g. ``pages.add_alias`` (issue #409, ADR-0030) — reassembles via
+    ``prefix + <new YAML dump> + suffix`` so everything outside the
+    frontmatter fence is preserved byte-for-byte (mirrors the
+    "rebuild-the-whole-frontmatter, never surgically string-splice"
+    convention ``qa._flip_draft_to_live`` documents, scoped here to just the
+    delimiter split rather than a full page re-render).
+
+    Returns ``None`` under the same conditions ``read_existing_frontmatter``
+    treats as "no usable existing state": the file is missing, unreadable,
+    or has no parseable ``---``-delimited frontmatter block.
+    """
+    if not path.exists():
+        return None
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+    lines = content.splitlines(keepends=True)
+    dash_indices = [i for i, line in enumerate(lines) if line.strip() == "---"]
+    if len(dash_indices) < 2:
+        return None
+
+    fm_text = "".join(lines[dash_indices[0] + 1 : dash_indices[1]])
+    try:
+        parsed = yaml.safe_load(fm_text)
+    except yaml.YAMLError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+
+    prefix = "".join(lines[: dash_indices[0] + 1])
+    suffix = "".join(lines[dash_indices[1] :])
+    return prefix, parsed, suffix
 
 
 def delete_orphans(

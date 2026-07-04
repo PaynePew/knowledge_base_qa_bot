@@ -1,4 +1,4 @@
-"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``CitationRef``, ``FiledStatus``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``, ``CoverageGapFinding``, ``PagePairFinding``, ``PromotionCandidateFinding``, ``QaStalenessFinding``, ``InvalidQaSchemaFinding``, ``AliasCollisionFinding``, ``QaEditRequest``, ``QaRefileResponse``, ``SkippedSlug``, ``QaPromoteBatchRequest``, ``QaPromoteBatchResponse``, ``ImportRequest``, ``ImportSourceResultSchema``, ``ImportFailureSchema``, ``ImportResponse``, ``ReconcileDraft``, ``ReconcileGenerateRequest``, ``ReconcileGenerateResponse``, ``ReconcileApplyRequest``, ``ReconcileApplyResponse``, ``CollisionMergeDraft``, ``CollisionPageDraft``, ``CollisionDifferentiateDraft``, ``CollisionMergeGenerateRequest``, ``CollisionMergeGenerateResponse``, ``CollisionMergeApplyRequest``, ``InboundReference``, ``CollisionMergeApplyResponse``, ``CollisionDifferentiateGenerateRequest``, ``CollisionDifferentiateGenerateResponse``, ``CollisionDifferentiateApplyRequest``, ``CollisionDifferentiateApplyResponse``).
+"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``CitationRef``, ``FiledStatus``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``, ``CoverageGapFinding``, ``PagePairFinding``, ``PromotionCandidateFinding``, ``QaStalenessFinding``, ``InvalidQaSchemaFinding``, ``AliasCollisionFinding``, ``AliasAssignRequest``, ``QaEditRequest``, ``QaRefileResponse``, ``SkippedSlug``, ``QaPromoteBatchRequest``, ``QaPromoteBatchResponse``, ``ImportRequest``, ``ImportSourceResultSchema``, ``ImportFailureSchema``, ``ImportResponse``, ``ReconcileDraft``, ``ReconcileGenerateRequest``, ``ReconcileGenerateResponse``, ``ReconcileApplyRequest``, ``ReconcileApplyResponse``, ``CollisionMergeDraft``, ``CollisionPageDraft``, ``CollisionDifferentiateDraft``, ``CollisionMergeGenerateRequest``, ``CollisionMergeGenerateResponse``, ``CollisionMergeApplyRequest``, ``InboundReference``, ``CollisionMergeApplyResponse``, ``CollisionDifferentiateGenerateRequest``, ``CollisionDifferentiateGenerateResponse``, ``CollisionDifferentiateApplyRequest``, ``CollisionDifferentiateApplyResponse``).
 
 Pydantic request/response models for the FastAPI routes. No domain logic."""
 
@@ -696,6 +696,19 @@ class AliasCollisionFinding(BaseModel):
     slug_owner: str | None = None
     resolved_to: str
     suggested_action: str
+
+
+class AliasAssignRequest(BaseModel):
+    """Request body for ``POST /pages/{slug}/aliases`` (issue #409, ADR-0030
+    decision 3).
+
+    ``alias`` is the single alternate slug to assign to the ``{slug}`` path
+    parameter's target page. Direct-class, never a batch (ADR-0030 Invariant
+    "assign-alias never batches") — the shape carries exactly one string,
+    never a list.
+    """
+
+    alias: str
 
 
 class LintFindings(BaseModel):

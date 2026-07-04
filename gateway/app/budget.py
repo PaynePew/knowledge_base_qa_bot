@@ -37,17 +37,19 @@ Per-endpoint estimate table (USD per request, deliberately generous):
     | /wiki/qa/{slug}/refile | 0.05 | C9 re-file: full grounded answer round (draft + verify) server-side |
     | /wiki/pages/{slug} (DELETE) | 0.00 | C11 Confirmed orphan-delete: no LLM call at all (ADR-0024 Invariant) — hard delete + one BM25 reindex |
     | /wiki/qa/promote-batch | 0.00 | Direct-tier batch promote: no LLM call — per-slug status flips + one BM25 reindex (ADR-0023, issue #382) |
+    | /wiki/pages/{slug}/aliases (POST) | 0.00 | Direct-tier assign-alias: no LLM call — one frontmatter field write, no reindex (ADR-0030, issue #409) |
     | (default heavy)  | 0.10     | unknown heavy path → assume a mid-range cost    |
 
-The ``/wiki/qa/{slug}/refile`` and ``/wiki/pages/{slug}`` keys are the
-middleware's ``QA_REFILE_TEMPLATE`` / ``PAGES_DELETE_TEMPLATE`` — concrete
-per-slug paths are canonicalised to them before ``charge()`` is called, so
-the table stays exact-match (ADR-0026 decision 1, issue #380; ADR-0025,
-issue #381). ``/wiki/qa/promote-batch`` is not parameterized (no slug in the
-path) so it needs no canonicalisation — it is charged directly, mirroring
-the delete path's explicit $0.00 entry (not left to the default-heavy
-fallback) so its zero LLM cost is documented rather than silently
-indistinguishable from an un-tabulated path.
+The ``/wiki/qa/{slug}/refile``, ``/wiki/pages/{slug}``, and
+``/wiki/pages/{slug}/aliases`` keys are the middleware's
+``QA_REFILE_TEMPLATE`` / ``PAGES_DELETE_TEMPLATE`` / ``ALIAS_ASSIGN_TEMPLATE``
+— concrete per-slug paths are canonicalised to them before ``charge()`` is
+called, so the table stays exact-match (ADR-0026 decision 1, issue #380;
+ADR-0025, issue #381; ADR-0030 decision 3, issue #409). ``/wiki/qa/promote-batch``
+is not parameterized (no slug in the path) so it needs no canonicalisation —
+it is charged directly, mirroring the delete path's explicit $0.00 entry
+(not left to the default-heavy fallback) so its zero LLM cost is documented
+rather than silently indistinguishable from an un-tabulated path.
 
 The numbers are intentionally above plausible real cost on a small demo corpus
 (GPT-class answer rounds are sub-cent; ``text-embedding-3-small`` re-embeds are
@@ -84,6 +86,7 @@ _COST_ESTIMATES: dict[str, float] = {
     "/wiki/qa/{slug}/refile": 0.05,
     "/wiki/pages/{slug}": 0.00,
     "/wiki/qa/promote-batch": 0.00,
+    "/wiki/pages/{slug}/aliases": 0.00,
 }
 
 # Fallback for any heavy path missing from the table — assume a mid-range cost
