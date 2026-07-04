@@ -22,7 +22,11 @@ Pipeline per source file:
        ``.txt`` / ``.md`` → passthrough (no heading inference); ``.pdf`` →
        MarkItDown text-layer extraction (ADR-0031) — binary bytes bypass the
        UTF-8 decode step; no heading inference of our own, headings are
-       whatever literal ``#`` text the extractor emits.
+       whatever literal ``#`` text the extractor emits. The ``.pdf`` branch's
+       extracted body additionally passes through deterministic Kangxi-radical
+       codepoint normalization (issue #425, ``kangxi_normalize.py``) —
+       ``.html``/``.txt``/``.md`` passthrough paths are not normalized, since
+       only PDF extraction manufactures these codepoints.
     6. Render output: YAML frontmatter (imported_from, original_format,
        imported_at, content_sha256) + converted body.
     7. Atomic write: tempfile in same dir + ``os.replace`` + cleanup on
@@ -91,6 +95,7 @@ from pdfminer.pdfdocument import PDFEncryptionError
 
 from ._paths import _REPO_ROOT, DOCS_DIR
 from .atomic import write_text_atomic
+from .kangxi_normalize import normalize_kangxi_radicals
 from .logger import log_event
 
 # ---------------------------------------------------------------------------
@@ -953,6 +958,14 @@ def _convert_pdf_to_markdown(raw_bytes: bytes) -> str:
     empty/whitespace-only result is returned as-is (not raised) — the caller
     checks that separately and maps it to ``NoTextLayer``, since an empty
     string is not an exception.
+
+    The extracted body is passed through ``normalize_kangxi_radicals``
+    (issue #425) before returning: some subsetted-font PDFs emit CJK
+    ideographs as visually-identical Kangxi-radical codepoints, which the
+    CJK bigram tokenizer treats as literally different characters. This
+    runs before the caller's ``NoTextLayer`` emptiness check and before
+    frontmatter is rendered, so ``content_sha256`` (hashed from raw bytes,
+    computed earlier in the pipeline) is unaffected.
     """
     try:
         result = _get_markitdown().convert_stream(io.BytesIO(raw_bytes), file_extension=".pdf")
@@ -960,7 +973,7 @@ def _convert_pdf_to_markdown(raw_bytes: bytes) -> str:
         if _is_encrypted_pdf_error(exc):
             raise _EncryptedPdfError(str(exc)) from exc
         raise
-    return result.text_content
+    return normalize_kangxi_radicals(result.text_content)
 
 
 def _render_output(
