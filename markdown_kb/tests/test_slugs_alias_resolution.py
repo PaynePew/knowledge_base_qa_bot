@@ -18,7 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.schemas import WikiPageDraft, WikiPageFrontmatter
-from app.slugs import build_alias_resolution_map
+from app.slugs import build_alias_resolution_map, build_slug_paths
 from app.wiki_writer import write_pages_for_source
 
 FIXED_TS = "2026-05-26T14:30:00Z"
@@ -156,3 +156,43 @@ def test_blank_alias_entries_are_ignored(tmp_path):
 
     assert "" not in resolution
     assert resolution["real-alias"] == "page-a"
+
+
+# ---------------------------------------------------------------------------
+# build_slug_paths — a location lookup, not a resolution decision (issue #410)
+# ---------------------------------------------------------------------------
+
+
+def test_slug_paths_maps_concept_slug_to_its_relpath(tmp_path):
+    wiki_dir = tmp_path / "wiki"
+    _write_page(wiki_dir, "cancellation-window")
+
+    paths = build_slug_paths(wiki_dir)
+
+    assert paths == {"cancellation-window": "wiki/concepts/cancellation-window.md"}
+
+
+def test_slug_paths_maps_entity_slug_to_its_relpath(tmp_path):
+    wiki_dir = tmp_path / "wiki"
+    _write_page(wiki_dir, "acme-shop", page_type="entity")
+
+    paths = build_slug_paths(wiki_dir)
+
+    assert paths == {"acme-shop": "wiki/entities/acme-shop.md"}
+
+
+def test_slug_paths_excludes_aliases_and_unresolvable_strings(tmp_path):
+    """Aliases resolve THROUGH a real slug (issue #410 AC) — they are not
+    themselves keys of ``build_slug_paths``; only real page slugs are."""
+    wiki_dir = tmp_path / "wiki"
+    _write_page(wiki_dir, "replacement-payment-methods", aliases=["paypal"])
+
+    paths = build_slug_paths(wiki_dir)
+
+    assert paths == {"replacement-payment-methods": "wiki/concepts/replacement-payment-methods.md"}
+    assert "paypal" not in paths
+
+
+def test_slug_paths_empty_wiki_dir_returns_empty_map(tmp_path):
+    wiki_dir = tmp_path / "wiki"
+    assert build_slug_paths(wiki_dir) == {}

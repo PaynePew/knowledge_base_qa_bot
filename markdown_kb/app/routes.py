@@ -5,7 +5,8 @@ HTTP wiring for /health, /index, /chat, /qa/{slug}/promote,
 /lint, /import, /pages/reconcile, /pages/reconcile/apply,
 /pages/collision/merge, /pages/collision/merge/apply,
 /pages/collision/differentiate, /pages/collision/differentiate/apply,
-/pages/{slug} (DELETE), /pages/{slug}/aliases (POST). No domain logic."""
+/pages/{slug} (DELETE), /pages/{slug}/aliases (POST),
+/pages/resolution-map (GET). No domain logic."""
 
 from __future__ import annotations
 
@@ -53,6 +54,7 @@ from .schemas import (
     ReconcileApplyResponse,
     ReconcileGenerateRequest,
     ReconcileGenerateResponse,
+    ResolutionMapResponse,
 )
 
 router = APIRouter()
@@ -908,3 +910,30 @@ def assign_alias(slug: str, request: AliasAssignRequest) -> None:
             status_code=409,
             detail=f"alias '{exc.alias}' already resolves to page '{exc.owner}'",
         ) from exc
+
+
+# ---------------------------------------------------------------------------
+# /pages/resolution-map — linkify resolution map (issue #410, ADR-0030 decision 5)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/pages/resolution-map", response_model=ResolutionMapResponse)
+def get_resolution_map() -> ResolutionMapResponse:
+    """Read-only linkify resolution map, consumed by clients.
+
+    issue #410 / ADR-0030 decision 5. Every ``[[wikilink]]``-rendering
+    surface (Console ``/read/file`` viewer, reader chat answer bodies, the
+    chat-side citation viewer) consults this ONE endpoint instead of
+    building its own slug set (ADR-0030 Invariant) — a wikilink resolves
+    here iff C2 would NOT flag it as red for the same corpus.
+
+    Cache-friendly: no query params, no side effects, a pure read of the
+    current corpus state.
+
+    Shallow wrapper around ``pages.get_resolution_map`` (CODING_STANDARD
+    §2.3 — all domain logic lives in ``pages.py``).
+
+    Returns:
+        ``ResolutionMapResponse`` — see its docstring for field shapes.
+    """
+    return pages_module.get_resolution_map()

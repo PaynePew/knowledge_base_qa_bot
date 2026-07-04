@@ -552,6 +552,19 @@
     overflow-y: auto;
     word-break: break-word;
   }
+  /* Wikilink linkify (issue #410, ADR-0030 decision 5) — curator surface:
+     resolved -> navigable link; unresolved -> red-link styling (the SAME
+     judgment C2 reports for the same corpus), non-navigating. */
+  .wikilink {
+    color: var(--accent);
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .wikilink-unresolved {
+    color: var(--fail);
+    text-decoration: none;
+    cursor: default;
+  }
 
   /* ── Staleness guard banner ──────────────────────────────── */
   .staleness-banner {
@@ -5311,6 +5324,74 @@ function renderEntries(entries) {
   }
 }
 
+/* ── Wikilink linkify (issue #410, ADR-0030 decision 5) ──────────────────
+   parseWikilinks is a PURE function (text -> segments), kept separable from
+   DOM rendering and hermetically unit-tested via a Python mirror (mirrors the
+   SSE-parser convention, §12.7). "[[slug|display]]" shows the display text;
+   resolution always uses the slug part. Rendering below is CURATOR-scoped:
+   resolved (slug or alias, via the ONE shared GET /wiki/pages/resolution-map
+   — ADR-0030 Invariant: no surface builds its own slug set) -> a navigable
+   link; unresolved -> red-link styling (visually the SAME judgment C2
+   reports for the same corpus), never navigating.                          */
+function parseWikilinks(text) {
+  var re = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+  var segments = [];
+  var lastIndex = 0;
+  var m;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > lastIndex) segments.push({ type: "text", value: text.slice(lastIndex, m.index) });
+    var slug = m[1].trim();
+    var display = m[2] !== undefined ? m[2].trim() : slug;
+    segments.push({ type: "link", slug: slug, display: display });
+    lastIndex = re.lastIndex;
+  }
+  if (lastIndex < text.length) segments.push({ type: "text", value: text.slice(lastIndex) });
+  return segments;
+}
+
+/* Looks up `slug` in the shared resolution map; returns the target's
+   server-supplied wiki-relative path, or null if unresolvable. The client
+   never constructs a wiki path from a bare slug itself (CODING_STANDARD
+   §12.5 — mirrors the reader UI's existing source.path convention). */
+function resolveWikilinkPath(slug, resolutionMap) {
+  var slugs = (resolutionMap && resolutionMap.slugs) || {};
+  var aliases = (resolutionMap && resolutionMap.aliases) || {};
+  if (Object.prototype.hasOwnProperty.call(slugs, slug)) return slugs[slug];
+  if (Object.prototype.hasOwnProperty.call(aliases, slug)) {
+    var canonical = aliases[slug];
+    return Object.prototype.hasOwnProperty.call(slugs, canonical) ? slugs[canonical] : null;
+  }
+  return null;
+}
+
+/* Fetches the shared ADR-0030 resolution map fresh on every call (the map
+   changes on assign-alias / ingest; this endpoint is cheap and cache-friendly
+   — no client-side cache to invalidate). Degrades to "nothing resolves" on
+   failure so a transient fetch error renders every wikilink red rather than
+   throwing. */
+function fetchResolutionMap() {
+  return fetch("/wiki/pages/resolution-map")
+    .then(function(r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+    .catch(function() { return { slugs: {}, aliases: {} }; });
+}
+
+/* Builds the curator-surface DOM nodes (Text nodes + .wikilink / a
+   .wikilink-unresolved span per link) for one file's raw content. */
+function renderWikilinkNodes(content, resolutionMap) {
+  return parseWikilinks(content).map(function(seg) {
+    if (seg.type === "text") return document.createTextNode(seg.value);
+    var relpath = resolveWikilinkPath(seg.slug, resolutionMap);
+    if (relpath) {
+      return el("a", {
+        class: "wikilink", href: "#",
+        onclick: function(e) { e.preventDefault(); openFile(relpath, relpath.split("/").pop()); },
+        text: seg.display,
+      });
+    }
+    return el("span", { class: "wikilink-unresolved", text: seg.display });
+  });
+}
+
 /* ── Open and display a file ─────────────────────────────── */
 function openFile(relpath, name) {
   if (browserBusy) return;
@@ -5332,18 +5413,28 @@ function openFile(relpath, name) {
      and a scroll now would stop a few pixels down; once the full article swaps
      in the page grows but would not re-scroll. */
 
-  fetch("/read/file?" + new URLSearchParams({ path: relpath }))
-    .then(function(r) {
-      if (!r.ok) return r.json().then(function(j) { throw new Error(j.detail || ("HTTP " + r.status)); });
-      return r.json();
-    })
-    .then(function(data) {
-      /* §12.4: raw Markdown shown via textContent (NOT rendered HTML) */
+  Promise.all([
+    fetch("/read/file?" + new URLSearchParams({ path: relpath }))
+      .then(function(r) {
+        if (!r.ok) return r.json().then(function(j) { throw new Error(j.detail || ("HTTP " + r.status)); });
+        return r.json();
+      }),
+    fetchResolutionMap(),
+  ])
+    .then(function(results) {
+      var data = results[0];
+      var resolutionMap = results[1];
+      /* §12.4: raw Markdown shown via textContent-built nodes (NOT innerHTML) —
+         wikilinks are the ONE exception carved out by ADR-0030 decision 5:
+         a [[wikilink]] becomes a safely-constructed <a>/<span>, never raw HTML. */
       var content = data.content;
       var closeBtn = el("button", {
         class: "file-viewer-close", type: "button", text: "close",
         onclick: function() { fileViewerEl.replaceChildren(); }
       });
+
+      var pre = el("pre", { class: "file-content" });
+      pre.append.apply(pre, renderWikilinkNodes(content, resolutionMap));
 
       var contentViewer = el("div", { class: "file-viewer" },
         el("div", { class: "file-viewer-head" },
@@ -5352,7 +5443,7 @@ function openFile(relpath, name) {
           el("span", { class: "file-name", text: relpath }),
           closeBtn
         ),
-        el("pre", { class: "file-content", text: content })
+        pre
       );
       fileViewerEl.replaceChildren(contentViewer);
       animateIn(contentViewer, 300, 0, 4);

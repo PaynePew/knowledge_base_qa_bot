@@ -1,6 +1,7 @@
 """Shared slug-safety and link-resolution helpers (CODING_STANDARD §2.4).
 
-Public surface: ``is_bare_slug``, ``build_alias_resolution_map``.
+Public surface: ``is_bare_slug``, ``build_alias_resolution_map``,
+``build_slug_paths``.
 
 This is the canonical home for the path-shape guard originally written as
 ``qa._is_bare_slug`` for ``qa.promote_batch``'s body-supplied slugs (issue
@@ -126,3 +127,33 @@ def build_alias_resolution_map(wiki_dir: Path) -> dict[str, str]:
         # overwrites a real page's self-mapping.
         resolution[alias] = canonical
     return resolution
+
+
+def build_slug_paths(wiki_dir: Path) -> dict[str, str]:
+    """Map every real entities/concepts page slug to its wiki-relative path.
+
+    A LOCATION lookup, not a resolution decision — ``build_alias_
+    resolution_map`` (above) remains the sole authority on "does this string
+    resolve" (ADR-0030 Invariant: one shared resolver). This exists so a
+    linkify client (issue #410, ADR-0030 decision 5) can navigate to a
+    resolved canonical page WITHOUT ever constructing a wiki path from a bare
+    slug itself — CODING_STANDARD §12.5 / §12.4 already require this for the
+    reader UI's citation links (``source.path`` is server-supplied); the
+    resolution-map endpoint (``pages.get_resolution_map``) extends the same
+    convention to wikilink navigation.
+
+    Args:
+        wiki_dir: Root wiki directory (``entities/`` and ``concepts/`` are
+            read from beneath it; missing subdirectories are skipped).
+
+    Returns:
+        Dict mapping every real page slug to ``"wiki/<subdir>/<slug>.md"``.
+    """
+    paths: dict[str, str] = {}
+    for subdir_name in _ALIAS_ELIGIBLE_SUBDIRS:
+        subdir = wiki_dir / subdir_name
+        if not subdir.exists():
+            continue
+        for page_path in subdir.glob("*.md"):
+            paths[page_path.stem] = f"wiki/{subdir_name}/{page_path.name}"
+    return paths
