@@ -220,3 +220,61 @@ def test_assign_alias_triggers_no_reindex(alias_client, monkeypatch):
 
     assert resp.status_code == 204, resp.text
     assert calls == [], "aliases never enter BM25 — no reindex should run (ADR-0030 Invariant)"
+
+
+# ---------------------------------------------------------------------------
+# AC closure: assigning an alias then re-running lint clears the C2 finding
+# for that slug (over live HTTP against a real fixture — both endpoints
+# through the SAME TestClient, mirroring test_c2_c4_alias_resolution.py's
+# domain-level fixture shape one layer up at the HTTP seam).
+# ---------------------------------------------------------------------------
+
+
+def test_assign_alias_then_relint_clears_the_c2_finding(
+    alias_client, alias_wiki_dir, monkeypatch, tmp_path
+):
+    # POST /lint resolves its wiki/docs/log paths from app.lint's OWN
+    # module-level constants (imported directly from _paths.py, not via
+    # indexer.WIKI_DIR) — see run_lint's docstring: "Parameters default to
+    # the module-level constants... so tests can monkeypatch those
+    # attributes". alias_client's own fixture only redirects indexer.WIKI_DIR
+    # (sufficient for pages.py/add_alias), so this test additionally redirects
+    # app.lint's constants, mirroring test_lint_e2e.py's established pattern.
+    import app.lint as lint_module
+
+    monkeypatch.setattr(lint_module, "WIKI_DIR", alias_wiki_dir)
+    monkeypatch.setattr(lint_module, "DOCS_DIR", tmp_path / "docs")
+    monkeypatch.setattr(lint_module, "LOG_PATH", tmp_path / "wiki" / "log.md")
+
+    referrer_dir = alias_wiki_dir / "concepts"
+    referrer_dir.mkdir(parents=True, exist_ok=True)
+    (referrer_dir / "referrer-page.md").write_text(
+        "---\n"
+        "id: referrer-page\n"
+        "type: concept\n"
+        "created: '2026-07-03T00:00:00Z'\n"
+        "updated: '2026-07-03T00:00:00Z'\n"
+        "sources:\n  - payments.md#s\n"
+        "status: live\n"
+        "open_questions: []\n"
+        "source_hashes: {}\n"
+        "---\n\n"
+        "# referrer-page\n\nSee [[venmo]] for alternatives.\n"
+        "\n[Source: payments.md]\n",
+        encoding="utf-8",
+    )
+
+    before = alias_client.post("/lint", params={"include_c5": "false"})
+    assert before.status_code == 200, before.text
+    assert "venmo" in [f["slug"] for f in before.json()["findings"]["red_links"]], (
+        "the fixture must start with an unresolved [[venmo]] red link"
+    )
+
+    assign = alias_client.post(f"/pages/{_TARGET_SLUG}/aliases", json={"alias": "venmo"})
+    assert assign.status_code == 204, assign.text
+
+    after = alias_client.post("/lint", params={"include_c5": "false"})
+    assert after.status_code == 200, after.text
+    assert "venmo" not in [f["slug"] for f in after.json()["findings"]["red_links"]], (
+        "assigning 'venmo' as an alias of the target page must clear the C2 finding on re-lint"
+    )

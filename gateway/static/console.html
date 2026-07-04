@@ -848,6 +848,61 @@
   }
   .fix-source-banner.visible { display: flex; }
 
+  /* ── C2 Assign-Alias picker (issue #409, ADR-0030 decision 3) ──────────
+     The red link's SECOND exit alongside .fill-import-btn (a picker +
+     execute button, not just navigation — this one DOES fetch, so the
+     Assign button gets the same filled-accent "this executes" treatment as
+     .verify-reask-btn / .reingest-btn). First <select> in this file — kept
+     visually consistent with the existing monospace form-control language
+     (.draft-card-edit-form input/textarea) rather than a bare native
+     control. */
+  .assign-alias-select {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    color: var(--ink);
+    background: var(--bg);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 4px 6px;
+    max-width: 220px;
+  }
+  .assign-alias-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--accent);
+    color: #fff;
+    border: 0;
+    padding: 4px 10px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .04em;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: opacity .15s ease;
+  }
+  .assign-alias-btn:hover:not(:disabled) { opacity: .82; }
+  .assign-alias-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+  /* Honest-miss offer buttons (issue #409, ADR-0030 decision 3) — rendered
+     inside the existing .lint-batch-summary post-fill banner (ADR-0027
+     decision 3), one per page the triggering Ingest run actually created.
+     Same filled-accent "this executes" treatment as .assign-alias-btn. */
+  .assign-alias-offer-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--accent);
+    color: #fff;
+    border: 0;
+    padding: 4px 10px;
+    margin-top: 6px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .04em;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: opacity .15s ease;
+  }
+  .assign-alias-offer-btn:hover:not(:disabled) { opacity: .82; }
+  .assign-alias-offer-btn:disabled { opacity: .45; cursor: not-allowed; }
+
   /* ── C5 Reconcile (tier-B S1, issue #376, ADR-0028) ─────────────
      The one Authored-tier check with a real Gated affordance this slice —
      C4 keeps the disabled .tier-b-btn above until its own slice. */
@@ -2066,6 +2121,8 @@ var LINT_CHROME = {
     viewSource:          "View Source",
     c3GiveUpPrefix:      "If this Source should not produce a wiki page: remove docs/",
     c3GiveUpSuffix:      " and this page becomes a C11 full orphan, removable via Confirmed delete.",
+    assignAlias:           "Assign Alias",
+    assignAliasChoosePage: "Choose a page…",
   },
   zh: {
     reingest:        "重新匯入",
@@ -2104,6 +2161,8 @@ var LINT_CHROME = {
     viewSource:          "檢視 Source",
     c3GiveUpPrefix:      "若此 Source 不該產生 wiki 頁:移除 docs/",
     c3GiveUpSuffix:      " 後此頁轉為 C11 full orphan,可用 Confirmed delete 移除。",
+    assignAlias:           "指派別名",
+    assignAliasChoosePage: "選擇頁面…",
   },
 };
 
@@ -2146,8 +2205,11 @@ var lastIngestedPageSlugs = [];
    a prior run's (or nothing at all). */
 var ingestRunCounter = 0;
 
-/* One-shot outcome text for the NEXT renderLintCard, mirroring
-   lastBatchSummary's pattern exactly (set here, read-and-cleared there). */
+/* One-shot outcome for the NEXT renderLintCard, mirroring lastBatchSummary's
+   pattern (set here, read-and-cleared there). Either null, or
+   {target, newPages} (issue #409 — ADR-0030 decision 3's honest-miss offer;
+   see checkCoverageFillOutcome below and coverageFillOutcomeBanner in
+   renderLintCard). */
 var lastCoverageFillOutcome = null;
 
 /* Context text carrying the finding's own fields into the banner (AC: C2
@@ -2247,9 +2309,17 @@ function checkCoverageFillOutcome(lintData) {
   pendingCoverageFill = null;
   hideCoverageFillBanner();
   var newPages = lastIngestedPageSlugs.length > 0 ? lastIngestedPageSlugs.join(", ") : "none";
-  lastCoverageFillOutcome =
-    "Fill via Import: imported and ingested — new pages: " + newPages +
-    " — but [[" + fill.target + "]] is still unresolved.";
+  /* issue #409 (ADR-0030 decision 3): carries {text, target, newPages}
+     rather than a plain string — text is the same honest-miss message this
+     always built (still unresolved, new pages named), and target/newPages
+     additionally let renderLintCard upgrade the report into an executable
+     "make [[target]] an alias of <newPage>?" offer per newly-minted page. */
+  lastCoverageFillOutcome = {
+    text: "Fill via Import: imported and ingested — new pages: " + newPages +
+      " — but [[" + fill.target + "]] is still unresolved.",
+    target: fill.target,
+    newPages: lastIngestedPageSlugs.slice(),
+  };
 }
 
 /* ============================================================
@@ -2448,6 +2518,47 @@ function discardRemediationRequest(slug) {
       }
       return null;
     });
+}
+
+/* Assign-Alias write (issue #409, ADR-0030 decision 3) — the ONE new
+   endpoint this slice adds (every other remediation on this card reuses an
+   existing one, ADR-0023/ADR-0027 convention). Direct-class: no batch, no
+   LLM. A 409 collision (alias already resolves to a different page) or a
+   422 blank alias surfaces verbatim through runLintRemediation's existing
+   err-status rendering (§12.5) — this wrapper never re-derives eligibility
+   itself. */
+function assignAliasRequest(pageSlug, alias) {
+  return fetch("/wiki/pages/" + encodeURIComponent(pageSlug) + "/aliases", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ alias: alias }),
+  }).then(function(resp) {
+    if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+    return null;
+  });
+}
+
+/* Candidate page list for the Assign-Alias picker — sourced from the
+   EXISTING GET /read/tree resource browser (entities/ + concepts/), not a
+   new listing endpoint invented for this picker (ADR-0030 adds exactly one
+   new endpoint: the write above). Directory entries only, ".md" suffix
+   stripped to a bare slug, merged + sorted across both subdirs. Failures in
+   either fetch degrade to an empty list for that subdir rather than
+   rejecting the whole picker. */
+function fetchAliasPickerPages() {
+  function listSlugs(subdir) {
+    return fetch("/read/tree?" + new URLSearchParams({ path: "wiki/" + subdir }))
+      .then(function(resp) { return resp.ok ? resp.json() : { entries: [] }; })
+      .then(function(data) {
+        return (data.entries || [])
+          .filter(function(entry) { return !entry.is_dir && /\.md$/.test(entry.name); })
+          .map(function(entry) { return entry.name.replace(/\.md$/, ""); });
+      })
+      .catch(function() { return []; });
+  }
+  return Promise.all([listSlugs("entities"), listSlugs("concepts")]).then(function(lists) {
+    return lists[0].concat(lists[1]).sort();
+  });
 }
 
 /* C1 Verify: re-ask (tier-B S8, issue #384, ADR-0027 decision 2) — the
@@ -2664,6 +2775,15 @@ function renderLintCard(data, resultEl) {
 
   var bodyEl = el("div");
 
+  /* Every clickable remediation button this card renders (per-row AND
+     batch) — the in-flight guard disables the whole set while any one of
+     them is running (issue #364). Permanently-disabled affordances (the
+     empty-source guard, the Authored tier-B button) are never pushed here
+     since they must never become clickable. Declared before the two
+     one-shot banners below so coverageFillOutcomeBanner's honest-miss
+     offer buttons (issue #409) can push onto it too. */
+  var allButtons = [];
+
   /* Batch-remediation summary banner (issue #364) — one-shot: cleared
      immediately after being shown so it does not linger across an
      unrelated later re-render (e.g. the Refresh button). */
@@ -2675,18 +2795,13 @@ function renderLintCard(data, resultEl) {
   /* Routed Coverage Fill honest-miss banner (tier-B S7, issue #383,
      ADR-0027 decision 3) — same one-shot pattern as lastBatchSummary above:
      checkCoverageFillOutcome (called by the caller before this function)
-     sets it when a post-fill re-lint finds the red link still unresolved. */
+     sets it when a post-fill re-lint finds the red link still unresolved.
+     issue #409 (ADR-0030 decision 3) upgrades this from a dead-end message
+     into an executable offer — see coverageFillOutcomeBanner below. */
   if (lastCoverageFillOutcome) {
-    bodyEl.append(el("div", { class: "lint-batch-summary", text: lastCoverageFillOutcome }));
+    bodyEl.append(coverageFillOutcomeBanner(lastCoverageFillOutcome));
     lastCoverageFillOutcome = null;
   }
-
-  /* Every clickable remediation button this card renders (per-row AND
-     batch) — the in-flight guard disables the whole set while any one of
-     them is running (issue #364). Permanently-disabled affordances (the
-     empty-source guard, the Authored tier-B button) are never pushed here
-     since they must never become clickable. */
-  var allButtons = [];
 
   /* Helper: emit an axis section heading. batchBtnEl (optional) renders an
      axis-level batch action flush right (issue #364 — Freshness only).
@@ -2845,6 +2960,79 @@ function renderLintCard(data, resultEl) {
       runLintRemediation(discardRemediationRequest(slug), btn, statusMsgEl, resultEl, allButtons);
     });
     return el("div", { class: "lint-row-actions" }, btn, statusMsgEl);
+  }
+
+  /* ── C2 Assign-Alias picker (issue #409, ADR-0030 decision 3) ──────────
+     The red link's SECOND exit alongside fillViaImportAction (Routed Fill
+     via Import): instead of importing new coverage, name the finding's
+     ``[[slug]]`` as an alias of an EXISTING page. Unlike fillViaImportAction
+     this DOES fetch — it reuses runLintRemediation, the SAME Direct-
+     remediation re-lint + re-render path every other row action on this
+     card uses, so a 409 collision (alias already resolves to a different
+     page) surfaces through its existing err-status rendering verbatim
+     (§12.5) — this function never re-derives eligibility itself.
+     ADR-0030 Invariant: never batches — one picker, one slug, one POST. */
+  var aliasPickerPagesPromise = null;
+  function aliasPickerPages() {
+    if (!aliasPickerPagesPromise) aliasPickerPagesPromise = fetchAliasPickerPages();
+    return aliasPickerPagesPromise;
+  }
+
+  function assignAliasAction(finding) {
+    var select = el("select", { class: "assign-alias-select" },
+      el("option", { value: "", text: LINT_CHROME[consoleLang].assignAliasChoosePage }));
+    var btn = el("button", { class: "assign-alias-btn", type: "button",
+      text: LINT_CHROME[consoleLang].assignAlias, disabled: "" });
+    var statusMsgEl = el("span", { class: "card-status-msg" });
+
+    aliasPickerPages().then(function(slugs) {
+      slugs.forEach(function(slug) {
+        select.append(el("option", { value: slug, text: slug }));
+      });
+    }).catch(function() { /* picker stays empty; Assign remains disabled */ });
+
+    select.addEventListener("change", function() {
+      btn.disabled = !select.value;
+    });
+
+    allButtons.push(btn);
+    btn.addEventListener("click", function() {
+      if (btn.disabled || !select.value || remediationInFlight) return;
+      runLintRemediation(
+        assignAliasRequest(select.value, finding.slug), btn, statusMsgEl, resultEl, allButtons
+      );
+    });
+    return el("div", { class: "lint-row-actions" }, select, btn, statusMsgEl);
+  }
+
+  /* Honest-miss offer (issue #409, ADR-0030 decision 3) — upgrades the
+     post-fill honest-miss report (ADR-0027 decision 3) from a dead-end
+     prose message into an executable one-click offer: "make [[target]] an
+     alias of <just-minted page>?", one button per page the triggering
+     Ingest run actually created (outcome.newPages — never guessed, only
+     the pages that specific run wrote). Zero new pages renders the plain
+     message with no offer. Each offer reuses runLintRemediation exactly
+     like assignAliasAction above. */
+  function coverageFillOutcomeBanner(outcome) {
+    var container = el("div", { class: "lint-batch-summary" },
+      el("div", { text: outcome.text })
+    );
+
+    outcome.newPages.forEach(function(pageSlug) {
+      var btn = el("button", { class: "assign-alias-offer-btn", type: "button",
+        text: "Make [[" + outcome.target + "]] an alias of " + pageSlug + "?" });
+      var statusMsgEl = el("span", { class: "card-status-msg" });
+      allButtons.push(btn);
+      btn.addEventListener("click", function() {
+        if (btn.disabled || remediationInFlight) return;
+        runLintRemediation(
+          assignAliasRequest(pageSlug, outcome.target), btn, statusMsgEl, resultEl, allButtons
+        );
+      });
+      container.append(el("div", { class: "lint-row-actions" }, btn, statusMsgEl));
+    });
+
+    return container;
   }
 
   /* C1 Verify: re-ask (tier-B S8, issue #384, ADR-0027 decision 2) — a
@@ -3021,10 +3209,15 @@ function renderLintCard(data, resultEl) {
         el("div", {}, fillViaImportAction("C1", f), verifyReaskAction(f)));
     },
     C2: function(i, f) {
+      /* issue #409 (ADR-0030 decision 3): two exits per red-link finding —
+         the existing Routed fillViaImportAction stays wired unchanged, and
+         assignAliasAction adds a second, Direct-class picker alongside it
+         (never replacing it). */
       return findingRow(i, f.slug,
         f.mention_count + " mention" + (f.mention_count !== 1 ? "s" : "") +
         " · " + (f.referenced_by || []).slice(0, 3).join(", "),
-        "red-link", "label-failed", fillViaImportAction("C2", f));
+        "red-link", "label-failed",
+        el("div", {}, fillViaImportAction("C2", f), assignAliasAction(f)));
     },
     C8: function(i, f) {
       return findingRow(i, f.slug, f.question, "count:" + f.count, "label-created");
