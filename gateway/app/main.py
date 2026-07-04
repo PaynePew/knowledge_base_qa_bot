@@ -25,6 +25,11 @@ The Gateway is a thin parent ASGI app that:
     lifespan protocol into a mounted sub-app, so without this a cold Gateway
     process serves ``/wiki`` and ``/rag`` with an empty in-memory index until
     something happens to lazy-load it.
+  - Registers a per-page budget hook with ``markdown_kb.app.transcriber``
+    (issue #460) so Transcribe's real per-page vision-model cost — not a
+    flat per-request estimate — is charged into the same daily USD budget
+    ledger ``ProdMiddleware`` uses, for both the ``/wiki/import`` auto-route
+    and the forced ``/wiki/transcribe``.
 """
 
 from __future__ import annotations
@@ -43,13 +48,39 @@ from fastapi import FastAPI  # noqa: E402
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
-# Import sub-apps AFTER env is loaded so retrieval singletons see OPENAI_API_KEY.
+# Import sub-apps (and the transcriber module for the budget-hook wiring
+# below) AFTER env is loaded so retrieval singletons see OPENAI_API_KEY.
+from markdown_kb.app import transcriber as _transcriber_module  # noqa: E402
 from markdown_kb.app.main import app as _wiki_app  # noqa: E402
 from vector_rag.app.main import app as _rag_app  # noqa: E402
 
+from . import budget as _budget  # noqa: E402
 from .middleware import ProdMiddleware, read_saturated  # noqa: E402
 from .routes import router  # noqa: E402
 from .warmup import warm_hybrid_indexes, warm_openai_clients  # noqa: E402
+
+
+def _charge_transcribe_pages(page_count: int) -> None:
+    """Charge Transcribe's per-page cost into the daily USD budget ledger.
+
+    Registered with ``markdown_kb.app.transcriber`` below (issue #460):
+    markdown_kb has no dependency on gateway (ADR-0002's one-way Stack
+    boundary), so it cannot charge this ledger itself — this closure is the
+    composition root's half of that inversion. Called with a PDF's page
+    count BEFORE any vision-model call, for both the ``/wiki/import``
+    auto-route and the forced ``/wiki/transcribe`` (mirrors the middleware's
+    own "check over_cap, then charge" ordering): a batch already at the
+    ceiling is rejected before spending further, rather than only detected
+    after the fact.
+    """
+    if _budget.budget.over_cap():
+        raise _transcriber_module.TranscribeBudgetExceeded(
+            "daily demo budget reached; Transcribe rejected before any vision-model call"
+        )
+    _budget.budget.charge_pages(page_count)
+
+
+_transcriber_module.set_page_budget_hook(_charge_transcribe_pages)
 
 
 @asynccontextmanager
