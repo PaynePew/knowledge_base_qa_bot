@@ -366,6 +366,28 @@ def _format_c11_orphans(findings: object, label: str) -> list[str]:
     return lines
 
 
+def _c3_fix_source_hint() -> str:
+    """Render C3's Routed fix-the-Source navigation hint as plain text
+    (issue #408, ADR-0029).
+
+    C3 is the first check carrying two remediation classes at once: its
+    executable Direct "Re-ingest (retry)" action stays wired (unchanged since
+    issue #363), and ``remediation_for("C3").secondary_route`` names an
+    ADDITIONAL Routed navigation for its dominant failure mode
+    (``claim_unsupported``) — amending what the Source says is knowledge only
+    the human can supply, so there is nothing here to execute, only to
+    describe. Mirrors ``_routed_fill_hint`` above (C1/C2), which reads the
+    PRIMARY ``route`` field instead — C3 stays Direct-tier, so its navigation
+    hint lives in ``secondary_route`` (see ``RemediationDescriptor``).
+    """
+    from markdown_kb.app.lint import remediation_for
+
+    route = remediation_for("C3").secondary_route
+    if route == "fix-source":
+        return "  fix via: edit the Source under docs/, then: kb ingest <source> && kb lint"
+    return f"  fix via: {route}"  # pragma: no cover — no other secondary route exists yet
+
+
 def _format_c3_failed_grounding(findings: object, label: str) -> list[str]:
     """C3 Failed grounding lines, or ``[]`` when there are none.
 
@@ -373,13 +395,15 @@ def _format_c3_failed_grounding(findings: object, label: str) -> list[str]:
     ADR-0017 four-surface parity — the Markdown report already did this in
     Slice 5-2). An empty claims list (``verifier_unavailable``, or a
     defensive/legacy page) degrades to an honest "(claims not recorded)"
-    note rather than a blank line.
+    note rather than a blank line. The Routed fix-the-Source hint (issue
+    #408) follows the heading line, mirroring C1/C2's placement.
     """
     if not findings.failed_grounding:  # type: ignore[attr-defined]
         return []
     lines = [
         f"C3 Failed grounding ({len(findings.failed_grounding)}) — {label}:"  # type: ignore[attr-defined]
     ]
+    lines.append(_c3_fix_source_hint())
     for f in findings.failed_grounding:  # type: ignore[attr-defined]
         claims = (
             "; ".join(f.unsupported_claims) if f.unsupported_claims else "(claims not recorded)"

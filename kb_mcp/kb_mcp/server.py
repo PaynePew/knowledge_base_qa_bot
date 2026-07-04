@@ -397,6 +397,21 @@ def _routed_fill_hint(route: str | None) -> str:
     return f"route: {route}"  # pragma: no cover — no other route exists yet
 
 
+def _c3_fix_source_hint(secondary_route: str | None) -> str:
+    """Render C3's added Routed fix-the-Source navigation hint as plain text
+    (issue #408, ADR-0029).
+
+    Mirrors ``kb_cli.main._c3_fix_source_hint`` (same shared taxonomy, same
+    text). C3 is the first check carrying two remediation classes at once —
+    its executable Direct Re-ingest retry is untouched by this; this reads
+    ``remediation_for("C3").secondary_route`` (never the primary ``route``
+    field, which stays ``None`` for C3 — see ``RemediationDescriptor``).
+    """
+    if secondary_route == "fix-source":
+        return "edit the Source under docs/, then: kb ingest <source> && kb lint"
+    return f"route: {secondary_route}"  # pragma: no cover — no other secondary route exists yet
+
+
 # ---------------------------------------------------------------------------
 # Tool: kb_lint_v1
 # ---------------------------------------------------------------------------
@@ -438,6 +453,16 @@ def _routed_fill_hint(route: str | None) -> str:
         "Source to ground a draft against), so there is no tool call that "
         "resolves them either.  Report the finding and the hint to your "
         "human instead of attempting to synthesise a fix.\n\n"
+        "  findings.failed_grounding[] (C3) additionally carries a 'fix_via' "
+        "text hint (issue #408, ADR-0029) — C3 is the first check carrying "
+        "TWO remediation classes: its 'reason' field distinguishes a "
+        "transient failure ('verifier_unavailable', where re-ingesting is "
+        "the real fix) from 'claim_unsupported' (the dominant case, where "
+        "the Source itself needs a human correction before any re-ingest "
+        "can succeed — the same unchanged Source feeds the same verifier "
+        "and fails identically).  There is no tool call that edits a Source "
+        "file; report the finding, its 'unsupported_claims', and the hint "
+        "to your human.\n\n"
         "Returns isError=true when the C5 LLM call fails catastrophically:\n"
         "  {code, message} where code is 'LLM_UNAVAILABLE' (retryable) or\n"
         "  'LLM_ERROR' (non-retryable, report message to user).\n"
@@ -549,6 +574,15 @@ def kb_lint_v1(
     red_link_hint = _routed_fill_hint(remediation_for("C2").route)
     for red_link in payload["findings"]["red_links"]:
         red_link["fill_via"] = red_link_hint
+
+    # C3's secondary Routed class (issue #408, ADR-0029): unlike C1/C2, C3
+    # stays Direct-tier (its reingest_retry tool call is unaffected) — this
+    # reads secondary_route, not the primary route field (which is None for
+    # C3), since fixing what a claim_unsupported Source says is knowledge
+    # only the human can supply.
+    fix_source_hint = _c3_fix_source_hint(remediation_for("C3").secondary_route)
+    for fg in payload["findings"]["failed_grounding"]:
+        fg["fix_via"] = fix_source_hint
 
     return payload
 
