@@ -550,6 +550,19 @@
     text-align: right;
   }
 
+  /* Per-row failure notice (issue #444) — sits directly under the entry row
+     that was clicked, so a failing open is visible at the point of action
+     instead of only in the file viewer further down the page. Hidden by
+     default; toggled with .visible when openFile's error callback fires. */
+  .entry-row-notice {
+    display: none;
+    padding: 0 16px 10px 46px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    color: var(--fail);
+  }
+  .entry-row-notice.visible { display: block; }
+
   /* File content viewer */
   .file-viewer {
     margin-top: 20px;
@@ -599,6 +612,20 @@
     color: var(--fail);
     text-decoration: none;
     cursor: default;
+  }
+
+  /* Busy feedback across every file-open trigger (issue #444) — navigateTo()
+     and openFile() share one browserBusy flag, so a click on ANY of these
+     while either is in flight must visibly refuse rather than silently
+     no-op. pointer-events:none means the click never reaches the handler at
+     all, so this "disabled" look is real, not just cosmetic; mirrors the
+     existing .browser-entries.is-loading dim treatment above. */
+  body.file-open-busy .entry-row,
+  body.file-open-busy .view-source-btn,
+  body.file-open-busy .wikilink {
+    pointer-events: none;
+    opacity: .5;
+    cursor: wait;
   }
 
   /* ── Staleness guard banner ──────────────────────────────── */
@@ -2498,12 +2525,24 @@ function showFixSourceBanner(finding) {
     var filename = c3SourceFilename(finding);
     var viewBtn = el("button", { class: "view-source-btn", type: "button",
       text: LINT_CHROME[consoleLang].viewSource });
+    /* Notice slot next to the button (issue #444) — a failing open is
+       visible right where the operator clicked, not only in the resource
+       browser's file viewer further down the page. */
+    var viewStatusEl = el("span", { class: "card-status-msg" });
     viewBtn.addEventListener("click", function() {
-      openFile("docs/" + filename, filename);
+      viewStatusEl.textContent = "";
+      viewStatusEl.className = "card-status-msg";
+      openFile("docs/" + filename, filename, {
+        onError: function(message) {
+          viewStatusEl.textContent = "Failed: " + message;
+          viewStatusEl.className = "card-status-msg err";
+        }
+      });
     });
     banner.replaceChildren(
       el("span", { text: fixSourceBannerText(finding) }),
-      viewBtn
+      viewBtn,
+      viewStatusEl
     );
     banner.classList.add("visible");
   }
@@ -5484,6 +5523,16 @@ var browserPath = "";   /* current relpath in the tree */
 var browserBusy = false;
 var browserBooted = false;   /* suppress auto-scroll on the initial boot load */
 
+/* Single choke point for browserBusy so every write also flips the shared
+   .file-open-busy body class (issue #444) — navigateTo() and openFile()
+   both guard on browserBusy, so both must also drive the same visible
+   busy state on every trigger (browse-tree rows, the Fix Source banner's
+   View Source button, in-file wikilinks), never just one of the two. */
+function setBrowserBusy(busy) {
+  browserBusy = busy;
+  document.body.classList.toggle("file-open-busy", busy);
+}
+
 /* ── Browser containers ──────────────────────────────────── */
 var browserSection = document.getElementById("browser-section");
 var breadcrumbEl = el("div", { class: "browser-breadcrumb" });
@@ -5543,7 +5592,7 @@ function fmtBytes(n) {
 /* ── Navigate to a directory ─────────────────────────────── */
 function navigateTo(relpath) {
   if (browserBusy) return;
-  browserBusy = true;
+  setBrowserBusy(true);
   /* Close any open file viewer */
   fileViewerEl.replaceChildren();
 
@@ -5601,7 +5650,7 @@ function navigateTo(relpath) {
         )
       );
     })
-    .finally(function() { browserBusy = false; });
+    .finally(function() { setBrowserBusy(false); });
 }
 
 /* ── Render directory entries ────────────────────────────── */
@@ -5613,18 +5662,37 @@ function renderEntries(entries) {
     return;
   }
 
-  var rows = entries.map(function(entry) {
+  /* rows holds every DOM node appended to entriesEl (entry rows AND their
+     paired notice slots below); toAnimate holds only the actual entry rows,
+     so the staggered reveal below indexes by visual row position, not by
+     DOM child position (a notice slot must never consume a stagger step). */
+  var rows = [];
+  var toAnimate = [];
+
+  entries.forEach(function(entry) {
     /* §12.4: all textContent via el() */
     var icon = entry.is_dir ? "▸" : "·";
     var meta = entry.is_dir ? "" : fmtBytes(entry.size);
     var rowClass = "entry-row" + (entry.is_dir ? " is-dir" : "");
 
-    return el("div", { class: rowClass,
+    /* Only files open a viewer that can fail (issue #444); a directory's
+       failure already renders inline in entriesEl itself via navigateTo's
+       own .catch, so only file rows get a paired notice slot. */
+    var noticeEl = entry.is_dir ? null : el("div", { class: "entry-row-notice" });
+
+    var row = el("div", { class: rowClass,
       onclick: function() {
         if (entry.is_dir) {
           navigateTo(entry.relpath);
         } else {
-          openFile(entry.relpath, entry.name);
+          if (noticeEl) { noticeEl.textContent = ""; noticeEl.classList.remove("visible"); }
+          openFile(entry.relpath, entry.name, {
+            onError: function(message) {
+              if (!noticeEl) return;
+              noticeEl.textContent = "Failed: " + message;
+              noticeEl.classList.add("visible");
+            }
+          });
         }
       }
     },
@@ -5632,6 +5700,10 @@ function renderEntries(entries) {
       el("span", { class: "entry-name", text: entry.name }),
       el("span", { class: "entry-meta", text: meta })
     );
+
+    rows.push(row);
+    toAnimate.push(row);
+    if (noticeEl) rows.push(noticeEl);
   });
 
   entriesEl.replaceChildren.apply(entriesEl, rows);
@@ -5640,7 +5712,7 @@ function renderEntries(entries) {
      closing (breadcrumb up) a gentle motion instead of an instant hard cut.
      Stagger is capped so a large directory still settles quickly. */
   if (!REDUCED_MOTION.matches) {
-    rows.forEach(function(row, i) {
+    toAnimate.forEach(function(row, i) {
       animateIn(row, 300, Math.min(i * 26, 260), 5);
     });
   }
@@ -5715,9 +5787,17 @@ function renderWikilinkNodes(content, resolutionMap) {
 }
 
 /* ── Open and display a file ─────────────────────────────── */
+/* Third argument is OPTIONAL and deliberately not a named parameter — kept
+   out of the declared signature so every existing exact-signature caller
+   (openFile(relpath, name), no third arg) keeps working unchanged. Callers
+   that render their own control near the click (the Fix Source banner's
+   View Source button, a browse-tree row) pass { onError: fn(message) } to
+   surface a failure at the point of action (issue #444); read via
+   `arguments` rather than a declared `opts` parameter for the same reason. */
 function openFile(relpath, name) {
+  var opts = arguments.length > 2 ? arguments[2] : {};
   if (browserBusy) return;
-  browserBusy = true;
+  setBrowserBusy(true);
 
   /* Show loading in viewer area, then glide down to it so the user sees the
      article that just appeared at the bottom (otherwise it opens off-screen).
@@ -5774,15 +5854,27 @@ function openFile(relpath, name) {
       requestAnimationFrame(function() { scrollSoftIntoView(contentViewer, "start"); });
     })
     .catch(function(err) {
-      fileViewerEl.replaceChildren(
-        el("div", { class: "file-viewer" },
-          el("div", { class: "file-viewer-head" },
-            el("span", { style: "color:var(--fail);", text: "Failed: " + (err.message || String(err)) })
-          )
+      var message = err.message || String(err);
+      var errorViewer = el("div", { class: "file-viewer" },
+        el("div", { class: "file-viewer-head" },
+          el("span", { style: "color:var(--fail);", text: "Failed: " + message })
         )
       );
+      fileViewerEl.replaceChildren(errorViewer);
+      /* A failure must be exactly as visible as a success (issue #444) — the
+         success path (above) glides down to the loaded article; without this
+         an error rendered at the bottom of the page reads as a silent
+         no-op until the operator manually scrolls down to find it. */
+      requestAnimationFrame(function() { scrollSoftIntoView(errorViewer, "start"); });
+      /* ALSO surface the failure right next to the control that was
+         clicked, since the viewer can be far down the page from the trigger
+         (e.g. the Fix Source banner lives up near the top) — the scroll
+         above closes that gap, but a notice at the point of action means
+         the operator doesn't have to wait for the scroll to land to know
+         something went wrong. */
+      if (typeof opts.onError === "function") opts.onError(message);
     })
-    .finally(function() { browserBusy = false; });
+    .finally(function() { setBrowserBusy(false); });
 }
 
 /* ── Boot the browser ────────────────────────────────────── */
