@@ -605,6 +605,42 @@ def test_concurrent_page_limit_exceeded_before_any_model_call(monkeypatch):
     assert fake_llm.call_count == 0, "Page-cap guard must reject before any model call"
 
 
+def test_concurrent_budget_hook_called_with_page_count_before_any_model_call(monkeypatch):
+    """The concurrent pool honours the same budget hook as the sequential path (issue #460)."""
+    import app.transcriber as transcriber_module
+
+    fake_llm = _OrderAwarePageLLM()
+    monkeypatch.setattr(transcriber_module, "get_transcribe_llm", lambda: fake_llm)
+
+    hook_calls: list[int] = []
+    monkeypatch.setattr(transcriber_module, "_page_budget_hook", hook_calls.append)
+
+    raw_bytes = (FIXTURES / "transcribe_scanned_cjk.pdf").read_bytes()
+    transcriber_module.transcribe_pdf_bytes_concurrent(raw_bytes)
+
+    assert hook_calls == [1], "the fixture PDF has exactly 1 page"
+    assert fake_llm.call_count == 1
+
+
+def test_concurrent_budget_hook_rejection_prevents_any_model_call(monkeypatch):
+    """A hook raising TranscribeBudgetExceeded stops the file before any vision call."""
+    import app.transcriber as transcriber_module
+
+    fake_llm = _OrderAwarePageLLM()
+    monkeypatch.setattr(transcriber_module, "get_transcribe_llm", lambda: fake_llm)
+
+    def _reject(page_count: int) -> None:
+        raise transcriber_module.TranscribeBudgetExceeded("daily demo budget reached")
+
+    monkeypatch.setattr(transcriber_module, "_page_budget_hook", _reject)
+
+    raw_bytes = (FIXTURES / "transcribe_scanned_cjk.pdf").read_bytes()
+    with pytest.raises(transcriber_module.TranscribeBudgetExceeded):
+        transcriber_module.transcribe_pdf_bytes_concurrent(raw_bytes)
+
+    assert fake_llm.call_count == 0, "a budget rejection must reject before any model call"
+
+
 def test_concurrent_preserves_page_order_regardless_of_completion_order(monkeypatch):
     """Page 0 finishes LAST (longest delay); assembled output must still be in order."""
     import app.transcriber as transcriber_module
