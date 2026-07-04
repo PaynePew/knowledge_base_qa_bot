@@ -136,10 +136,13 @@ def test_banner_text_carries_filename_and_claims():
     closure), so it must compute the claims summary itself rather than
     reach for c3ClaimsSummary — a private helper scoped inside
     renderLintCard that is NOT visible here (would be a ReferenceError at
-    click time)."""
+    click time). issue #445: the Source location comes from
+    c3SourceLabel(finding), which renders the resolved source_path (or a
+    distinct missing/ambiguous message) instead of a client-built
+    "docs/" + basename guess."""
     text = _console_text()
     body = _function_body(text, "fixSourceBannerText")
-    assert "c3SourceFilename(finding)" in body
+    assert "c3SourceLabel(finding)" in body
     assert "finding.unsupported_claims" in body
     assert "c3ClaimsSummary" not in body, (
         "fixSourceBannerText must not call renderLintCard's private "
@@ -150,12 +153,19 @@ def test_banner_text_carries_filename_and_claims():
 def test_banner_offers_a_view_source_control_wired_to_read_file():
     """AC: 'a /read/file view link' — implemented as a button reusing the
     existing openFile() resource-browser viewer (GET /read/file), never a
-    second fetch implementation."""
+    second fetch implementation. issue #445: the button opens the finding's
+    own server-resolved source_path — never a client-built "docs/" +
+    basename guess, which 404'd for Sources nested under a docs/
+    subdirectory."""
     text = _console_text()
     body = _function_body(text, "showFixSourceBanner")
     assert "view-source-btn" in body
     assert "openFile(" in body
-    assert '"docs/"' in body
+    assert "openFile(finding.source_path" in body
+    assert '"docs/" + ' not in body, (
+        "showFixSourceBanner must not rebuild the Source path client-side "
+        "(issue #445) — it must use finding.source_path verbatim"
+    )
 
 
 def test_show_fix_source_banner_never_fetches_directly():

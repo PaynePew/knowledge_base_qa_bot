@@ -295,7 +295,7 @@ import string
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any, Literal, NamedTuple
 
 import yaml
 
@@ -590,8 +590,44 @@ def _iter_wiki_pages(wiki_dir: Path):
 # ---------------------------------------------------------------------------
 
 
+def _resolve_c3_source_path(
+    source_ref: str, docs_dir: Path
+) -> tuple[str | None, Literal["resolved", "missing", "ambiguous"]]:
+    """Resolve a C3 finding's raw ``source`` citation to a repo-relative path.
+
+    ``source_ref`` is a bare Source filename, optionally with a ``#anchor``
+    (e.g. ``"product_care.md#cleaning-instructions"``) — ingest discovers
+    Sources nested under ``docs/**`` but records only the filename, so the
+    anchor is stripped and the remaining basename is matched against every
+    file under ``docs_dir`` (mirrors C11's ``docs_dir.glob("**/*.md")``
+    pattern). Unlike C6's ``matches[0]`` shortcut, a basename shared by 2+
+    files in different subdirectories is never silently guessed (issue
+    #445) — the Console must render that state distinctly rather than open
+    a path that may point at the wrong file.
+
+    Returns ``(None, "missing")`` when ``source_ref`` has no basename or no
+    file matches it, ``(None, "ambiguous")`` when 2+ files match, or
+    ``(repo_relative_path, "resolved")`` on exactly one match (e.g.
+    ``"docs/fake-docs/product_care.md"``).
+    """
+    file_part = source_ref.split("#")[0].strip()
+    filename = Path(file_part).name if file_part else ""
+    if not filename:
+        return None, "missing"
+
+    matches = sorted(docs_dir.glob(f"**/{filename}"))
+    if not matches:
+        return None, "missing"
+    if len(matches) > 1:
+        return None, "ambiguous"
+
+    relative = matches[0].relative_to(docs_dir).as_posix()
+    return f"docs/{relative}", "resolved"
+
+
 def _check_c3_failed_grounding(
     wiki_dir: Path,
+    docs_dir: Path,
 ) -> list[FailedGroundingFinding]:
     """Return findings for every wiki page with ``frontmatter.status == "failed_grounding"``.
 
@@ -611,7 +647,10 @@ def _check_c3_failed_grounding(
        points at amending the Source — never a bare Re-ingest, since the same
        unchanged Source feeds the same verifier and fails identically;
        ``verifier_unavailable`` recommends Re-ingest (a transient failure).
-    5. Return findings sorted alphabetically by ``page_slug``.
+    5. Resolve ``sources[0]``'s basename against ``docs_dir`` via
+       ``_resolve_c3_source_path`` (issue #445), populating
+       ``source_path`` / ``source_resolution`` on the finding.
+    6. Return findings sorted alphabetically by ``page_slug``.
 
     If ``grounding_failure`` is absent or malformed, the finding still records
     ``reason="verifier_unavailable"`` and an empty ``unsupported_claims`` list
@@ -629,6 +668,7 @@ def _check_c3_failed_grounding(
 
         sources = fm.get("sources", [])
         source_ref = str(sources[0]) if sources else ""
+        source_path, source_resolution = _resolve_c3_source_path(source_ref, docs_dir)
 
         # Extract grounding_failure sub-block defensively
         gf_raw = fm.get("grounding_failure")
@@ -665,6 +705,8 @@ def _check_c3_failed_grounding(
             FailedGroundingFinding(
                 page_slug=slug,
                 source=source_ref,
+                source_path=source_path,
+                source_resolution=source_resolution,
                 reason=reason,  # type: ignore[arg-type]
                 unsupported_claims=unsupported_claims,
                 suggested_action=suggested_action,
@@ -3193,7 +3235,7 @@ def run_lint(
         # --- C3 Failed-grounding sweep ---
         failed_grounding: list[FailedGroundingFinding] = []
         try:
-            failed_grounding = _check_c3_failed_grounding(resolved_wiki)
+            failed_grounding = _check_c3_failed_grounding(resolved_wiki, resolved_docs)
         except Exception as exc:  # noqa: BLE001
             err_msg = f"{type(exc).__name__}: {exc}"
             check_errors["c3"] = err_msg
