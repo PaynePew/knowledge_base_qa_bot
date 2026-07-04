@@ -13,6 +13,8 @@ modules directly (NOT the Gateway).  Exposes:
   - ``kb_index_v1``          — rebuild the Section Index via build_index (Slice 5, #231)
   - ``kb_lint_v1``           — run the Lint Pass via run_lint (Slice 5, #231)
   - ``kb_import_v1``         — import a local file into docs/ via the Import deep module (Slice 6, #233)
+  - ``kb_transcribe_v1``     — force-transcribe a local PDF into docs/ via the Transcribe
+                               deep module (issue #427, ADR-0017/ADR-0032 parity)
 
 Launch via ``python -m kb_mcp`` (stdio transport, Claude Desktop compatible).
 
@@ -969,6 +971,100 @@ def kb_import_v1(
 
 
 # ---------------------------------------------------------------------------
+# Tool: kb_transcribe_v1
+# ---------------------------------------------------------------------------
+@mcp.tool(
+    name="kb_transcribe_v1",
+    description=(
+        "Force-transcribe a local PDF into the knowledge base via the "
+        "model-assisted Transcribe deep module (ADR-0032) — the MCP parity "
+        "surface for `kb transcribe` / `POST /transcribe` (ADR-0017). Stages "
+        "the file into raw/ and always runs the vision-model conversion, "
+        "bypassing the text-layer probe that ``kb_import_v1`` applies "
+        "automatically. Use this for a digital-native PDF whose mechanical "
+        "Import came out degraded, or any PDF you want re-converted via the "
+        "model regardless of what the probe would decide.\n\n"
+        "Parameters:\n"
+        "  path — absolute path to the local .pdf file to force-transcribe "
+        "(required). The basename must be traversal-safe (no '#', ':', "
+        "separators, control characters, or bidi override codepoints).\n\n"
+        "Returns on success: {ok: true, source: str, status: str, "
+        "origin: 'transcribed', transcribe_model: str}\n"
+        "  source           — basename of the written docs/ Source (e.g. 'scan.md').\n"
+        "  status           — 'created' (fresh write), 'updated' (hash-drift "
+        "overwrite), or 'skipped' (hash-match no-op — no second model call).\n"
+        "  origin           — always 'transcribed' — the provenance marker "
+        "distinguishing model-derived Sources from mechanical Imports.\n"
+        "  transcribe_model — the vision model that produced the Markdown "
+        "(the currently configured model when status='skipped').\n\n"
+        "Returns isError=true on rejection:\n"
+        "  {code: str, message: str}\n"
+        "  code carries the same typed reason string the CLI and HTTP "
+        "surfaces use (ADR-0032): 'FileNotFoundError', 'InvalidFilename', "
+        "'InvalidSourcePath', 'UnsupportedExtension' (non-.pdf), 'IOError', "
+        "'TranscribeUnavailable' (missing OPENAI_API_KEY or "
+        "KB_TRANSCRIBE_ENABLED not set), 'TranscribePageLimitExceeded' "
+        "(exceeds KB_TRANSCRIBE_MAX_PAGES), or 'TranscribeError' (a page "
+        "failed after bounded retry, or assembly produced no content).\n\n"
+        "Reading an arbitrary local path is safe under the single-operator "
+        "posture (ADR-0017). After transcribing, run kb_ingest_v1 / "
+        "kb_index_v1 to make the new Source retrievable."
+    ),
+)
+def kb_transcribe_v1(
+    path: Annotated[
+        str,
+        Field(
+            description=(
+                "Absolute path to the local .pdf file to force-transcribe "
+                "(e.g. 'C:\\\\scans\\\\report.pdf' or '/home/user/scan.pdf')."
+            )
+        ),
+    ],
+) -> Any:
+    """Stage a local PDF and force-transcribe it via the Transcribe deep module.
+
+    Delegates to ``markdown_kb.app.transcriber.transcribe_path`` — the same
+    path-accepting force entry ``kb transcribe <path>`` (CLI) uses, mirroring
+    how ``kb_import_v1`` delegates to ``importer.import_path`` (ADR-0017: MCP
+    is a local process, so it passes a filesystem path rather than
+    transporting bytes).
+
+    On ``TranscribePathError``, returns a ``CallToolResult`` with
+    ``isError=True`` whose ``code`` is the exception's own ``error_type`` —
+    the identical reason string the CLI prints (``Error [{error_type}]:
+    ...``) and the HTTP route's ``status_map`` keys on (ADR-0032), giving all
+    three interfaces one shared failure vocabulary (issue #427).
+
+    No new LLM-facing surface is registered here: this is a second caller of
+    the single ``get_transcribe_llm`` deep-module singleton, which already
+    carries its one live smoke test per ADR-0005 (CODING_STANDARD §6.4).
+    """
+    from pathlib import Path as _Path
+
+    from markdown_kb.app.transcriber import TranscribePathError, transcribe_path
+
+    try:
+        result = transcribe_path(_Path(path))
+    except TranscribePathError as exc:
+        payload = json.dumps({"code": exc.error_type, "message": exc.message})
+        return CallToolResult(
+            content=[TextContent(type="text", text=payload)],
+            isError=True,
+        )
+
+    # Neutral dict shape — no raw transcriber types cross the MCP boundary.
+    source_basename = _Path(result.docs_path).name
+    return {
+        "ok": True,
+        "source": source_basename,
+        "status": result.status,
+        "origin": result.origin,
+        "transcribe_model": result.transcribe_model,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Patch schema to add additionalProperties:false (ADR-0016 strict schema)
 # ---------------------------------------------------------------------------
 # FastMCP generates the tool parameters schema from the function signature but
@@ -989,6 +1085,7 @@ def _add_strict_schema() -> None:
         "kb_ingest_status_v1",
         "kb_capture_v1",
         "kb_import_v1",
+        "kb_transcribe_v1",
     ):
         tool = mcp._tool_manager.get_tool(tool_name)
         if tool is not None:
