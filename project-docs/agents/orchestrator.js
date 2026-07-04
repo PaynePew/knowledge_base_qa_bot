@@ -1,7 +1,7 @@
 export const meta = {
   name: 'kb-slice-orchestrator',
-  description: '專案自有 orchestrator（gh-native，零 beads）：plan(GitHub issues / 明確 slices) → 每 issue 並行 build(implement+review 同一 worktree) → 對抗驗證(嚴重度閘門+evidence) → 過閘門即開 PR（Rung 1 預設：body 帶 Closes #N + verify 報告；openPRs:false 退回 Rung 0 只備妥分支；autoMerge:true 升 Rung 3 — 貼 verify/verdict status 後 gh pr merge --auto，required checks 全綠時 GitHub 自動合併；未授權時人類負責按下 merge）',
-  phases: [{ title: 'Plan' }, { title: 'Build' }, { title: 'OpenPRs' }],
+  description: '專案自有 orchestrator（gh-native，零 beads）：plan(GitHub issues / 明確 slices) → 每 issue 並行 build(implement+review 同一 worktree) → 對抗驗證(嚴重度閘門+evidence) → 過閘門即開 PR → 獨立 Verdict agent 複驗 pushed SHA 並「自己」貼 verify/verdict status（貼的人=驗的人，過得了權限分類器；預設 Rung 2：人類只按 merge 鈕；autoMerge:true 升 Rung 3 — merge agent 預先武裝 gh pr merge --auto，checks 全綠 GitHub 自動合併；openPRs:false 退回 Rung 0 只備妥分支）',
+  phases: [{ title: 'Plan' }, { title: 'Build' }, { title: 'OpenPRs' }, { title: 'Verdict' }],
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -50,12 +50,18 @@ log(`effective config → slices=${CONFIG.slices ? CONFIG.slices.length : 'null'
 const PLAN_SCHEMA = { type:'object', required:['issues'], properties:{
   issues:{ type:'array', items:{ type:'object', required:['id','branch'], properties:{
     id:{type:'string'}, title:{type:'string'}, type:{type:'string'}, branch:{type:'string'} } } } } }
+const _BLOCKER_ITEMS = { type:'object', required:['severity','evidence'], properties:{
+  file:{type:'string'}, line:{type:'number'}, issue:{type:'string'},
+  evidence:{type:'string'},   // 必填：怎麼確認是真的（測試輸出/重現步驟/diff 具體行為）；逼 reviewer 拿證據，防「一定找得到東西」式的湊 blocker（與全域正本同構）
+  severity:{ type:'string', enum:['critical','high','medium','low'] } } }
 const VERDICT_SCHEMA = { type:'object', required:['verdict','blockers'], properties:{
   verdict:{ type:'string', enum:['pass','changes-requested'] },
-  blockers:{ type:'array', items:{ type:'object', required:['severity','evidence'], properties:{
-    file:{type:'string'}, line:{type:'number'}, issue:{type:'string'},
-    evidence:{type:'string'},   // 必填：怎麼確認是真的（測試輸出/重現步驟/diff 具體行為）；逼 reviewer 拿證據，防「一定找得到東西」式的湊 blocker（與全域正本同構）
-    severity:{ type:'string', enum:['critical','high','medium','low'] } } } } } }
+  blockers:{ type:'array', items: _BLOCKER_ITEMS } } }
+// Verdict stage 的回傳：判定 + 它實際貼上去的 status（sha/state），讓頂層能稽核「貼了什麼」
+const VERDICT_POST_SCHEMA = { type:'object', required:['verdict','blockers','posted_sha','posted_state'], properties:{
+  verdict:{ type:'string', enum:['pass','changes-requested'] },
+  blockers:{ type:'array', items: _BLOCKER_ITEMS },
+  posted_sha:{ type:'string' }, posted_state:{ type:'string', enum:['success','failure'] } } }
 
 const mkBranch = (id) => CONFIG.branchPrefix + String(id).replace(/[^A-Za-z0-9._-]/g, '-')
 
@@ -97,12 +103,22 @@ ${JSON.stringify(nonBlocking, null, 2).slice(0, 3000)}
 === /報告 ===
 ${GUARDRAILS}
 - 你在共用的主工作樹操作：絕不執行 git stash / git reset / git checkout -- / git clean（主工作樹可能有頂層 session 的未提交工作）。發現未提交變更擋路時，一律 abort 回報，不要「幫忙清理」。你要 push 的分支在它自己的 worktree，主工作樹髒不髒與你的任務無關。
-Rung 2：照 merge.md 步驟 3.5 在 push 後把 verify verdict 貼成 head SHA 的 commit status（context=verify/verdict、state=success、description 用 verdict=${r?.v?.verdict ?? 'pass'}、非阻擋 finding ${nonBlocking.length} 個）——main 的 branch protection 要求這個 check，漏貼 = PR 永遠不能 merge。
+status 分工（取代 merge.md 步驟 3.5，2026-07-04 起）：你「絕不」貼任何 commit status —— verify/verdict 由後續的獨立 Verdict agent 複驗後自己貼（貼的人=驗的人，才不構成 self-approval；由你轉貼別人的 verdict 會被權限分類器整段擋下，實測過）。
 ${CONFIG.autoMerge
-  ? `Rung 3（本 run 已獲人類明確授權 autoMerge）：開完 PR、貼完 verify/verdict status 後，執行 gh pr merge <PR編號> --auto --merge（GitHub 會在 required checks 全綠時自動合併）。絕不 --admin、絕不繞過或停用任何 branch protection / check；若 --auto 排程失敗（例如 repo 未開 allow_auto_merge），回報原因並讓 PR 保持開啟，不要改用其他合併方式。絕不 gh issue close（merge 後 GitHub 依 Closes #N 自動關）。`
+  ? `Rung 3（本 run 已獲人類明確授權 autoMerge）：開完 PR 後執行 gh pr merge <PR編號> --auto --merge —— 這只是預先武裝：required checks（CI 雙平台 + 獨立 Verdict agent 的 verify/verdict）全綠前 GitHub 不會合併，Verdict 貼 failure 就永遠鎖住。絕不 --admin、絕不繞過或停用任何 branch protection / check；若 --auto 排程失敗（例如 repo 未開 allow_auto_merge），回報原因並讓 PR 保持開啟，不要改用其他合併方式。絕不 gh issue close（merge 後 GitHub 依 Closes #N 自動關）。`
   : `注意：只 push + 開 PR（body 含 Closes #${i.id} + 上述 verify 報告）+ 在 issue 留 PR 連結；絕不自己按 merge、絕不 gh issue close（GitHub 會在人類 merge PR 時自動關）。`}
-回傳：PR 連結與狀態${CONFIG.autoMerge ? '（含是否已排入 auto-merge）' : ''}。`
+回傳：PR 編號與連結${CONFIG.autoMerge ? '（含是否已排入 auto-merge）' : ''}。`
 }
+
+// Verdict（Rung 2/3 的第二雙眼）：push 之後對 origin 上的 head SHA 做獨立複驗，並把「自己的」判定
+// 貼成 commit status。關鍵約束：貼 status 的人必須就是作出判定的人 —— 由 merge agent（或頂層 session）
+// 轉貼別人的 verdict 會被權限分類器判為 self-approval 而卡死（2026-07-04 實測；獨立 reviewer 自貼放行）。
+const verdictPrompt = (i) => `你是獨立 reviewer，與本 run 的 build/merge agent 完全無關；對 GitHub issue #${i.id} 的已推分支做最終複驗，並把「你自己的」判定貼成 commit status。
+1) git fetch origin ${i.branch}；sha = git rev-parse origin/${i.branch}；gh pr view 確認 PR 存在且 head 一致（PR 不存在 → 直接回報，不貼任何 status）。
+2) 唯讀複驗 git diff ${CONFIG.baseBranch}..origin/${i.branch}：找「影響正確性、安全性或明確需求」的 bug，對照 ${CONFIG.standards}（特別是 §11 drift signals）與相關 Accepted project-docs/adr/*。範圍紀律同 verify（precision over recall；blocker 必附 evidence；給不出證據最高標 medium）；只有 critical/high 構成 changes-requested。
+3) 把你的判定貼成該 SHA 的 status：gh api repos/${CONFIG.repo}/statuses/<sha> -f context=verify/verdict -f state=<pass→success；changes-requested→failure> -f description="independent verdict: <一句話摘要>"。你貼的是你自己剛作出的判定 —— 絕不代貼他人結論、絕不在 changes-requested 時貼 success、絕不貼到別的 SHA。
+4) 你在共用主工作樹操作：唯讀（git fetch / rev-parse / diff / gh 可以）；絕不改 code、絕不 commit、絕不 git stash / reset / checkout -- / clean、絕不 merge、絕不關 PR/issue（合不合由 GitHub 依 required checks 決定）。
+回傳：verdict、blockers、posted_sha、posted_state。`
 
 // ── ① PLAN：明確 slices / only（零 tracker）優先；否則 gh issue list（GitHub 原生佇列）──
 let todo
@@ -156,12 +172,25 @@ if (!CONFIG.openPRs)
   return { planned: todo.length, opened: 0, eligible: eligible.map(e => e.issue), blocked,
            note: `Rung 0 退回模式（openPRs:false）：分支已備妥並過閘門（從 ${CONFIG.baseBranch} 開）。由頂層 session 逐一：驗證真實 artifact → 開 PR(Closes #N) → CI 雙綠 → 人工 merge。` }
 
-// ── ③ OPEN PRs（Rung 1 預設）：每 eligible 分支 push + 開 PR（Closes #N + verify 報告）；人類負責 merge ──
-phase('OpenPRs')
-const prs = await parallel(eligible.map(e => () =>
-  agent(mergePrompt(e.issue, e.r), { label:`openpr:${lbl(e.issue)}`, phase:'OpenPRs', model: MODELS.merge })
-    .then(out => ({ id: e.issue.id, out })).catch(() => ({ id: e.issue.id, out: null }))))
-return { planned: todo.length, opened: prs.filter(p => p.out).length, blocked, prs,
-         note: CONFIG.autoMerge
-           ? 'PR 已開並排入 auto-merge（Rung 3：verify/verdict + CI 全綠時 GitHub 自動合併）。頂層 session：驗證真實 artifact，並確認 auto-merge 實際發生（status 沒貼上 = PR 卡住要回報人類）。'
-           : 'PR 已開（Closes #N + verify 報告）。頂層 session：驗證真實 artifact → CI 雙綠 → 人類 merge；orchestrator 不自動 merge。' }
+// ── ③ OPEN PRs → ④ VERDICT（pipeline，無 barrier：A 片在複驗時 B 片可能還在開 PR）──
+// OpenPRs：push + 開 PR（autoMerge 時順手武裝 --auto，無害：checks 綠之前 GitHub 不會合）。
+// Verdict：獨立 reviewer 對 pushed SHA 複驗並「自己」貼 verify/verdict —— Rung 2 從此不需要人貼 status，
+// Rung 3（autoMerge:true）連 merge 鈕都不用按；Verdict 貼 failure 時 PR 被 branch protection 鎖死。
+const prs = await pipeline(
+  eligible,
+  (e) => agent(mergePrompt(e.issue, e.r), { label:`openpr:${lbl(e.issue)}`, phase:'OpenPRs', model: MODELS.merge })
+    .then(out => ({ e, id: e.issue.id, out })).catch(() => ({ e, id: e.issue.id, out: null })),
+  (opened) => !opened?.out
+    ? { id: opened?.e?.issue?.id, out: null, verdictPost: null }
+    : agent(verdictPrompt(opened.e.issue), { label:`verdict:${lbl(opened.e.issue)}`, phase:'Verdict', schema: VERDICT_POST_SCHEMA, model: MODELS.verify })
+        .then(vp => ({ id: opened.id, out: opened.out, verdictPost: vp }))
+        .catch(() => ({ id: opened.id, out: opened.out, verdictPost: null })),
+)
+const failedVerdicts = prs.filter(p => p?.verdictPost?.posted_state === 'failure').map(p => p.id)
+const missingVerdicts = prs.filter(p => p?.out && !p?.verdictPost).map(p => p.id)
+return { planned: todo.length, opened: prs.filter(p => p?.out).length, blocked, failedVerdicts, missingVerdicts, prs,
+         note: (CONFIG.autoMerge
+           ? 'PR 已開 + --auto 已武裝 + 獨立 Verdict agent 已複驗自貼 verify/verdict（Rung 3：checks 全綠時 GitHub 自動合併）。頂層 session：驗證真實 artifact，並確認 auto-merge 實際發生。'
+           : 'PR 已開 + verify/verdict 已由獨立 Verdict agent 複驗自貼（Rung 2）。頂層 session：驗證真實 artifact → CI 綠 → 人類只需按 merge。')
+           + (failedVerdicts.length ? `；Verdict 貼了 failure（PR 鎖死待人裁）：${failedVerdicts.join(', ')}` : '')
+           + (missingVerdicts.length ? `；Verdict agent 未完成（status 缺席、PR 不能合，要人補）：${missingVerdicts.join(', ')}` : '') }
