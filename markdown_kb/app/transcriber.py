@@ -87,6 +87,18 @@ independent fixes:
     the concurrent version — that is where the real 63-page-scan pain lives.
     Both entries into the concurrent pool honour the SAME budget hook as the
     sequential path (issue #460 invariant preserved across the speedup).
+
+Thread safety (issue #468): giving each worker thread its OWN
+``pdfium.PdfDocument`` (previous design) turned out to be INSUFFICIENT —
+pypdfium2 / PDFium keeps process-wide global state, so concurrent
+open/render/close from separate threads races and intermittently segfaults
+(Linux CI, exit 139) regardless of per-document isolation. The fix keeps the
+concurrency win but moves the serialization point: ``_pdfium_lock`` (module
+level) guards EVERY pypdfium2 call in this module — document open, page
+access, render, and close — so no two threads are ever inside PDFium at the
+same time. The (slow, I/O-bound, thread-safe) vision-model call always runs
+OUTSIDE that lock, so pages still transcribe in parallel; only the
+microsecond-scale render serializes.
 """
 
 from __future__ import annotations
@@ -349,6 +361,17 @@ def get_page_budget_hook() -> Callable[[int], None] | None:
 # Public API — page rendering + transcription
 # ---------------------------------------------------------------------------
 
+# Process-wide PDFium lock (issue #468). pypdfium2 / PDFium is NOT
+# thread-safe at the library level — it keeps global state, so concurrent
+# open/render/close calls from separate threads race and segfault even when
+# each thread uses its OWN ``PdfDocument`` instance. Every pypdfium2 touch in
+# this module (document open, page access, render, close) acquires this ONE
+# lock first; the vision-model call is deliberately kept OUTSIDE it (see
+# ``_render_and_transcribe_page`` / ``_render_and_transcribe_page_isolated``)
+# so the issue #459 concurrency win survives on the part that actually
+# benefits from parallelism.
+_pdfium_lock = threading.Lock()
+
 
 def transcribe_pdf_bytes(raw_bytes: bytes) -> tuple[str, str]:
     """Transcribe PDF bytes into Markdown via the vision model (ADR-0032).
@@ -367,6 +390,11 @@ def transcribe_pdf_bytes(raw_bytes: bytes) -> tuple[str, str]:
     in depth — model output can carry the same font-adjacent contamination
     class as mechanical extraction).
 
+    Every pypdfium2 call (open, render, close) goes through ``_pdfium_lock``
+    (issue #468) so this sequential path can never race with another thread
+    concurrently inside PDFium — e.g. ``transcribe_pdf_bytes_concurrent``'s
+    worker pool running on another file at the same time.
+
     Raises:
         TranscribePageLimitExceeded: page count > ``KB_TRANSCRIBE_MAX_PAGES``.
         TranscribeBudgetExceeded: the installed page-budget hook rejected
@@ -377,9 +405,10 @@ def transcribe_pdf_bytes(raw_bytes: bytes) -> tuple[str, str]:
     """
     max_pages = int(os.getenv("KB_TRANSCRIBE_MAX_PAGES", str(_DEFAULT_MAX_PAGES)))
 
-    pdf = pdfium.PdfDocument(raw_bytes)
-    try:
+    with _pdfium_lock:
+        pdf = pdfium.PdfDocument(raw_bytes)
         page_count = len(pdf)
+    try:
         if page_count > max_pages:
             raise TranscribePageLimitExceeded(
                 f"PDF has {page_count} page(s), exceeding KB_TRANSCRIBE_MAX_PAGES={max_pages}"
@@ -388,7 +417,8 @@ def transcribe_pdf_bytes(raw_bytes: bytes) -> tuple[str, str]:
             _page_budget_hook(page_count)
         page_bodies = [_render_and_transcribe_page(pdf, i) for i in range(page_count)]
     finally:
-        pdf.close()
+        with _pdfium_lock:
+            pdf.close()
 
     assembled = "\n\n".join(body for body in page_bodies if body)
     if not assembled.strip():
@@ -452,12 +482,20 @@ def transcribe_pdf_bytes_concurrent(
     minute at concurrency 16+ (measured).
 
     Each page opens its OWN ``pdfium.PdfDocument(raw_bytes)`` instead of
-    sharing one across worker threads — pypdfium2 is not thread-safe; a
-    shared ``PdfDocument`` raises "Failed to load page" under concurrent
-    access (see ``_render_and_transcribe_page_isolated``). The document (and
-    its rendered image) is released before returning, so peak memory is
-    O(concurrency) — bounded and tunable — rather than O(page count), which
-    is what keeps this a genuine fix and not a reversion to the pre-#456 bug.
+    sharing one across worker threads — a shared ``PdfDocument`` raises
+    "Failed to load page" under concurrent access. Per-document isolation
+    alone is NOT sufficient, though: pypdfium2 / PDFium keeps process-wide
+    global state and is not thread-safe at the library level, so two threads
+    each rendering from their OWN independent document can still race and
+    segfault (issue #468, measured — intermittent SIGSEGV on Linux CI). Every
+    pypdfium2 call therefore also goes through the module-level
+    ``_pdfium_lock`` (see ``_render_and_transcribe_page_isolated``) so no two
+    threads are ever inside PDFium at the same time; only the (slow,
+    thread-safe) vision-model call runs outside that lock, which is what
+    keeps this concurrent. The document (and its rendered image) is released
+    before returning, so peak memory is O(concurrency) — bounded and tunable
+    — rather than O(page count), which is what keeps this a genuine fix and
+    not a reversion to the pre-#456 bug.
 
     ``on_page_done``, if given, is called exactly once per completed page —
     ``on_page_done(pages_done, page_count)`` — regardless of completion
@@ -474,11 +512,12 @@ def transcribe_pdf_bytes_concurrent(
     """
     max_pages = int(os.getenv("KB_TRANSCRIBE_MAX_PAGES", str(_DEFAULT_MAX_PAGES)))
 
-    pdf = pdfium.PdfDocument(raw_bytes)
-    try:
-        page_count = len(pdf)
-    finally:
-        pdf.close()
+    with _pdfium_lock:
+        pdf = pdfium.PdfDocument(raw_bytes)
+        try:
+            page_count = len(pdf)
+        finally:
+            pdf.close()
     if page_count > max_pages:
         raise TranscribePageLimitExceeded(
             f"PDF has {page_count} page(s), exceeding KB_TRANSCRIBE_MAX_PAGES={max_pages}"
@@ -521,18 +560,25 @@ def transcribe_pdf_bytes_concurrent(
 def _render_and_transcribe_page_isolated(raw_bytes: bytes, page_index: int) -> str:
     """Render page ``page_index`` from an INDEPENDENT ``PdfDocument`` and transcribe it.
 
-    pypdfium2 is not thread-safe: multiple worker threads rendering pages
-    from ONE shared ``PdfDocument`` raise "Failed to load page" (issue #459,
-    measured). Each call here opens its own document instead, so concurrent
-    workers never touch shared pypdfium2 state. The document is closed (and
-    the rendered PNG goes out of scope after transcription) before this
-    function returns, so nothing outlives one page's worth of work.
+    Each call here opens its own document rather than sharing one across
+    worker threads — a shared ``PdfDocument`` raises "Failed to load page"
+    under concurrent access (issue #459). Per-document isolation alone is
+    NOT enough, though: pypdfium2 / PDFium keeps process-wide global state
+    and is not thread-safe at the library level, so open/render/close is
+    additionally guarded by the module-level ``_pdfium_lock`` (issue #468) —
+    no two threads are ever inside PDFium at the same time, regardless of
+    which document they hold. The (slow, thread-safe) vision-model call
+    happens OUTSIDE the lock, so pages still transcribe concurrently — only
+    the microsecond-scale render serializes. The document is closed (and the
+    rendered PNG goes out of scope after transcription) before this function
+    returns, so nothing outlives one page's worth of work.
     """
-    pdf = pdfium.PdfDocument(raw_bytes)
-    try:
-        page_png = _render_page_png(pdf[page_index])
-    finally:
-        pdf.close()
+    with _pdfium_lock:
+        pdf = pdfium.PdfDocument(raw_bytes)
+        try:
+            page_png = _render_page_png(pdf[page_index])
+        finally:
+            pdf.close()
     return _transcribe_one_page(page_png, page_index + 1)
 
 
@@ -542,9 +588,12 @@ def _render_and_transcribe_page(pdf: pdfium.PdfDocument, page_index: int) -> str
     The rendered PNG bytes live only inside this function's frame — they are
     dropped when this call returns, before the caller renders the next page
     (issue #456). This is what keeps ``transcribe_pdf_bytes`` from holding
-    more than one page image in memory at a time.
+    more than one page image in memory at a time. The render itself runs
+    under ``_pdfium_lock`` (issue #468 — no two threads ever inside PDFium at
+    once); the vision-model call happens after the lock is released.
     """
-    page_png = _render_page_png(pdf[page_index])
+    with _pdfium_lock:
+        page_png = _render_page_png(pdf[page_index])
     return _transcribe_one_page(page_png, page_index + 1)
 
 
