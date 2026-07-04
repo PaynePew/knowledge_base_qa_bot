@@ -251,6 +251,14 @@
     text-wrap: pretty;
   }
   .answer.cannot .body { color: var(--ink-2); }
+  /* Wikilink linkify (issue #410, ADR-0030 decision 5) — reader surface:
+     resolved -> navigable link; unresolved degrades to plain text with NO
+     styling (a reader can fix nothing, so red would only be noise). */
+  .wikilink {
+    color: var(--accent);
+    text-decoration: underline;
+    cursor: pointer;
+  }
   .cursor {
     display: inline-block;
     width: 7px; height: 1em;
@@ -665,6 +673,10 @@ var PRESET_QUESTIONS = {
 /* ── STATE ───────────────────────────────────────────────────────────────── */
 var stack = "wiki";
 var answerEl = null, answerBody = null, verifyEl = null;
+/* Accumulates the current answer's plain text across onToken calls so onDone
+   can linkify the complete text in one pass (issue #410 — a [[wikilink]] can
+   split across token boundaries). Reset at the start of each new answer. */
+var answerRawText = "";
 var currentQuery = "";
 /* Phase 11 Slice 4: session id captured from done.session; echoed on next request.
    Never cleared — stack toggle preserves history across Wiki↔RAG switches. */
@@ -936,6 +948,69 @@ function stripFrontmatter(text) {
   return text;
 }
 
+/* ── Wikilink linkify (issue #410, ADR-0030 decision 5) ──────────────────
+   parseWikilinks is a PURE function (text -> segments), kept separable from
+   DOM rendering (mirrors the SSE-parser convention, §12.7 — hermetically
+   unit-tested via a Python mirror, no browser needed). "[[slug|display]]"
+   shows the display text; resolution always uses the slug part. Rendering
+   is READER-scoped: resolved (via the ONE shared GET /wiki/pages/
+   resolution-map — ADR-0030 Invariant) -> a link that opens the page view
+   (reusing openCitation, the SAME in-page viewer citations already use);
+   unresolved -> PLAIN TEXT, zero red styling — a reader can fix nothing. */
+function parseWikilinks(text) {
+  var re = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+  var segments = [];
+  var lastIndex = 0;
+  var m;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > lastIndex) segments.push({ type: "text", value: text.slice(lastIndex, m.index) });
+    var slug = m[1].trim();
+    var display = m[2] !== undefined ? m[2].trim() : slug;
+    segments.push({ type: "link", slug: slug, display: display });
+    lastIndex = re.lastIndex;
+  }
+  if (lastIndex < text.length) segments.push({ type: "text", value: text.slice(lastIndex) });
+  return segments;
+}
+
+/* Looks up `slug` in the shared resolution map; returns the target's
+   server-supplied wiki-relative path, or null if unresolvable. The client
+   never constructs a wiki path from a bare slug itself (§12.5). */
+function resolveWikilinkPath(slug, resolutionMap) {
+  var slugs = (resolutionMap && resolutionMap.slugs) || {};
+  var aliases = (resolutionMap && resolutionMap.aliases) || {};
+  if (Object.prototype.hasOwnProperty.call(slugs, slug)) return slugs[slug];
+  if (Object.prototype.hasOwnProperty.call(aliases, slug)) {
+    var canonical = aliases[slug];
+    return Object.prototype.hasOwnProperty.call(slugs, canonical) ? slugs[canonical] : null;
+  }
+  return null;
+}
+
+/* Fetches the shared ADR-0030 resolution map fresh on every call (cheap,
+   cache-friendly, no client cache to invalidate). Degrades to "nothing
+   resolves" on failure so a transient fetch error falls back to plain text
+   rather than throwing — the reader-surface-safe failure mode. */
+function fetchResolutionMap() {
+  return fetch("/wiki/pages/resolution-map")
+    .then(function(r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+    .catch(function() { return { slugs: {}, aliases: {} }; });
+}
+
+/* Builds reader-surface DOM nodes (Text nodes + .wikilink <a> per resolved
+   link) for one block of raw content. Unresolved segments render as a plain
+   Text node — no wrapper element, no styling (ADR-0030 decision 5). */
+function renderWikilinkNodes(content, resolutionMap) {
+  return parseWikilinks(content).map(function(seg) {
+    if (seg.type === "text") return document.createTextNode(seg.value);
+    var relpath = resolveWikilinkPath(seg.slug, resolutionMap);
+    if (!relpath) return document.createTextNode(seg.display);
+    var a = el("a", { class: "wikilink", href: "#", text: seg.display });
+    a.addEventListener("click", function(e) { e.preventDefault(); openCitation(relpath, seg.display, a); });
+    return a;
+  });
+}
+
 function citeOnKeydown(e) { if (e.key === "Escape") closeCitation(); }
 
 function closeCitation() {
@@ -978,13 +1053,20 @@ function openCitation(path, label, triggerEl) {
 
   /* /read/file → JSON {relpath, content}. On error the viewer shows the message
      in place (it never silently closes). A stale fetch (viewer already replaced)
-     writes to a detached <pre>, which is harmless. */
-  fetch("/read/file?" + new URLSearchParams({ path: path }))
-    .then(function(r) {
-      if (!r.ok) return r.json().then(function(j) { throw new Error(j.detail || ("HTTP " + r.status)); });
-      return r.json();
+     writes to a detached <pre>, which is harmless. The resolution map is fetched
+     alongside so wikilinks in the body linkify (issue #410, ADR-0030 decision 5). */
+  Promise.all([
+    fetch("/read/file?" + new URLSearchParams({ path: path }))
+      .then(function(r) {
+        if (!r.ok) return r.json().then(function(j) { throw new Error(j.detail || ("HTTP " + r.status)); });
+        return r.json();
+      }),
+    fetchResolutionMap(),
+  ])
+    .then(function(results) {
+      var body = stripFrontmatter(results[0].content || "");
+      pre.replaceChildren.apply(pre, renderWikilinkNodes(body, results[1]));
     })
-    .then(function(data) { pre.textContent = stripFrontmatter(data.content || ""); })
     .catch(function(err) { pre.textContent = "Failed to load source: " + (err.message || String(err)); });
 }
 
@@ -1142,14 +1224,33 @@ function onToken(t) {
     answerEl = el("div", { class: "answer" }, answerBody, el("span", { class: "cursor" }));
     entry.append(answerEl);
     add(entry);
+    answerRawText = "";
     /* Beat 1 (cont.): the answer area just appeared — glide to it once so the
        reader sees generation start. Deliberately NOT repeated per token below
        (that yanks the viewport); the next glide is onDone. */
     scrollStreamToBottom();
   }
   /* §12.4: token text appended as TextNode (never innerHTML). No per-token
-     scroll — the answer fills in place; the viewport settles to it on done. */
+     scroll — the answer fills in place; the viewport settles to it on done.
+     answerRawText accumulates the plain text so onDone can linkify the
+     complete answer in one pass (issue #410) — a [[wikilink]] can split
+     across token boundaries, so linkify never runs mid-stream. */
   answerBody.append(document.createTextNode(t.text));
+  answerRawText += t.text;
+}
+
+/* Re-renders one completed answer's full text as linkified nodes (issue #410).
+   Runs once, at onDone — never mid-stream, so a [[wikilink]] split across
+   token boundaries is never a concern. `targetBody` and `rawText` are
+   captured by the CALLER at onDone time, not read from the shared
+   answerBody/answerRawText variables inside this function, so a stale fetch
+   can never overwrite a LATER turn's answer if the user asks a fast
+   follow-up before this resolves. */
+function linkifyAnswerBody(targetBody, rawText) {
+  if (!targetBody) return;
+  fetchResolutionMap().then(function(resolutionMap) {
+    targetBody.replaceChildren.apply(targetBody, renderWikilinkNodes(rawText, resolutionMap));
+  });
 }
 
 function onDone(d) {
@@ -1181,6 +1282,7 @@ function onDone(d) {
     ));
   }
   answerEl.append(foot);
+  linkifyAnswerBody(answerBody, answerRawText);
   /* Beat 2: the answer is complete — glide to the bottom so its end and the
      grounding verdict (Grounded / Cannot confirm) are fully in view. */
   scrollStreamToBottom();
