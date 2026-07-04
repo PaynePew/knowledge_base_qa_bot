@@ -19,6 +19,7 @@ export const meta = {
 // 執行方式（具名 workflow 不會自動解析 project-docs/ 下的檔，用 scriptPath 跑）：
 //   Workflow({ scriptPath: "project-docs/agents/orchestrator.js",
 //              args: { slices:[{id:"363",title:"..."}], standards:"project-docs/CODING_STANDARD.md" } })
+//   slices 也吃裸 ID（[404] / ["404"]，自動正規化成 {id}；無效 id 直接 throw，不會派出 #undefined）
 //   或依賴 gh 佇列： args: { only:["362","363"], skipPlan:true }
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -106,7 +107,12 @@ ${CONFIG.autoMerge
 // ── ① PLAN：明確 slices / only（零 tracker）優先；否則 gh issue list（GitHub 原生佇列）──
 let todo
 if (CONFIG.slices?.length) {
-  todo = CONFIG.slices.map(s => ({ id:String(s.id), title:s.title || '', type:s.type || 'task', branch: s.branch || mkBranch(s.id) }))
+  // slices 收物件 [{id,...}]，裸 ID（數字/字串）也吃：不正規化的話 s.id 是 undefined，
+  // 字串化成 "undefined" 後每個 build agent 只能拿著 #undefined 停手（2026-07-04 燒 240k tokens 的教訓）。
+  const norm = CONFIG.slices.map(s => (s && typeof s === 'object') ? s : { id: s })
+  const bad = norm.filter(s => s.id === undefined || s.id === null || String(s.id).trim() === '' || String(s.id) === 'undefined')
+  if (bad.length) throw new Error(`slices 含無效 id：${JSON.stringify(bad)} — 傳 [{id,title,branch}] 物件或裸 ID（如 [404] / ["404"]）`)
+  todo = norm.map(s => ({ id:String(s.id), title:s.title || '', type:s.type || 'task', branch: s.branch || mkBranch(s.id) }))
   log(`明確 slices：直接做指定的 ${todo.length} 片（不查任何 tracker）`)
 } else if (CONFIG.skipPlan && CONFIG.only?.length) {
   todo = CONFIG.only.map(id => ({ id:String(id), title:'', type:'task', branch: mkBranch(id) }))
