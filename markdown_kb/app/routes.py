@@ -596,6 +596,8 @@ async def get_transcribe_job(job_id: str) -> TranscribeJobStatusResponse:
 
     return TranscribeJobStatusResponse(
         job_id=job.job_id,
+        # mypy sees TranscribeJob.status as plain str; it is always one of the
+        # Literal's four values (only _run_batch/submit_batch assign to it).
         status=job.status,  # type: ignore[arg-type]
         pages_done=job.pages_done,
         pages_total=job.pages_total,
