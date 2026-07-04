@@ -24,7 +24,18 @@ services:
       # cold-client latency. A few tokens per boot; see .env.example and
       # .github/workflows/reset.yml for the full tradeoff. Committed here
       # (not .env.prod) so the deviation is visible in version control.
-      - KB_WARMUP_PING=true
+      KB_WARMUP_PING: "true"
+      # Transcribe (ADR-0032, issue #437): baked in here rather than left to
+      # the hand-maintained .env.prod so the flag ships with every deploy of
+      # this tracked file — `environment:` overrides `env_file` in Compose's
+      # merge order. The demo corpus is scan-heavy (verified 63-page,
+      # no-text-layer PDF, 2026-07-04); the page cap is sized above that with
+      # headroom. A full ~63-page transcribe costs roughly $0.05-0.15 at the
+      # default OPENAI_TRANSCRIBE_MODEL=gpt-5-mini (~$2/1k pages), well inside
+      # the flat $0.10 POST /wiki/import budget charge and bounded further by
+      # the admin-semaphore (KB_MAX_ADMIN) concurrency gate.
+      KB_TRANSCRIBE_ENABLED: "true"
+      KB_TRANSCRIBE_MAX_PAGES: "80"
     networks:
       - default
       - edge
