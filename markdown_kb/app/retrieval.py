@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``query``, ``stream_query``.
+"""Deep module per Ousterhout. Public surface: ``query``, ``stream_query``, ``warm_llm_client``.
 
 Retrieval layer — query() and stream_query() for the grounded /chat endpoint.
 
@@ -118,6 +118,29 @@ def get_retry_llm():
             max_retries=1,
         )
     return _retry_llm
+
+
+def warm_llm_client() -> None:
+    """Fire one tiny ping at the answer LLM client to prime its connection (issue #439).
+
+    Cold-start fix: the first REAL ``/chat`` request otherwise pays
+    ``ChatOpenAI`` client construction + TLS handshake + first-connection
+    latency on top of the actual answer call. Gateway startup (opt-in behind
+    ``KB_WARMUP_PING`` — see ``gateway/app/warmup.py``) calls this once per
+    process so that one-time cost lands at boot instead of on a user's first
+    question. ``max_tokens=1`` keeps the completion itself a few tokens; the
+    reply is discarded.
+
+    Best-effort: any failure (auth, quota, network) is caught and logged, never
+    raised — a failed ping degrades to the pre-issue-#439 behaviour (the client
+    still lazily constructs + connects on the next real call) and never blocks
+    Gateway startup.
+    """
+    try:
+        get_llm().invoke("Hi", max_tokens=1)
+        log_event("startup_warmup", "client=wiki_llm status=ok")
+    except Exception as exc:
+        log_event("startup_warmup", f"client=wiki_llm status=failed exc={type(exc).__name__}")
 
 
 def query(question: str, exclude_qa: bool = False) -> dict:

@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``query``, ``stream_query``, ``build_prompt``, ``SYSTEM_PROMPT``, ``get_llm``, ``CANNOT_CONFIRM_PHRASE``.
+"""Deep module per Ousterhout. Public surface: ``query``, ``stream_query``, ``build_prompt``, ``SYSTEM_PROMPT``, ``get_llm``, ``warm_llm_client``, ``CANNOT_CONFIRM_PHRASE``.
 
 Vector RAG (Stack B) query path — retrieve Chunks, gate weak retrieval, build a
 grounded prompt, call the LLM, and verify the draft against the cited Chunks.
@@ -111,6 +111,28 @@ def get_llm() -> ChatOpenAI:
             max_retries=1,
         )
     return _llm
+
+
+def warm_llm_client() -> None:
+    """Fire one tiny ping at the answer LLM client to prime its connection (issue #439).
+
+    Mirrors ``markdown_kb.app.retrieval.warm_llm_client`` for Stack B's own LLM
+    singleton. Opt-in — called only from Gateway startup behind
+    ``KB_WARMUP_PING`` (see ``gateway/app/warmup.py``). ``max_tokens=1`` keeps
+    the completion itself a few tokens; the reply is discarded.
+
+    Best-effort: any failure (auth, quota, network) is caught and logged, never
+    raised — a failed ping degrades to the pre-issue-#439 behaviour (the client
+    still lazily constructs + connects on the next real call) and never blocks
+    Gateway startup.
+    """
+    try:
+        get_llm().invoke("Hi", max_tokens=1)
+        log_event("startup_warmup", "client=rag_llm status=ok")
+    except Exception as exc:
+        log_event(
+            "startup_warmup", f"client=rag_llm status=failed exc={type(exc).__name__}"
+        )
 
 
 # ---------------------------------------------------------------------------

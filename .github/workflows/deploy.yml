@@ -69,7 +69,9 @@ jobs:
             docker compose -p ask-wiki-rag -f docker-compose.prod.yml pull
             docker compose -p ask-wiki-rag -f docker-compose.prod.yml up -d ask-wiki-rag
             # /healthz smoke via python (python:3.11-slim has NO curl). Retry to
-            # let uvicorn + the langchain/faiss imports finish starting.
+            # let uvicorn + the langchain/faiss imports AND the Gateway startup
+            # warmup (hybrid dense index + optional client pings, issue #439)
+            # finish before treating a slow-starting box as unhealthy.
             for i in $(seq 1 10); do
               if docker compose -p ask-wiki-rag -f docker-compose.prod.yml exec -T ask-wiki-rag \
                    python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz', timeout=5).status == 200 else 1)"; then
