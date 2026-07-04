@@ -277,6 +277,41 @@
     cursor: not-allowed;
   }
 
+  /* Groups the Run button with the Lint step's extra Deep audit control
+     (issue #441) so .step-panel-head's space-between still sees exactly
+     two flex children (headLeft, actions) regardless of button count. */
+  .step-panel-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  /* Deep audit (C5) — secondary/outline styling to read as "on-demand,
+     heavier" next to the primary filled Run button (issue #441). */
+  .deep-audit-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--rule);
+    padding: 6px 14px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .04em;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: background .15s ease, opacity .15s ease;
+  }
+  .deep-audit-btn:hover:not(:disabled) { background: var(--rule-2); }
+  .deep-audit-btn:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+  }
+
   /* Step result area */
   .step-result {
     /* populated by JS — empty by default */
@@ -2150,6 +2185,9 @@ var LINT_CHROME = {
     assignAlias:           "Assign Alias",
     assignAliasChoosePage: "Choose a page…",
     seeCurationQueue:      "see Curation Queue below",
+    /* issue #441: pipeline Lint is LLM-free by default; this is the
+       explicit on-demand control for the C5 contradiction audit. */
+    deepAudit:             "Deep audit (C5)",
   },
   zh: {
     reingest:        "重新匯入",
@@ -2191,6 +2229,7 @@ var LINT_CHROME = {
     assignAlias:           "指派別名",
     assignAliasChoosePage: "選擇頁面…",
     seeCurationQueue:      "詳見下方 Curation Queue",
+    deepAudit:             "深度稽核（C5）",
   },
 };
 
@@ -4134,15 +4173,24 @@ var STEP_DEFS = [
   {
     id: "lint",
     label: "Lint",
-    desc: "Lint: audit the wiki for orphans, red links, and contradictions — keeps the knowledge base coherent.",
+    desc: "Lint: audit the wiki for orphans and red links locally — keeps the knowledge base coherent (Deep audit adds the LLM contradiction check).",
     buildBody: null,
     run: function(resultEl, setStepBusy) {
       /* Phase 15 S4 (#173): real LintResponse card with per-check grouped findings */
       /* Phase 15 S6 (#174): store lint data + trigger Curation Queue render */
+      /* issue #441: fast, LLM-free by default — include_c5=false skips the
+         C5 contradiction audit (up to 30 gpt-4o-mini page-pair calls); that
+         check now runs only on demand via the Deep audit control below.
+         The completion chain below is deliberately kept inline (not
+         factored into a shared helper with deepAudit) — existing structural
+         tests (test_ui_console_routed_coverage_fill.py,
+         test_ui_console_c3_routed_fix_source.py) pin the exact ordering of
+         checkCoverageFillOutcome / checkFixSourceOutcome / renderLintCard
+         inside THIS function's own body. */
       setStepBusy(true);
       resultEl.replaceChildren(makeBusyCard("Running Lint audit…"));
 
-      fetch("/wiki/lint", { method: "POST" })
+      fetch("/wiki/lint?include_c5=false", { method: "POST" })
         .then(function(resp) {
           if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
           return resp.json();
@@ -4156,6 +4204,30 @@ var STEP_DEFS = [
           checkFixSourceOutcome(data);
           resultEl.replaceChildren(renderLintCard(data, resultEl));
           /* Phase 15 S6: store latest lint data and render the Curation Queue */
+          lastLintData = data;
+          renderCurationQueue(document.getElementById("curation-queue-root"), data);
+        })
+        .catch(function(err)  { resultEl.replaceChildren(renderErrorCard("Lint", err.message || String(err))); })
+        .finally(function()   { setStepBusy(false); });
+    },
+    deepAudit: function(resultEl, setStepBusy) {
+      /* issue #441: on-demand C5 contradiction audit. Mirrors run() above
+         exactly (same completion chain — outcome banners -> renderLintCard
+         -> lastLintData -> Curation Queue) so C5 findings render exactly as
+         they do today, in the same card (AC "same card, same downstream
+         flows"); only include_c5 and the busy label differ. */
+      setStepBusy(true);
+      resultEl.replaceChildren(makeBusyCard("Running deep audit (C5)"));
+
+      fetch("/wiki/lint?include_c5=true", { method: "POST" })
+        .then(function(resp) {
+          if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+          return resp.json();
+        })
+        .then(function(data) {
+          checkCoverageFillOutcome(data);
+          checkFixSourceOutcome(data);
+          resultEl.replaceChildren(renderLintCard(data, resultEl));
           lastLintData = data;
           renderCurationQueue(document.getElementById("curation-queue-root"), data);
         })
@@ -4194,9 +4266,13 @@ function buildPipeline(rootEl) {
     if (step.id === "lint") lintResultEl = resultEl;
 
     /* Per-step busy state + button toggle */
-    var runBtn;
+    var runBtn, deepAuditBtn;
     function setStepBusy(busy) {
       if (runBtn) runBtn.disabled = busy;
+      /* issue #441: the Lint step's Run and Deep audit both hit
+         POST /wiki/lint — disable each other while either is in flight so
+         they never race the same underlying lint pass. */
+      if (deepAuditBtn) deepAuditBtn.disabled = busy;
       /* Update track pill */
       var pill = document.getElementById("track-" + step.id);
       if (pill) {
@@ -4221,7 +4297,21 @@ function buildPipeline(rootEl) {
       runBtn = el("button", { class: "run-btn", type: "button", text: "Run",
         onclick: function() { step.run(resultEl, setStepBusy); }
       });
-      headEl = el("div", { class: "step-panel-head" }, headLeft, runBtn);
+      var headActions = [runBtn];
+      if (step.deepAudit) {
+        /* issue #441: Lint-only second control — the on-demand C5
+           contradiction audit, kept out of the now-fast default Run path.
+           Wrapped together with runBtn in .step-panel-actions below so
+           .step-panel-head's space-between layout still sees exactly two
+           flex children regardless of how many action buttons a step has. */
+        deepAuditBtn = el("button", { class: "deep-audit-btn", type: "button",
+          text: LINT_CHROME[consoleLang].deepAudit,
+          onclick: function() { step.deepAudit(resultEl, setStepBusy); }
+        });
+        headActions.push(deepAuditBtn);
+      }
+      headEl = el("div", { class: "step-panel-head" }, headLeft,
+        el.apply(null, ["div", { class: "step-panel-actions" }].concat(headActions)));
     }
 
     /* Body */
