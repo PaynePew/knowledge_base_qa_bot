@@ -108,6 +108,7 @@ ADMIN_PATHS: frozenset[str] = frozenset(
         "/wiki/ingest",
         "/wiki/lint",
         "/wiki/import",
+        "/wiki/transcribe",  # issue #460: forced Transcribe — same cost-exposure surface as /wiki/import's auto-route
         "/upload",
         "/hybrid/index",  # ADR-0022: operator-triggered dense re-embed (issue #348)
         "/wiki/pages/reconcile",  # ADR-0028: C5 reconcile draft — LLM draft + grounding (issue #376)

@@ -269,6 +269,123 @@ def test_estimate_overestimates_admin_reindex(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Issue #460: Transcribe per-page budget charging
+# ---------------------------------------------------------------------------
+
+
+def test_transcribe_path_is_admin_gated():
+    """POST /wiki/transcribe is now classified as an admin heavy path.
+
+    Regression guard: before issue #460 this path was absent from
+    ADMIN_PATHS entirely, so it bypassed every guard (admin token,
+    concurrency, budget) — the same "#376 bug class" the middleware
+    docstring warns about, just for Transcribe's forced entry.
+    """
+    import gateway.app.middleware as mw_mod
+
+    assert "/wiki/transcribe" in mw_mod.ADMIN_PATHS
+
+
+def test_transcribe_path_over_admin_limit_returns_503(client):
+    """The admin semaphore also shields /wiki/transcribe once fully held."""
+    import gateway.app.middleware as mw_mod
+
+    acquired = []
+    while mw_mod.admin_sem.acquire(blocking=False):
+        acquired.append(True)
+    try:
+        resp = client.post("/wiki/transcribe", json={"source": "x.pdf"})
+        assert resp.status_code == 503
+    finally:
+        for _ in acquired:
+            mw_mod.admin_sem.release()
+
+
+def test_transcribe_path_requires_bearer_when_token_set(monkeypatch):
+    monkeypatch.setenv("KB_ADMIN_TOKEN", "s3cret")
+    client = TestClient(_fresh_app())
+    resp = client.post("/wiki/transcribe", json={"source": "x.pdf"})
+    assert resp.status_code == 401
+
+
+def test_transcribe_estimate_is_zero_true_cost_is_per_page(monkeypatch):
+    """No flat admission estimate for /wiki/transcribe — its real cost is
+    charged per-page by the transcriber hook, so a flat estimate on top
+    would double-count."""
+    import gateway.app.budget as budget_mod
+
+    importlib.reload(budget_mod)
+    assert budget_mod.estimate_cost("/wiki/transcribe") == 0.0
+
+
+def test_charge_pages_accumulates_page_count_times_rate(monkeypatch):
+    import gateway.app.budget as budget_mod
+
+    importlib.reload(budget_mod)
+    b = budget_mod.DailyBudget(cap_usd=10.0)
+    total = b.charge_pages(63)
+    assert total == pytest.approx(63 * budget_mod.TRANSCRIBE_PAGE_USD)
+
+
+def test_charge_pages_shares_the_same_ledger_as_charge(monkeypatch):
+    """A flat charge() and a per-page charge_pages() accumulate into one total."""
+    import gateway.app.budget as budget_mod
+
+    importlib.reload(budget_mod)
+    b = budget_mod.DailyBudget(cap_usd=10.0)
+    b.charge("/wiki/import")
+    b.charge_pages(10)
+    expected = budget_mod.estimate_cost("/wiki/import") + 10 * budget_mod.TRANSCRIBE_PAGE_USD
+    assert b.day_total() == pytest.approx(expected)
+
+
+def test_main_registers_transcribe_budget_hook(monkeypatch):
+    """The Gateway composition root wires a page-budget hook into markdown_kb.app.transcriber."""
+    _fresh_app()
+    from markdown_kb.app import transcriber as transcriber_mod
+
+    assert transcriber_mod.get_page_budget_hook() is not None
+
+
+def test_transcribe_budget_hook_charges_ledger_then_trips_cap(monkeypatch):
+    """The wired hook charges the shared ledger per page and rejects once over cap.
+
+    Proves the multi-scan batch scenario from the issue: a batch charges
+    proportionally to pages transcribed (not a flat $0.10), and once the
+    running total reaches the cap the NEXT file is rejected before any
+    vision-model call for it.
+    """
+    monkeypatch.setenv("KB_DAILY_USD_CAP", "1.0")
+    _fresh_app()
+
+    from markdown_kb.app import transcriber as transcriber_mod
+
+    import gateway.app.budget as budget_mod
+
+    hook = transcriber_mod.get_page_budget_hook()
+    assert hook is not None
+
+    before = budget_mod.budget.day_total()
+    # 63-page scan at the default $0.01/page = $0.63 — under the $1.00 cap.
+    hook(63)
+    after_one = budget_mod.budget.day_total()
+    assert after_one == pytest.approx(before + 63 * budget_mod.TRANSCRIBE_PAGE_USD)
+    assert budget_mod.budget.over_cap() is False
+
+    # A second 63-page scan pushes the running total to $1.26 — over the cap.
+    hook(63)
+    assert budget_mod.budget.over_cap() is True
+
+    # A third file must be rejected BEFORE its pages are charged/billed.
+    total_before_third = budget_mod.budget.day_total()
+    with pytest.raises(transcriber_mod.TranscribeBudgetExceeded):
+        hook(63)
+    assert budget_mod.budget.day_total() == total_before_third, (
+        "a rejected file must not be charged"
+    )
+
+
+# ---------------------------------------------------------------------------
 # AC6: optional KB_ADMIN_TOKEN kill-switch
 # ---------------------------------------------------------------------------
 

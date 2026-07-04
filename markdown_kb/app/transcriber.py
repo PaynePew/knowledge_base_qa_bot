@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``transcribe_available``, ``probe_has_text_layer``, ``transcribe_pdf_bytes``, ``transcribe_source``, ``transcribe_path``, ``get_transcribe_llm``, ``TranscribeSourceResult``, ``TranscribePathError``, ``TranscribeUnavailable``, ``TranscribePageLimitExceeded``, ``TranscribeError``.
+"""Deep module per Ousterhout. Public surface: ``transcribe_available``, ``probe_has_text_layer``, ``transcribe_pdf_bytes``, ``transcribe_source``, ``transcribe_path``, ``get_transcribe_llm``, ``set_page_budget_hook``, ``get_page_budget_hook``, ``TranscribeSourceResult``, ``TranscribePathError``, ``TranscribeUnavailable``, ``TranscribePageLimitExceeded``, ``TranscribeBudgetExceeded``, ``TranscribeError``.
 
 Transcribe — model-assisted PDF conversion (issue #426, ADR-0032). Sits
 beside ``importer.py`` as the second ``raw/`` -> ``docs/`` converter:
@@ -49,6 +49,21 @@ so a bare ``git pull`` never starts billing a curator's OpenAI account, and
 the default test suite / CI's dummy-key session (see ``.github/workflows/ci.yml``)
 never attempts a live network call from the probe-routing path
 (CODING_STANDARD §6.3 — the LLM getter is not the only live network seam).
+
+Budget hook (issue #460): ``transcribe_pdf_bytes`` calls an optional
+module-level hook with the PDF's page count immediately after the
+``KB_TRANSCRIBE_MAX_PAGES`` check and BEFORE any page is rasterized or sent
+to the vision model. markdown_kb has no dependency on ``gateway`` (ADR-0002's
+one-way Stack boundary), so it cannot charge the Gateway's per-UTC-day USD
+budget ledger itself; ``set_page_budget_hook`` is the inversion point the
+Gateway composition root (``gateway/app/main.py``) wires at startup so both
+Transcribe entries — the ``/wiki/import`` auto-route and the forced
+``/wiki/transcribe`` — charge the SAME shared ledger per page, and a hook
+that raises ``TranscribeBudgetExceeded`` rejects the file before any vision
+call spends real money (reserve-before-spend). Standalone callers (kb_cli,
+kb_mcp, bare markdown_kb) never install a hook, so the default ``None``
+means unmetered, uncapped behaviour there — unchanged from before this hook
+existed.
 """
 
 from __future__ import annotations
@@ -59,6 +74,7 @@ import io
 import os
 import time
 import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from typing import Literal
@@ -118,6 +134,15 @@ class TranscribeUnavailable(Exception):
 class TranscribePageLimitExceeded(Exception):
     """The PDF's page count exceeds ``KB_TRANSCRIBE_MAX_PAGES``. Raised
     before any model call (ADR-0032 fail-closed guard)."""
+
+
+class TranscribeBudgetExceeded(Exception):
+    """The registered page-budget hook rejected this page count (issue #460).
+
+    Raised before any model call, same as ``TranscribePageLimitExceeded`` —
+    the Gateway's daily USD cost cap is already at/over the ceiling, so this
+    file's vision calls must not start. Never raised when no hook is
+    installed (standalone markdown_kb, kb_cli, kb_mcp)."""
 
 
 class TranscribeError(Exception):
@@ -249,6 +274,39 @@ def get_transcribe_llm() -> ChatOpenAI:
 
 
 # ---------------------------------------------------------------------------
+# Budget hook (issue #460) — see module docstring "Budget hook" section.
+# ---------------------------------------------------------------------------
+
+_page_budget_hook: Callable[[int], None] | None = None
+
+
+def set_page_budget_hook(hook: Callable[[int], None] | None) -> None:
+    """Register (or clear, with ``None``) the per-page budget callback.
+
+    Called by ``transcribe_pdf_bytes`` with a PDF's page count, after the
+    ``KB_TRANSCRIBE_MAX_PAGES`` guard and before any page is rasterized or
+    sent to the vision model. The hook may raise ``TranscribeBudgetExceeded``
+    to reject the file before any spend. See the module docstring's "Budget
+    hook" section for why this indirection exists instead of markdown_kb
+    importing the Gateway's budget ledger directly.
+    """
+    global _page_budget_hook
+    _page_budget_hook = hook
+
+
+def get_page_budget_hook() -> Callable[[int], None] | None:
+    """Return the currently-installed page-budget hook, or ``None`` if unset.
+
+    Symmetric public counterpart to ``set_page_budget_hook`` (CODING_STANDARD
+    §2.4 — no reaching into another module's private ``_page_budget_hook``
+    state from outside this module; a caller that needs to introspect or
+    drive the installed hook, e.g. the Gateway's own tests, uses this getter
+    instead).
+    """
+    return _page_budget_hook
+
+
+# ---------------------------------------------------------------------------
 # Public API — page rendering + transcription
 # ---------------------------------------------------------------------------
 
@@ -258,10 +316,12 @@ def transcribe_pdf_bytes(raw_bytes: bytes) -> tuple[str, str]:
 
     Assumes the caller has already confirmed ``transcribe_available()``.
     Checks the page count against ``KB_TRANSCRIBE_MAX_PAGES`` (default 50)
-    BEFORE any model call, then rasterizes and transcribes each page
-    page-at-a-time (issue #456) — page i's rendered image is released before
-    page i+1 is rasterized, so peak memory is O(one page) instead of
-    O(page count). Page bodies are joined with a blank line, in order.
+    BEFORE any model call, then — if a page-budget hook is installed (issue
+    #460) — gives it the page count, also before any model call, then
+    rasterizes and transcribes each page page-at-a-time (issue #456) — page
+    i's rendered image is released before page i+1 is rasterized, so peak
+    memory is O(one page) instead of O(page count). Page bodies are joined
+    with a blank line, in order.
 
     Returns ``(assembled_markdown, model_name)``. ``assembled_markdown`` has
     already passed through ``normalize_kangxi_radicals`` (issue #425, defense
@@ -270,6 +330,8 @@ def transcribe_pdf_bytes(raw_bytes: bytes) -> tuple[str, str]:
 
     Raises:
         TranscribePageLimitExceeded: page count > ``KB_TRANSCRIBE_MAX_PAGES``.
+        TranscribeBudgetExceeded: the installed page-budget hook rejected
+            this page count (issue #460); never raised when no hook is set.
         TranscribeError: a page failed after the LLM wrapper's bounded retry,
             or the model transcribed every page as empty (assembly failure —
             mirrors Import's "never write a silent empty Source" invariant).
@@ -283,6 +345,8 @@ def transcribe_pdf_bytes(raw_bytes: bytes) -> tuple[str, str]:
             raise TranscribePageLimitExceeded(
                 f"PDF has {page_count} page(s), exceeding KB_TRANSCRIBE_MAX_PAGES={max_pages}"
             )
+        if _page_budget_hook is not None:
+            _page_budget_hook(page_count)
         page_bodies = [_render_and_transcribe_page(pdf, i) for i in range(page_count)]
     finally:
         pdf.close()
@@ -560,6 +624,8 @@ def _force_transcribe(raw_path: Path) -> TranscribeSourceResult:
         md_body, model_name = transcribe_pdf_bytes(raw_bytes)
     except TranscribePageLimitExceeded as exc:
         raise TranscribePathError(str(exc)[:200], error_type="TranscribePageLimitExceeded") from exc
+    except TranscribeBudgetExceeded as exc:
+        raise TranscribePathError(str(exc)[:200], error_type="TranscribeBudgetExceeded") from exc
     except TranscribeError as exc:
         raise TranscribePathError(str(exc)[:200], error_type="TranscribeError") from exc
 

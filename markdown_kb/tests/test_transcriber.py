@@ -237,6 +237,80 @@ def test_transcribe_pdf_bytes_streams_one_page_image_at_a_time(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Budget hook (issue #460) — reserve-before-spend
+# ---------------------------------------------------------------------------
+
+
+def test_budget_hook_called_with_page_count_before_any_model_call(monkeypatch):
+    """The registered hook receives the real page count before rasterization/model calls."""
+    import app.transcriber as transcriber_module
+
+    fake_llm = FakeTranscribeLLM()
+    monkeypatch.setattr(transcriber_module, "get_transcribe_llm", lambda: fake_llm)
+
+    hook_calls: list[int] = []
+    monkeypatch.setattr(transcriber_module, "_page_budget_hook", hook_calls.append)
+
+    raw_bytes = (FIXTURES / "transcribe_scanned_cjk.pdf").read_bytes()
+    transcriber_module.transcribe_pdf_bytes(raw_bytes)
+
+    assert hook_calls == [1], "the fixture PDF has exactly 1 page"
+    assert fake_llm.call_count == 1
+
+
+def test_budget_hook_rejection_prevents_any_model_call(monkeypatch):
+    """A hook raising TranscribeBudgetExceeded stops the file before any vision call."""
+    import app.transcriber as transcriber_module
+
+    fake_llm = FakeTranscribeLLM()
+    monkeypatch.setattr(transcriber_module, "get_transcribe_llm", lambda: fake_llm)
+
+    def _reject(page_count: int) -> None:
+        raise transcriber_module.TranscribeBudgetExceeded("daily demo budget reached")
+
+    monkeypatch.setattr(transcriber_module, "_page_budget_hook", _reject)
+
+    raw_bytes = (FIXTURES / "transcribe_scanned_cjk.pdf").read_bytes()
+    with pytest.raises(transcriber_module.TranscribeBudgetExceeded):
+        transcriber_module.transcribe_pdf_bytes(raw_bytes)
+
+    assert fake_llm.call_count == 0, "a budget rejection must reject before any model call"
+
+
+def test_no_hook_installed_is_unmetered_and_uncapped(monkeypatch):
+    """Standalone callers (no hook registered) keep today's unmetered behaviour."""
+    import app.transcriber as transcriber_module
+
+    fake_llm = FakeTranscribeLLM()
+    monkeypatch.setattr(transcriber_module, "get_transcribe_llm", lambda: fake_llm)
+    monkeypatch.setattr(transcriber_module, "_page_budget_hook", None)
+
+    raw_bytes = (FIXTURES / "transcribe_scanned_cjk.pdf").read_bytes()
+    body, _ = transcriber_module.transcribe_pdf_bytes(raw_bytes)
+
+    assert body
+    assert fake_llm.call_count == 1
+
+
+def test_set_page_budget_hook_installs_and_clears():
+    """The public setter installs a hook (round-tripped via the public getter),
+    and installing None clears it."""
+    import app.transcriber as transcriber_module
+
+    calls: list[int] = []
+
+    def _hook(page_count: int) -> None:
+        calls.append(page_count)
+
+    transcriber_module.set_page_budget_hook(_hook)
+    try:
+        assert transcriber_module.get_page_budget_hook() is _hook
+    finally:
+        transcriber_module.set_page_budget_hook(None)
+    assert transcriber_module.get_page_budget_hook() is None
+
+
+# ---------------------------------------------------------------------------
 # Force entry — transcribe_source() / transcribe_path()
 # ---------------------------------------------------------------------------
 
@@ -361,6 +435,30 @@ def test_transcribe_source_page_limit_exceeded_writes_nothing(transcribe_env, mo
         transcriber_module.transcribe_source("sample_english.pdf")
 
     assert exc_info.value.error_type == "TranscribePageLimitExceeded"
+    assert fake_llm.call_count == 0
+    assert not (transcribe_env["docs_dir"] / "sample_english.md").exists()
+
+
+def test_transcribe_source_budget_exceeded_writes_nothing(transcribe_env, monkeypatch):
+    """The force entry (POST /transcribe) also honours the budget hook (issue #460)."""
+    import app.transcriber as transcriber_module
+
+    fake_llm = FakeTranscribeLLM()
+    monkeypatch.setattr(transcriber_module, "get_transcribe_llm", lambda: fake_llm)
+
+    def _reject(page_count: int) -> None:
+        raise transcriber_module.TranscribeBudgetExceeded("daily demo budget reached")
+
+    monkeypatch.setattr(transcriber_module, "_page_budget_hook", _reject)
+
+    (transcribe_env["raw_dir"] / "sample_english.pdf").write_bytes(
+        (FIXTURES / "sample_english.pdf").read_bytes()
+    )
+
+    with pytest.raises(transcriber_module.TranscribePathError) as exc_info:
+        transcriber_module.transcribe_source("sample_english.pdf")
+
+    assert exc_info.value.error_type == "TranscribeBudgetExceeded"
     assert fake_llm.call_count == 0
     assert not (transcribe_env["docs_dir"] / "sample_english.md").exists()
 

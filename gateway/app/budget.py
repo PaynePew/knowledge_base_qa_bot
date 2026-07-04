@@ -1,5 +1,5 @@
 """Shallow module per Ousterhout. Public surface: ``DailyBudget``, ``budget``,
-``estimate_cost``, ``DAILY_USD_CAP``.
+``estimate_cost``, ``DAILY_USD_CAP``, ``TRANSCRIBE_PAGE_USD``.
 
 Per-UTC-day cost accumulator for the demo deploy's hard $/day ceiling (issue
 #269, AC4).  Each *heavy* (OpenAI-calling) request is charged a **conservative
@@ -23,7 +23,8 @@ Per-endpoint estimate table (USD per request, deliberately generous):
     | /rag/chat        | 0.02     | same answer round on the RAG stack              |
     | /wiki/lint       | 0.15     | C5 contradiction audit fans out to ~30 LLM pairs|
     | /wiki/ingest     | 0.10     | classify-on-outline + per-section LLM passes    |
-    | /wiki/import     | 0.10     | conversion + classification LLM passes          |
+    | /wiki/import     | 0.10     | mechanical conversion flat floor (Transcribe's per-page cost is charged on top, see below) |
+    | /wiki/transcribe | 0.00     | true cost is charged per-page (see below), not a flat estimate |
     | /wiki/index      | 0.05     | Wiki re-index touches the corpus                |
     | /rag/index       | 0.50     | re-embeds the WHOLE corpus (many embed calls)   |
     | /hybrid/index    | 0.50     | re-embeds the WHOLE wiki Section corpus         |
@@ -56,6 +57,23 @@ The numbers are intentionally above plausible real cost on a small demo corpus
 fractions of a cent per thousand tokens).  Overestimating keeps the demo safely
 under the $3/day in-app ceiling and the $15/mo provider hard limit.
 
+Per-page Transcribe charging (issue #460): Transcribe (ADR-0032) makes one
+vision-model call per PDF page, so a flat per-request estimate radically
+undercounts a multi-page batch — ``/wiki/import`` in single-request batch
+mode loops every staged raw source under ONE admission-time charge, so a
+handful of large scans could transcribe hundreds of pages for $0.10 total.
+``DailyBudget.charge_pages`` charges ``page_count * TRANSCRIBE_PAGE_USD``
+into the SAME per-UTC-day ledger ``charge()`` uses. It is invoked via a hook
+the Gateway registers with ``markdown_kb.app.transcriber`` at startup (see
+``gateway/app/main.py``) — called with a PDF's page count BEFORE any vision
+call for that file (reserve-before-spend), for both the ``/wiki/import``
+auto-route and the forced ``/wiki/transcribe``. The hook checks
+``over_cap()`` first and raises ``TranscribeBudgetExceeded`` before charging
+if already at/over the ceiling, so a multi-file batch trips the cap partway
+through — every file after the ceiling is crossed is rejected before its
+pages are billed — rather than only discovering the overrun once the whole
+batch (all vision calls) has already run.
+
 Single-worker model (CODING_STANDARD §2.6/§2.7): a plain in-process ``dict``
 guarded by the GIL is sufficient; multi-worker would need a shared store.
 """
@@ -73,6 +91,7 @@ _COST_ESTIMATES: dict[str, float] = {
     "/wiki/lint": 0.15,
     "/wiki/ingest": 0.10,
     "/wiki/import": 0.10,
+    "/wiki/transcribe": 0.00,
     "/wiki/index": 0.05,
     "/rag/index": 0.50,
     "/hybrid/index": 0.50,
@@ -108,6 +127,24 @@ def _read_cap() -> float:
 DAILY_USD_CAP = _read_cap()
 
 
+def _read_transcribe_page_cost() -> float:
+    """Read ``KB_TRANSCRIBE_PAGE_USD`` at construction time (default $0.01/page).
+
+    ADR-0032 estimates real Transcribe cost (``gpt-5-mini``) at ~$2 per 1,000
+    pages (~$0.002/page); $0.01/page keeps the same generous overestimate
+    margin (~5x) as the rest of this module's flat per-endpoint estimates.
+    """
+    raw = os.getenv("KB_TRANSCRIBE_PAGE_USD", "0.01")
+    try:
+        return float(raw)
+    except ValueError:
+        return 0.01
+
+
+# Module-level default, read once at import (restart to apply a new value).
+TRANSCRIBE_PAGE_USD = _read_transcribe_page_cost()
+
+
 def estimate_cost(path: str) -> float:
     """Return the conservative USD estimate for a heavy ``path``.
 
@@ -127,7 +164,9 @@ class DailyBudget:
     """Accumulates heavy-request cost estimates per UTC day against a cap.
 
     Public surface:
-      - ``charge(path, day=None)``  — add the path's estimate to ``day``'s total.
+      - ``charge(path, day=None)``       — add the path's estimate to ``day``'s total.
+      - ``charge_pages(page_count, day=None)`` — add ``page_count * TRANSCRIBE_PAGE_USD``
+        (issue #460 — Transcribe's per-page metered charge).
       - ``over_cap(day=None)``      — True once ``day``'s total reaches the cap.
       - ``day_total(day=None)``     — current accumulated USD for ``day``.
 
@@ -144,6 +183,17 @@ class DailyBudget:
         """Add ``path``'s estimate to ``day``'s total; return the new total."""
         key = day if day is not None else _utc_today()
         new_total = self._totals.get(key, 0.0) + estimate_cost(path)
+        self._totals[key] = new_total
+        return new_total
+
+    def charge_pages(self, page_count: int, *, day: str | None = None) -> float:
+        """Add ``page_count * TRANSCRIBE_PAGE_USD`` to ``day``'s total (issue #460).
+
+        Charges the SAME ledger ``charge()`` uses, so Transcribe's per-page
+        cost competes for the same daily ceiling as every other heavy path.
+        """
+        key = day if day is not None else _utc_today()
+        new_total = self._totals.get(key, 0.0) + (page_count * TRANSCRIBE_PAGE_USD)
         self._totals[key] = new_total
         return new_total
 

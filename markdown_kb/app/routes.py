@@ -513,7 +513,10 @@ def transcribe_raw(req: TranscribeRequest) -> TranscribeResponse:
         HTTP 500: a page failed transcription after bounded retry, or an
             atomic-write ``IOError``.
         HTTP 503: Transcribe is unavailable (missing ``OPENAI_API_KEY`` or
-            ``KB_TRANSCRIBE_ENABLED`` not set).
+            ``KB_TRANSCRIBE_ENABLED`` not set), or the Gateway's daily USD
+            budget hook rejected this file's page count before any model
+            call (issue #460 — same 503 family as budget-exhaustion
+            elsewhere in the Gateway).
     """
     try:
         result = run_transcribe(req.source)
@@ -525,6 +528,7 @@ def transcribe_raw(req: TranscribeRequest) -> TranscribeResponse:
             "UnsupportedExtension": 400,
             "TranscribeUnavailable": 503,
             "TranscribePageLimitExceeded": 413,
+            "TranscribeBudgetExceeded": 503,
         }
         status_code = status_map.get(exc.error_type, 500)
         raise HTTPException(status_code=status_code, detail=exc.message) from exc

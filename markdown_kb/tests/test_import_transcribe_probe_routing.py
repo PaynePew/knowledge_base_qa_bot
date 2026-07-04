@@ -238,3 +238,50 @@ def test_batch_mixed_mechanical_and_transcribed_both_succeed(import_env, stub_tr
     assert stub_transcribe_model.call_count == 1, "Only the text-less PDF calls the model"
     assert (docs_dir / "sample_english.md").exists()
     assert (docs_dir / "transcribe_scanned_cjk.md").exists()
+
+
+# ---------------------------------------------------------------------------
+# Budget hook (issue #460) — a batch stops billing once the cap trips
+# ---------------------------------------------------------------------------
+
+
+def test_budget_hook_trips_mid_batch_remaining_files_never_billed(
+    import_env, stub_transcribe_model, monkeypatch
+):
+    """Once the (mocked) daily cap trips, later files in the SAME batch are
+    rejected before any vision-model call — proving a multi-scan batch cannot
+    silently blow past the ceiling under one flat charge (issue #460)."""
+    import app.transcriber as transcriber_module
+
+    raw_dir = import_env["raw_dir"]
+    docs_dir = import_env["docs_dir"]
+    client = import_env["client"]
+
+    # Two independent text-less PDFs (batch mode globs both).
+    (raw_dir / "scan_a.pdf").write_bytes((FIXTURES / "transcribe_scanned_cjk.pdf").read_bytes())
+    (raw_dir / "scan_b.pdf").write_bytes((FIXTURES / "transcribe_scanned_cjk.pdf").read_bytes())
+
+    # Simulate the Gateway's hook: reject every call after the first, as if
+    # the first file's charge already crossed the daily cap.
+    calls: list[int] = []
+
+    def _hook(page_count: int) -> None:
+        calls.append(page_count)
+        if len(calls) > 1:
+            raise transcriber_module.TranscribeBudgetExceeded("daily demo budget reached")
+
+    monkeypatch.setattr(transcriber_module, "_page_budget_hook", _hook)
+
+    resp = client.post("/import")
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert len(data["imported_sources"]) == 1, "one file bills through before the cap trips"
+    assert len(data["failed_sources"]) == 1
+    assert data["failed_sources"][0]["error_type"] == "TranscribeBudgetExceeded"
+    assert stub_transcribe_model.call_count == 1, (
+        "the rejected file's pages must never reach the vision model"
+    )
+    # Exactly one of the two docs targets was written — the other was rejected
+    # before any content existed to write.
+    assert sum(1 for name in ("scan_a.md", "scan_b.md") if (docs_dir / name).exists()) == 1
