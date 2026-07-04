@@ -2188,6 +2188,10 @@ var LINT_CHROME = {
     /* issue #441: pipeline Lint is LLM-free by default; this is the
        explicit on-demand control for the C5 contradiction audit. */
     deepAudit:             "Deep audit (C5)",
+    /* issue #442: Save/Promote/Discard against a wiki/qa/ draft the demo
+       environment already wiped (periodic reset, or another tab's action) —
+       self-heal instead of surfacing the raw HTTP 404. */
+    staleDraftGone:        "This draft no longer exists — the demo environment resets periodically. Refreshing the queue…",
   },
   zh: {
     reingest:        "重新匯入",
@@ -2230,6 +2234,7 @@ var LINT_CHROME = {
     assignAliasChoosePage: "選擇頁面…",
     seeCurationQueue:      "詳見下方 Curation Queue",
     deepAudit:             "深度稽核（C5）",
+    staleDraftGone:        "此草稿已不存在 — 展示環境會定期重置。正在重新整理佇列…",
   },
 };
 
@@ -4488,6 +4493,48 @@ function renderCurationQueue(rootEl, lintData) {
   rootEl.replaceChildren(queueEl);
 }
 
+/* ── Shared fast-path queue refresh ───────────────────────────
+   Re-runs lint (include_c5=false: the queue only needs the local
+   C8/C9/C10 checks, never the slow C5 LLM contradiction audit) and
+   re-renders the Curation Queue in place. Shared by the Refresh button,
+   the initial page-load fetch, and the stale-draft self-heal (issue #442)
+   so all three go through one fetch+render path. Rejects (network error
+   or non-2xx) so each caller can decide its own fallback UI. */
+function refreshCurationQueueFast() {
+  return fetch("/wiki/lint?include_c5=false", { method: "POST" })
+    .then(function(resp) {
+      if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+      return resp.json();
+    })
+    .then(function(data) {
+      lastLintData = data;
+      renderCurationQueue(document.getElementById("curation-queue-root"), data);
+    });
+}
+
+/* ── Stale-draft self-heal (issue #442) ───────────────────────
+   Save/Promote/Discard against a wiki/qa/{slug}.md draft return 404
+   ("wiki/qa/<slug>.md not found") once the demo environment's periodic
+   reset (or another tab's own action) has already removed the file —
+   the card on screen is a stale snapshot, not a real error. Rather than
+   surface the raw HTTP string, mark the card as gone, show a bilingual
+   explanatory notice, and refresh the queue so the card's own removal
+   (the finding is gone from the next lint response) is what actually
+   drops it — no separate client-side "remove this node" logic to keep
+   in sync with the server's findings (§12.5). statusMsgEl may be null
+   (the C10 flag-card Discard path does not thread one through). */
+function handleStaleDraftGone(cardEl, statusMsgEl) {
+  if (statusMsgEl) {
+    statusMsgEl.textContent = LINT_CHROME[consoleLang].staleDraftGone;
+    statusMsgEl.className = "card-status-msg";
+  }
+  cardEl.style.opacity = "0.5";
+  refreshCurationQueueFast().catch(function() {
+    /* non-fatal: the card stays marked gone; the operator's own Refresh
+       click will retry the queue fetch. */
+  });
+}
+
 /* ── Refresh button ─────────────────────────────────────────
    Re-runs lint and refreshes the queue without opening the
    full pipeline stepper — keeps the queue self-contained.    */
@@ -4501,17 +4548,7 @@ function makeRefreshBtn() {
     btn.disabled = true;
     btn.textContent = "Refreshing…";
 
-    /* Fast path (include_c5=false): the queue needs only the local C8/C9/C10
-       checks, so skip the slow C5 LLM contradiction audit. */
-    fetch("/wiki/lint?include_c5=false", { method: "POST" })
-      .then(function(resp) {
-        if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
-        return resp.json();
-      })
-      .then(function(data) {
-        lastLintData = data;
-        renderCurationQueue(document.getElementById("curation-queue-root"), data);
-      })
+    refreshCurationQueueFast()
       .catch(function() {
         btn.disabled = false;
         btn.textContent = "Refresh";
@@ -4665,10 +4702,15 @@ function buildDraftCard(f) {
 
     fetch("/wiki/qa/" + encodeURIComponent(slug) + "/promote", { method: "POST" })
       .then(function(resp) {
+        /* Stale card (issue #442): the demo environment already wiped this
+           draft (periodic reset, or acted on from another tab). Self-heal
+           instead of surfacing the raw "wiki/qa/<slug>.md not found" 404. */
+        if (resp.status === 404) { handleStaleDraftGone(cardEl, statusMsgEl); return null; }
         if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
         return resp.json();
       })
-      .then(function() {
+      .then(function(data) {
+        if (data === null) return; /* stale-draft branch already handled above */
         /* Gate legibility (issue #379 / ADR-0026): close the loop with the
            observable consequence instead of a bare "now live" confirmation. */
         statusMsgEl.textContent = 'Promoted — ask "' + currentQuestion + '" in chat, it now cites this page.';
@@ -4846,6 +4888,14 @@ function buildDraftCard(f) {
           statusMsgEl.textContent = "";
           return;
         }
+        if (result.status === 404) {
+          /* Stale card (issue #442): the draft was already wiped (demo
+             reset, or discarded from another tab) by the time Save fired.
+             Self-heal instead of surfacing the raw 404 string. */
+          closeEditForm();
+          handleStaleDraftGone(cardEl, statusMsgEl);
+          return;
+        }
         statusMsgEl.textContent = "Error: HTTP " + result.status + " " + (result.data.detail || "");
         statusMsgEl.className = "card-status-msg err";
       })
@@ -5001,6 +5051,7 @@ function buildRefileFlagCard(slug, subtitle) {
 /* ── Shared discard helper ─────────────────────────────────
    Calls DELETE /wiki/qa/{slug}. On 204 → mark card as discarded.
    On 409 → server decided this page is live; show message.
+   On 404 → stale card (issue #442): self-heal instead of a raw error.
    statusMsgEl / setActionBusy may be null in the flag-card path.    */
 function doDiscard(slug, cardEl, statusMsgEl, setActionBusy) {
   fetch("/wiki/qa/" + encodeURIComponent(slug), { method: "DELETE" })
@@ -5013,6 +5064,13 @@ function doDiscard(slug, cardEl, statusMsgEl, setActionBusy) {
           statusMsgEl.className = "card-status-msg err";
         }
         if (setActionBusy) setActionBusy(false);
+        return;
+      }
+      if (resp.status === 404) {
+        /* The demo environment already wiped this draft (periodic reset,
+           or discarded from another tab). Self-heal instead of surfacing
+           the raw "wiki/qa/<slug>.md not found" 404. */
+        handleStaleDraftGone(cardEl, statusMsgEl);
         return;
       }
       if (!resp.ok) {
@@ -5080,14 +5138,7 @@ buildPipeline(document.getElementById("pipeline-root"));
    wiki). The full Lint button still runs C5 for the deliberate audit; the queue
    Refresh button also uses this fast path. */
 (function loadCurationQueueFast() {
-  fetch("/wiki/lint?include_c5=false", { method: "POST" })
-    .then(function(resp) { return resp.ok ? resp.json() : null; })
-    .then(function(data) {
-      if (!data) return;
-      lastLintData = data;
-      renderCurationQueue(document.getElementById("curation-queue-root"), data);
-    })
-    .catch(function() { /* non-fatal: queue stays empty until Lint/Refresh */ });
+  refreshCurationQueueFast().catch(function() { /* non-fatal: queue stays empty until Lint/Refresh */ });
 })();
 
 /* ============================================================
