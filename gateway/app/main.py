@@ -75,11 +75,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     ``hybrid_kb`` ships no sub-app of its own (library-only — see
     ``routes.py``'s ``/hybrid/index`` route), so it never joined the above
     lifespan-propagation fix; ``warm_hybrid_indexes()`` closes that gap
-    (unconditional, token-free). ``warm_openai_clients()`` is the opt-in
-    per-client connection-priming ping (``KB_WARMUP_PING``, default off — see
-    ``gateway/app/warmup.py``). Both run AFTER the sub-app lifespans (BM25 is
-    already warm by then) and BEFORE ``yield``, so uvicorn — and therefore the
-    edge — does not consider the process ready until warmup has run.
+    (token-free). It skips (and logs) when ``OPENAI_API_KEY`` is absent, but
+    once a key is present it no longer swallows failures: a corrupt or
+    missing committed dense seed now PROPAGATES out of it, matching the
+    fail-fast contract the two sub-app lifespans above already have (issue
+    #457). ``warm_openai_clients()`` is the opt-in per-client
+    connection-priming ping (``KB_WARMUP_PING``, default off — see
+    ``gateway/app/warmup.py``), and it stays best-effort. Both run AFTER the
+    sub-app lifespans (BM25 is already warm by then) and BEFORE ``yield``, so
+    uvicorn — and therefore the edge — does not consider the process ready
+    until warmup has run: a propagated ``warm_hybrid_indexes()`` failure means
+    the process never reaches ``yield`` and never reports healthy.
     """
     async with AsyncExitStack() as stack:
         await stack.enter_async_context(_wiki_app.router.lifespan_context(_wiki_app))

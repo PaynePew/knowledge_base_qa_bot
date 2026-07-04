@@ -327,15 +327,15 @@ with `'` (per CODING_STANDARD §5.3 bounded-summary idiom).
 
 ---
 
-## Startup warmup (issue #439)
+## Startup warmup (issue #439, failure-timing symmetry issue #457)
 
 Authorized by GitHub issue #439 (gateway: warm hybrid dense index + OpenAI
 clients at startup). Fixes the post-deploy `/chat` cold start: the Gateway
-`lifespan` (`gateway/app/main.py`) now unconditionally loads the Hybrid
-(Stack C) dense index at boot (`gateway/app/warmup.py::warm_hybrid_indexes`,
-token-free — a pure disk load), and, only when `KB_WARMUP_PING` is truthy,
-fires one tiny ping per distinct OpenAI client (`warm_openai_clients`) so
-connection-priming cost lands at boot instead of on a user's first question.
+`lifespan` (`gateway/app/main.py`) loads the Hybrid (Stack C) dense index at
+boot (`gateway/app/warmup.py::warm_hybrid_indexes`, token-free — a pure disk
+load), and, only when `KB_WARMUP_PING` is truthy, fires one tiny ping per
+distinct OpenAI client (`warm_openai_clients`) so connection-priming cost
+lands at boot instead of on a user's first question.
 
 The `startup_warmup` kind is emitted from **whichever package owns the target**
 — it is one instrumentation concept written into four different channels, not
@@ -343,19 +343,24 @@ four different kinds:
 
 | Emitted from | `target=` values |
 |---|---|
-| `gateway/log.md` (`gateway/app/warmup.py`) | `hybrid_dense_index` (only on failure — a successful load already emits `dense_index_loaded`, see Hybrid Retrieval (Stack C) below) |
+| `gateway/log.md` (`gateway/app/warmup.py`) | `hybrid_dense_index` (only when `OPENAI_API_KEY` is absent — `status=skipped`; issue #457. A successful load emits `dense_index_loaded` instead, see Hybrid Retrieval (Stack C) below, and a load failure with a key present now PROPAGATES out of the Gateway lifespan rather than being logged here) |
 | `wiki/log.md` (`markdown_kb/app/retrieval.py::warm_llm_client`) | `wiki_llm` |
 | `vector_rag/log.md` (`vector_rag/app/retrieval.py::warm_llm_client`, `vector_rag/app/indexer.py::warm_embeddings_client`) | `rag_llm`, `rag_embeddings` |
 | `hybrid_kb/log.md` (`hybrid_kb/app/query.py::warm_llm_client`, `hybrid_kb/app/dense_index.py::warm_embeddings_client`) | `hybrid_llm`, `hybrid_embeddings` |
 
 | Kind | When fired | Summary template |
 |---|---|---|
-| `startup_warmup` | A client ping (`KB_WARMUP_PING` on) succeeded or failed, OR the unconditional hybrid dense-index warm failed | `client=<target> status=ok` or `client=<target> status=failed exc=<ExceptionClassName>` (client pings) / `target=hybrid_dense_index status=failed exc=<ExceptionClassName>` (index warm failure) |
+| `startup_warmup` | A client ping (`KB_WARMUP_PING` on) succeeded or failed, OR the hybrid dense-index warm was skipped for a keyless boot | `client=<target> status=ok` or `client=<target> status=failed exc=<ExceptionClassName>` (client pings) / `target=hybrid_dense_index status=skipped reason=no_openai_api_key` (keyless-boot skip) |
 
-All warm attempts are best-effort: a failure is logged, never raised — Gateway
-startup never blocks on a warmup problem, and the existing per-request
-lazy-load fallbacks (issue #133 RAG, issue #326 Hybrid) still apply on the
-first real request either way.
+The client pings stay best-effort: a failure is logged, never raised —
+Gateway startup never blocks on a single client ping problem, and the
+existing per-request lazy-load fallbacks (issue #133 RAG, issue #326 Hybrid)
+still apply on the first real request either way. The hybrid dense-index warm
+is DIFFERENT since issue #457: a missing key is a soft skip (logged, boot
+stays green), but any other failure — most notably a corrupt or missing
+committed dense seed — now PROPAGATES out of `warm_hybrid_indexes` and fails
+the Gateway boot, matching the Wiki/RAG sub-apps' existing fail-fast
+lifespans (neither of which ever caught its own loader's exceptions either).
 
 ---
 
