@@ -73,10 +73,13 @@ and issue #416 (EncryptedPdf)):
       ``PDFEncryptionError``/``PDFPasswordIncorrect`` on open); curator must
       supply a decrypted copy and re-import
 
-Two more typed failures surface here when a text-less PDF auto-routes to
+Three more typed failures surface here when a text-less PDF auto-routes to
 Transcribe (ADR-0032, issue #426) and the model-assisted conversion itself
 fails — see ``transcriber.py`` for the full contract:
     - ``TranscribePageLimitExceeded`` — page count exceeds ``KB_TRANSCRIBE_MAX_PAGES``
+    - ``TranscribeBudgetExceeded``    — the Gateway's daily USD budget hook
+      (issue #460) rejected this file's page count before any model call;
+      never raised outside the Gateway (no hook installed elsewhere)
     - ``TranscribeError``             — a page failed after bounded retry, or
       assembly failed; no partial ``docs/`` write
 
@@ -812,6 +815,19 @@ def _process_one_source(
                     failure = ImportFailure(
                         raw_path=str(raw_path),
                         error_type="TranscribePageLimitExceeded",
+                        error_message=str(exc)[:200],
+                    )
+                    result.failed_sources.append(failure)
+                    _emit_import_error(failure)
+                    return
+                except transcriber_module.TranscribeBudgetExceeded as exc:
+                    # issue #460: the Gateway's daily USD budget hook rejected
+                    # this file's page count before any vision-model call —
+                    # continue-on-error records it and moves to the next
+                    # source, mirroring TranscribePageLimitExceeded above.
+                    failure = ImportFailure(
+                        raw_path=str(raw_path),
+                        error_type="TranscribeBudgetExceeded",
                         error_message=str(exc)[:200],
                     )
                     result.failed_sources.append(failure)
