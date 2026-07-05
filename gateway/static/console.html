@@ -1567,6 +1567,20 @@
 
   .flag-actions { display: flex; align-items: flex-start; padding-top: 1px; }
 
+  /* Full-width status row (issue #496): a long Re-file/Discard outcome
+     message inside .flag-actions inflates the auto grid column's
+     max-content, collapsing the 1fr body column to one word per line.
+     The message lives on its own grid row spanning the whole card; the
+     span keeps churning its own card-status-msg ok/err classes freely.
+     :empty keeps the row invisible until there is something to say. */
+  .flag-status-row { grid-column: 1 / -1; min-width: 0; }
+  .flag-status-row .card-status-msg {
+    display: block;
+    flex: none;
+    margin: 6px 0 0 36px; /* aligns under .flag-body: 24px icon col + 12px gap */
+  }
+  .flag-status-row .card-status-msg:empty { display: none; }
+
   @media (max-width: 540px) {
     .page { padding: 0 20px 48px; }
   }
@@ -5867,9 +5881,9 @@ function buildFlagCard(icon, slug, subtitle, showDiscard, onDiscard) {
   var actionBusy = false;
   var statusMsgEl = el("span", { class: "card-status-msg" });
 
-  var actionsChildren = [statusMsgEl];
+  var dBtn = null;
   if (showDiscard) {
-    var dBtn = el("button", {
+    dBtn = el("button", {
       class: "discard-btn",
       type: "button",
       text: "Discard"
@@ -5882,7 +5896,6 @@ function buildFlagCard(icon, slug, subtitle, showDiscard, onDiscard) {
       statusMsgEl.className = "card-status-msg";
       if (onDiscard) onDiscard(cardEl);
     });
-    actionsChildren = [dBtn, statusMsgEl];
   }
 
   var bodyEl = el("div", { class: "flag-body" },
@@ -5893,8 +5906,10 @@ function buildFlagCard(icon, slug, subtitle, showDiscard, onDiscard) {
   var cardEl = el("div", { class: "flag-card" },
     el("div", { class: "flag-icon", text: icon }),
     bodyEl,
-    el("div", { class: "flag-actions" }, actionsChildren[0],
-      actionsChildren.length > 1 ? actionsChildren[1] : null)
+    el("div", { class: "flag-actions" }, dBtn),
+    /* issue #496: same full-width status row as buildRefileFlagCard — a
+       long Discard outcome inside .flag-actions squeezed the body column. */
+    el("div", { class: "flag-status-row" }, statusMsgEl)
   );
 
   return cardEl;
@@ -5969,7 +5984,10 @@ function buildRefileFlagCard(slug, subtitle) {
   var cardEl = el("div", { class: "flag-card" },
     el("div", { class: "flag-icon", text: "~" }),
     bodyEl,
-    el("div", { class: "flag-actions" }, refileBtn, statusMsgEl)
+    el("div", { class: "flag-actions" }, refileBtn),
+    /* issue #496: the outcome message spans the whole card on its own grid
+       row — inside .flag-actions its length collapsed the body column. */
+    el("div", { class: "flag-status-row" }, statusMsgEl)
   );
 
   return cardEl;
