@@ -97,55 +97,34 @@ def test_row_renderers_c12_is_defined():
 
 
 # ---------------------------------------------------------------------------
-# Remediation reuses the EXISTING Assign-Alias picker — no new endpoint
+# Remediation is advisory-only until the alias-remove endpoint lands
 # ---------------------------------------------------------------------------
 
 
-def test_c12_row_reuses_assign_alias_action_not_a_new_control():
-    text = _console_text()
-    match = re.search(r"C12:\s*function\(i,\s*f\)\s*\{(.*?)\n    \},", text, re.DOTALL)
-    assert match is not None
-    body = match.group(1)
-    assert "assignAliasAction(" in body, (
-        "C12 must reuse the existing Assign-Alias flow (issue #409/ADR-0030 "
-        "decision 3) — the issue explicitly scopes this as reusing, not "
-        "inventing, a remediation control"
+
+
+def _row_renderer_c12_body() -> str:
+    match = re.search(r"C12:\s*function\(i,\s*f\)\s*\{(.*?)\n    \},", _console_text(), re.DOTALL)
+    assert match is not None, "console.html must define ROW_RENDERERS.C12"
+    return match.group(1)
+
+def test_c12_row_is_advisory_only_no_write_control():
+    """The C12 row must NOT wire any write action: the add-only assign-alias
+    endpoint cannot resolve a collision (same-page add is an idempotent no-op
+    that renders a fake success; any other page 409s), and the server's
+    remediation taxonomy deliberately ships no C12 action. Advisory only,
+    until the alias-remove endpoint follow-up lands (#488 verdict finding)."""
+    body = _row_renderer_c12_body()
+    assert "assignAliasAction(" not in body, (
+        "C12 must not reuse the add-only assign-alias picker - it cannot "
+        "resolve a collision (verdict on the first #488 build)"
     )
-    assert "tierBAffordance()" not in body, (
-        "C12 has a real Direct-tier remediation available (assign-alias) — it "
-        "must not fall back to the disabled Authored-tier placeholder"
-    )
+    assert "c12Advisory" in body, "C12 row must render the bilingual advisory text"
+    assert "tierBAffordance()" not in body
 
 
-def test_c12_assign_alias_action_targets_the_colliding_alias():
+def test_c12_advisory_exists_in_both_language_maps():
     text = _console_text()
-    match = re.search(r"C12:\s*function\(i,\s*f\)\s*\{(.*?)\n    \},", text, re.DOTALL)
-    assert match is not None
-    assert "assignAliasAction({ slug: f.alias })" in match.group(1), (
-        "the picker must assign the collided alias string (f.alias) to "
-        "whichever existing page the operator picks — the same shape "
-        "assignAliasAction already expects via finding.slug"
-    )
-
-
-def test_assign_alias_action_itself_is_unmodified_by_this_slice():
-    """assignAliasAction is reused verbatim (duck-typed { slug: ... } shim at
-    the C12 call site) — its own body must be untouched so the existing C2
-    coverage in test_ui_console_assign_alias.py keeps pinning it."""
-    text = _console_text()
-    action_src = text.split("function assignAliasAction(finding)")[1].split(
-        "function coverageFillOutcomeBanner"
-    )[0]
-    assert "assignAliasRequest(select.value, finding.slug)" in action_src
-
-
-# ---------------------------------------------------------------------------
-# Console-wide invariants extended by this slice
-# ---------------------------------------------------------------------------
-
-
-def test_no_inner_html_assignment_introduced():
-    text = _console_text()
-    assert ".innerHTML" not in text, (
-        "innerHTML assignment found in console.html — §12.4 requires textContent only"
+    assert text.count("c12Advisory:") >= 2, (
+        "c12Advisory label must exist in BOTH LINT_CHROME maps (en + zh)"
     )

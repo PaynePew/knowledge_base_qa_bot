@@ -2507,11 +2507,14 @@ var AXIS_CHECK_CODES = {
                 operation to confirm, only an existing workflow to carry the
                 finding's context into.
    C12 alias-collision (Coherence axis, issue #406/#409 foundation, wired to
-                the Console by issue #488) is "direct" too: the fix is a
-                frontmatter hand-edit, no LLM, reversible. Its row
-                (ROW_RENDERERS.C12 below) reuses the SAME assignAliasAction
-                picker C2 already wires (issue #409/ADR-0030 decision 3)
-                instead of the generic reingest/discard buttons above. */
+                the Console by issue #488) renders DETECTION + ADVISORY only:
+                the server taxonomy deliberately ships no RemediationAction
+                for C12 (lint.py _REMEDIATION_TAXONOMY - the fix is a
+                frontmatter hand-edit REMOVING the alias), and the existing
+                assign-alias endpoint is add-only - adding can never resolve
+                a collision (same-page add is an idempotent no-op, any other
+                page 409s). The one-click action arrives with the
+                alias-remove endpoint follow-up slice. */
 var LINT_CHECK_META = {
   C6:  { label: "stale",            tier: "direct",    findingsKey: "stale_pages" },
   C3:  { label: "failed-grounding", tier: "direct",    findingsKey: "failed_grounding" },
@@ -2625,6 +2628,7 @@ var LINT_CHROME = {
     deleteCancel:        "Cancel",
     deleteWorking:       "Deleting…",
     partialOrphanAdvisory: "Partial orphan — a Source still exists. Repair the citation; never delete.",
+    c12Advisory:         "Alias collisions are resolved by hand: remove the alias from the extra page(s) frontmatter (aliases field), then re-run lint. One-click remediation ships with the alias-remove endpoint (follow-up of #488).",
     fillViaImport:       "Fill via Import",
     verifyReask:         "Verify: re-ask",
     claimsNotRecorded:   "Claims not recorded.",
@@ -2701,6 +2705,7 @@ var LINT_CHROME = {
     deleteCancel:        "取消",
     deleteWorking:       "刪除中…",
     partialOrphanAdvisory: "部分孤立 — 仍有 Source 存在，請修正引用，勿刪除。",
+    c12Advisory:         "別名衝突需手動處理：至多保留一頁宣告此別名，於其餘頁面的 frontmatter aliases 欄位移除後重新 lint。一鍵修復隨 alias 移除端點的後續 slice 提供（#488 的 follow-up）。",
     fillViaImport:       "透過匯入補齊",
     verifyReask:         "驗證：重新提問",
     claimsNotRecorded:   "未記錄相關聲明。",
@@ -3889,6 +3894,15 @@ function renderLintCard(data, resultEl) {
      C8 and C9 render no actionsEl here: both checks' real actions live in
      the dedicated Curation Queue block instead — C8's Promote/Discard
      (issue #363 AC) and, since tier-B S4 (issue #380), C9's Re-file. */
+  /* C12 advisory element — chrome lookup lives OUTSIDE ROW_RENDERERS (the
+     bilingual-parity test pins that renderer bodies never touch
+     LINT_CHROME[consoleLang]; advisory strings are chrome, fetched here,
+     mirroring the C11 partial-orphan advisory). */
+  function c12AdvisoryEl() {
+    return el("div", { class: "lint-row-actions" },
+      el("span", { class: "card-status-msg", text: LINT_CHROME[consoleLang].c12Advisory }));
+  }
+
   var ROW_RENDERERS = {
     C11: function(i, f) {
       return findingRow(i, f.page_slug,
@@ -3922,25 +3936,26 @@ function renderLintCard(data, resultEl) {
       return findingRow(i, f.base_slug, (f.pages_in_group || []).join(", "),
         "collision", "label-updated", collisionAction(f.base_slug, f.pages_in_group));
     },
-    /* ── C12 alias-collision (issue #488) — this foundation check (issue
-       #406, ADR-0030) shipped no Console UI; this wires it in. Two
+    /* ── C12 alias-collision (issue #488) — detection + advisory. Two
        ``kind`` shapes, both keyed on ``f.alias``: ``alias_vs_slug`` (the
        alias matches an existing page's real slug, named by
        ``f.slug_owner``) and ``alias_vs_alias`` (two+ pages independently
-       claim it, ``f.claimed_by`` lists them). The row reuses
-       assignAliasAction UNCHANGED (issue #409/ADR-0030 decision 3) via a
-       duck-typed ``{ slug: f.alias }`` shim — the picker assigns the
-       collided alias string to whichever existing page the operator picks,
-       exactly the shape assignAliasAction already expects
-       (``finding.slug``); any 409/422 the server raises surfaces verbatim
-       through runLintRemediation's existing err-status rendering (§12.5) —
-       this row never re-derives eligibility itself. */
+       claim it, ``f.claimed_by`` lists them). Deliberately NO write control:
+       the add-only assign-alias endpoint cannot resolve a collision (adding
+       the alias to a page that already claims it is an idempotent no-op that
+       would render as a fake success; adding it to any other page is a
+       server 409), and the server's own remediation taxonomy carries no
+       action for C12 — the honest fix today is removing the alias from the
+       extra page's frontmatter. The one-click remediation lands with the
+       alias-remove endpoint (follow-up of #488), which upgrades this
+       advisory to a real control. */
     C12: function(i, f) {
       var collidesWith = (f.claimed_by || []).join(", ") +
         (f.slug_owner ? " vs page slug " + f.slug_owner : "");
       return findingRow(i, f.alias,
         f.kind + " · claimed by: " + collidesWith + " · resolves to " + f.resolved_to,
-        "alias-collision", "label-updated", assignAliasAction({ slug: f.alias }));
+        "alias-collision", "label-updated",
+        c12AdvisoryEl());
     },
     C1: function(i, f) {
       return findingRow(i, f.query_canonical,
