@@ -386,6 +386,56 @@ def test_transcribe_budget_hook_charges_ledger_then_trips_cap(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Issue #447: /wiki/transcribe/batch — the async submit path was absent from
+# ADMIN_PATHS entirely (issue #459 added the route after #460 classified only
+# the synchronous /wiki/transcribe), so it bypassed the admin token,
+# concurrency cap, and budget-cap check — the same "#376 bug class" the
+# middleware docstring warns about. GET /wiki/transcribe/jobs/{job_id} and
+# GET /wiki/transcribe/page-count are deliberately NOT covered here — they are
+# read-only/mechanical (job-status poll; PDF page count), same rationale as
+# GET /read/* and GET /healthz* staying unclassified.
+# ---------------------------------------------------------------------------
+
+
+def test_transcribe_batch_path_is_admin_gated():
+    import gateway.app.middleware as mw_mod
+
+    assert "/wiki/transcribe/batch" in mw_mod.ADMIN_PATHS
+
+
+def test_transcribe_batch_path_over_admin_limit_returns_503(client):
+    """The admin semaphore also shields /wiki/transcribe/batch once fully held."""
+    import gateway.app.middleware as mw_mod
+
+    acquired = []
+    while mw_mod.admin_sem.acquire(blocking=False):
+        acquired.append(True)
+    try:
+        resp = client.post("/wiki/transcribe/batch", json={"sources": ["x.pdf"]})
+        assert resp.status_code == 503
+    finally:
+        for _ in acquired:
+            mw_mod.admin_sem.release()
+
+
+def test_transcribe_batch_path_requires_bearer_when_token_set(monkeypatch):
+    monkeypatch.setenv("KB_ADMIN_TOKEN", "s3cret")
+    client = TestClient(_fresh_app())
+    resp = client.post("/wiki/transcribe/batch", json={"sources": ["x.pdf"]})
+    assert resp.status_code == 401
+
+
+def test_transcribe_batch_estimate_is_zero_true_cost_is_per_page(monkeypatch):
+    """No flat admission estimate for /wiki/transcribe/batch either — it is
+    the SAME force-transcribe surface as /wiki/transcribe, metered by the
+    same per-page hook (issue #460), not a second flat charge."""
+    import gateway.app.budget as budget_mod
+
+    importlib.reload(budget_mod)
+    assert budget_mod.estimate_cost("/wiki/transcribe/batch") == 0.0
+
+
+# ---------------------------------------------------------------------------
 # AC6: optional KB_ADMIN_TOKEN kill-switch
 # ---------------------------------------------------------------------------
 
