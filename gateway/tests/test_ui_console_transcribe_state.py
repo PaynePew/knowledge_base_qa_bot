@@ -45,9 +45,7 @@ def _function_body(name: str, args_pattern: str = r"[^)]*") -> str:
     match up to the first line-anchored closing brace, same convention as the
     sibling UI test files)."""
     text = _console_text()
-    match = re.search(
-        rf"function {name}\({args_pattern}\) \{{(.*?)\n\}}", text, re.DOTALL
-    )
+    match = re.search(rf"function {name}\({args_pattern}\) \{{(.*?)\n\}}", text, re.DOTALL)
     assert match is not None, f"console.html must define function {name}"
     return match.group(1)
 
@@ -102,9 +100,7 @@ def test_poll_retries_transient_failures():
     assert "consecutiveFailures" in body, (
         "pollTranscribeJob must count consecutive poll failures (issue #476 M2)"
     )
-    catch_match = re.search(
-        r"\.catch\(function\(err\) \{(.*?)\n      \}\);", body, re.DOTALL
-    )
+    catch_match = re.search(r"\.catch\(function\(err\) \{(.*?)\n      \}\);", body, re.DOTALL)
     assert catch_match is not None
     catch_body = catch_match.group(1)
     assert "setTimeout(tick" in catch_body, (
@@ -188,8 +184,7 @@ def test_failure_hides_progress_bar():
 def test_unknown_status_has_bounded_backstop():
     body = _function_body("pollTranscribeJob")
     assert "unknownStatusTicks" in body, (
-        "pollTranscribeJob must bound polling on an unrecognised status "
-        "(issue #476 L5)"
+        "pollTranscribeJob must bound polling on an unrecognised status (issue #476 L5)"
     )
     assert '"submitted"' in body and '"working"' in body, (
         "the non-terminal statuses the poller recognises are the server's "

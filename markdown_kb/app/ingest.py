@@ -597,9 +597,7 @@ def ingest_sources(
         # Single/multi-source mode: entries are citation-shaped refs
         # (optionally anchored, possibly nested) — resolve them the same way
         # the C3 view path does (issue #475).
-        source_pairs, ambiguous_sources = _resolve_single_source_pairs(
-            source_filenames, docs_dir
-        )
+        source_pairs, ambiguous_sources = _resolve_single_source_pairs(source_filenames, docs_dir)
 
     batch = IngestBatchResult()
     for ambiguous_name in ambiguous_sources:
@@ -909,9 +907,7 @@ async def aingest_sources(
     else:
         # Citation-shaped refs resolve like the C3 view path — kept in step
         # with ingest_sources (issue #475).
-        source_pairs, ambiguous_sources = _resolve_single_source_pairs(
-            source_filenames, docs_dir
-        )
+        source_pairs, ambiguous_sources = _resolve_single_source_pairs(source_filenames, docs_dir)
 
     sem = asyncio.Semaphore(concurrency if concurrency is not None else _max_concurrency())
 

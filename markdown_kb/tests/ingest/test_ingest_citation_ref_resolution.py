@@ -116,9 +116,7 @@ def test_nested_source_resolves(tmp_path, monkeypatch):
         "## Cleaning Instructions\n\nWipe gently.\n", encoding="utf-8"
     )
 
-    result = ingest_module.ingest_sources(
-        ["product_care.md"], docs_dir=docs_dir, wiki_dir=wiki_dir
-    )
+    result = ingest_module.ingest_sources(["product_care.md"], docs_dir=docs_dir, wiki_dir=wiki_dir)
 
     assert result.failed_sources == [], f"Unexpected failures: {result.failed_sources}"
     assert [r.source for r in result.results] == ["product_care.md"]
@@ -155,9 +153,7 @@ def test_ambiguous_basename_fails_without_guessing(tmp_path, monkeypatch):
     nested.mkdir()
     (nested / "dup.md").write_text("## Nested Dup\n\nNested content.\n", encoding="utf-8")
 
-    result = ingest_module.ingest_sources(
-        ["dup.md#flat-dup"], docs_dir=docs_dir, wiki_dir=wiki_dir
-    )
+    result = ingest_module.ingest_sources(["dup.md#flat-dup"], docs_dir=docs_dir, wiki_dir=wiki_dir)
 
     assert result.failed_sources == ["dup.md"], (
         f"Ambiguous basename must fail, got failed={result.failed_sources} "

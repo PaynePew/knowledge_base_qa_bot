@@ -101,12 +101,11 @@ def test_row_renderers_c12_is_defined():
 # ---------------------------------------------------------------------------
 
 
-
-
 def _row_renderer_c12_body() -> str:
     match = re.search(r"C12:\s*function\(i,\s*f\)\s*\{(.*?)\n    \},", _console_text(), re.DOTALL)
     assert match is not None, "console.html must define ROW_RENDERERS.C12"
     return match.group(1)
+
 
 def test_c12_row_is_advisory_only_no_write_control():
     """The C12 row must NOT wire any write action: the add-only assign-alias
