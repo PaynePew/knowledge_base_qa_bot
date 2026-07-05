@@ -1911,6 +1911,10 @@ function renderImportCard(data) {
    pipeline's own "Batch k/N" indicator). Only one Transcribe run at a time
    (mirrors the Lint card's remediationInFlight guard). */
 var transcribeInFlight = false;
+/* True while ANY row's confirm modal is on screen (pre-confirm included,
+   when transcribeInFlight is still false) — a sibling row's Transcribe click
+   during that window used to stack a second confirm modal (issue #476 L1). */
+var transcribeModalOpen = false;
 
 function transcribeAction(source, onSuccess) {
   var btn = el("button", { class: "transcribe-btn", type: "button",
@@ -1919,6 +1923,11 @@ function transcribeAction(source, onSuccess) {
 
   btn.addEventListener("click", function() {
     if (btn.disabled || transcribeInFlight) return;
+    if (transcribeModalOpen) {
+      statusMsgEl.textContent = LINT_CHROME[consoleLang].transcribeDialogOpen;
+      statusMsgEl.className = "card-status-msg err";
+      return;
+    }
     btn.disabled = true;
     statusMsgEl.textContent = LINT_CHROME[consoleLang].transcribeChecking;
     statusMsgEl.className = "card-status-msg";
@@ -1978,16 +1987,33 @@ function openTranscribeConfirm(source, pageCount, maxPages, triggerBtn, onSucces
   /* True once the batch job has actually been submitted (POST fired) — a
      cancel/backdrop-click BEFORE that point re-enables triggerBtn (nothing
      is running yet); AFTER that point the job keeps running in the
-     background regardless of the modal (issue #459 design), and its own
-     terminal callback (fail(), below) owns re-enabling triggerBtn instead. */
+     background regardless of the modal (issue #459 design). */
   var jobSubmitted = false;
+  /* null while nothing terminal has happened; "failed" once a terminal
+     failure is rendered (server said failed, or the submit itself never
+     created a job); "abandoned" when polling gave up on a job that may STILL
+     be running server-side (issue #476 M2). Only cancelAndClose reads it —
+     re-enabling the trigger is the modal exit's job, never fail()'s
+     (issue #476 M1: fail() re-enabling mid-modal let a re-click stack a
+     second confirm modal for the same source). */
+  var jobOutcome = null;
 
-  function closeModal() { overlay.remove(); }
+  transcribeModalOpen = true;
+  function closeModal() { transcribeModalOpen = false; overlay.remove(); }
   function cancelAndClose() {
-    if (!jobSubmitted) triggerBtn.disabled = false;
+    /* Re-enable the trigger only when nothing can still be running: never
+       submitted, or a server-terminal failure. An abandoned poll keeps it
+       disabled — re-clicking would start a SECOND paid transcription of a
+       source whose job may still be running (issue #476 M2). */
+    if (!jobSubmitted || jobOutcome === "failed") triggerBtn.disabled = false;
     closeModal();
   }
-  overlay.addEventListener("click", function(e) { if (e.target === overlay) cancelAndClose(); });
+  overlay.addEventListener("click", function(e) {
+    /* Backdrop-dismiss is inert while the job is in flight (issue #476 M3)
+       — the Cancel button already is; otherwise fail() would render into a
+       detached modal and the terminal failure would surface nowhere. */
+    if (e.target === overlay && !transcribeInFlight) cancelAndClose();
+  });
   cancelBtn.addEventListener("click", function() {
     if (cancelBtn.disabled) return;
     cancelAndClose();
@@ -2004,9 +2030,11 @@ function openTranscribeConfirm(source, pageCount, maxPages, triggerBtn, onSucces
   confirmBtn.addEventListener("click", function() {
     if (confirmBtn.disabled || transcribeInFlight) return;
     jobSubmitted = true;
+    jobOutcome = null;
     transcribeInFlight = true;
     confirmBtn.disabled = true;
     cancelBtn.disabled = true;
+    cancelBtn.textContent = chrome.transcribeCancel;
     statusMsgEl.replaceChildren(el("span", { class: "spinner" }),
       document.createTextNode(" " + chrome.transcribeWorking));
     statusMsgEl.className = "card-status-msg";
@@ -2014,9 +2042,17 @@ function openTranscribeConfirm(source, pageCount, maxPages, triggerBtn, onSucces
     progressLabelEl.style.display = "block";
     setProgress(0, 0);
 
-    function fail(message) {
+    /* Renders the terminal failure INSIDE the modal and hands control back
+       to its Close button. Deliberately never touches triggerBtn
+       (issue #476 M1) — cancelAndClose owns that, gated on jobOutcome.
+       abandoned=true marks a poll give-up on a possibly-still-running job. */
+    function fail(message, abandoned) {
       transcribeInFlight = false;
-      triggerBtn.disabled = false;
+      jobOutcome = abandoned ? "abandoned" : "failed";
+      /* A frozen progress bar behind an error reads as "still working" or
+         "finished" (issue #476 L4). */
+      progressTrackEl.style.display = "none";
+      progressLabelEl.style.display = "none";
       statusMsgEl.textContent = "Error: " + message;
       statusMsgEl.className = "card-status-msg err";
       cancelBtn.disabled = false;
@@ -2049,10 +2085,19 @@ function openTranscribeConfirm(source, pageCount, maxPages, triggerBtn, onSucces
               fail(reason);
             }
           },
-          function(err) { fail(err.message || String(err)); }
+          function(err) {
+            /* Bounded retries exhausted (issue #476 M2): the job may still
+               be running server-side — say so, and mark the outcome
+               abandoned so closing the modal does NOT hand the trigger back
+               (a re-click would double-charge the vision budget). */
+            fail((err.message || String(err)) + " — " + chrome.transcribePollLost, true);
+          }
         );
       })
       .catch(function(err) {
+        /* The submit itself failed — no job exists server-side, so an
+           in-modal Confirm retry is safe. */
+        jobSubmitted = false;
         confirmBtn.disabled = false;
         fail(err.message || String(err));
       });
@@ -2079,9 +2124,16 @@ function openTranscribeConfirm(source, pageCount, maxPages, triggerBtn, onSucces
    overlap the next poll. onProgress(pagesDone, pagesTotal) fires on every
    tick — real, server-reported numbers, never a client-guessed percentage
    (CODING_STANDARD §12.8). onDone(job) fires exactly once, when status is
-   "completed" or "failed"; onError(err) fires on a network/HTTP failure
-   (the poll surfaces a failure rather than silently going quiet). */
+   "completed" or "failed"; onError(err) fires only after BOUNDED retries are
+   exhausted (issue #476 M2): a 63-page scan is 40-75 polls at 800 ms, so a
+   single proxy 502 is not exotic — one blip must not abandon a still-running
+   PAID job (the pre-#476 first-blip abandon re-enabled the trigger and
+   invited a duplicate batch of the same PDF). Retries poll the SAME job_id;
+   an unrecognised status is also bounded (issue #476 L5) rather than polled
+   forever. */
 function pollTranscribeJob(jobId, onProgress, onDone, onError) {
+  var consecutiveFailures = 0;
+  var unknownStatusTicks = 0;
   function tick() {
     fetch("/wiki/transcribe/jobs/" + encodeURIComponent(jobId))
       .then(function(resp) {
@@ -2089,14 +2141,28 @@ function pollTranscribeJob(jobId, onProgress, onDone, onError) {
         return resp.json();
       })
       .then(function(job) {
+        consecutiveFailures = 0;
         onProgress(job.pages_done, job.pages_total);
         if (job.status === "completed" || job.status === "failed") {
           onDone(job);
-        } else {
-          setTimeout(tick, 800);
+          return;
         }
+        if (job.status === "submitted" || job.status === "working") {
+          unknownStatusTicks = 0;
+        } else {
+          unknownStatusTicks += 1;
+          if (unknownStatusTicks >= 5) {
+            onError(new Error("unknown transcribe job status: " + String(job.status)));
+            return;
+          }
+        }
+        setTimeout(tick, 800);
       })
-      .catch(function(err) { onError(err); });
+      .catch(function(err) {
+        consecutiveFailures += 1;
+        if (consecutiveFailures >= 3) { onError(err); return; }
+        setTimeout(tick, 1600);
+      });
   }
   tick();
 }
@@ -2596,6 +2662,8 @@ var LINT_CHROME = {
     transcribeProgress:      "{done}/{total} pages",
     transcribeSuccess:       "Transcribed — now in docs/",
     transcribeClose:         "Close",
+    transcribePollLost:      "lost contact with the running job; it may still be running on the server — not retrying, to avoid a duplicate charge",
+    transcribeDialogOpen:    "another Transcribe dialog is open",
   },
   zh: {
     reingest:        "重新匯入",
@@ -2655,6 +2723,8 @@ var LINT_CHROME = {
     transcribeProgress:      "{done}/{total} 頁",
     transcribeSuccess:       "已轉錄 — 已加入 docs/",
     transcribeClose:         "關閉",
+    transcribePollLost:      "與執行中的工作失去連線；伺服器端可能仍在執行 — 為避免重複收費，不會自動重跑",
+    transcribeDialogOpen:    "另一個轉錄視窗已開啟",
   },
 };
 
