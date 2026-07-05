@@ -7,20 +7,23 @@
 aliases: []
 created: '2026-07-05T08:42:13Z'
 id: fee
-open_questions: []
+open_questions:
+- Does the NT$1,000 threshold apply before or after discounts, coupons, or taxes?
+- Are there any exceptions or surcharges (e.g., oversized items, remote areas) for
+  convenience store pickup?
 source_hashes:
   convenience_store_pickup.md:
-    docs_body: d4b51dd591545e905ff9ab296b700be5e84181934e0d563926455e3538bd9a34
+    docs_body: 02f22ab10d0435aabdbe2452a1b35c3230684e7eabf7e4323e35df2479c4fce7
     raw: null
 sources:
 - convenience_store_pickup.md#fee
 status: live
 type: concept
-updated: '2026-07-05T08:42:13Z'
+updated: '2026-07-05T11:02:08Z'
 ---
 
 # Fee
 
-convenience-store-pickup costs NT$60. Orders of NT$1,000 or more ship free, using the same threshold as home-delivery.
+Convenience store pickup costs NT$60. Orders of NT$1,000 or more ship free, matching the home-delivery threshold.
 
 [Source: convenience_store_pickup.md#fee]

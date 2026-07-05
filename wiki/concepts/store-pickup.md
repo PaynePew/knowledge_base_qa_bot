@@ -8,23 +8,24 @@ aliases: []
 created: '2026-07-05T09:07:31Z'
 id: store-pickup
 open_questions:
-- Which stores or regions are included in the pickup locations?
-- What are the specific pickup windows and order readiness timelines?
-- What requirements must customers satisfy at pickup?
-- Is there a hold period or deadline for collecting orders?
+- Which store locations support pickup?
+- How long does it take for an order to be ready for pickup?
+- What documentation or verification is required at pickup?
+- Are there specific pickup windows or hold times?
+- Can someone other than the purchaser pick up the order?
 source_hashes:
   store_pickup.md:
-    docs_body: 6cce869216404e554ec54dd209363f9de1ad9189e5a32de3481d2adbca92ad95
+    docs_body: 56ca4c6dcfc3fedf7597902308aa8e87c6b42a4c9d2786c3c30ca48f7d246310
     raw: null
 sources:
 - store_pickup.md#store-pickup
 status: live
 type: concept
-updated: '2026-07-05T09:07:31Z'
+updated: '2026-07-05T11:05:13Z'
 ---
 
 # Store Pickup
 
-This section outlines the in-store pickup program, covering available pickup-locations, expected pickup-timing, and applicable pickup-requirements. It explains where pickup is offered, when orders can be collected, and what conditions must be met for pickup.
+This section provides an overview of in-store pickup, covering pickup locations, timing, and the requirements customers must meet. It serves as a guide to where orders can be collected, when they will be ready, and what is needed to complete pickup.
 
 [Source: store_pickup.md#store-pickup]

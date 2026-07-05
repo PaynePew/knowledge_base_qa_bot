@@ -536,3 +536,153 @@
 ## [2026-07-05T10:43:54.284982Z] ingest_batch_completed | sources=2 total_pages=11 llm_calls=13 cost_usd=0.00 failed_grounding=0
 ## [2026-07-05T10:44:41.283225Z] lint_started | 
 ## [2026-07-05T10:44:45.407018Z] lint_completed | findings=0 by_check=c11:0,c3:0,c4a:0,c12:0,c6:0,c2:0,c1:0,c5:0,c8:0,c9:0,c10:0 llm_calls=0 cost_usd=0.000000 c5_cache_hits=0 errors=0
+## [2026-07-05T10:46:38.121058Z] ingest_batch_started | sources=10
+## [2026-07-05T10:46:38.121058Z] parse_warning | non-leaf heading with no body in 連假退貨.md: '連假退貨說明'
+## [2026-07-05T10:47:07.615822Z] grounding_verify | reason=claim_supported retries=0 latency=13.203s
+## [2026-07-05T10:47:07.882219Z] ingest_source | source=連假退貨.md type=concept pages_created=1 pages_updated=0 pages_deleted=0
+## [2026-07-05T10:47:07.884276Z] parse_warning | non-leaf heading with no body in holiday_returns.md: 'Holiday Returns'
+## [2026-07-05T10:47:37.122958Z] grounding_verify | reason=claim_supported retries=0 latency=12.422s
+## [2026-07-05T10:47:37.322214Z] ingest_source | source=holiday_returns.md type=concept pages_created=1 pages_updated=0 pages_deleted=0
+## [2026-07-05T10:47:37.323214Z] parse_warning | non-leaf heading with no body in 快閃特賣.md: '快閃特賣活動'
+## [2026-07-05T10:48:17.150275Z] grounding_verify | reason=claim_supported retries=0 latency=12.609s
+## [2026-07-05T10:48:17.335000Z] ingest_source | source=快閃特賣.md type=concept pages_created=1 pages_updated=0 pages_deleted=0
+## [2026-07-05T10:48:17.335547Z] parse_warning | non-leaf heading with no body in flash_sale_faq.md: 'Flash Sale FAQ'
+## [2026-07-05T10:48:45.915429Z] grounding_verify | reason=claim_supported retries=0 latency=8.688s
+## [2026-07-05T10:48:46.119083Z] ingest_source | source=flash_sale_faq.md type=concept pages_created=1 pages_updated=0 pages_deleted=0
+## [2026-07-05T10:48:46.120082Z] parse_warning | non-leaf heading with no body in 門市服務指南.md: '門市服務指南'
+## [2026-07-05T10:49:09.000517Z] grounding_verify | reason=claim_supported retries=0 latency=11.203s
+## [2026-07-05T10:49:09.184110Z] ingest_source | source=門市服務指南.md type=concept pages_created=1 pages_updated=0 pages_deleted=0
+## [2026-07-05T10:49:09.185107Z] parse_warning | non-leaf heading with no body in store_services_guide.md: 'Store Services Guide'
+## [2026-07-05T10:49:32.462235Z] grounding_verify | reason=claim_supported retries=0 latency=9.407s
+## [2026-07-05T10:49:32.651296Z] ingest_source | source=store_services_guide.md type=concept pages_created=1 pages_updated=0 pages_deleted=0
+## [2026-07-05T10:49:32.652587Z] parse_warning | non-leaf heading with no body in 取貨常見問題.md: '取貨常見問題'
+## [2026-07-05T10:50:04.934044Z] grounding_verify | reason=claim_supported retries=0 latency=11.968s
+## [2026-07-05T10:50:05.138538Z] ingest_source | source=取貨常見問題.md type=concept pages_created=1 pages_updated=0 pages_deleted=0
+## [2026-07-05T10:50:05.139528Z] parse_warning | non-leaf heading with no body in pickup_faq.md: 'Pickup FAQ'
+## [2026-07-05T10:50:33.940595Z] grounding_verify | reason=claim_supported retries=0 latency=11.765s
+## [2026-07-05T10:50:34.136968Z] ingest_source | source=pickup_faq.md type=concept pages_created=1 pages_updated=0 pages_deleted=0
+## [2026-07-05T10:50:34.137968Z] parse_warning | non-leaf heading with no body in 會員日活動.md: '會員日活動'
+## [2026-07-05T10:51:00.358680Z] grounding_verify | reason=claim_supported retries=0 latency=10.797s
+## [2026-07-05T10:51:10.536217Z] grounding_verify | reason=claim_supported retries=0 latency=10.172s
+## [2026-07-05T10:51:10.733296Z] ingest_source | source=會員日活動.md type=concept pages_created=2 pages_updated=0 pages_deleted=0
+## [2026-07-05T10:51:10.734591Z] parse_warning | non-leaf heading with no body in member_day.md: 'Member Day'
+## [2026-07-05T10:51:34.906405Z] grounding_verify | reason=claim_supported retries=0 latency=11.453s
+## [2026-07-05T10:51:54.634568Z] grounding_verify | reason=claim_supported retries=0 latency=19.734s
+## [2026-07-05T10:51:54.847561Z] ingest_source | source=member_day.md type=concept pages_created=2 pages_updated=0 pages_deleted=0
+## [2026-07-05T10:51:54.847561Z] ingest_batch_completed | sources=10 total_pages=12 llm_calls=22 cost_usd=0.00 failed_grounding=0
+## [2026-07-04T09:10:00Z] chat_fallback | "ACME 有提供禮物包裝服務嗎" reason=retrieval_empty
+## [2026-07-04T14:25:00Z] chat_fallback | "ACME 有提供禮物包裝服務嗎" reason=retrieval_empty
+## [2026-07-05T02:40:00Z] chat_fallback | "ACME 有提供禮物包裝服務嗎" reason=retrieval_empty
+## [2026-07-04T11:05:00Z] chat_fallback | "does ACME offer gift wrapping" reason=retrieval_empty
+## [2026-07-05T03:15:00Z] chat_fallback | "does ACME offer gift wrapping" reason=retrieval_empty
+## [2026-07-05T10:54:20.112416Z] qa_invalid_status | file=qa-typo-status-en-005.md status='Live'
+## [2026-07-05T10:54:20.165590Z] index_built | files=182 sections=182
+## [2026-07-05T10:54:22.236793Z] parse_warning | non-leaf heading with no body in account_help.md: 'Account Help'
+## [2026-07-05T10:54:22.239069Z] parse_warning | non-leaf heading with no body in 取貨常見問題.md: '取貨常見問題'
+## [2026-07-05T10:54:22.241284Z] parse_warning | non-leaf heading with no body in 會員日活動.md: '會員日活動'
+## [2026-07-05T10:54:22.246642Z] parse_warning | non-leaf heading with no body in 連假退貨.md: '連假退貨說明'
+## [2026-07-05T10:54:22.247643Z] parse_warning | non-leaf heading with no body in 門市服務指南.md: '門市服務指南'
+## [2026-07-05T10:54:22.254804Z] parse_warning | non-leaf heading with no body in holiday_returns.md: 'Holiday Returns'
+## [2026-07-05T10:54:22.256410Z] parse_warning | non-leaf heading with no body in member_day.md: 'Member Day'
+## [2026-07-05T10:54:22.259902Z] parse_warning | non-leaf heading with no body in pickup_faq.md: 'Pickup FAQ'
+## [2026-07-05T10:54:22.263591Z] parse_warning | non-leaf heading with no body in store_services_guide.md: 'Store Services Guide'
+## [2026-07-05T10:54:22.268207Z] parse_warning | non-leaf heading with no body in refund_policy.md: 'Refund Policy'
+## [2026-07-05T10:54:22.268207Z] parse_warning | non-leaf heading with no body in shipping_faq.md: 'Shipping FAQ'
+## [2026-07-05T10:54:27.307590Z] qa_invalid_status | file=qa-typo-status-en-005.md status='Live'
+## [2026-07-05T10:54:29.686515Z] lint_started | 
+## [2026-07-05T10:54:46.958431Z] lint_completed | findings=42 by_check=c11:2,c3:2,c4a:2,c12:2,c6:2,c2:2,c1:2,c5:22,c8:2,c9:2,c10:2 llm_calls=30 cost_usd=0.004950 c5_cache_hits=0 errors=0
+## [2026-07-05T11:00:01.832074Z] ingest_batch_started | sources=8
+## [2026-07-05T11:00:40.754974Z] grounding_verify | reason=claim_supported retries=0 latency=17.235s
+## [2026-07-05T11:00:58.027763Z] grounding_verify | reason=claim_supported retries=0 latency=17.281s
+## [2026-07-05T11:01:24.771193Z] grounding_verify | reason=claim_supported retries=0 latency=26.734s
+## [2026-07-05T11:01:37.077317Z] grounding_verify | reason=claim_supported retries=0 latency=12.297s
+## [2026-07-05T11:02:04.354267Z] grounding_verify | reason=claim_unsupported retries=0 latency=27.281s
+## [2026-07-05T11:02:04.617442Z] ingest_grounding_failed | page=超商取貨 reason=claim_unsupported claims=['此處僅說明主題範圍，未提供具體費率、天數或品項細節。']
+## [2026-07-05T11:02:04.618448Z] ingest_source | source=超商取貨.md type=concept pages_created=0 pages_updated=5 pages_deleted=0
+## [2026-07-05T11:02:36.660118Z] grounding_verify | reason=claim_supported retries=0 latency=11.734s
+## [2026-07-05T11:02:49.151343Z] grounding_verify | reason=claim_supported retries=0 latency=12.5s
+## [2026-07-05T11:03:01.156371Z] grounding_verify | reason=claim_supported retries=0 latency=12.0s
+## [2026-07-05T11:03:12.030850Z] grounding_verify | reason=claim_supported retries=0 latency=10.875s
+## [2026-07-05T11:03:32.851593Z] grounding_verify | reason=claim_supported retries=0 latency=20.813s
+## [2026-07-05T11:03:33.219155Z] ingest_source | source=convenience_store_pickup.md type=concept pages_created=0 pages_updated=5 pages_deleted=0
+## [2026-07-05T11:04:01.929540Z] grounding_verify | reason=claim_supported retries=0 latency=10.594s
+## [2026-07-05T11:04:12.203394Z] grounding_verify | reason=claim_supported retries=0 latency=10.266s
+## [2026-07-05T11:04:22.994699Z] grounding_verify | reason=claim_supported retries=0 latency=10.797s
+## [2026-07-05T11:04:33.245327Z] grounding_verify | reason=claim_supported retries=0 latency=10.25s
+## [2026-07-05T11:05:10.348690Z] grounding_verify | reason=claim_unsupported retries=0 latency=37.094s
+## [2026-07-05T11:05:10.771205Z] ingest_grounding_failed | page=門市自取 reason=claim_unsupported claims=['本節協助顧客規劃到店取貨流程']
+## [2026-07-05T11:05:10.771205Z] ingest_source | source=門市自取.md type=concept pages_created=0 pages_updated=5 pages_deleted=0
+## [2026-07-05T11:05:59.543257Z] grounding_verify | reason=claim_supported retries=0 latency=10.516s
+## [2026-07-05T11:06:12.310041Z] grounding_verify | reason=claim_supported retries=0 latency=12.765s
+## [2026-07-05T11:06:26.290615Z] grounding_verify | reason=claim_supported retries=0 latency=13.985s
+## [2026-07-05T11:06:35.852622Z] grounding_verify | reason=claim_supported retries=0 latency=9.547s
+## [2026-07-05T11:06:52.368050Z] grounding_verify | reason=claim_supported retries=0 latency=16.516s
+## [2026-07-05T11:06:52.742066Z] ingest_source | source=store_pickup.md type=concept pages_created=0 pages_updated=5 pages_deleted=0
+## [2026-07-05T11:06:52.750065Z] parse_warning | non-leaf heading with no body in 退貨期限提醒.md: '退貨期限提醒'
+## [2026-07-05T11:07:20.922000Z] grounding_verify | reason=claim_supported retries=0 latency=10.938s
+## [2026-07-05T11:07:21.316004Z] ingest_source | source=退貨期限提醒.md type=concept pages_created=1 pages_updated=0 pages_deleted=0
+## [2026-07-05T11:07:21.329987Z] parse_warning | non-leaf heading with no body in returns_reminder.md: 'Returns Reminder'
+## [2026-07-05T11:08:00.220866Z] grounding_verify | reason=claim_supported retries=0 latency=16.813s
+## [2026-07-05T11:08:00.452993Z] ingest_source | source=returns_reminder.md type=concept pages_created=1 pages_updated=0 pages_deleted=0
+## [2026-07-05T11:08:00.470602Z] parse_warning | non-leaf heading with no body in 取貨方式比較.md: '取貨方式比較'
+## [2026-07-05T11:08:25.379143Z] grounding_verify | reason=claim_supported retries=0 latency=14.547s
+## [2026-07-05T11:08:25.619383Z] ingest_source | source=取貨方式比較.md type=concept pages_created=1 pages_updated=0 pages_deleted=0
+## [2026-07-05T11:08:25.639353Z] parse_warning | non-leaf heading with no body in pickup_options.md: 'Pickup Options'
+## [2026-07-05T11:08:49.490062Z] grounding_verify | reason=claim_supported retries=0 latency=10.422s
+## [2026-07-05T11:08:49.766444Z] ingest_source | source=pickup_options.md type=concept pages_created=1 pages_updated=0 pages_deleted=0
+## [2026-07-05T11:08:49.766444Z] ingest_batch_completed | sources=8 total_pages=24 llm_calls=32 cost_usd=0.00 failed_grounding=2
+## [2026-07-05T11:09:44.772983Z] ingest_batch_started | sources=2
+## [2026-07-05T11:10:24.870951Z] grounding_verify | reason=claim_supported retries=0 latency=8.219s
+## [2026-07-05T11:10:34.792857Z] grounding_verify | reason=claim_supported retries=0 latency=9.922s
+## [2026-07-05T11:10:48.984942Z] grounding_verify | reason=claim_supported retries=0 latency=14.187s
+## [2026-07-05T11:10:59.172410Z] grounding_verify | reason=claim_supported retries=0 latency=10.188s
+## [2026-07-05T11:11:14.863799Z] grounding_verify | reason=claim_supported retries=0 latency=15.687s
+## [2026-07-05T11:11:15.116365Z] ingest_source | source=超商取貨.md type=concept pages_created=0 pages_updated=5 pages_deleted=0
+## [2026-07-05T11:11:49.368632Z] grounding_verify | reason=claim_supported retries=0 latency=8.469s
+## [2026-07-05T11:12:10.655073Z] grounding_verify | reason=claim_unsupported retries=0 latency=21.281s
+## [2026-07-05T11:12:26.063515Z] grounding_verify | reason=claim_supported retries=0 latency=15.406s
+## [2026-07-05T11:12:34.380920Z] grounding_verify | reason=claim_supported retries=0 latency=8.313s
+## [2026-07-05T11:12:55.601993Z] grounding_verify | reason=claim_supported retries=0 latency=21.234s
+## [2026-07-05T11:12:55.961985Z] ingest_grounding_failed | page=取貨時效 reason=claim_unsupported claims=['門市無法提早交付。']
+## [2026-07-05T11:12:55.963077Z] ingest_source | source=門市自取.md type=concept pages_created=0 pages_updated=5 pages_deleted=0
+## [2026-07-05T11:12:55.963077Z] ingest_batch_completed | sources=2 total_pages=10 llm_calls=12 cost_usd=0.00 failed_grounding=1
+## [2026-07-05T11:13:32.477318Z] ingest_batch_started | sources=1
+## [2026-07-05T11:14:02.593042Z] grounding_verify | reason=claim_supported retries=0 latency=14.157s
+## [2026-07-05T11:14:14.511186Z] grounding_verify | reason=claim_supported retries=0 latency=11.921s
+## [2026-07-05T11:14:28.521460Z] grounding_verify | reason=claim_supported retries=0 latency=14.0s
+## [2026-07-05T11:14:40.849485Z] grounding_verify | reason=claim_supported retries=0 latency=12.313s
+## [2026-07-05T11:14:57.365127Z] grounding_verify | reason=claim_supported retries=0 latency=16.515s
+## [2026-07-05T11:14:57.592788Z] ingest_source | source=門市自取.md type=concept pages_created=0 pages_updated=5 pages_deleted=0
+## [2026-07-05T11:14:57.593779Z] ingest_batch_completed | sources=1 total_pages=5 llm_calls=6 cost_usd=0.00 failed_grounding=0
+## [2026-07-05T11:15:27.317466Z] qa_invalid_status | file=qa-typo-status-en-005.md status='Live'
+## [2026-07-05T11:15:27.346442Z] index_built | files=174 sections=174
+## [2026-07-05T11:15:29.326127Z] parse_warning | non-leaf heading with no body in account_help.md: 'Account Help'
+## [2026-07-05T11:15:29.329129Z] parse_warning | non-leaf heading with no body in 取貨方式比較.md: '取貨方式比較'
+## [2026-07-05T11:15:29.332128Z] parse_warning | non-leaf heading with no body in 會員日活動.md: '會員日活動'
+## [2026-07-05T11:15:29.337127Z] parse_warning | non-leaf heading with no body in 退貨期限提醒.md: '退貨期限提醒'
+## [2026-07-05T11:15:29.339131Z] parse_warning | non-leaf heading with no body in 門市服務指南.md: '門市服務指南'
+## [2026-07-05T11:15:29.346720Z] parse_warning | non-leaf heading with no body in member_day.md: 'Member Day'
+## [2026-07-05T11:15:29.350733Z] parse_warning | non-leaf heading with no body in pickup_options.md: 'Pickup Options'
+## [2026-07-05T11:15:29.353823Z] parse_warning | non-leaf heading with no body in returns_reminder.md: 'Returns Reminder'
+## [2026-07-05T11:15:29.356721Z] parse_warning | non-leaf heading with no body in store_services_guide.md: 'Store Services Guide'
+## [2026-07-05T11:15:29.361722Z] parse_warning | non-leaf heading with no body in refund_policy.md: 'Refund Policy'
+## [2026-07-05T11:15:29.362730Z] parse_warning | non-leaf heading with no body in shipping_faq.md: 'Shipping FAQ'
+## [2026-07-05T11:15:32.828093Z] qa_invalid_status | file=qa-typo-status-en-005.md status='Live'
+## [2026-07-05T11:15:34.402520Z] lint_started | 
+## [2026-07-05T11:15:47.953866Z] lint_completed | findings=42 by_check=c11:2,c3:2,c4a:2,c12:2,c6:2,c2:2,c1:2,c5:22,c8:2,c9:2,c10:2 llm_calls=19 cost_usd=0.003135 c5_cache_hits=11 errors=0
+## [2026-07-05T11:24:21.385692Z] qa_invalid_status | file=qa-typo-status-en-005.md status='Live'
+## [2026-07-05T11:24:21.415532Z] index_built | files=174 sections=174
+## [2026-07-05T11:24:23.278863Z] parse_warning | non-leaf heading with no body in account_help.md: 'Account Help'
+## [2026-07-05T11:24:23.302268Z] parse_warning | non-leaf heading with no body in member_day.md: 'Member Day'
+## [2026-07-05T11:24:23.303270Z] parse_warning | non-leaf heading with no body in pickup_options.md: 'Pickup Options'
+## [2026-07-05T11:24:23.304270Z] parse_warning | non-leaf heading with no body in returns_reminder.md: 'Returns Reminder'
+## [2026-07-05T11:24:23.305270Z] parse_warning | non-leaf heading with no body in store_services_guide.md: 'Store Services Guide'
+## [2026-07-05T11:24:23.305270Z] parse_warning | non-leaf heading with no body in 取貨方式比較.md: '取貨方式比較'
+## [2026-07-05T11:24:23.306270Z] parse_warning | non-leaf heading with no body in 會員日活動.md: '會員日活動'
+## [2026-07-05T11:24:23.306270Z] parse_warning | non-leaf heading with no body in 退貨期限提醒.md: '退貨期限提醒'
+## [2026-07-05T11:24:23.307316Z] parse_warning | non-leaf heading with no body in 門市服務指南.md: '門市服務指南'
+## [2026-07-05T11:24:23.310270Z] parse_warning | non-leaf heading with no body in refund_policy.md: 'Refund Policy'
+## [2026-07-05T11:24:23.310270Z] parse_warning | non-leaf heading with no body in shipping_faq.md: 'Shipping FAQ'
+## [2026-07-05T11:24:26.213789Z] qa_invalid_status | file=qa-typo-status-en-005.md status='Live'
+## [2026-07-05T11:24:27.651938Z] lint_started | 
+## [2026-07-05T11:24:29.569672Z] lint_completed | findings=42 by_check=c11:2,c3:2,c4a:2,c12:2,c6:2,c2:2,c1:2,c5:22,c8:2,c9:2,c10:2 llm_calls=0 cost_usd=0.000000 c5_cache_hits=30 errors=0

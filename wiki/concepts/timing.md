@@ -8,22 +8,23 @@ aliases: []
 created: '2026-07-05T09:07:31Z'
 id: timing
 open_questions:
-- For orders placed outside store hours or near closing, does the 2-hour window begin
-  at the next opening time?
-- How are customers notified when the status changes to "Ready for pickup"?
+- If an order is placed near closing, is the 2-hour prep time carried over to the
+  next opening period?
+- Besides the status change, is there any additional notification when an order becomes
+  ready?
 source_hashes:
   store_pickup.md:
-    docs_body: 6cce869216404e554ec54dd209363f9de1ad9189e5a32de3481d2adbca92ad95
+    docs_body: 56ca4c6dcfc3fedf7597902308aa8e87c6b42a4c9d2786c3c30ca48f7d246310
     raw: null
 sources:
 - store_pickup.md#timing
 status: live
 type: concept
-updated: '2026-07-05T09:07:31Z'
+updated: '2026-07-05T11:05:13Z'
 ---
 
 # Timing
 
-store-pickup orders are usually ready within 2 hours of payment, but only during store-hours. Go to the store only after the order-status shows "Ready for pickup"; staff cannot pull stock before the ready-for-pickup stage.
+store-pickup orders are usually ready within 2 hours of payment, with preparation occurring only during store-opening-hours. Go to the store only after your order status shows ready-for-pickup; staff cannot pull stock earlier.
 
 [Source: store_pickup.md#timing]

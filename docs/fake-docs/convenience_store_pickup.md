@@ -8,7 +8,7 @@ Convenience store pickup costs **NT$60**; orders of **NT$1,000 or more** ship fr
 
 ## Pickup Flow & Deadline
 
-When your parcel reaches the selected store, you receive an SMS notification. Parcels are held for **7 days**; unclaimed parcels are returned and the order is cancelled automatically, with the payment refunded to the original method.
+When your parcel reaches the selected store, you receive an SMS notification. Parcels are held at the convenience store for **7 days** after arrival - a rule specific to convenience store pickup (in-store pickup has its own 3-day hold from the ready notification). Unclaimed parcels are returned and the order is cancelled automatically, with the payment refunded to the original method.
 
 ## Item Restrictions
 

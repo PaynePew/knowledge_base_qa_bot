@@ -10,17 +10,17 @@ id: hold-period
 open_questions: []
 source_hashes:
   store_pickup.md:
-    docs_body: 6cce869216404e554ec54dd209363f9de1ad9189e5a32de3481d2adbca92ad95
+    docs_body: 56ca4c6dcfc3fedf7597902308aa8e87c6b42a4c9d2786c3c30ca48f7d246310
     raw: null
 sources:
 - store_pickup.md#hold-period
 status: live
 type: concept
-updated: '2026-07-05T09:07:31Z'
+updated: '2026-07-05T11:05:13Z'
 ---
 
 # Hold Period
 
-Orders under store-pickup are held for 3 calendar days from the ready-for-pickup-notification. Unclaimed orders are cancelled automatically with a full refund to the original payment method within the standard refund-timeline of 5-7 business days.
+store-pickup orders are held for 3 calendar days from the ready-for-pickup-notification. Unclaimed orders are cancelled automatically with a full refund to the original payment method within 5–7 business days. This does not apply to convenience-store-parcels, which follow their own 7‑day rule.
 
 [Source: store_pickup.md#hold-period]

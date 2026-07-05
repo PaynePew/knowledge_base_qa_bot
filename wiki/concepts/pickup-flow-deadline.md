@@ -7,23 +7,20 @@
 aliases: []
 created: '2026-07-05T08:42:13Z'
 id: pickup-flow-deadline
-open_questions:
-- Can the 7-day hold be extended or changed for specific orders or stores?
-- Where exactly are unclaimed parcels returned to?
-- How long does the refund to the original payment method take once the order is cancelled?
+open_questions: []
 source_hashes:
   convenience_store_pickup.md:
-    docs_body: d4b51dd591545e905ff9ab296b700be5e84181934e0d563926455e3538bd9a34
+    docs_body: 02f22ab10d0435aabdbe2452a1b35c3230684e7eabf7e4323e35df2479c4fce7
     raw: null
 sources:
 - convenience_store_pickup.md#pickup-flow-deadline
 status: live
 type: concept
-updated: '2026-07-05T08:42:13Z'
+updated: '2026-07-05T11:02:08Z'
 ---
 
 # Pickup Flow & Deadline
 
-For convenience-store-pickup, when your parcel arrives at the selected store you’ll receive an sms-notification. Parcels are held for 7 days; if unclaimed, they are returned, the order-cancellation is processed automatically, and payment is refunded to the original-payment-method.
+When your parcel reaches the selected store, you’ll receive an SMS notification. For convenience-store-pickup, parcels are held for 7 days after arrival (by contrast, in-store-pickup has a 3‑day hold from the ready notification). Unclaimed parcels are returned, the order is cancelled automatically, and the payment is refunded to the original method.
 
 [Source: convenience_store_pickup.md#pickup-flow-deadline]

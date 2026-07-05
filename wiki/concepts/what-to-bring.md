@@ -8,22 +8,22 @@ aliases: []
 created: '2026-07-05T09:07:31Z'
 id: what-to-bring
 open_questions:
-- What forms of photo ID are accepted?
-- Are digital barcodes acceptable, or is a printed barcode required?
-- Is any additional authorization needed for someone else to collect on your behalf?
+- Which forms of photo ID are accepted?
+- Are digital barcodes or digital IDs acceptable?
+- Are there any additional requirements for third-party pickup?
 source_hashes:
   store_pickup.md:
-    docs_body: 6cce869216404e554ec54dd209363f9de1ad9189e5a32de3481d2adbca92ad95
+    docs_body: 56ca4c6dcfc3fedf7597902308aa8e87c6b42a4c9d2786c3c30ca48f7d246310
     raw: null
 sources:
 - store_pickup.md#what-to-bring
 status: live
 type: concept
-updated: '2026-07-05T09:07:31Z'
+updated: '2026-07-05T11:05:13Z'
 ---
 
 # What to Bring
 
-For store-pickup, present your order-barcode and a photo-id at pickup. Another person may collect on your behalf with the order-barcode and their own photo-id.
+For store-pickup, bring your order-barcode and a photo-id to collect your order. Someone else may pick up on your behalf if they present the order barcode and their own photo ID.
 
 [Source: store_pickup.md#what-to-bring]

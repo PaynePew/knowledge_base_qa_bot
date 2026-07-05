@@ -1,0 +1,272 @@
+{
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:0961b915c4481c638c50907591bf4ed1b2427a1d9304c927f24e2f8141305f0c:b829da7a4b1f809c4296482dee1c9bab17590f808bc432f16b348a56b3ab54e8": {
+    "page_a": "cancelling",
+    "page_a_claim": "Cancellation must be completed at least 24 hours before the next billing-cycle.",
+    "page_b": "pausing",
+    "page_b_claim": "To avoid being charged for the next cycle, the pause must be set at least 24 hours before the next billing-cycle; otherwise that upcoming cycle will still be charged.",
+    "severity": "tension",
+    "suggested_action": "Review and clarify the distinctions between cancelling and pausing subscriptions.",
+    "summary": "Both pages discuss the importance of timing in relation to the next billing cycle, but they address different actions (cancelling vs. pausing) which could lead to confusion for readers about the implications of each action."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:1ddaeb15f95fba0623c576c9682f4a4688a799594d0a60a47d5a6c3cfed2a082:60d8ee37c4d26d256f22fbb3cf27539816c43675722f881514a9c1d86ef98244": {
+    "page_a": "locations",
+    "page_a_claim": "Pickup at these stores is offered free of charge.",
+    "page_b": "store-locations-and-pickup-service",
+    "page_b_claim": "All locations offer free in-store-pickup for online orders; present your order barcode and a valid photo ID when collecting.",
+    "severity": "duplicate",
+    "suggested_action": "Merge pages",
+    "summary": "Both pages discuss the same concept of in-store pickup at the same locations, with no contradictions in the information provided."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:1edac8c83d031cce732c6ae83c2743c661695b26e622f8a3c861766c54581223:f8947be78df31c32e70c4a51ada185228396ea5614b54e0f86af763dc44efb5c": {
+    "page_a": "自取地點",
+    "page_a_claim": "選擇自取可享免運費。",
+    "page_b": "門市據點與自取服務",
+    "page_b_claim": "三家門市皆提供線上訂單的門市自取服務，免運費；取貨時需出示訂單條碼與身分證件。",
+    "severity": "duplicate",
+    "suggested_action": "Merge pages",
+    "summary": "Both pages discuss the same three physical store locations offering self-pickup services with free shipping, indicating they cover the same concept without contradiction."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:21026b792e4ad209d9b5c10c93f490db4ddca9653427588abc010a77f3fd95c5:10a3056795ffe1f1edce2f64b07a467b0131f88168692d0b0a9562a075669c2c": {
+    "page_a": "會員日優惠-2",
+    "page_a_claim": "單筆訂單可用點數折抵的上限為訂單金額的 50%。",
+    "page_b": "點數折抵",
+    "page_b_claim": "單筆訂單折抵上限為訂單金額的 50%。",
+    "severity": "duplicate",
+    "suggested_action": "Merge pages",
+    "summary": "Both pages describe the same point redemption rules, including the redemption rate and the maximum limit for a single order, without any contradictions."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:23d63f2cd457a654cbff37145bb2ea6a2ccc343dd077923bf527e1e9f8a63264:d40ed14b80734e93214ac14cd2555521e51abfc3abaaaea561a3a2acc6899839": {
+    "page_a": "difference-from-regular-returns",
+    "page_a_claim": "Damaged or defective items are exempt from the usual “unused, complete packaging” return-conditions that apply to regular returns.",
+    "page_b": "return-shipping",
+    "page_b_claim": "For defective products or items damaged in transit, acme-shop covers the return shipping cost.",
+    "severity": "duplicate",
+    "suggested_action": "Merge pages",
+    "summary": "Both pages discuss the return shipping policy for defective items, indicating that ACME Shop covers the return shipping cost in such cases, which suggests they are addressing the same concept without contradiction."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:2eb0fcdbb1cf0543db603eb2aa058b1d7ef564125a0122fb103fd277878844d7:3196840ee66342f539147032657af2c68199e1b069d570befb7e75c0a07846e9": {
+    "page_a": "標準配送",
+    "page_a_claim": "標準配送運費為新台幣 80 元；單筆訂單滿新台幣 1,000 元享免運（免運門檻）。",
+    "page_b": "超商取貨運費",
+    "page_b_claim": "超商取貨運費為新台幣 60 元。單筆訂單滿新台幣 1,000 元即免運，免運門檻與宅配相同。",
+    "severity": "none",
+    "suggested_action": "Review and dismiss.",
+    "summary": "The two pages discuss different shipping methods with distinct costs and delivery times, but there is no overlap or contradiction between them. Each page provides information relevant to its specific shipping option."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:34ba2abe27c8349c9491135c19781b42b8f7969a9cf0a23f3ace7ea0b29fb0c9:cf97b04742f47f402f7835be62e928f4110b1d18c6a7caee8d7c78b4558ec157": {
+    "page_a": "gift-cards",
+    "page_a_claim": "It outlines the available amounts, how long cards remain valid, and how they can be used.",
+    "page_b": "validity",
+    "page_b_claim": "Gift cards do not expire; they remain valid indefinitely.",
+    "severity": "tension",
+    "suggested_action": "Review and clarify the validity rules on Page A.",
+    "summary": "Both pages discuss the validity of gift cards, but Page A suggests there are rules regarding how long cards remain valid, while Page B states they do not expire at all, which could confuse readers about the actual validity period."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:3988b0aa444a1c72c7610f65cd1e65d617fa2251fe98583c351ee5bc842b25c1:772ab5c9561bcbc578be4b2df6a50ad969904d97d50693858727ad3e889b96c5": {
+    "page_a": "account-deletion",
+    "page_a_claim": "Deletion requests submitted in account-settings enter a 14-day grace-period.",
+    "page_b": "refund-window",
+    "page_b_claim": "The refund window is 14 calendar days from the date the item is received, including holidays.",
+    "severity": "none",
+    "suggested_action": "Review and dismiss.",
+    "summary": "Both pages mention a 14-day period, but they refer to different contexts (account deletion vs. refund window) without any overlap or contradiction."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:3e480eb1ddfb64eb5960fd6c30e59e82756d2c3f97390054255a7df2ef1de8b7:9a637c1e1d4bd6ea59ffb35471195f512b5a83945b0b73cb0fab96f64ac9d1d4": {
+    "page_a": "convenience-store-payment-codes",
+    "page_a_claim": "Payment must be completed within 3 days of placing the order; unpaid orders are automatically cancelled after the deadline.",
+    "page_b": "pickup-flow-deadline",
+    "page_b_claim": "Unclaimed parcels are returned, the order is cancelled automatically, and the payment is refunded to the original method.",
+    "severity": "none",
+    "suggested_action": "Review and dismiss.",
+    "summary": "While both pages discuss cancellation policies, they address different aspects of the process: one focuses on payment deadlines and the other on parcel pickup deadlines. There is no direct overlap or contradiction between the two pages."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:4bc789e29d7ec9556bd0b744c3a34fcfd5f0b70fdca6c38f260bc6ae85873e28:7883317fef902f0e9cfe3ed44295637c70bb9cd93ce04296b363e03f114ce4a3": {
+    "page_a": "取消訂閱",
+    "page_a_claim": "取消需於下一個帳單週期開始前至少 24 小時完成。",
+    "page_b": "暫停訂閱",
+    "page_b_claim": "必須在下一個帳單週期開始前至少 24 小時完成暫停，否則該期仍會照常扣款。",
+    "severity": "tension",
+    "suggested_action": "Review and clarify the distinctions between cancellation and suspension.",
+    "summary": "Both pages discuss actions that must be taken before the next billing cycle, but they cover different processes (cancellation vs. suspension) which could confuse readers about the differences between the two actions."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:4e36f1f8a3e4a4a5168b14a31d920dc349192b7d94e0a2a5bdb680ce8a7ad040:2eb0fcdbb1cf0543db603eb2aa058b1d7ef564125a0122fb103fd277878844d7": {
+    "page_a": "快速到貨",
+    "page_a_claim": "本島地區可選用快速到貨，出貨後 1–2 個工作天送達，運費為新台幣 150 元；需於當日 14:00 前完成下單與付款。",
+    "page_b": "標準配送",
+    "page_b_claim": "標準配送出貨後，台灣本島約 3 至 5 個工作天送達；離島地區（澎湖、金門、馬祖）則需額外 1 至 3 個工作天。",
+    "severity": "none",
+    "suggested_action": "None",
+    "summary": "The two pages describe different shipping options without any overlap or contradiction, as they cover distinct delivery methods and timelines."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:618a69d423c02003eef235d1a53ae62a9ea457a445611021f77b900d3c0328ee:f76c381ebc15b4162c491d23cfe55d40377ae2952b25de46385cf67e0c9d6fb8": {
+    "page_a": "搭配貨到付款",
+    "page_a_claim": "單筆金額上限與手續費標準請參考付款方式。",
+    "page_b": "貨到付款",
+    "page_b_claim": "每筆訂單金額上限為新台幣 20,000 元，並需另收手續費新台幣 30 元。",
+    "severity": "direct",
+    "suggested_action": "Reconcile sources",
+    "summary": "Page A does not specify the order amount limit or the handling fee, while Page B explicitly states that the order amount limit is NT$20,000 and the handling fee is NT$30, indicating a clear factual disagreement."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:687d316601665925f5be0a93012ddc189a57ab96b2baaa0b075f4b6197d51d33:9a637c1e1d4bd6ea59ffb35471195f512b5a83945b0b73cb0fab96f64ac9d1d4": {
+    "page_a": "hold-period",
+    "page_a_claim": "store-pickup orders are held for 3 calendar days from the ready-for-pickup-notification.",
+    "page_b": "pickup-flow-deadline",
+    "page_b_claim": "in-store-pickup has a 3‑day hold from the ready notification.",
+    "severity": "tension",
+    "suggested_action": "Review and clarify the differences in hold periods between store-pickup and convenience-store-pickup.",
+    "summary": "Both pages discuss the hold period for pickup orders, but Page A focuses on store-pickup while Page B contrasts it with convenience-store-pickup, which could lead to confusion about the different policies."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:7c88005d5e0af373db88352415227369f2b4679e996479e937b9519cb29a9a87:60d8ee37c4d26d256f22fbb3cf27539816c43675722f881514a9c1d86ef98244": {
+    "page_a": "acme-shop-about",
+    "page_a_claim": "It operates three physical stores—Taipei Xinyi, Taichung Xitun, and Kaohsiung Dream Mall—each offering store-pickup.",
+    "page_b": "store-locations-and-pickup-service",
+    "page_b_claim": "ACME Shop operates three physical stores: taipei-xinyi, taichung-xitun, and kaohsiung-dream-mall. All locations offer free in-store-pickup for online orders; present your order barcode and a valid photo ID when collecting.",
+    "severity": "duplicate",
+    "suggested_action": "Merge pages",
+    "summary": "Both pages provide information about the same three physical store locations and their pickup services, without any contradictions or differing details."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:9a637c1e1d4bd6ea59ffb35471195f512b5a83945b0b73cb0fab96f64ac9d1d4:a1545b9fb9062ff07344ea635184365559d5c3da0d8b0054762a41bb6578f336": {
+    "page_a": "pickup-flow-deadline",
+    "page_a_claim": "parcels are held for 7 days after arrival (by contrast, in-store-pickup has a 3‑day hold from the ready notification)",
+    "page_b": "pickup-options-compared",
+    "page_b_claim": "convenience-store-pickup (NT$60; parcels held 7 days after arriving at the store), and in-store-pickup (free; held 3 days from the ready-for-pickup-notification)",
+    "severity": "duplicate",
+    "suggested_action": "Merge pages",
+    "summary": "Both pages discuss the same pickup options and their respective hold times for parcels, indicating a duplication of content without any contradictions."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:aced3f61b44acd04d650d17ebfff0dae0be371b85d69ee086b28960e4c3ece26:6be527b089b03af6e273cd84df10c3fec52aa7403ebf450a88e95aec03ffd16a": {
+    "page_a": "exclusions",
+    "page_a_claim": "Exclusions include purchases of gift-cards and items already on sale.",
+    "page_b": "gift-card-restrictions",
+    "page_b_claim": "Promo codes cannot be applied to gift card purchases (see promo-codes).",
+    "severity": "duplicate",
+    "suggested_action": "Merge pages",
+    "summary": "Both pages address the restriction of using promo codes on gift card purchases, indicating that gift cards are excluded from promo code applications. This overlap suggests that the information is essentially the same but presented in different contexts."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:b467dd27a1fe842bb2e92287f40be3b0d8252f77f613ed652d4e29c2892c6eab:3196840ee66342f539147032657af2c68199e1b069d570befb7e75c0a07846e9": {
+    "page_a": "取貨方式比較",
+    "page_a_claim": "超商取貨運費新台幣 60 元，包裹到店後保留 7 天；",
+    "page_b": "超商取貨運費",
+    "page_b_claim": "超商取貨運費為新台幣 60 元。單筆訂單滿新台幣 1,000 元即免運，免運門檻與宅配相同。",
+    "severity": "duplicate",
+    "suggested_action": "Merge pages",
+    "summary": "Both pages discuss the shipping cost for the convenience store pickup option, providing the same information about the fee and the conditions for free shipping, indicating they cover the same concept without contradiction."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:b9805a6f54734848356534ed5f3d42c84df1ee6edb769d5eb5ffee56ceb5880a:6524760cdbe456acb57defb215fdb3bd8fa35d96b8e4f0a25f22791c12f9a830": {
+    "page_a": "process",
+    "page_a_claim": "customer-support reviews the request within 3 business days, and if approved, the refund is sent to your original payment-methods within 5–7 business days.",
+    "page_b": "return-deadline-reminder",
+    "page_b_claim": "Refunds follow the standard process: support reviews within 3 business days, and approved refunds reach the original payment method within 5–7 business days.",
+    "severity": "tension",
+    "suggested_action": "Review and clarify the refund policy to ensure consistency across pages.",
+    "summary": "Both pages describe the refund process, but Page B introduces a specific 30-day return window and a fee for non-defective returns, which could confuse readers about the overall refund policy."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:c8c87e780337229dfa1dac638cd89082cece416979f1334c6c932cbbb398c6f7:0e49987938204585d215306d5e490678c799f7a460e7979d02ac977c0400057a": {
+    "page_a": "dispatch-time",
+    "page_a_claim": "Orders are dispatched within 24–48 hours after payment-confirmation.",
+    "page_b": "tracking",
+    "page_b_claim": "After dispatch, you’ll receive an email with your tracking number.",
+    "severity": "none",
+    "suggested_action": "Review and dismiss.",
+    "summary": "There is no meaningful overlap or conflict between the two pages; Page A discusses dispatch times while Page B focuses on tracking information after dispatch."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:d1d5b6211168853bb06413d93138d7f5513642b7bd24b709909760028eb2cf0b:23d63f2cd457a654cbff37145bb2ea6a2ccc343dd077923bf527e1e9f8a63264": {
+    "page_a": "conditions",
+    "page_a_claim": "Items that are defective or damaged in transit are exempt from these conditions; see damaged-items for details.",
+    "page_b": "difference-from-regular-returns",
+    "page_b_claim": "Damaged or defective items are exempt from the usual “unused, complete packaging” return-conditions that apply to regular returns.",
+    "severity": "duplicate",
+    "suggested_action": "Merge pages",
+    "summary": "Both pages discuss the exemption of damaged or defective items from standard return conditions, indicating they cover the same concept without contradiction."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:d78ccd893c3bc03bdf00b294f46832249f14c01d6153fa85d6a1b2132ad749f7:6f6b3385e18ae279568e477a84ec77a37ae6328a16af602dc8bf50f10857ad42": {
+    "page_a": "退款流程",
+    "page_a_claim": "客服將於 3 個工作天 內完成審核；審核通過後，款項會在 5 至 7 個工作天 內退回原付款方式。",
+    "page_b": "退貨期限提醒",
+    "page_b_claim": "客服將於3個工作天內完成審核流程，審核通過後，款項將於5–7個工作天退回原付款方式。",
+    "severity": "tension",
+    "suggested_action": "Clarify the refund request timeframe in Page A to align with Page B.",
+    "summary": "Both pages discuss the refund process and the timeline for approval and refund, but Page B introduces a specific 30-day limit for refund requests that is not mentioned in Page A, which could confuse readers about the timeframe for refunds."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:d92011a6a9e8af1e2fc7ea1469a26cf66e0382a9bcf0a2c3662ae18dc872cf9a:a1545b9fb9062ff07344ea635184365559d5c3da0d8b0054762a41bb6578f336": {
+    "page_a": "fee",
+    "page_a_claim": "Convenience store pickup costs NT$60.",
+    "page_b": "pickup-options-compared",
+    "page_b_claim": "convenience-store-pickup (NT$60; parcels held 7 days after arriving at the store)",
+    "severity": "duplicate",
+    "suggested_action": "Merge pages",
+    "summary": "Both pages provide information about the cost of convenience store pickup, stating it is NT$60, without any contradictions or differing details."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:d92011a6a9e8af1e2fc7ea1469a26cf66e0382a9bcf0a2c3662ae18dc872cf9a:c834a000cd37f6a7ebb2fb2277197d877a6c2951ece86ec913ca13ffd481e8cb": {
+    "page_a": "fee",
+    "page_a_claim": "Convenience store pickup costs NT$60. Orders of NT$1,000 or more ship free, matching the home-delivery threshold.",
+    "page_b": "standard-home-delivery",
+    "page_b_claim": "Standard shipping costs NT$80, with free shipping on orders of NT$1,000 or more.",
+    "severity": "tension",
+    "suggested_action": "Review and clarify the shipping cost differences.",
+    "summary": "Both pages discuss shipping costs and free shipping thresholds, but they present different costs for convenience store pickup and standard home delivery, which could confuse readers about the pricing structure."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:db25938ad0fcd7e076a2ff9498a76a65e041574481a901bd185d06a82805517c:e59d2cb4bfb93fe13fc6c668a1b435ff45321895132c66ab76939adde4c60b8b": {
+    "page_a": "international-shipping",
+    "page_a_claim": "This section states that the document covers international shipping scope across international-destinations, delivery-times, shipping-fees, and shipping-restrictions.",
+    "page_b": "shipping-delivery",
+    "page_b_claim": "For cross-border orders, see international-shipping.",
+    "severity": "tension",
+    "suggested_action": "Review and clarify the relationship between international and domestic shipping.",
+    "summary": "Both pages address shipping but focus on different scopes; Page A covers international shipping in detail while Page B mentions it only in the context of domestic shipping, which could confuse readers about the relationship between the two topics."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:e8f201be0a48dc99175459e2d0e3ae73bfe87bc5c7f66d996bc7d63e5f0d3ca1:c834a000cd37f6a7ebb2fb2277197d877a6c2951ece86ec913ca13ffd481e8cb": {
+    "page_a": "express-home-delivery",
+    "page_a_claim": "Express home delivery to main-island-addresses arrives 1–2 business days after dispatch and costs NT$150.",
+    "page_b": "standard-home-delivery",
+    "page_b_claim": "Orders to the taiwan-main-island arrive 3–5 business days after dispatch; shipments to the outlying islands—penghu, kinmen, and matsu—require an additional 1–3 business days.",
+    "severity": "none",
+    "suggested_action": "None, as there is no meaningful overlap or conflict.",
+    "summary": "The two pages cover different delivery options (express vs. standard) without any conflicting information, thus they do not overlap meaningfully."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:ee81647c8fa71f40b3d3673e3e96bfaa2d3c50256cbdb61a153ac5db610ada7a:7dce065fbd58f45b984e3c29c41ceb8369a13cf574109023d7b796375aacdf3d": {
+    "page_a": "credit-cards",
+    "page_a_claim": "Payments can be made as a single charge or, for qualifying orders, in installments; see credit-card-installments for details.",
+    "page_b": "not-accepted",
+    "page_b_claim": "All orders must be paid using one of the supported options listed under payment-methods.",
+    "severity": "none",
+    "suggested_action": "None",
+    "summary": "There is no meaningful overlap or conflict between the two pages; Page A lists accepted payment methods while Page B specifies what is not accepted. They address different aspects of payment methods without contradiction."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:ef6753a0d5441bbcc3393adb0ff7ed5954cf5e7dbc87527d5c8056a5d7c8a360:ee81647c8fa71f40b3d3673e3e96bfaa2d3c50256cbdb61a153ac5db610ada7a": {
+    "page_a": "credit-card-installments",
+    "page_a_claim": "Credit Card Installments let eligible orders of NT$3,000 or more be split into 3, 6, or 12 payments as a payment-methods option.",
+    "page_b": "credit-cards",
+    "page_b_claim": "Payments can be made as a single charge or, for qualifying orders, in installments; see credit-card-installments for details.",
+    "severity": "none",
+    "suggested_action": "None",
+    "summary": "There is no meaningful overlap or conflict between the two pages; Page A provides specific details about credit card installment options, while Page B references Page A for those details without contradiction."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:f7ad7e6c5e223efb98dab184f667709a919aeefe2e12d622334b907b3b4d5019:1e1d8a334ce7f8fa33d3f1d563d0ff9b88303ffe9b881ea83b663449453d88f5": {
+    "page_a": "member-day-perks-2",
+    "page_a_claim": "Each point is worth NT$1, and you can apply points to cover up to 50% of an order's total.",
+    "page_b": "redeeming-points",
+    "page_b_claim": "You may redeem points to cover up to 50% of a single order’s total.",
+    "severity": "duplicate",
+    "suggested_action": "Merge pages",
+    "summary": "Both pages describe the same point redemption policy, stating that each point is worth NT$1 and can cover up to 50% of an order's total, indicating they are duplicates."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:fa6ffa5ca60461ee5d49366c4510a763b19c98dcf37f2e814dce0e03339c1f75:8ac6aa67998ee1aa275adc96e0ebe6ea02955a6fbf21ef29d50f55dfdc0b9e80": {
+    "page_a": "保留期限",
+    "page_a_claim": "門市自取商品自「可取貨」通知起於門市保留3天（日曆天）；本規則不含超商取貨，超商包裹到店後保留7天。",
+    "page_b": "取件流程與期限",
+    "page_b_claim": "若為門市自取，則自「可取貨」通知起保留 3 天。逾期未取將退回並自動取消訂單，款項依原付款方式退回；退款細節請見退款政策。",
+    "severity": "duplicate",
+    "suggested_action": "Merge pages",
+    "summary": "Both pages discuss the retention periods for items picked up from the store and convenience stores, providing the same information without contradiction. Therefore, they cover the same concepts."
+  },
+  "1fe2694c4c2d9e5af082fec4b60c6642f9ac3e78dda3e4f6b780538096f1e97d:fd2a0993562dffc4fe6b41e1cb51949971f6732067b475ebca662b1e55e87061:39a2fc7d007369cd8cfc5d1492acfcfa38bedd72269533554f19f18fe61b4023": {
+    "page_a": "convenience-store-pickup",
+    "page_a_claim": "It defines the scope of charges, collection timeframes, and which items are eligible or prohibited for this pickup method.",
+    "page_b": "item-restrictions",
+    "page_b_claim": "Items weighing over 5 kg or with any side longer than 45 cm (oversized) are not eligible for convenience-store-pickup.",
+    "severity": "tension",
+    "suggested_action": "Review and clarify the item restrictions in Page A to ensure consistency with Page B.",
+    "summary": "Both pages discuss item restrictions related to convenience store pickup, but Page A is broader in scope while Page B provides specific criteria. This could lead to confusion for readers trying to understand the complete restrictions."
+  }
+}

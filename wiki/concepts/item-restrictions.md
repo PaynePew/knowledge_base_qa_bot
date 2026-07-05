@@ -7,22 +7,20 @@
 aliases: []
 created: '2026-07-05T08:42:13Z'
 id: item-restrictions
-open_questions:
-- Does the restriction apply at the order level if any item is oversized/overweight?
-- Are weight and dimensions measured including packaging or only the product itself?
+open_questions: []
 source_hashes:
   convenience_store_pickup.md:
-    docs_body: d4b51dd591545e905ff9ab296b700be5e84181934e0d563926455e3538bd9a34
+    docs_body: 02f22ab10d0435aabdbe2452a1b35c3230684e7eabf7e4323e35df2479c4fce7
     raw: null
 sources:
 - convenience_store_pickup.md#item-restrictions
 status: live
 type: concept
-updated: '2026-07-05T08:42:13Z'
+updated: '2026-07-05T11:02:08Z'
 ---
 
 # Item Restrictions
 
-Items over 5 kg, or with any side longer than 45 cm (considered oversized-item), are not eligible for convenience-store-pickup. The convenience store pickup option is hidden automatically at checkout for such items.
+Items weighing over 5 kg or with any side longer than 45 cm (oversized) are not eligible for convenience-store-pickup. For such items, the convenience store pickup option is automatically hidden at checkout.
 
 [Source: convenience_store_pickup.md#item-restrictions]

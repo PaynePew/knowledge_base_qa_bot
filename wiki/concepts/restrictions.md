@@ -6,7 +6,7 @@
 ---
 aliases: []
 created: '2026-07-05T08:50:16Z'
-id: restrictions-2
+id: restrictions
 open_questions:
 - How are partial refunds handled—are points reclaimed proportionally?
 - When are points reclaimed—upon refund initiation or completion?

@@ -8,22 +8,22 @@ aliases: []
 created: '2026-07-05T08:42:13Z'
 id: convenience-store-pickup
 open_questions:
-- What are the specific fee amounts or how are fees calculated?
-- What are the exact pickup deadlines or holding periods?
-- Which items are restricted or prohibited for convenience store pickup?
+- What are the specific fees for convenience store pickup?
+- What are the exact pickup deadlines or timeframes?
+- Which items are restricted or allowed for convenience store pickup?
 source_hashes:
   convenience_store_pickup.md:
-    docs_body: d4b51dd591545e905ff9ab296b700be5e84181934e0d563926455e3538bd9a34
+    docs_body: 02f22ab10d0435aabdbe2452a1b35c3230684e7eabf7e4323e35df2479c4fce7
     raw: null
 sources:
 - convenience_store_pickup.md#convenience-store-pickup
 status: live
 type: concept
-updated: '2026-07-05T08:42:13Z'
+updated: '2026-07-05T11:02:08Z'
 ---
 
 # Convenience Store Pickup
 
-This page outlines convenience store pickup, covering applicable convenience store pickup fees, pickup deadlines, and item restrictions. It serves as a reference for what costs may apply, how long orders are held for pickup, and which items are ineligible.
+This document outlines convenience-store-pickup-fees, pickup-deadlines, and item-restrictions related to convenience store pickup. It defines the scope of charges, collection timeframes, and which items are eligible or prohibited for this pickup method.
 
 [Source: convenience_store_pickup.md#convenience-store-pickup]

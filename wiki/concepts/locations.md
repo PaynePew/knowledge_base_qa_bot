@@ -8,23 +8,21 @@ aliases: []
 created: '2026-07-05T09:07:31Z'
 id: locations
 open_questions:
-- Are there specified pickup time windows or lead times?
-- How long will orders be held for pickup?
-- Is identification or order confirmation required at pickup?
-- Are all products eligible for store pickup at these locations?
+- Are there specific pickup hours or ID/order number requirements at each store?
+- Is there a holding period or notification process before pickup?
 source_hashes:
   store_pickup.md:
-    docs_body: 6cce869216404e554ec54dd209363f9de1ad9189e5a32de3481d2adbca92ad95
+    docs_body: 56ca4c6dcfc3fedf7597902308aa8e87c6b42a4c9d2786c3c30ca48f7d246310
     raw: null
 sources:
 - store_pickup.md#locations
 status: live
 type: concept
-updated: '2026-07-05T09:07:31Z'
+updated: '2026-07-05T11:05:13Z'
 ---
 
 # Locations
 
-All three stores — taipei-xinyi, taichung-xitun, and kaohsiung-dream-mall — offer store-pickup. This service is free of charge.
+In-store pickup is available at all three retail locations — taipei-xinyi, taichung-xitun, and kaohsiung-dream-mall. Pickup at these stores is offered free of charge.
 
 [Source: store_pickup.md#locations]
