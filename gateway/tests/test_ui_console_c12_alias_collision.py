@@ -1,27 +1,30 @@
 """Structural tests for the Operator Console C12 alias-collision row
-(issue #488).
+(issue #488, upgraded to a real Remove control by issue #491).
 
 Following the pattern in ``test_ui_console_collision.py`` /
 ``test_ui_console_assign_alias.py``, these tests inspect the production
 ``gateway/static/console.html`` file's text to assert the structural
-invariants of issue #488:
+invariants of issue #488 / #491:
 
 - C12 is a real, wired check: present in ``LINT_CHECK_META`` (with the
   ``alias_collisions`` findings key, matching ``LintFindings.alias_collisions``
   in ``markdown_kb/app/schemas.py``) and in the Coherence axis's
-  ``AXIS_CHECK_CODES`` — before this slice neither existed, so a C12 finding
+  ``AXIS_CHECK_CODES`` — before issue #488 neither existed, so a C12 finding
   was silently dropped by the axis-loop's ``if (!items ...) return`` guard
   (issue #488 "no row" symptom).
 - C12 is NOT one of the Curation-Queue-owned Lifecycle checks (issue #438) —
   it must render its own per-item rows, not a count + pointer line.
 - ``ROW_RENDERERS.C12`` renders per-row detail: the alias, the collision
   kind, and the colliding page(s)/slug (``claimed_by`` / ``slug_owner``).
-- The row's remediation reuses the EXISTING ``assignAliasAction`` picker
-  (issue #409/ADR-0030 decision 3) — no new endpoint, no bespoke action.
+- The row's remediation is ``removeAliasAction`` (issue #491, ADR-0030
+  extension) wired to the real ``DELETE /pages/{slug}/aliases/{alias}``
+  endpoint — NOT the add-only ``assignAliasAction`` picker (issue
+  #409/ADR-0030 decision 3), which can never resolve a collision (verdict on
+  the first #488 build).
 - No ``innerHTML`` assignment is introduced (§12.4).
 
 No DOM, no fetch, no browser, no OPENAI_API_KEY — fully hermetic (§6.3 /
-§12.7). DOM rendering / the click -> assign -> relint loop is verified
+§12.7). DOM rendering / the click -> remove -> relint loop is verified
 manually per §12.7 (visual rendering is out of scope for unit tests).
 """
 
@@ -97,7 +100,8 @@ def test_row_renderers_c12_is_defined():
 
 
 # ---------------------------------------------------------------------------
-# Remediation is advisory-only until the alias-remove endpoint lands
+# Remediation is a real Remove control (issue #491) — not the add-only
+# assign-alias picker, and not a disabled tier-B affordance
 # ---------------------------------------------------------------------------
 
 
@@ -107,23 +111,36 @@ def _row_renderer_c12_body() -> str:
     return match.group(1)
 
 
-def test_c12_row_is_advisory_only_no_write_control():
-    """The C12 row must NOT wire any write action: the add-only assign-alias
-    endpoint cannot resolve a collision (same-page add is an idempotent no-op
-    that renders a fake success; any other page 409s), and the server's
-    remediation taxonomy deliberately ships no C12 action. Advisory only,
-    until the alias-remove endpoint follow-up lands (#488 verdict finding)."""
+def test_c12_row_wires_remove_alias_action_not_assign_alias():
+    """The C12 row must NOT wire the add-only assign-alias picker: adding
+    can never resolve a collision (same-page add is an idempotent no-op;
+    any other page 409s — verdict on the first #488 build). Issue #491 wires
+    the real fix, ``removeAliasAction`` (``DELETE
+    /pages/{slug}/aliases/{alias}``), instead."""
     body = _row_renderer_c12_body()
     assert "assignAliasAction(" not in body, (
         "C12 must not reuse the add-only assign-alias picker - it cannot "
         "resolve a collision (verdict on the first #488 build)"
     )
-    assert "c12Advisory" in body, "C12 row must render the bilingual advisory text"
+    assert "removeAliasAction(" in body, (
+        "C12 row must wire the real remove-alias control (issue #491)"
+    )
     assert "tierBAffordance()" not in body
 
 
-def test_c12_advisory_exists_in_both_language_maps():
+def test_c12_remove_labels_exist_in_both_language_maps():
     text = _console_text()
-    assert text.count("c12Advisory:") >= 2, (
-        "c12Advisory label must exist in BOTH LINT_CHROME maps (en + zh)"
-    )
+    for key in ("c12Remove:", "c12RemoveChooseKeeper:", "c12RemoveKeepAndClear:"):
+        assert text.count(key) >= 2, f"{key} label must exist in BOTH LINT_CHROME maps (en + zh)"
+
+
+def test_remove_alias_action_handles_both_collision_kinds():
+    """``removeAliasAction`` (issue #491 AC) must branch on both C12 shapes:
+    alias_vs_slug (no valid keeper — every claimant loses the alias) and
+    alias_vs_alias (curator picks a keeper; the rest lose it)."""
+    text = _console_text()
+    match = re.search(r"function removeAliasAction\(finding\)\s*\{(.*?)\n  \}", text, re.DOTALL)
+    assert match is not None, "console.html must define removeAliasAction"
+    body = match.group(1)
+    assert 'finding.kind === "alias_vs_slug"' in body
+    assert "removeAliasFromClaimantsRequest" in body
