@@ -2465,11 +2465,11 @@ function renderIndexCard(data) {
 
    The Console has no Python runtime, so this is the client's copy of
    markdown_kb/app/lint.py's LINT_CHECK_TAXONOMY + remediation_for — the
-   SAME ten codes, axes, and Direct/Authored/deferred tiers (kept honest by
-   the Python remediation_for unit tests plus this file's structural test,
-   gateway/tests/test_ui_console_lint_remediation.py). The client does not
-   decide *eligibility* here (that stays server-side, e.g. C10 discard is
-   refused server-side for a live page) — it only decides which button to
+   SAME eleven codes, axes, and Direct/Authored/deferred tiers (kept honest
+   by the Python remediation_for unit tests plus this file's structural
+   test, gateway/tests/test_ui_console_lint_remediation.py). The client does
+   not decide *eligibility* here (that stays server-side, e.g. C10 discard
+   is refused server-side for a live page) — it only decides which button to
    show for which check, mirroring the existing C9/C10 split already used
    by the Curation Queue below (§12.5).
    ============================================================ */
@@ -2478,7 +2478,7 @@ var LINT_AXIS_ORDER = ["Freshness", "Coherence", "Coverage", "Lifecycle"];
 /* axis -> ordered check codes, matching LINT_CHECK_TAXONOMY's per-axis order */
 var AXIS_CHECK_CODES = {
   Freshness: ["C6", "C3", "C11"],
-  Coherence: ["C5", "C4"],
+  Coherence: ["C5", "C4", "C12"],
   Coverage:  ["C1", "C2"],
   Lifecycle: ["C8", "C10", "C9"],
 };
@@ -2505,13 +2505,20 @@ var AXIS_CHECK_CODES = {
                 Import" navigation control (fillViaImportAction) — never an
                 execute button, since there is no draft to approve and no
                 operation to confirm, only an existing workflow to carry the
-                finding's context into. */
+                finding's context into.
+   C12 alias-collision (Coherence axis, issue #406/#409 foundation, wired to
+                the Console by issue #488) is "direct" too: the fix is a
+                frontmatter hand-edit, no LLM, reversible. Its row
+                (ROW_RENDERERS.C12 below) reuses the SAME assignAliasAction
+                picker C2 already wires (issue #409/ADR-0030 decision 3)
+                instead of the generic reingest/discard buttons above. */
 var LINT_CHECK_META = {
   C6:  { label: "stale",            tier: "direct",    findingsKey: "stale_pages" },
   C3:  { label: "failed-grounding", tier: "direct",    findingsKey: "failed_grounding" },
   C11: { label: "orphan",           tier: "confirmed", findingsKey: "orphans" },
   C5:  { label: "contradiction",    tier: "authored",  findingsKey: "page_pairs" },
   C4:  { label: "collision",        tier: "authored",  findingsKey: "slug_collisions" },
+  C12: { label: "alias-collision",  tier: "direct",    findingsKey: "alias_collisions" },
   C1:  { label: "coverage-gap",     tier: "routed",    findingsKey: "coverage_gaps" },
   C2:  { label: "red-link",         tier: "routed",    findingsKey: "red_links" },
   C8:  { label: "promotion",        tier: "direct",    findingsKey: "promotion_candidates" },
@@ -2570,12 +2577,11 @@ var LINT_CHECK_LABEL_ZH = {
   C11: "孤立頁面",
   C5:  "矛盾",
   C4:  "重複",
-  /* C12 alias-collision (issue #406, ADR-0030): label only, kept in sync
-     with markdown_kb/app/lint.py's LINT_CHECK_TAXONOMY["C12"].label_zh so
-     the bilingual-parity structural test stays green. Deliberately NOT
-     added to LINT_CHECK_META / AXIS_ORDER below — this foundation slice
-     ships no HTTP surface / UI for C12 (no assign-alias endpoint exists
-     yet); a follow-up slice wires the real Console rendering. */
+  /* C12 alias-collision (issue #406, ADR-0030) — kept in sync with
+     markdown_kb/app/lint.py's LINT_CHECK_TAXONOMY["C12"].label_zh so the
+     bilingual-parity structural test stays green. Issue #488 wires C12 into
+     LINT_CHECK_META / AXIS_CHECK_CODES / ROW_RENDERERS below — this label
+     is shared by that real rendering now, not just held in reserve. */
   C12: "別名衝突",
   C1:  "覆蓋缺口",
   C2:  "失效連結",
@@ -3915,6 +3921,26 @@ function renderLintCard(data, resultEl) {
     C4: function(i, f) {
       return findingRow(i, f.base_slug, (f.pages_in_group || []).join(", "),
         "collision", "label-updated", collisionAction(f.base_slug, f.pages_in_group));
+    },
+    /* ── C12 alias-collision (issue #488) — this foundation check (issue
+       #406, ADR-0030) shipped no Console UI; this wires it in. Two
+       ``kind`` shapes, both keyed on ``f.alias``: ``alias_vs_slug`` (the
+       alias matches an existing page's real slug, named by
+       ``f.slug_owner``) and ``alias_vs_alias`` (two+ pages independently
+       claim it, ``f.claimed_by`` lists them). The row reuses
+       assignAliasAction UNCHANGED (issue #409/ADR-0030 decision 3) via a
+       duck-typed ``{ slug: f.alias }`` shim — the picker assigns the
+       collided alias string to whichever existing page the operator picks,
+       exactly the shape assignAliasAction already expects
+       (``finding.slug``); any 409/422 the server raises surfaces verbatim
+       through runLintRemediation's existing err-status rendering (§12.5) —
+       this row never re-derives eligibility itself. */
+    C12: function(i, f) {
+      var collidesWith = (f.claimed_by || []).join(", ") +
+        (f.slug_owner ? " vs page slug " + f.slug_owner : "");
+      return findingRow(i, f.alias,
+        f.kind + " · claimed by: " + collidesWith + " · resolves to " + f.resolved_to,
+        "alias-collision", "label-updated", assignAliasAction({ slug: f.alias }));
     },
     C1: function(i, f) {
       return findingRow(i, f.query_canonical,
