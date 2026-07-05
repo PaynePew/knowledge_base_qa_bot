@@ -874,13 +874,17 @@ class QaEditRejected(Exception):
 def _resolve_cited_sections(source_ids: list[str], wiki_dir: Path) -> list[CitableContent]:
     """Resolve a qa page's ``frontmatter.sources`` ids back into Sections.
 
-    Each id has the shape ``<wiki-page-slug>#<heading-slug>`` — the slug-based
-    addressing ``indexer.parse_markdown`` assigns to wiki-derived pages (the
-    page's type subdir is not encoded in the id, so ``entities``/``concepts``/
-    ``qa`` are each tried in turn; a filed qa answer can itself cite an
-    already-promoted qa page). Re-parses the cited pages directly from disk
-    rather than depending on the in-memory BM25 index being loaded, so the
-    check works the same whether or not ``build_index()`` has run yet.
+    Each id is either ``<wiki-page-slug>#<heading-slug>`` or a BARE
+    ``<wiki-page-slug>`` — the slug-based addressing ``indexer.parse_markdown``
+    assigns to wiki-derived pages: rule 7 gives a page with zero headings a
+    single Section whose id is the bare slug, which is exactly what a
+    promoted qa page looks like (issue #495 — skipping bare ids made every
+    edit of a draft citing one permanently rejected). The page's type subdir
+    is not encoded in the id, so ``entities``/``concepts``/``qa`` are each
+    tried in turn; a filed qa answer can itself cite an already-promoted qa
+    page. Re-parses the cited pages directly from disk rather than depending
+    on the in-memory BM25 index being loaded, so the check works the same
+    whether or not ``build_index()`` has run yet.
 
     A citation whose page no longer resolves, or whose heading no longer
     exists on that page, is skipped — best-effort, mirrors
@@ -893,8 +897,10 @@ def _resolve_cited_sections(source_ids: list[str], wiki_dir: Path) -> list[Citab
     parsed_by_page: dict[str, list] = {}
 
     for source_id in source_ids:
-        page_slug, sep, _heading_slug = source_id.partition("#")
-        if not sep:
+        # A bare id (no '#') is a whole heading-less page (rule 7): the page
+        # slug IS the id, and its single Section's id matches it verbatim.
+        page_slug = source_id.partition("#")[0]
+        if not page_slug:
             continue
         if page_slug not in parsed_by_page:
             page_path = None

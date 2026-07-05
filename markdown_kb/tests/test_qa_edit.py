@@ -308,6 +308,41 @@ def test_edit_unresolvable_citation_rejected(tmp_path):
     assert any("no longer resolves" in f for f in exc_info.value.failures)
 
 
+def test_edit_bare_id_citation_of_headingless_page_resolves(tmp_path):
+    """A promoted qa page has no headings, so ``parse_markdown`` rule 7 gives
+    its single Section a BARE id (no ``#anchor``). A draft citing that page
+    carries the bare id in ``frontmatter.sources`` and the inline citation —
+    the grounding re-check must resolve it rather than skip it (issue #495:
+    skipping made even a no-op Edit → Save permanently rejected)."""
+    from app.qa import edit
+
+    cited_slug = "qa-store-pickup-zh-003"
+    _write_raw_qa(tmp_path, cited_slug, "live")  # heading-less page → bare Section id
+    slug = "pickup-question-ab12cd"
+    _write_raw_qa(tmp_path, slug, "draft", sources=[cited_slug])
+
+    body = f"Bring the order barcode and photo ID. [Source: {cited_slug}]"
+    result = edit(slug, "original question", body)
+
+    assert result.status == "draft"
+    after = (tmp_path / "wiki" / "qa" / f"{slug}.md").read_text(encoding="utf-8")
+    assert body in after
+
+
+def test_edit_bare_id_citation_missing_page_still_rejected(tmp_path):
+    """A bare-id citation whose page genuinely does not exist on disk keeps
+    failing with the same honest unresolvable-citation message."""
+    from app.qa import QaEditRejected, edit
+
+    slug = "pickup-question-ab12cd"
+    _write_raw_qa(tmp_path, slug, "draft", sources=["qa-vanished-zh-999"])
+
+    with pytest.raises(QaEditRejected) as exc_info:
+        edit(slug, "edited question", "edited body. [Source: qa-vanished-zh-999]")
+
+    assert any("no longer resolves" in f for f in exc_info.value.failures)
+
+
 # ---------------------------------------------------------------------------
 # Route-level tests: PUT /qa/{slug}
 # ---------------------------------------------------------------------------
