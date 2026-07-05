@@ -1,6 +1,6 @@
 # Refunds & Returns
 
-This document covers the refund window, conditions, process, and timelines.
+This document is an overview of refunds and returns: it summarises the application window, the eligibility conditions, the review process and refund timelines, return shipping costs, and the items not eligible for refund. The specific durations, criteria, and exceptions are detailed in the sections below rather than in this overview.
 
 ## Refund Window
 
@@ -26,7 +26,7 @@ Refund requests must be submitted within **14 days of receiving the item** (cale
 
 ACME Shop charges **no restocking fee on any product category**.
 
-## Non-Refundable Items
+## Items Not Eligible for Refund
 
 The following items are not eligible for refund or return:
 

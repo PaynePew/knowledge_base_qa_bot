@@ -1,6 +1,6 @@
 # Account Management & Security
 
-This document covers registration, passwords, security settings, and account deletion.
+This guide is the central reference for setting up an account, maintaining passwords and credentials, configuring security controls, and deleting an account when it is no longer needed.
 
 ## Registration
 

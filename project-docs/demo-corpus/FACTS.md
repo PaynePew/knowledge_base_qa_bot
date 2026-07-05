@@ -2,6 +2,7 @@
 
 > **狀態：APPROVED 2026-07-04**（issue #440 HITL 關卡 1 已過）。
 > 修訂 2026-07-04（bake 迭代）：F-PAY-01、F-CVS-03、F-PIC-03、F-DMG-01、F-DMG-03 依 grounding 驗證揭露的資訊縫隙補明確化細節——最終審核時請一併過目。
+> 修訂 2026-07-05（bake 迭代 2）：F-PAY-04 補「自下單起」（gpt-5 clean bake 12 頁隔離的唯一真事實縫隙；其餘 11 處為源文件引言句/措辭補強，未動事實）。
 > 規則：demo 語料（zh-TW 與 EN 鏡像）裡出現的**每一個數字與規則**都必須能回溯到本表的一個事實條目（`F-*` ID）。
 > 本表沒有的事實 = 語料不准寫。要新增事實，先改本表再改語料。
 > 刻意種植的瑕疵（lint demo 用）記錄在文末 §P，與正常事實嚴格分開。
@@ -37,7 +38,7 @@
 - **F-PAY-01** 信用卡：VISA、MasterCard、JCB；可一次付清，滿額訂單亦可分期（見 F-PAY-02）。
 - **F-PAY-02** 信用卡分期：3、6、12 期；單筆滿 NT$3,000 才可分期；3/6 期零利率，12 期年利率 5%。
 - **F-PAY-03** 行動支付：Apple Pay、Google Pay。
-- **F-PAY-04** 超商代碼繳費：單筆上限 NT$20,000，繳費期限 3 天，逾期訂單自動取消。
+- **F-PAY-04** 超商代碼繳費：單筆上限 NT$20,000，繳費期限自下單起 3 天，逾期訂單自動取消。
 - **F-PAY-05** 貨到付款：僅限本島超商取貨，單筆上限 NT$20,000，另收手續費 NT$30。
 - **F-PAY-06** 不接受：銀行轉帳、支票、外幣付款。
 
@@ -138,9 +139,52 @@
 - **寫作紀律**：每份 3–6 個 `##` 小節；不寫行銷填充語；每個數字/規則後不標 F-ID（顧客看不到內部編號），但 PR 描述需附「文件 → F-ID 對照表」供審核。
 - **鏡像一致性**：zh/EN 同主題文件敘述同一組 F-ID，允許語言慣用差異，不允許事實差異。
 
-## §P 種植瑕疵（lint demo 劇本 — 動筆前不填，種植階段逐項登記）
+## §P 種植瑕疵（lint demo 劇本 — 2026-07-05 種植）
 
-> 每類 lint 檢查 2–3 個、雙語分布；每一筆記錄：類別（C1–C12）、載體文件、瑕疵內容、預期修復動作。
+> 每類 lint 檢查 2 個、雙語分布；每一筆記錄：類別（C1–C12）、載體、瑕疵內容、預期修復動作。
 > 種植的矛盾**只准**與本表衝突或與另一份種植文件衝突，不准改動乾淨語料。
+> 種植載體 = 10 份新增源文件（單一小節，刻意精簡於語料規格的 3–6 節；不列入 TRACEABILITY 主表）＋烤製後的 wiki 層操作。除本表登記的瑕疵外，種植文件的其餘敘述一律回溯既有 F-ID。
 
-（待種植階段填入）
+**種植源文件（10 份）：**
+
+| 文件 | 語言 | 承載 | 乾淨部分回溯 |
+|---|---|---|---|
+| demo-zh/連假退貨.md | zh | C5-zh、C2-zh | F-RET-03/04/05 |
+| fake-docs/holiday_returns.md | en | C5-en、C2-en | F-RET-03/04/05 |
+| demo-zh/快閃特賣.md | zh | C11-zh | F-PRO-01/02、F-SHP-02/04 |
+| fake-docs/flash_sale_faq.md | en | C11-en | F-PRO-01/02、F-SHP-02/04 |
+| demo-zh/門市服務指南.md | zh | C6-zh、C12-zh | F-ABT-02、F-PIC-01/04 |
+| fake-docs/store_services_guide.md | en | C6-en、C12-en(1/2) | F-ABT-02、F-PIC-01/04 |
+| demo-zh/取貨常見問題.md | zh | C3-zh | F-CVS-01/02/03、F-SHP-02 |
+| fake-docs/pickup_faq.md | en | C3-en | F-CVS-01/02/03、F-SHP-02 |
+| demo-zh/會員日活動.md | zh | C4-zh | F-PTS-01/03/07 |
+| fake-docs/member_day.md | en | C4-en、C12-en(2/2) | F-PTS-01/03/07 |
+
+**逐項登記（11 類 × 2，共 22 筆）：**
+
+| # | 類別 | 語言 | 載體 | 瑕疵 | 預期修復 |
+|---|---|---|---|---|---|
+| P-01 | C5 direct | zh | 連假退貨（頁）vs 乾淨退款頁 | 「30 天內都可申請退款」抵觸 F-RET-01（14 天） | Reconcile |
+| P-02 | C5 direct | en | holiday-returns（頁）vs 乾淨 refunds 頁 | "within 30 days" 抵觸 F-RET-01 | Reconcile |
+| P-03 | C6 stale | zh | 門市服務指南.md（源） | 烤後源文件補上 F-PIC-02/03 細節 → docs_body hash 漂移 | Re-ingest |
+| P-04 | C6 stale | en | store_services_guide.md（源） | 同 P-03（EN 鏡像） | Re-ingest |
+| P-05 | C3 failed-grounding | zh | 取貨常見問題（頁） | frontmatter 翻成 `status: failed_grounding` + `verifier_unavailable`（模擬烤製時 verifier 斷線） | Re-ingest (retry) |
+| P-06 | C3 failed-grounding | en | pickup-faq（頁） | body 手植無佐證句「Curbside pickup is available at all three stores.」+ `claim_unsupported` 列該句 | Fix Source（或 force Re-ingest 重合成） |
+| P-07 | C11 full orphan | zh | 快閃特賣（頁） | 烤後刪除源文件 docs/demo-zh/快閃特賣.md | Confirmed delete |
+| P-08 | C11 full orphan | en | flash-sale（頁） | 烤後刪除源文件 fake-docs/flash_sale_faq.md | Confirmed delete |
+| P-09 | C4 collision | zh | 會員日活動.md（源） | 同一文件兩個 `## 會員日優惠` 小節 → 頁 + 頁-2 | Merge / Differentiate |
+| P-10 | C4 collision | en | member_day.md（源） | 兩個 `## Member Day perks` 小節 | Merge / Differentiate |
+| P-11 | C12 alias_vs_slug | zh | 門市服務指南（頁） | `aliases:` 加上某乾淨頁的既有 slug（烤後定值） | Assign Alias 重指派 |
+| P-12 | C12 alias_vs_alias | en | store-services + member-day 兩頁 | 兩頁同時宣告 `aliases: [gift-vouchers]`（無此真頁） | Assign Alias |
+| P-13 | C2 red link | zh | 連假退貨（頁 body） | 附加「詳見 [[退貨教學]]」（無此頁） | Fill via Import |
+| P-14 | C2 red link | en | holiday-returns（頁 body） | 附加 "See also [[return-shipping-guide]]" | Fill via Import |
+| P-15 | C1 coverage gap | zh | wiki/log.md | 3 行 `chat_fallback`「ACME 有提供禮物包裝服務嗎？」reason=retrieval_empty（FACTS 刻意無此事實） | Fill via Import → Verify re-ask |
+| P-16 | C1 coverage gap | en | wiki/log.md | 2 行 `chat_fallback` "does ACME offer gift wrapping" reason=retrieval_empty | Fill via Import → Verify re-ask |
+| P-17 | C8 promotion | zh | wiki/qa/（手寫 draft） | 會員日問題 draft、count 3 | Promote / Discard |
+| P-18 | C8 promotion | en | wiki/qa/（手寫 draft） | flash-sale 問題 draft、count 1 | Promote / Discard |
+| P-19 | C9 stale-qa | zh | wiki/qa/（手寫 live） | live qa 引用門市服務指南頁，qa.updated 早於該頁 updated | Re-file |
+| P-20 | C9 stale-qa | en | wiki/qa/（手寫 live） | live qa 引用 store-services 頁，updated 較舊 | Re-file |
+| P-21 | C10 invalid schema | en | wiki/qa/（手寫） | `status: Live`（大小寫錯誤） | 修 frontmatter 或 Discard |
+| P-22 | C10 invalid schema | zh | wiki/qa/（手寫） | `count: 0`（非正整數） | 修 frontmatter 或 Discard |
+
+種植不變式：eval/lint_fixtures/ 完全不動（測試套件自足）；乾淨語料 32+3 檔零改動；C6/C9 靠 hash 與 frontmatter `updated`（loader 的 mtime-touch 是死碼，不依賴）；期望 findings 清單種植後以 `POST /wiki/lint?include_c5=true` 對照驗證 — 多一筆（organic noise）或少一筆都算種植失敗，回頭修種植文件。

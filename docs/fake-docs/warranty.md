@@ -13,7 +13,7 @@ This document covers warranty periods, claims, and exclusions.
 2. Attach the e-invoice or order number.
 3. Repairs take **7–14 business days**, after which the item is shipped back.
 
-## Exclusions
+## Warranty Exclusions
 
 - Damage caused by misuse (drops, water damage, unauthorized disassembly).
 - Items past their warranty period.

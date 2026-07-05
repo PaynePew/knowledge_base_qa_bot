@@ -19,7 +19,7 @@ Orders of **NT$3,000 or more** qualify for installment payments over **3, 6, or 
 
 ## Convenience Store Payment Codes
 
-Per-order limit of **NT$20,000**, payable within **3 days**; unpaid orders are cancelled automatically after the deadline.
+Per-order limit of **NT$20,000**, payable within **3 days of placing the order**; unpaid orders are cancelled automatically after the deadline.
 
 ## Cash on Delivery
 
@@ -27,4 +27,4 @@ Available only for **convenience store pickup orders on the main island**, with 
 
 ## Not Accepted
 
-Bank transfers, checks, and foreign-currency payments are not accepted.
+Bank transfers, checks, and foreign-currency payments are not accepted. Orders must be paid using one of the supported methods above.

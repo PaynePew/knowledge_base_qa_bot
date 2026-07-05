@@ -16,6 +16,6 @@ Enter the code in the **Promo code** field at checkout and apply it. Codes **can
 - **Gift card** purchases.
 - Items **already on sale**.
 
-## Expiry
+## Promo Code Expiry
 
 Expired codes are invalid and **not reissued**. Validity dates are stated on each campaign page.

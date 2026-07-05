@@ -15,7 +15,7 @@ In line with Taiwan's gift voucher regulations, gift cards have **no expiry date
 - Orders **buying a gift card** do not earn reward points.
 - Orders **paid with a gift card** earn points normally.
 
-## Restrictions
+## Gift Card Restrictions
 
 - Gift cards are non-refundable, cannot be exchanged for cash, and give no cash change.
 - Unused balance stays in your account for future purchases.
