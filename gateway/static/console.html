@@ -3035,6 +3035,19 @@ function ingestRemediationRequest(source, force) {
   }).then(function(resp) {
     if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
     return resp.json();
+  }).then(function(data) {
+    /* /wiki/ingest answers HTTP 200 even when the Source failed (routes.py
+       returns a batch-shaped body in all cases), and this wrapper sends
+       exactly ONE source — so any failed_sources entry IS this row's source.
+       Rejecting routes the failure through runLintRemediation's err-status
+       rendering instead of letting the row look successful while the finding
+       silently stays (issue #475). This surfaces the server's own verdict,
+       never re-derives eligibility (§12.5). */
+    if (data && data.failed_sources && data.failed_sources.length > 0) {
+      throw new Error("Re-ingest failed for " + data.failed_sources.join(", ") +
+        " (source not found, ambiguous, or unparseable)");
+    }
+    return data;
   });
 }
 
