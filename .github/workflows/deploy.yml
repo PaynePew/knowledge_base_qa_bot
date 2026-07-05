@@ -23,10 +23,27 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Pre-deploy gate (issue #477): run the SAME test suite CI runs, and block the
+  # deploy on it. Before this, deploy fired on `push: [main]` independently of
+  # ci.yml, so a red main still deployed to the live VPS (2026-07-05: main went
+  # red with a pdfium SIGSEGV for ~4h and deployed regardless). Reuses the single
+  # test definition so "deployable" means exactly "CI-green" — no drift.
+  #
+  # Only gates AUTOMATIC (push) deploys. A manual `workflow_dispatch` skips this
+  # job and remains the documented override for force-deploying past a red/flaky
+  # suite (issue #477 AC).
+  gate:
+    if: ${{ github.event_name == 'push' }}
+    uses: ./.github/workflows/test.yml
+
   build-and-deploy:
-    # Owner-only guard: skip entirely on forks. Forks have no DEPLOY_* secrets,
-    # and this stops a fork clone from firing failed deploys at the owner's box.
-    if: ${{ github.repository_owner == 'PaynePew' }}
+    needs: [gate]
+    # Run when: owner repo AND the gate did not fail/cancel. On push the gate
+    # must be green; on workflow_dispatch the gate is skipped (not a failure),
+    # so `!failure()` is true and the manual override still deploys. Using a
+    # status function (`failure()`) is also what lets this job run despite the
+    # skipped `needs` on the dispatch path.
+    if: ${{ !cancelled() && !failure() && github.repository_owner == 'PaynePew' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

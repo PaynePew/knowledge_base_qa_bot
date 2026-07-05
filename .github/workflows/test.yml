@@ -1,0 +1,56 @@
+# Reusable pytest suite (issue #477) — single source of truth for the test gate.
+#
+# Extracted verbatim from the old inline ci.yml `test` job so that BOTH the CI
+# workflow (on push/pull_request) AND the deploy workflow's pre-deploy gate call
+# the exact same job via `uses:`. Before this, deploy.yml ran on `push: [main]`
+# independently of ci.yml, so a red main still deployed to the live VPS
+# (2026-07-05: main went red with a pdfium SIGSEGV for ~4h and deployed anyway).
+# Keeping one definition means the gate can never drift from what "green" means.
+#
+# Platforms: windows-latest + ubuntu-latest (matrix, fail-fast: false). Windows
+# is the project's trusted green baseline (the dev platform); ubuntu-latest
+# matches the prod target (deploy.yml builds linux/amd64), added once #332 made
+# the default suite hermetic. fail-fast is off so a failure on one OS still
+# reports the other.
+#
+# Hermeticity (#332): the two default-suite tests that previously made REAL
+# OpenAI calls now mock the LLM getter (lint C5 + the RAG-stack gateway test),
+# and the formerly Windows-only path-validation test now rejects drive-letter /
+# UNC paths under the Windows path flavour regardless of host OS — so the suite
+# no longer 401s and no longer depends on the platform.
+#
+# The dummy OPENAI_API_KEY only satisfies OpenAI *client construction* (exercised
+# by non-live retry/config tests); -m live tests are skipped by default so no
+# real API call is ever made.
+name: test
+
+on:
+  workflow_call:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    env:
+      # Not a real key — only needed so the OpenAI client constructor (exercised
+      # by non-live retry/config tests) succeeds. Live tests stay skipped.
+      OPENAI_API_KEY: sk-ci-dummy-key-not-real
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Sync all workspace packages
+        run: uv sync --all-packages
+
+      - name: Run pytest (default markers — skips live tests)
+        run: uv run pytest
