@@ -329,6 +329,135 @@ class TestStaleCacheEntry:
 
 
 # ---------------------------------------------------------------------------
+# Generation salt (issue #473) — a model or system-prompt change invalidates
+# every existing entry instead of serving a stale verdict at cost=0.
+# ---------------------------------------------------------------------------
+
+
+class TestGenerationSalt:
+    def test_salt_changes_when_resolved_model_changes(self, monkeypatch):
+        from app.lint import _c5_generation_salt
+
+        monkeypatch.setenv("OPENAI_LINT_MODEL", "gpt-4o-mini")
+        salt_a = _c5_generation_salt()
+
+        monkeypatch.setenv("OPENAI_LINT_MODEL", "gpt-4.1")
+        salt_b = _c5_generation_salt()
+
+        assert salt_a != salt_b
+
+    def test_salt_changes_when_system_prompt_changes(self, monkeypatch):
+        import app.lint as lint_module
+
+        salt_a = lint_module._c5_generation_salt()
+        monkeypatch.setattr(lint_module, "_C5_SYSTEM_PROMPT", "a different judge prompt")
+        salt_b = lint_module._c5_generation_salt()
+
+        assert salt_a != salt_b
+
+    def test_salt_stable_for_unchanged_model_and_prompt(self, monkeypatch):
+        from app.lint import _c5_generation_salt
+
+        monkeypatch.setenv("OPENAI_LINT_MODEL", "gpt-4o-mini")
+        assert _c5_generation_salt() == _c5_generation_salt()
+
+
+class TestGenerationSaltInvalidation:
+    def test_model_change_does_not_serve_stale_verdict(self, tmp_wiki_dir, monkeypatch):
+        """FAILS on pre-#473 main: the cache key omitted the model, so a model
+        swap between two runs still served the first run's cached verdict."""
+        _write_wiki_page(tmp_wiki_dir, "page-a", ["shared.md#s"], "Refund takes 5 days.")
+        _write_wiki_page(tmp_wiki_dir, "page-b", ["shared.md#s"], "Refund takes 14 days.")
+
+        judged = _spy_llm(monkeypatch, severity="direct")
+
+        import app.lint as lint_module
+
+        monkeypatch.setenv("OPENAI_LINT_MODEL", "gpt-4o-mini")
+        first = lint_module._check_c5_page_pair(tmp_wiki_dir)
+        assert len(judged) == 1, "First run must judge the one candidate pair"
+        assert len(first) == 1
+
+        monkeypatch.setenv("OPENAI_LINT_MODEL", "gpt-4.1")
+        second = lint_module._check_c5_page_pair(tmp_wiki_dir)
+
+        assert len(judged) == 2, (
+            "A model change must re-judge the pair, not reuse the prior model's verdict"
+        )
+        assert lint_module._c5_llm_call_counter[0] == 1, "The post-swap run is a fresh miss"
+        assert lint_module._c5_cache_hit_counter[0] == 0, (
+            "Nothing carries over across a model change"
+        )
+        assert len(second) == 1
+
+    def test_system_prompt_change_does_not_serve_stale_verdict(self, tmp_wiki_dir, monkeypatch):
+        """FAILS on pre-#473 main for the same reason as the model-change test
+        above, but via a ``_C5_SYSTEM_PROMPT`` edit instead of an env var."""
+        _write_wiki_page(tmp_wiki_dir, "page-a", ["shared.md#s"], "Refund takes 5 days.")
+        _write_wiki_page(tmp_wiki_dir, "page-b", ["shared.md#s"], "Refund takes 14 days.")
+
+        judged = _spy_llm(monkeypatch, severity="direct")
+
+        import app.lint as lint_module
+
+        lint_module._check_c5_page_pair(tmp_wiki_dir)
+        assert len(judged) == 1
+
+        monkeypatch.setattr(
+            lint_module, "_C5_SYSTEM_PROMPT", lint_module._C5_SYSTEM_PROMPT + "\nrevised."
+        )
+        second = lint_module._check_c5_page_pair(tmp_wiki_dir)
+
+        assert len(judged) == 2, (
+            "A system-prompt change must re-judge the pair, not reuse the prior prompt's verdict"
+        )
+        assert lint_module._c5_llm_call_counter[0] == 1
+        assert lint_module._c5_cache_hit_counter[0] == 0
+        assert len(second) == 1
+
+    def test_unchanged_model_and_prompt_still_hits_cache(self, tmp_wiki_dir, monkeypatch):
+        """Same content + same model + same prompt preserves the #446 cost win."""
+        _write_wiki_page(tmp_wiki_dir, "page-a", ["shared.md#s"], "Refund takes 5 days.")
+        _write_wiki_page(tmp_wiki_dir, "page-b", ["shared.md#s"], "Refund takes 14 days.")
+
+        judged = _spy_llm(monkeypatch, severity="direct")
+
+        import app.lint as lint_module
+
+        monkeypatch.setenv("OPENAI_LINT_MODEL", "gpt-4o-mini")
+        lint_module._check_c5_page_pair(tmp_wiki_dir)
+        assert len(judged) == 1
+
+        lint_module._check_c5_page_pair(tmp_wiki_dir)
+        assert len(judged) == 1, "Same generation salt must still hit the cache"
+        assert lint_module._c5_cache_hit_counter[0] == 1
+        assert lint_module._c5_llm_call_counter[0] == 0
+
+    def test_run_lint_metrics_correct_after_model_change(self, lint_env, monkeypatch):
+        """Metrics (llm_calls, cost_usd) stay accurate through a salt-driven
+        invalidation surfaced via the full ``run_lint`` orchestrator."""
+        wiki_dir = lint_env["wiki_dir"]
+        _write_wiki_page(wiki_dir, "page-a", ["shared.md#s"], "Refund takes 5 days.")
+        _write_wiki_page(wiki_dir, "page-b", ["shared.md#s"], "Refund takes 14 days.")
+
+        _spy_llm(monkeypatch, severity="direct")
+
+        from app.lint import run_lint
+
+        monkeypatch.setenv("OPENAI_LINT_MODEL", "gpt-4o-mini")
+        first = run_lint(**lint_env)
+        assert first.summary.llm_calls == 1
+        assert first.summary.cost_usd > 0.0
+
+        monkeypatch.setenv("OPENAI_LINT_MODEL", "gpt-4.1")
+        second = run_lint(**lint_env)
+        assert second.summary.llm_calls == 1, (
+            "A model change must register as a real re-judge call, not a cache hit"
+        )
+        assert second.summary.cost_usd > 0.0, "Cost must reflect the real re-judge, not zero"
+
+
+# ---------------------------------------------------------------------------
 # AC3 — cache hits/misses and estimated cost visible in logs.
 # ---------------------------------------------------------------------------
 
