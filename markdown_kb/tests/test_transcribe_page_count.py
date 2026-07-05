@@ -199,3 +199,113 @@ def test_page_count_bounded_by_process_wide_semaphore(page_count_env, monkeypatc
     assert all(page_count == 1 for page_count, _max_pages in results), (
         "a normal call must still return the correct page count once admitted"
     )
+
+
+# ---------------------------------------------------------------------------
+# Async dispatch — a page-count flood must not starve the shared threadpool
+# (issue #482)
+# ---------------------------------------------------------------------------
+
+
+def test_route_is_async_def():
+    """The route must be ``async def`` so Starlette does NOT dispatch it
+    through the shared default thread limiter (issue #482) — a plain
+    ``def`` route is always run via ``run_in_threadpool``, which binds it to
+    that limiter regardless of what the handler body does."""
+    import inspect
+
+    from app.routes import transcribe_page_count
+
+    assert inspect.iscoroutinefunction(transcribe_page_count)
+
+
+def test_page_count_for_source_async_returns_real_count(page_count_env):
+    import anyio
+
+    import app.transcriber as transcriber_module
+
+    (page_count_env["raw_dir"] / "sample_english.pdf").write_bytes(
+        (FIXTURES / "sample_english.pdf").read_bytes()
+    )
+
+    page_count, max_pages = anyio.run(
+        transcriber_module.page_count_for_source_async, "sample_english.pdf"
+    )
+
+    assert page_count == 1
+    assert max_pages == transcriber_module._DEFAULT_MAX_PAGES
+
+
+def test_page_count_for_source_async_propagates_typed_error(page_count_env):
+    import anyio
+
+    import app.transcriber as transcriber_module
+
+    with pytest.raises(transcriber_module.TranscribePathError) as exc_info:
+        anyio.run(transcriber_module.page_count_for_source_async, "does_not_exist.pdf")
+    assert exc_info.value.error_type == "FileNotFoundError"
+
+
+def test_page_count_thread_limiter_distinct_from_shared_default_limiter():
+    """``page_count_for_source_async`` must dispatch through its OWN
+    ``anyio.CapacityLimiter``, never the process-wide default one Starlette
+    uses for every other sync route — otherwise this fix is a no-op."""
+    import anyio
+    import anyio.to_thread
+
+    import app.transcriber as transcriber_module
+
+    async def _check():
+        assert (
+            transcriber_module._page_count_thread_limiter
+            is not anyio.to_thread.current_default_thread_limiter()
+        )
+
+    anyio.run(_check)
+
+
+def test_page_count_flood_leaves_shared_default_limiter_untouched(page_count_env, monkeypatch):
+    """Reproduces the starvation mechanism issue #482 fixes: while several
+    page-count calls are blocked in flight (waiting on the small,
+    process-wide ``_page_count_semaphore``), anyio's shared DEFAULT thread
+    limiter — what Starlette dispatches EVERY OTHER sync route through
+    (``/import``, ``/transcribe``, ``/lint``, ``/pages/reconcile``) — must
+    keep its full token count available. Before this fix, the blocking
+    semaphore wait ran inside that shared dispatch and held one of its
+    tokens for the whole wait; a flood could drain all of them.
+    """
+    import pathlib
+    import threading
+    import time
+
+    import anyio
+
+    import app.transcriber as transcriber_module
+
+    monkeypatch.setattr(transcriber_module, "_page_count_semaphore", threading.BoundedSemaphore(1))
+
+    (page_count_env["raw_dir"] / "sample_english.pdf").write_bytes(
+        (FIXTURES / "sample_english.pdf").read_bytes()
+    )
+
+    original_read_bytes = pathlib.Path.read_bytes
+
+    def _slow_read_bytes(self):
+        time.sleep(0.05)
+        return original_read_bytes(self)
+
+    monkeypatch.setattr(pathlib.Path, "read_bytes", _slow_read_bytes)
+
+    async def _scenario():
+        default_limiter = anyio.to_thread.current_default_thread_limiter()
+        starting_tokens = default_limiter.available_tokens
+
+        async with anyio.create_task_group() as tg:
+            for _ in range(5):
+                tg.start_soon(transcriber_module.page_count_for_source_async, "sample_english.pdf")
+            await anyio.sleep(0.02)
+            # The flood is in flight (blocked on the size-1 semaphore) right
+            # now — the shared default limiter must be completely untouched.
+            assert default_limiter.available_tokens == starting_tokens
+
+    anyio.run(_scenario)
