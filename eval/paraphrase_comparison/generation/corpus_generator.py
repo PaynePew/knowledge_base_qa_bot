@@ -129,12 +129,8 @@ DOC_SPECS: tuple[DocSpec, ...] = (
         title="About ACME Shop",
         is_entity=True,
         sections=(
-            SectionSpec(
-                "Background", "Founding year, headquarters, and market focus."
-            ),
-            SectionSpec(
-                "Retail Stores", "The three physical store locations."
-            ),
+            SectionSpec("Background", "Founding year, headquarters, and market focus."),
+            SectionSpec("Retail Stores", "The three physical store locations."),
             SectionSpec(
                 "Product Mix",
                 "Share of the ACME Basics private label vs distributed brands.",
@@ -150,9 +146,7 @@ DOC_SPECS: tuple[DocSpec, ...] = (
                 "Warranty Periods",
                 "Warranty length for electronics vs the ACME Basics private label.",
             ),
-            SectionSpec(
-                "Filing a Claim", "Steps and turnaround for a warranty claim."
-            ),
+            SectionSpec("Filing a Claim", "Steps and turnaround for a warranty claim."),
             SectionSpec(
                 "Exclusions", "What voids warranty coverage and the paid-repair path."
             ),
@@ -251,7 +245,9 @@ DOC_SPECS: tuple[DocSpec, ...] = (
         title="International Shipping",
         sections=(
             SectionSpec("Destinations", "Countries and regions ACME ships to."),
-            SectionSpec("Delivery Times", "Business-day ranges for Asia and North America."),
+            SectionSpec(
+                "Delivery Times", "Business-day ranges for Asia and North America."
+            ),
             SectionSpec("Fees", "Starting fees by region; no free shipping."),
             SectionSpec("Duties & Taxes", "DDU terms — recipient pays duties."),
             SectionSpec("Excluded Items", "Liquids and battery products excluded."),
@@ -277,7 +273,9 @@ DOC_SPECS: tuple[DocSpec, ...] = (
         title="Refunds & Returns",
         sections=(
             SectionSpec("Refund Window", "The 14-day post-delivery request window."),
-            SectionSpec("Conditions", "Unused condition, packaging, proof of purchase."),
+            SectionSpec(
+                "Conditions", "Unused condition, packaging, proof of purchase."
+            ),
             SectionSpec("Process", "Request steps, review time, and refund timing."),
             SectionSpec(
                 "Return Shipping", "Who pays return shipping; no restocking fee."
@@ -306,7 +304,9 @@ DOC_SPECS: tuple[DocSpec, ...] = (
         basename="membership_points.md",
         title="Membership & Reward Points",
         sections=(
-            SectionSpec("Earning Points", "Earn rate, eligible amounts, credit timing."),
+            SectionSpec(
+                "Earning Points", "Earn rate, eligible amounts, credit timing."
+            ),
             SectionSpec("Redeeming Points", "Redemption rate and per-order cap."),
             SectionSpec("Expiry", "12-month validity and balance lookup."),
             SectionSpec("Referrals", "Referral bonus conditions."),
