@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``transcribe_available``, ``probe_has_text_layer``, ``transcribe_pdf_bytes``, ``transcribe_pdf_bytes_concurrent``, ``transcribe_source``, ``transcribe_path``, ``get_transcribe_llm``, ``set_page_budget_hook``, ``get_page_budget_hook``, ``TranscribeSourceResult``, ``TranscribePathError``, ``TranscribeUnavailable``, ``TranscribePageLimitExceeded``, ``TranscribeBudgetExceeded``, ``TranscribeError``.
+"""Deep module per Ousterhout. Public surface: ``transcribe_available``, ``probe_has_text_layer``, ``page_count_for_source``, ``transcribe_pdf_bytes``, ``transcribe_pdf_bytes_concurrent``, ``transcribe_source``, ``transcribe_path``, ``get_transcribe_llm``, ``set_page_budget_hook``, ``get_page_budget_hook``, ``TranscribeSourceResult``, ``TranscribePathError``, ``TranscribeUnavailable``, ``TranscribePageLimitExceeded``, ``TranscribeBudgetExceeded``, ``TranscribeError``.
 
 Transcribe — model-assisted PDF conversion (issue #426, ADR-0032). Sits
 beside ``importer.py`` as the second ``raw/`` -> ``docs/`` converter:
@@ -632,6 +632,48 @@ def _transcribe_one_page(page_png: bytes, page_num: int) -> str:
     except Exception as exc:
         raise TranscribeError(f"page {page_num} transcription failed: {exc}"[:200]) from exc
     return response.content
+
+
+# ---------------------------------------------------------------------------
+# Public API — page-count preflight (issue #447)
+# ---------------------------------------------------------------------------
+
+
+def page_count_for_source(source_filter: str) -> tuple[int, int]:
+    """Return ``(page_count, max_pages)`` for a raw/ PDF, with NO model call.
+
+    Mechanical preflight — reuses ``_resolve_pdf_source``'s validation chain
+    (same typed ``TranscribePathError`` failures as ``transcribe_source``) and
+    then only opens the document to count pages, the same
+    ``pdfium.PdfDocument`` open already performed inside
+    ``transcribe_pdf_bytes``/``transcribe_pdf_bytes_concurrent`` — factored out
+    so a caller can learn a file's real page count and the configured page cap
+    BEFORE committing to a forced transcription. Used by the Console's guarded
+    Transcribe action (issue #447) to name the real page count in its confirm
+    step rather than guessing one client-side (CODING_STANDARD §12.5).
+
+    Every pypdfium2 touch goes through ``_pdfium_lock`` (issue #468), same as
+    the concurrent page-worker pool, since this can run concurrently with an
+    in-flight batch job's own page workers.
+
+    Raises ``TranscribePathError`` for the same validation failures as
+    ``transcribe_source`` (missing file, bad extension, path traversal, ...).
+    """
+    raw_path = _resolve_pdf_source(source_filter)
+    try:
+        raw_bytes = raw_path.read_bytes()
+    except OSError as exc:
+        raise TranscribePathError(str(exc)[:200], error_type="IOError") from exc
+
+    with _pdfium_lock:
+        pdf = pdfium.PdfDocument(raw_bytes)
+        try:
+            page_count = len(pdf)
+        finally:
+            pdf.close()
+
+    max_pages = int(os.getenv("KB_TRANSCRIBE_MAX_PAGES", str(_DEFAULT_MAX_PAGES)))
+    return page_count, max_pages
 
 
 # ---------------------------------------------------------------------------

@@ -1139,6 +1139,20 @@ class TranscribeRequest(BaseModel):
     source: str
 
 
+class TranscribePageCountResponse(BaseModel):
+    """Response body for GET /transcribe/page-count (issue #447 preflight).
+
+    A mechanical page count for a raw/ PDF, computed with NO model call — the
+    Console's guarded Transcribe action names this real number (plus the
+    configured page cap) in its confirm step before the operator commits to a
+    forced transcription, rather than guessing a bound client-side.
+    """
+
+    source: str
+    page_count: int
+    max_pages: int
+
+
 class TranscribeResponse(BaseModel):
     """Response body for POST /transcribe.
 

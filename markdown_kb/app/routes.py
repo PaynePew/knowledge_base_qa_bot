@@ -3,7 +3,7 @@
 HTTP wiring for /health, /index, /chat, /qa/{slug}/promote,
 /qa/promote-batch, /qa/{slug} (DELETE, PUT), /qa/{slug}/refile, /ingest,
 /lint, /import, /transcribe, /transcribe/batch, /transcribe/jobs/{job_id},
-/pages/reconcile, /pages/reconcile/apply, /pages/collision/merge,
+/transcribe/page-count, /pages/reconcile, /pages/reconcile/apply, /pages/collision/merge,
 /pages/collision/merge/apply, /pages/collision/differentiate,
 /pages/collision/differentiate/apply, /pages/{slug} (DELETE),
 /pages/{slug}/aliases (POST), /pages/resolution-map (GET). No domain logic."""
@@ -60,10 +60,12 @@ from .schemas import (
     TranscribeBatchSubmitResponse,
     TranscribeJobResultSchema,
     TranscribeJobStatusResponse,
+    TranscribePageCountResponse,
     TranscribeRequest,
     TranscribeResponse,
 )
 from .transcriber import TranscribePathError
+from .transcriber import page_count_for_source as get_page_count_for_source
 from .transcriber import transcribe_source as run_transcribe
 
 router = APIRouter()
@@ -611,6 +613,43 @@ async def get_transcribe_job(job_id: str) -> TranscribeJobStatusResponse:
         ],
         error=job.error,
     )
+
+
+# ---------------------------------------------------------------------------
+# /transcribe/page-count — mechanical preflight, no model call (issue #447)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/transcribe/page-count", response_model=TranscribePageCountResponse)
+def transcribe_page_count(source: str) -> TranscribePageCountResponse:
+    """Return a staged raw/ PDF's page count and the configured page cap.
+
+    Mechanical preflight (no model call) the Console's guarded Transcribe
+    action calls before showing its confirm step — names the real page count
+    rather than guessing a bound client-side (CODING_STANDARD §12.5). Shares
+    ``/transcribe``'s validation chain, so a source that would 404/400 there
+    404s/400s here too, before any confirm dialog is shown.
+
+    Shallow wrapper around ``transcriber.page_count_for_source`` (CODING_STANDARD
+    §2.3 — all domain logic lives in ``transcriber.py``).
+
+    Raises:
+        HTTP 400: invalid filename / source path / unsupported extension.
+        HTTP 404: the named file does not exist under ``raw/``.
+    """
+    try:
+        page_count, max_pages = get_page_count_for_source(source)
+    except TranscribePathError as exc:
+        status_map = {
+            "FileNotFoundError": 404,
+            "InvalidFilename": 400,
+            "InvalidSourcePath": 400,
+            "UnsupportedExtension": 400,
+        }
+        status_code = status_map.get(exc.error_type, 500)
+        raise HTTPException(status_code=status_code, detail=exc.message) from exc
+
+    return TranscribePageCountResponse(source=source, page_count=page_count, max_pages=max_pages)
 
 
 # ---------------------------------------------------------------------------
