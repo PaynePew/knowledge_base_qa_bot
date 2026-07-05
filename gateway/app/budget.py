@@ -75,14 +75,24 @@ through — every file after the ceiling is crossed is rejected before its
 pages are billed — rather than only discovering the overrun once the whole
 batch (all vision calls) has already run.
 
-Single-worker model (CODING_STANDARD §2.6/§2.7): a plain in-process ``dict``
-guarded by the GIL is sufficient; multi-worker would need a shared store.
+Single-worker model (CODING_STANDARD §2.6/§2.7): one in-process ``dict`` is
+the whole store; multi-worker would need a shared store. Within that single
+process, ``charge()``/``charge_pages()`` are called from more than one thread
+(issue #472) — the event loop's ``ProdMiddleware.charge()`` plus the
+Transcribe page-budget hook running on worker threads (``asyncio.to_thread``
+batch runs, anyio threadpool sync handlers) — so a read-modify-write on the
+GIL alone is NOT safe (the GIL only makes each individual bytecode atomic,
+not the multi-step "read total, add estimate, write total" sequence). Every
+mutation and the check-then-charge admission (``reserve_pages``) takes the
+same ``threading.Lock`` so concurrent callers see exact sums and no two
+callers can both pass an over-cap check before either charge lands.
 """
 
 from __future__ import annotations
 
 import datetime
 import os
+import threading
 
 # Conservative per-endpoint estimates (USD). See the module docstring table.
 _COST_ESTIMATES: dict[str, float] = {
@@ -169,24 +179,33 @@ class DailyBudget:
       - ``charge(path, day=None)``       — add the path's estimate to ``day``'s total.
       - ``charge_pages(page_count, day=None)`` — add ``page_count * TRANSCRIBE_PAGE_USD``
         (issue #460 — Transcribe's per-page metered charge).
+      - ``reserve_pages(page_count, day=None)`` — atomic over_cap-then-charge_pages
+        (issue #472 — the Transcribe page-budget hook's admission check).
       - ``over_cap(day=None)``      — True once ``day``'s total reaches the cap.
       - ``day_total(day=None)``     — current accumulated USD for ``day``.
 
     The store is a ``{day: total}`` dict.  Old days are never pruned (one float
     per calendar day is negligible for a demo lifetime); a lookup for a day with
     no entry returns 0.0, which is the UTC-midnight reset semantics.
+
+    Thread safety (issue #472): every read-modify-write and the admission
+    check in ``reserve_pages`` hold ``self._lock`` for their full duration, so
+    concurrent callers (event-loop coroutine + worker threads) never lose an
+    update and never both pass an over-cap check before either charge lands.
     """
 
     def __init__(self, *, cap_usd: float) -> None:
         self.cap_usd = cap_usd
         self._totals: dict[str, float] = {}
+        self._lock = threading.Lock()
 
     def charge(self, path: str, *, day: str | None = None) -> float:
         """Add ``path``'s estimate to ``day``'s total; return the new total."""
         key = day if day is not None else _utc_today()
-        new_total = self._totals.get(key, 0.0) + estimate_cost(path)
-        self._totals[key] = new_total
-        return new_total
+        with self._lock:
+            new_total = self._totals.get(key, 0.0) + estimate_cost(path)
+            self._totals[key] = new_total
+            return new_total
 
     def charge_pages(self, page_count: int, *, day: str | None = None) -> float:
         """Add ``page_count * TRANSCRIBE_PAGE_USD`` to ``day``'s total (issue #460).
@@ -195,17 +214,42 @@ class DailyBudget:
         cost competes for the same daily ceiling as every other heavy path.
         """
         key = day if day is not None else _utc_today()
-        new_total = self._totals.get(key, 0.0) + (page_count * TRANSCRIBE_PAGE_USD)
-        self._totals[key] = new_total
-        return new_total
+        with self._lock:
+            new_total = self._totals.get(key, 0.0) + (page_count * TRANSCRIBE_PAGE_USD)
+            self._totals[key] = new_total
+            return new_total
+
+    def reserve_pages(self, page_count: int, *, day: str | None = None) -> bool:
+        """Atomically check ``over_cap`` then ``charge_pages`` under one lock hold.
+
+        Returns ``True`` when the day was under cap and the charge was applied,
+        ``False`` when the day was already at/over cap (no charge is applied —
+        reserve-before-spend). Doing the check and the charge under a single
+        lock acquisition (issue #472) closes the race where two concurrent
+        callers both observe "under cap" before either has charged, which
+        would let both admissions through and overshoot the ceiling.
+        """
+        key = day if day is not None else _utc_today()
+        with self._lock:
+            if self._totals.get(key, 0.0) >= self.cap_usd:
+                return False
+            self._totals[key] = self._totals.get(key, 0.0) + (page_count * TRANSCRIBE_PAGE_USD)
+            return True
 
     def day_total(self, *, day: str | None = None) -> float:
         """Return the accumulated USD for ``day`` (0.0 if the day is unseen)."""
         key = day if day is not None else _utc_today()
-        return self._totals.get(key, 0.0)
+        with self._lock:
+            return self._totals.get(key, 0.0)
 
     def over_cap(self, *, day: str | None = None) -> bool:
-        """True once ``day``'s accumulated total has reached the cap."""
+        """True once ``day``'s accumulated total has reached the cap.
+
+        This read alone is NOT the admission check for concurrent
+        charge_pages callers — use ``reserve_pages`` for an atomic
+        check-then-charge. ``over_cap`` remains correct standalone use (e.g.
+        the event-loop middleware's single-threaded check before ``charge``).
+        """
         return self.day_total(day=day) >= self.cap_usd
 
 

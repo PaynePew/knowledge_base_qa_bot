@@ -68,16 +68,21 @@ def _charge_transcribe_pages(page_count: int) -> None:
     boundary), so it cannot charge this ledger itself — this closure is the
     composition root's half of that inversion. Called with a PDF's page
     count BEFORE any vision-model call, for both the ``/wiki/import``
-    auto-route and the forced ``/wiki/transcribe`` (mirrors the middleware's
-    own "check over_cap, then charge" ordering): a batch already at the
+    auto-route and the forced ``/wiki/transcribe``: a batch already at the
     ceiling is rejected before spending further, rather than only detected
     after the fact.
+
+    This hook runs on worker threads (issue #472 — concurrent transcribe
+    batches via ``asyncio.to_thread`` and the anyio threadpool sync routes),
+    so the admission check and the charge must be one atomic operation:
+    ``reserve_pages`` holds the ledger's lock for both, closing the race
+    where two concurrent callers could each observe "under cap" before
+    either has charged and both get admitted past the ceiling.
     """
-    if _budget.budget.over_cap():
+    if not _budget.budget.reserve_pages(page_count):
         raise _transcriber_module.TranscribeBudgetExceeded(
             "daily demo budget reached; Transcribe rejected before any vision-model call"
         )
-    _budget.budget.charge_pages(page_count)
 
 
 _transcriber_module.set_page_budget_hook(_charge_transcribe_pages)
