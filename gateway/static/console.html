@@ -2659,6 +2659,10 @@ var LINT_CHROME = {
     c5SuggestedAction:     "Suggested action:",
     c5Expand:              "Show more",
     c5Collapse:            "Show less",
+    /* issue #489: shown on the C5 check-group heading when the rendered
+       page_pairs came from the fallback baseline (a fast include_c5=false
+       relint never re-judges C5) rather than this render's own response. */
+    c5StaleNote:           "stale — re-run Deep audit (C5) to refresh",
     /* issue #447: guarded Transcribe action on a NoTextLayer Import failure —
        confirm step names the real page count + page cap (fetched from GET
        /wiki/transcribe/page-count), never a client-guessed bound. */
@@ -2724,6 +2728,7 @@ var LINT_CHROME = {
     c5SuggestedAction:     "建議動作:",
     c5Expand:              "顯示更多",
     c5Collapse:            "顯示較少",
+    c5StaleNote:           "已過時 — 請重新執行深度稽核（C5）以更新",
     transcribe:              "轉錄",
     transcribeChecking:      "正在確認頁數…",
     transcribeConfirmTitle:  "轉錄掃描 PDF",
@@ -3401,6 +3406,28 @@ function runLintRemediation(requestPromise, btn, statusMsgEl, resultEl, siblingB
    call site's argument list cannot grow. */
 var c5FindingByPair = {};
 
+/* ── C5 stale-preservation across fast relints (issue #489) ──────────────
+   Unlike c5FindingByPair above (rebuilt fresh on every renderLintCard call),
+   this holds the last GENUINELY judged ``findings.page_pairs`` from an
+   include_c5=true response — it must survive across the many
+   include_c5=false fast relints every remediation triggers (runLintRemediation
+   and friends), so renderLintCard can fall back to it instead of letting the
+   whole Coherence/C5 section vanish just because the fast path never judged
+   it (see pendingDeepC5Audit + the fallback logic inside renderLintCard).
+   null until the first Deep audit run this session; [] is itself a genuine
+   "judged and found nothing" result, distinct from "never judged". */
+var lastDeepC5Pairs = null;
+
+/* One-shot signal (mirrors lastBatchSummary/lastCoverageFillOutcome's
+   existing pattern) — set true by the Deep audit control right before it
+   calls renderLintCard, so that render (and only that render) knows its
+   response's page_pairs is a genuine fresh judgment rather than a fast
+   include_c5=false relint's untouched empty default. Not a renderLintCard
+   parameter: test_ui_console_lint_fast_default.py pins the literal 2-arg
+   ``renderLintCard(data, resultEl)`` call in both the Run and Deep audit
+   STEP_DEFS bodies. */
+var pendingDeepC5Audit = false;
+
 // Long quotes/summaries collapse to a preview with an explicit toggle —
 // never a silent slice(0, N) that just discards the rest of the string.
 var C5_COLLAPSE_AT = 160;
@@ -3456,7 +3483,43 @@ function renderLintCard(data, resultEl) {
   var findings = data.findings || {};
   var checkErrors = data.check_errors || {};
 
+  /* ── C5 stale-preservation (issue #489) ─────────────────────────────────
+     Every remediation re-lints via POST /wiki/lint?include_c5=false (fast,
+     LLM-free by design) and re-renders THIS card from that response, which
+     always carries page_pairs: [] — C5 is simply never judged on that path.
+     Naively rendering it away made a previously-populated C5 Contradiction
+     section vanish, reading as "contradictions resolved" when nothing was
+     re-judged. pendingDeepC5Audit (one-shot, set by the Deep audit control —
+     the one call site that requests include_c5=true — right before it calls
+     this function) tells THIS render whether its page_pairs is a genuine
+     fresh judgment; consumed immediately below so a later render is never
+     fooled by a stale flag. When true, this render's page_pairs (possibly
+     empty) becomes the new baseline. Otherwise, if this render's page_pairs
+     is empty AND a non-empty judged baseline already exists, fall back to
+     that baseline and flag the section as stale rather than letting it
+     disappear. A shallow copy avoids mutating data.findings — callers also
+     stash that same object in lastLintData and hand it to
+     renderCurationQueue. */
+  var c5Deep = pendingDeepC5Audit;
+  pendingDeepC5Audit = false;
+  var c5Stale = false;
+  if (c5Deep) {
+    lastDeepC5Pairs = findings.page_pairs || [];
+  } else if ((!findings.page_pairs || findings.page_pairs.length === 0) &&
+             lastDeepC5Pairs && lastDeepC5Pairs.length > 0) {
+    var findingsWithStaleC5 = {};
+    for (var fKey in findings) { if (findings.hasOwnProperty(fKey)) findingsWithStaleC5[fKey] = findings[fKey]; }
+    findingsWithStaleC5.page_pairs = lastDeepC5Pairs;
+    findings = findingsWithStaleC5;
+    c5Stale = true;
+  }
+
   var total       = summary.total_findings != null ? summary.total_findings : "?";
+  // The fast relint's own total_findings never counted the stale C5 pairs
+  // (C5 was skipped, not judged-and-clean) — fold them back in so the badge
+  // does not undercount against what the body actually renders below (the
+  // exact illusion issue #489 reports: a count that reads as "resolved").
+  if (c5Stale && typeof total === "number") total += lastDeepC5Pairs.length;
   var badgeClass  = total === 0 ? "badge badge-ok" : "badge badge-warn";
   var badgeLabel  = total === "?" ? "?" : (total + " finding" + (total !== 1 ? "s" : ""));
 
@@ -3522,12 +3585,16 @@ function renderLintCard(data, resultEl) {
      (optional) renders a check-level batch action flush right (issue #364
      — C6 "Re-ingest all", C10 "Discard all"). Check label is bilingual
      (issue #365) — LINT_CHECK_LABEL_ZH mirrors LintCheckMeta.label_zh; the
-     code itself (e.g. "C6") is never translated. */
-  function checkHead(code, count, batchBtnEl) {
+     code itself (e.g. "C6") is never translated. noteText (optional, issue
+     #489) appends an inline " — <note>" after the count, same shape as
+     queueCountLine's trailing pointer sentence below — used for the C5
+     stale-preservation marker. */
+  function checkHead(code, count, batchBtnEl, noteText) {
     var meta = LINT_CHECK_META[code];
     var label = consoleLang === "zh" ? LINT_CHECK_LABEL_ZH[code] : meta.label;
+    var headText = code + " " + label + " (" + count + ")" + (noteText ? " — " + noteText : "");
     return el("div", { class: "lint-group-head" },
-      el("span", { text: code + " " + label + " (" + count + ")" }),
+      el("span", { text: headText }),
       batchBtnEl || null
     );
   }
@@ -4036,7 +4103,11 @@ function renderLintCard(data, resultEl) {
         return;
       }
 
-      axisBody.push(checkHead(code, items.length, checkBatchBtnEl));
+      // issue #489: C5's items came from the stale fallback above (findings
+      // was shallow-copied with the last judged page_pairs) — flag it here,
+      // the one place code-specific chrome is already threaded through.
+      var noteText = (code === "C5" && c5Stale) ? LINT_CHROME[consoleLang].c5StaleNote : null;
+      axisBody.push(checkHead(code, items.length, checkBatchBtnEl, noteText));
       items.forEach(function(item, i) { axisBody.push(ROW_RENDERERS[code](i + 1, item)); });
 
       if (axis === "Freshness" && (code === "C6" || code === "C3")) {
@@ -4904,6 +4975,14 @@ var STEP_DEFS = [
         .then(function(data) {
           checkCoverageFillOutcome(data);
           checkFixSourceOutcome(data);
+          // issue #489: the ONLY call site that ever requests include_c5=true
+          // — a one-shot signal (mirrors lastBatchSummary/lastCoverageFillOutcome's
+          // pattern) telling the upcoming renderLintCard this response's
+          // page_pairs is a genuine fresh judgment, the baseline every later
+          // fast (include_c5=false) relint falls back to. Not passed as a 3rd
+          // renderLintCard argument: test_ui_console_lint_fast_default.py pins
+          // the literal 2-arg call in both run() and deepAudit() bodies.
+          pendingDeepC5Audit = true;
           resultEl.replaceChildren(renderLintCard(data, resultEl));
           lastLintData = data;
           renderCurationQueue(document.getElementById("curation-queue-root"), data);
