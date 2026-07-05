@@ -287,6 +287,22 @@ the issue's AC) without extending ``LintSummary`` or any CLI/MCP/Console
 renderer — out of this slice's scope, per its AC wording ("visible in
 logs").
 
+Slice scope (issue #473 — C5 verdict cache generation salt)
+-----------------------------------------------------------------
+Fixes a correctness regression in the #446 cache above: a C5 verdict is
+**not** a pure function of page content — it is also a function of the
+resolved judge model (``OPENAI_LINT_MODEL`` → ``OPENAI_MODEL`` →
+``"gpt-4o-mini"``) and ``_C5_SYSTEM_PROMPT``, neither of which was part of
+the cache key. ``_c5_generation_salt()`` hashes both of those (plus a
+cache-format version int) into a single salt that ``_check_c5_page_pair``
+prefixes onto every stored/looked-up key. A model swap or a prompt edit
+therefore makes every existing entry an on-disk key miss — a cold re-judge,
+not a silent cost=0 stale hit — with no explicit migration step, since the
+cache file is already rewritten each run from only that run's judged pairs
+(the orphaned old-salt entries are simply not carried forward). Same
+content + same model + same prompt still hits the cache unchanged, so the
+#446 cost win is preserved.
+
 Read-only invariant
 -------------------
 ``run_lint()`` does NOT modify wiki page frontmatter.  It writes:
@@ -394,11 +410,25 @@ _c5_cache_hit_counter: list[int] = [0]
 _c5_pair_errors: list[str] = []
 
 
+def _resolve_lint_model_name() -> str:
+    """Resolve the C5 judge model name (three-layer fallback, mirroring OPENAI_INGEST_MODEL):
+        OPENAI_LINT_MODEL  →  OPENAI_MODEL  →  "gpt-4o-mini"
+
+    Factored out of ``get_lint_llm`` so ``_c5_generation_salt`` (issue #473) can
+    read the same resolved name without constructing a ``ChatOpenAI`` client —
+    the two must never drift, since the salt exists to detect exactly this
+    model choice changing between audits.
+    """
+    return os.getenv(
+        "OPENAI_LINT_MODEL",
+        os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+    )
+
+
 def get_lint_llm():
     """Return the lazy singleton ChatOpenAI for C5 page-pair contradiction detection.
 
-    Model resolution (three-layer fallback, mirroring OPENAI_INGEST_MODEL):
-        OPENAI_LINT_MODEL  →  OPENAI_MODEL  →  "gpt-4o-mini"
+    Model resolution: see ``_resolve_lint_model_name``.
 
     temperature=0 for determinism (structured output, reproducible runs).
     """
@@ -406,12 +436,8 @@ def get_lint_llm():
     if _lint_llm is None:
         from langchain_openai import ChatOpenAI
 
-        model_name = os.getenv(
-            "OPENAI_LINT_MODEL",
-            os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-        )
         _lint_llm = ChatOpenAI(
-            model=model_name,
+            model=_resolve_lint_model_name(),
             temperature=0,
             timeout=60,
             max_retries=1,
@@ -2147,10 +2173,15 @@ def generate_collision_differentiate_draft(
 
 
 # ---------------------------------------------------------------------------
-# C5 verdict cache — content-hash keyed, skips unchanged page pairs (#446)
+# C5 verdict cache — content-hash keyed, skips unchanged page pairs (#446);
+# generation-salted so a model/prompt change invalidates it (#473)
 # ---------------------------------------------------------------------------
 
 _C5_CACHE_FILENAME = "c5_verdict_cache.json"
+
+# Bumped whenever the on-disk cache-key shape changes (independent of prompt/
+# model content) so an old cache format can be invalidated deliberately too.
+_C5_CACHE_FORMAT_VERSION = 1
 
 
 def _c5_verdict_cache_path(wiki_dir: Path) -> Path:
@@ -2168,7 +2199,10 @@ def _c5_verdict_cache_path(wiki_dir: Path) -> Path:
 
 
 def _c5_content_hash(body: str) -> str:
-    """SHA-256 of a wiki page body — the content C5 verdicts are a pure function of.
+    """SHA-256 of a wiki page body — ONE of the three inputs a C5 verdict is a
+    function of, not all of them (issue #473). A verdict also depends on the
+    resolved judge model and ``_C5_SYSTEM_PROMPT``; see ``_c5_generation_salt``
+    for the piece of the cache identity that captures those two.
 
     Hashes the frontmatter-stripped ``body`` (the same text ``_load_wiki_pages``
     feeds to the LLM judge), not the raw file text, so a frontmatter-only change
@@ -2179,7 +2213,14 @@ def _c5_content_hash(body: str) -> str:
 
 
 def _c5_cache_key(body_a: str, body_b: str) -> str:
-    """Cache key for a judged pair: its two content hashes, in call order.
+    """Content-only component of a judged pair's cache identity: its two
+    content hashes, in call order.
+
+    This is NOT the full on-disk cache key (issue #473) — ``_check_c5_page_pair``
+    prefixes it with ``_c5_generation_salt()`` before reading/writing the
+    cache file, so the same two page bodies judged under a different model or
+    system prompt occupy a different storage key rather than colliding with a
+    stale verdict.
 
     Callers always pass ``body_a``/``body_b`` for the already slug-canonical
     ``(slug_a, slug_b)`` pair (``slug_a <= slug_b`` — the same ordering
@@ -2187,6 +2228,25 @@ def _c5_cache_key(body_a: str, body_b: str) -> str:
     the same two pages regardless of content changes elsewhere in the wiki.
     """
     return f"{_c5_content_hash(body_a)}:{_c5_content_hash(body_b)}"
+
+
+def _c5_generation_salt() -> str:
+    """Hash of the C5 judge's generation identity: resolved model name +
+    ``_C5_SYSTEM_PROMPT`` + cache-format version (issue #473).
+
+    A C5 verdict is a function of page content AND this generation identity —
+    the pre-#473 cache keyed on content alone, so a verdict produced under an
+    old model or an old prompt survived unchanged pages indefinitely.
+    ``_check_c5_page_pair`` mixes this salt into every stored/looked-up cache
+    key, so a model swap (``OPENAI_LINT_MODEL``) or a ``_C5_SYSTEM_PROMPT``
+    edit makes every existing entry a lookup miss (cold re-judge) rather than
+    a silent cost=0 stale hit. No explicit migration step is needed: the
+    cache is already rebuilt each run from exactly the pairs judged that run
+    (see ``_check_c5_page_pair``), so orphaned old-salt entries are simply not
+    carried into the rewritten file.
+    """
+    identity = f"{_resolve_lint_model_name()}|{_C5_SYSTEM_PROMPT}|{_C5_CACHE_FORMAT_VERSION}"
+    return hashlib.sha256(identity.encode("utf-8")).hexdigest()
 
 
 def _load_c5_verdict_cache(cache_path: Path) -> dict[str, dict]:
@@ -2231,9 +2291,12 @@ def _check_c5_page_pair(
        pre-filter (issue #194). Pairs below the cap are NOT judged; their count
        is recorded in ``_c5_capped_counter`` so the report can surface them as
        "not judged (capped)" rather than dropping them silently.
-    4. Content-hash verdict cache (issue #446): a judged pair whose two bodies'
-       SHA-256 hashes match a stored verdict reuses it with zero LLM calls;
-       everything else falls through to ``_judge_page_pair``.
+    4. Content-hash verdict cache (issue #446), generation-salted (issue #473):
+       a judged pair whose two bodies' SHA-256 hashes AND current generation
+       salt (resolved model + ``_C5_SYSTEM_PROMPT`` + cache format version,
+       see ``_c5_generation_salt``) match a stored verdict reuses it with zero
+       LLM calls; everything else (including every entry after a model/prompt
+       change) falls through to ``_judge_page_pair``.
     5. Filter out findings with severity == "none".
     6. Continue-on-error: if the LLM raises for a pair, log the pair skipped
        and retain prior findings.
@@ -2271,17 +2334,23 @@ def _check_c5_page_pair(
     # Reset the module-level per-pair error accumulator for this run.
     _c5_pair_errors.clear()
 
-    # --- Content-hash verdict cache (issue #446) ---
+    # --- Content-hash verdict cache (issue #446), generation-salted (#473) ---
     # A corrupt cache file raises here (fail-fast, §4.1); run_lint's per-check
     # continue-on-error wrapper is the safety net (see _load_c5_verdict_cache).
     cache_path = _c5_verdict_cache_path(wiki_dir)
     cache = _load_c5_verdict_cache(cache_path)
 
+    # Salt is constant for the whole run — computed once, not per pair.
+    generation_salt = _c5_generation_salt()
+
     # Computed once per pair and reused below (cache lookup, then either the
     # hit path or the fresh_cache write after judging) so a pair's content
-    # hash is never recomputed.
+    # hash is never recomputed. Prefixed with the generation salt so a model
+    # or prompt change (#473) makes every existing on-disk key a miss.
     pair_keys: dict[tuple[str, str], str] = {
-        (slug_a, slug_b): _c5_cache_key(pages[slug_a]["body"], pages[slug_b]["body"])
+        (slug_a, slug_b): (
+            f"{generation_salt}:{_c5_cache_key(pages[slug_a]['body'], pages[slug_b]['body'])}"
+        )
         for slug_a, slug_b in judged_pairs
     }
 
