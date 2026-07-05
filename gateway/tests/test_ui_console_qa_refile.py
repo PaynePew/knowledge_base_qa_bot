@@ -145,3 +145,57 @@ def test_no_inner_html_assignment_in_refile_card():
 def test_no_inner_html_assignment_still_holds_console_wide():
     text = _console_text()
     assert ".innerHTML =" not in text and ".innerHTML=" not in text
+
+
+# ---------------------------------------------------------------------------
+# Full-width status row (issue #496): a long outcome message inside
+# .flag-actions inflates that auto grid column's max-content, collapsing the
+# 1fr body column to one word per line (prod repro: the C9 card's subtitle
+# rendered as a single vertical word column after Re-file). The message must
+# live on its own grid row spanning the whole card instead.
+# ---------------------------------------------------------------------------
+
+
+def _build_flag_card_body() -> str:
+    text = _console_text()
+    match = re.search(
+        r"function buildFlagCard\(icon, slug, subtitle, showDiscard, onDiscard\)\s*\{(.*?)\n\}\n",
+        text,
+        re.DOTALL,
+    )
+    assert match is not None, "buildFlagCard function not found in console.html"
+    return match.group(1)
+
+
+def test_refile_status_message_lives_in_full_width_row_not_actions():
+    body = _build_refile_flag_card_body()
+    actions_line = re.search(r'el\("div", \{ class: "flag-actions" \}[^\n]*', body)
+    assert actions_line is not None, "buildRefileFlagCard must render a .flag-actions container"
+    assert "statusMsgEl" not in actions_line.group(0), (
+        "the status message must not live inside .flag-actions — its length "
+        "collapses the card's 1fr body column (issue #496)"
+    )
+    assert '"flag-status-row"' in body, (
+        "buildRefileFlagCard must render the status message in the full-width "
+        ".flag-status-row grid row (issue #496)"
+    )
+
+
+def test_flag_card_status_message_lives_in_full_width_row_not_actions():
+    body = _build_flag_card_body()
+    actions_line = re.search(r'el\("div", \{ class: "flag-actions" \}[^\n]*', body)
+    assert actions_line is not None, "buildFlagCard must render a .flag-actions container"
+    assert "statusMsgEl" not in actions_line.group(0), (
+        "buildFlagCard's status message must not live inside .flag-actions (issue #496)"
+    )
+    assert '"flag-status-row"' in body
+
+
+def test_flag_status_row_css_spans_grid_and_hides_when_empty():
+    text = _console_text()
+    assert ".flag-status-row { grid-column: 1 / -1;" in text, (
+        ".flag-status-row must span the whole flag-card grid (issue #496)"
+    )
+    assert ".flag-status-row .card-status-msg:empty { display: none; }" in text, (
+        "an empty status message must not reserve visible space (issue #496)"
+    )
