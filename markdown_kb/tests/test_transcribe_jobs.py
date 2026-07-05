@@ -233,7 +233,10 @@ def test_terminal_job_evicted_once_ttl_elapses(jobs_env, monkeypatch):
 
     monkeypatch.setenv("KB_TRANSCRIBE_JOB_TTL_SECONDS", "10")
     fake_now = [0.0]
-    monkeypatch.setattr(transcribe_jobs.time, "monotonic", lambda: fake_now[0])
+    # Patch the job-TTL clock seam, NOT time.monotonic — patching the latter
+    # also freezes the asyncio loop clock and deadlocks _poll_until_terminal's
+    # asyncio.sleep (the #474 ubuntu CI hang). See transcribe_jobs._now.
+    monkeypatch.setattr(transcribe_jobs, "_now", lambda: fake_now[0])
 
     (jobs_env["raw_dir"] / "a.pdf").write_bytes((FIXTURES / "sample_english.pdf").read_bytes())
     (jobs_env["raw_dir"] / "b.pdf").write_bytes((FIXTURES / "sample_english.pdf").read_bytes())
@@ -255,7 +258,10 @@ def test_terminal_job_not_evicted_before_ttl_elapses(jobs_env, monkeypatch):
 
     monkeypatch.setenv("KB_TRANSCRIBE_JOB_TTL_SECONDS", "10")
     fake_now = [0.0]
-    monkeypatch.setattr(transcribe_jobs.time, "monotonic", lambda: fake_now[0])
+    # Patch the job-TTL clock seam, NOT time.monotonic — patching the latter
+    # also freezes the asyncio loop clock and deadlocks _poll_until_terminal's
+    # asyncio.sleep (the #474 ubuntu CI hang). See transcribe_jobs._now.
+    monkeypatch.setattr(transcribe_jobs, "_now", lambda: fake_now[0])
 
     (jobs_env["raw_dir"] / "a.pdf").write_bytes((FIXTURES / "sample_english.pdf").read_bytes())
     (jobs_env["raw_dir"] / "b.pdf").write_bytes((FIXTURES / "sample_english.pdf").read_bytes())

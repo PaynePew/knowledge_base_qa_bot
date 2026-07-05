@@ -193,6 +193,19 @@ def _job_ttl_seconds() -> int:
     return value if value > 0 else _DEFAULT_JOB_TTL_SECONDS
 
 
+def _now() -> float:
+    """Monotonic clock for job-TTL bookkeeping (``completed_at`` + eviction).
+
+    A single indirection so a test can freeze the TTL clock WITHOUT
+    monkeypatching the global ``time.monotonic`` — patching that also freezes
+    the asyncio event loop's own clock (``BaseEventLoop.time``), which stalls
+    ``asyncio.sleep`` and deadlocks any coroutine that polls (the #474 ubuntu
+    CI hang: a frozen loop clock never fired ``_poll_until_terminal``'s sleep
+    OR its own timeout). Tests patch ``transcribe_jobs._now`` instead.
+    """
+    return time.monotonic()
+
+
 def _evict_terminal_jobs() -> None:
     """Delete completed/failed jobs whose TTL has elapsed.
 
@@ -203,7 +216,7 @@ def _evict_terminal_jobs() -> None:
     call site that grows ``_JOBS`` — rather than a background task loop.
     """
     ttl = _job_ttl_seconds()
-    now = time.monotonic()
+    now = _now()
     expired = [
         job_id
         for job_id, job in list(_JOBS.items())
@@ -289,11 +302,11 @@ async def _run_batch(job: TranscribeJob, sources: list[str]) -> None:
     except Exception as exc:  # noqa: BLE001 - last-resort guard against a bug in the loop itself
         job.status = "failed"
         job.error = str(exc)[:200]
-        job.completed_at = time.monotonic()
+        job.completed_at = _now()
         return
 
     job.status = "completed"
-    job.completed_at = time.monotonic()
+    job.completed_at = _now()
 
 
 # ---------------------------------------------------------------------------
