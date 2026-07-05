@@ -243,6 +243,45 @@ def _resolve_docs_files(docs_dir: Path) -> list[tuple[str, Path]]:
     )
 
 
+def _resolve_single_source_pairs(
+    source_filenames: list[str], docs_dir: Path
+) -> tuple[list[tuple[str, Path]], list[str]]:
+    """Resolve single/multi-source-mode refs the way the C3 view path does.
+
+    Each entry is citation-shaped: a bare Source filename optionally carrying
+    a ``#anchor`` (ingest-produced pages always cite ``{source_name}#{slug}``,
+    see templates.py). Until issue #475 these refs were looked up verbatim as
+    ``docs_dir / name`` — flat-only, anchor included — so the Console's C3
+    "Re-ingest (retry)" dead-ended in ``failed_sources`` on exactly the refs
+    lint's view path (#467) reports as ``resolved``. Mirrors
+    ``lint._resolve_c3_source_path``: strip the anchor, take the basename,
+    match it against every file under ``docs_dir``.
+
+    Returns ``(pairs, ambiguous)``. ``pairs`` feeds the normal per-Source
+    ladder: a unique match resolves (nested Sources included); zero matches
+    keep the flat ``docs_dir / basename`` path so the existing
+    ``source_not_found`` rung reports it. ``ambiguous`` lists basenames
+    matching 2+ files — never silently guessed, same contract as the view
+    side (issue #445); callers fail these with ``error=ambiguous_source``.
+    """
+    pairs: list[tuple[str, Path]] = []
+    ambiguous: list[str] = []
+    for raw in source_filenames:
+        file_part = raw.split("#")[0].strip()
+        filename = Path(file_part).name if file_part else ""
+        if not filename:
+            # Blank / anchor-only ref: keep the verbatim lookup so it fails
+            # through the existing ladder exactly as before.
+            pairs.append((raw, docs_dir / raw))
+            continue
+        matches = sorted(docs_dir.glob(f"**/{filename}"))
+        if len(matches) > 1:
+            ambiguous.append(filename)
+        else:
+            pairs.append((filename, matches[0] if matches else docs_dir / filename))
+    return pairs, ambiguous
+
+
 def _compute_docs_body_hash(source_path: Path) -> str:
     """Compute SHA-256 of the source file's UTF-8 text content.
 
@@ -553,13 +592,20 @@ def ingest_sources(
     if source_filenames is None:
         # Pairs of (bare_filename, absolute_path)
         source_pairs: list[tuple[str, Path]] = _resolve_docs_files(docs_dir)
+        ambiguous_sources: list[str] = []
     else:
-        # Single-source mode: each entry is a bare filename; look it up directly.
-        # For flat docs/ this is just docs_dir/filename.  Nested paths are not
-        # supported in single-source mode (caller must pass bare filenames).
-        source_pairs = [(name, docs_dir / name) for name in source_filenames]
+        # Single/multi-source mode: entries are citation-shaped refs
+        # (optionally anchored, possibly nested) — resolve them the same way
+        # the C3 view path does (issue #475).
+        source_pairs, ambiguous_sources = _resolve_single_source_pairs(
+            source_filenames, docs_dir
+        )
 
     batch = IngestBatchResult()
+    for ambiguous_name in ambiguous_sources:
+        # 2+ Sources share this basename — never silently guess (issue #445).
+        log_event("ingest_error", f"source={ambiguous_name} error=ambiguous_source")
+        batch.failed_sources.append(ambiguous_name)
     # Slug collision tracking: single global set so cross-type collisions
     # (e.g. entity "foo" + concept "foo") are also detected.  The second
     # source to claim a slug — regardless of type — receives the -2 suffix.
@@ -859,12 +905,21 @@ async def aingest_sources(
 
     if source_filenames is None:
         source_pairs: list[tuple[str, Path]] = _resolve_docs_files(docs_dir)
+        ambiguous_sources: list[str] = []
     else:
-        source_pairs = [(name, docs_dir / name) for name in source_filenames]
+        # Citation-shaped refs resolve like the C3 view path — kept in step
+        # with ingest_sources (issue #475).
+        source_pairs, ambiguous_sources = _resolve_single_source_pairs(
+            source_filenames, docs_dir
+        )
 
     sem = asyncio.Semaphore(concurrency if concurrency is not None else _max_concurrency())
 
     batch = IngestBatchResult()
+    for ambiguous_name in ambiguous_sources:
+        # 2+ Sources share this basename — never silently guess (issue #445).
+        log_event("ingest_error", f"source={ambiguous_name} error=ambiguous_source")
+        batch.failed_sources.append(ambiguous_name)
     used_slugs: set[str] = set()
 
     log_event(
