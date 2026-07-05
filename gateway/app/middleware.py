@@ -28,17 +28,19 @@ module only wires guards around them (CODING_STANDARD §2.3).  Single-worker
 model: the semaphores and budget are plain in-process objects (§2.6/§2.7).
 
 Path matching uses the **full mounted path** with any trailing slash stripped
-(``/wiki/chat/`` == ``/wiki/chat``).  Three parameterized heavy paths are
+(``/wiki/chat/`` == ``/wiki/chat``).  Four parameterized heavy paths are
 canonicalised before classification and charging — an exact-match set
 cannot see a per-slug concrete path, and an unclassified path bypasses ALL
 guards (the #376 bug class): ``POST /wiki/qa/{slug}/refile`` (ADR-0026
 decision 1, issue #380) to ``QA_REFILE_TEMPLATE``, ``DELETE
 /wiki/pages/{slug}`` (ADR-0025, issue #381) to ``PAGES_DELETE_TEMPLATE``,
-and ``POST /wiki/pages/{slug}/aliases`` (ADR-0030 decision 3, issue #409) to
-``ALIAS_ASSIGN_TEMPLATE`` — the latter two call no LLM (Confirmed
-Remediation / Direct-class assign-alias, ADR-0024/ADR-0030 Invariants) but
-still mutate the live corpus, so they stay admin-semaphore + kill-switch
-gated even at a $0.00 budget estimate. ``POST /wiki/qa/promote-batch``
+``POST /wiki/pages/{slug}/aliases`` (ADR-0030 decision 3, issue #409) to
+``ALIAS_ASSIGN_TEMPLATE``, and ``DELETE /wiki/pages/{slug}/aliases/{alias}``
+(ADR-0030 extension, issue #491) to ``ALIAS_REMOVE_TEMPLATE`` — none of the
+four call any LLM (Confirmed Remediation / Direct-class assign-alias /
+remove-alias, ADR-0024/ADR-0030 Invariants) but each still mutates the live
+corpus, so they stay admin-semaphore + kill-switch gated even at a $0.00
+budget estimate. ``POST /wiki/qa/promote-batch``
 (ADR-0023, issue #382) needs no such canonicalisation — the path carries no
 slug — but is classified as ``ADMIN_PATHS`` for the same reason as the
 delete path: no LLM call, but a batch of live-corpus mutations plus a BM25
@@ -107,6 +109,18 @@ _PAGES_DELETE_RE = re.compile(r"^/wiki/pages/(?!reconcile$)[^/]+$")
 ALIAS_ASSIGN_TEMPLATE = "/wiki/pages/{slug}/aliases"
 _ALIAS_ASSIGN_RE = re.compile(r"^/wiki/pages/(?!reconcile$|collision$)[^/]+/aliases$")
 
+# Canonical billing/classification key for the remove-alias path (ADR-0030
+# extension, issue #491) — the mirror-image of ALIAS_ASSIGN_TEMPLATE, one path
+# segment deeper (the alias itself). Same "reconcile"/"collision" exclusion on
+# the slug segment, same defensive rationale: neither sub-route carries a
+# further "/aliases/<alias>" shape today, but the exclusion keeps this
+# canonicalisation honest if that ever changes. Anchored with its own ``$``
+# so it can never be confused with ALIAS_ASSIGN_TEMPLATE's 3-segment shape
+# (that regex's own ``$`` immediately follows "aliases", so a 4-segment path
+# never matches it either — the two templates are mutually exclusive).
+ALIAS_REMOVE_TEMPLATE = "/wiki/pages/{slug}/aliases/{alias}"
+_ALIAS_REMOVE_RE = re.compile(r"^/wiki/pages/(?!reconcile$|collision$)[^/]+/aliases/[^/]+$")
+
 # Admin / index / mutating paths — gated by the admin semaphore, the budget
 # guard, AND the optional admin-token kill-switch.
 ADMIN_PATHS: frozenset[str] = frozenset(
@@ -130,6 +144,7 @@ ADMIN_PATHS: frozenset[str] = frozenset(
         PAGES_DELETE_TEMPLATE,  # ADR-0025: C11 Confirmed orphan-delete — no LLM, still a live-corpus mutation (issue #381)
         "/wiki/qa/promote-batch",  # ADR-0023: Direct-tier batch promote — no LLM, still a live-corpus mutation (issue #382)
         ALIAS_ASSIGN_TEMPLATE,  # ADR-0030 decision 3: Direct-tier assign-alias — no LLM, still a live-corpus mutation (issue #409)
+        ALIAS_REMOVE_TEMPLATE,  # ADR-0030 extension: Direct-tier remove-alias — no LLM, still a live-corpus mutation (issue #491)
     }
 )
 
@@ -191,15 +206,18 @@ def _canonical_path(raw_path: str) -> str:
     """Normalise, then collapse a parameterized heavy path to its template key.
 
     ``/wiki/qa/<slug>/refile`` → ``QA_REFILE_TEMPLATE``,
-    ``/wiki/pages/<slug>`` → ``PAGES_DELETE_TEMPLATE``, and
-    ``/wiki/pages/<slug>/aliases`` → ``ALIAS_ASSIGN_TEMPLATE`` so the
+    ``/wiki/pages/<slug>`` → ``PAGES_DELETE_TEMPLATE``,
+    ``/wiki/pages/<slug>/aliases`` → ``ALIAS_ASSIGN_TEMPLATE``, and
+    ``/wiki/pages/<slug>/aliases/<alias>`` → ``ALIAS_REMOVE_TEMPLATE`` so the
     exact-match classification sets and the budget table see one stable key
-    per endpoint (also keeps per-slug cardinality out of the budget/log
-    keys). Every other path passes through unchanged.
+    per endpoint (also keeps per-slug/alias cardinality out of the
+    budget/log keys). Every other path passes through unchanged.
     """
     path = _normalise_path(raw_path)
     if _QA_REFILE_RE.fullmatch(path):
         return QA_REFILE_TEMPLATE
+    if _ALIAS_REMOVE_RE.fullmatch(path):
+        return ALIAS_REMOVE_TEMPLATE
     if _ALIAS_ASSIGN_RE.fullmatch(path):
         return ALIAS_ASSIGN_TEMPLATE
     if _PAGES_DELETE_RE.fullmatch(path):
