@@ -2,243 +2,395 @@
 
 # Wiki Index
 
-> 160 Sources, 160 Sections indexed.
+> 174 Sources, 174 Sections indexed.
 
-## accepted-cards
+## account-deletion
 
-- [Accepted Cards](../docs/accepted-cards#accepted-cards) — `accepted-cards#accepted-cards`
+- [Account Deletion](../docs/account-deletion#account-deletion) — `account-deletion#account-deletion`
+
+## account-management-security
+
+- [Account Management & Security](../docs/account-management-security#account-management-security) — `account-management-security#account-management-security`
 
 ## acme-shop-about
 
 - [Acme Shop About](../docs/acme-shop-about#acme-shop-about) — `acme-shop-about#acme-shop-about`
 
-## applying-a-code
+## cancelling
 
-- [Applying a Code](../docs/applying-a-code#applying-a-code) — `applying-a-code#applying-a-code`
+- [Cancelling](../docs/cancelling#cancelling) — `cancelling#cancelling`
 
-## backordered-items
+## cancelling-an-order
 
-- [Backordered Items](../docs/backordered-items#backordered-items) — `backordered-items#backordered-items`
+- [Cancelling an Order](../docs/cancelling-an-order#cancelling-an-order) — `cancelling-an-order#cancelling-an-order`
 
-## buy-online-pick-up-in-store
+## cash-on-delivery
 
-- [Buy Online Pick Up In Store](../docs/buy-online-pick-up-in-store#buy-online-pick-up-in-store) — `buy-online-pick-up-in-store#buy-online-pick-up-in-store`
+- [Cash on Delivery](../docs/cash-on-delivery#cash-on-delivery) — `cash-on-delivery#cash-on-delivery`
 
-## cancellation-window
+## channels
 
-- [Cancellation Window](../docs/cancellation-window#cancellation-window) — `cancellation-window#cancellation-window`
+- [Channels](../docs/channels#channels) — `channels#channels`
 
-## change-email-address
+## conditions
 
-- [Change Email Address](../docs/change-email-address#change-email-address) — `change-email-address#change-email-address`
+- [Conditions](../docs/conditions#conditions) — `conditions#conditions`
 
-## change-shipping-address
+## contact-support
 
-- [Change Shipping Address](../docs/change-shipping-address#change-shipping-address) — `change-shipping-address#change-shipping-address`
+- [Contact Support](../docs/contact-support#contact-support) — `contact-support#contact-support`
 
-## cleaning-instructions
+## convenience-store-payment-codes
 
-- [Cleaning Instructions](../docs/cleaning-instructions#cleaning-instructions) — `cleaning-instructions#cleaning-instructions`
+- [Convenience Store Payment Codes](../docs/convenience-store-payment-codes#convenience-store-payment-codes) — `convenience-store-payment-codes#convenience-store-payment-codes`
 
-## combine-orders
+## convenience-store-pickup
 
-- [Combine Orders](../docs/combine-orders#combine-orders) — `combine-orders#combine-orders`
+- [Convenience Store Pickup](../docs/convenience-store-pickup#convenience-store-pickup) — `convenience-store-pickup#convenience-store-pickup`
 
-## contact-channels
+## credit-card-installments
 
-- [Contact Channels](../docs/contact-channels#contact-channels) — `contact-channels#contact-channels`
+- [Credit Card Installments](../docs/credit-card-installments#credit-card-installments) — `credit-card-installments#credit-card-installments`
 
-## coverage-period
+## credit-cards
 
-- [Coverage Period](../docs/coverage-period#coverage-period) — `coverage-period#coverage-period`
+- [Credit Cards](../docs/credit-cards#credit-cards) — `credit-cards#credit-cards`
 
-## customs-and-duties
+## damaged-items
 
-- [Customs and Duties](../docs/customs-and-duties#customs-and-duties) — `customs-and-duties#customs-and-duties`
+- [Damaged Items](../docs/damaged-items#damaged-items) — `damaged-items#damaged-items`
 
-## delete-account
+## delivery-times
 
-- [Delete Account](../docs/delete-account#delete-account) — `delete-account#delete-account`
+- [Delivery Times](../docs/delivery-times#delivery-times) — `delivery-times#delivery-times`
+
+## denominations-delivery
+
+- [Denominations & Delivery](../docs/denominations-delivery#denominations-delivery) — `denominations-delivery#denominations-delivery`
+
+## destinations
+
+- [Destinations](../docs/destinations#destinations) — `destinations#destinations`
+
+## difference-from-regular-returns
+
+- [Difference from Regular Returns](../docs/difference-from-regular-returns#difference-from-regular-returns) — `difference-from-regular-returns#difference-from-regular-returns`
+
+## dispatch-time
+
+- [Dispatch Time](../docs/dispatch-time#dispatch-time) — `dispatch-time#dispatch-time`
+
+## duties-taxes
+
+- [Duties & Taxes](../docs/duties-taxes#duties-taxes) — `duties-taxes#duties-taxes`
 
 ## earning-points
 
 - [Earning Points](../docs/earning-points#earning-points) — `earning-points#earning-points`
 
-## eligibility-and-minimum-order
+## eligible-items-cycles
 
-- [Eligibility and Minimum Order](../docs/eligibility-and-minimum-order#eligibility-and-minimum-order) — `eligibility-and-minimum-order#eligibility-and-minimum-order`
+- [Eligible Items & Cycles](../docs/eligible-items-cycles#eligible-items-cycles) — `eligible-items-cycles#eligible-items-cycles`
 
-## escalation-process
+## excluded-items
 
-- [Escalation Process](../docs/escalation-process#escalation-process) — `escalation-process#escalation-process`
+- [Excluded Items](../docs/excluded-items#excluded-items) — `excluded-items#excluded-items`
 
-## expedited-shipping
+## exclusions
 
-- [Expedited Shipping](../docs/expedited-shipping#expedited-shipping) — `expedited-shipping#expedited-shipping`
+- [Exclusions](../docs/exclusions#exclusions) — `exclusions#exclusions`
 
-## failed-payments
+## expiry
 
-- [Failed Payments](../docs/failed-payments#failed-payments) — `failed-payments#failed-payments`
+- [Expiry](../docs/expiry#expiry) — `expiry#expiry`
 
-## fulfilment-and-lead-times
+## express-home-delivery
 
-- [Fulfilment and Lead Times](../docs/fulfilment-and-lead-times#fulfilment-and-lead-times) — `fulfilment-and-lead-times#fulfilment-and-lead-times`
+- [Express Home Delivery](../docs/express-home-delivery#express-home-delivery) — `express-home-delivery#express-home-delivery`
 
-## international-delivery-times
+## fee
 
-- [International Delivery Times](../docs/international-delivery-times#international-delivery-times) — `international-delivery-times#international-delivery-times`
+- [Fee](../docs/fee#fee) — `fee#fee`
 
-## lost-gift-cards
+## fees
 
-- [Lost Gift Cards](../docs/lost-gift-cards#lost-gift-cards) — `lost-gift-cards#lost-gift-cards`
+- [Fees](../docs/fees#fees) — `fees#fees`
 
-## managing-a-subscription
+## filing-a-claim
 
-- [Managing a Subscription](../docs/managing-a-subscription#managing-a-subscription) — `managing-a-subscription#managing-a-subscription`
+- [Filing a Claim](../docs/filing-a-claim#filing-a-claim) — `filing-a-claim#filing-a-claim`
 
-## managing-trusted-devices
+## flash-sale-shopping-notes
 
-- [Managing Trusted Devices](../docs/managing-trusted-devices#managing-trusted-devices) — `managing-trusted-devices#managing-trusted-devices`
+- [Flash sale shopping notes](../docs/flash-sale-shopping-notes#flash-sale-shopping-notes) — `flash-sale-shopping-notes#flash-sale-shopping-notes`
+
+## gift-card-restrictions
+
+- [Gift Card Restrictions](../docs/gift-card-restrictions#gift-card-restrictions) — `gift-card-restrictions#gift-card-restrictions`
+
+## gift-cards
+
+- [Gift Cards](../docs/gift-cards#gift-cards) — `gift-cards#gift-cards`
+
+## gift-cards-and-reward-points
+
+- [Gift Cards and Reward Points](../docs/gift-cards-and-reward-points#gift-cards-and-reward-points) — `gift-cards-and-reward-points#gift-cards-and-reward-points`
+
+## hold-period
+
+- [Hold Period](../docs/hold-period#hold-period) — `hold-period#hold-period`
+
+## how-to-use
+
+- [How to Use](../docs/how-to-use#how-to-use) — `how-to-use#how-to-use`
+
+## international-shipping
+
+- [International Shipping](../docs/international-shipping#international-shipping) — `international-shipping#international-shipping`
+
+## item-restrictions
+
+- [Item Restrictions](../docs/item-restrictions#item-restrictions) — `item-restrictions#item-restrictions`
+
+## items-not-eligible-for-refund
+
+- [Items Not Eligible for Refund](../docs/items-not-eligible-for-refund#items-not-eligible-for-refund) — `items-not-eligible-for-refund#items-not-eligible-for-refund`
+
+## locations
+
+- [Locations](../docs/locations#locations) — `locations#locations`
+
+## login-protection
+
+- [Login Protection](../docs/login-protection#login-protection) — `login-protection#login-protection`
+
+## member-day-perks
+
+- [Member Day perks](../docs/member-day-perks#member-day-perks) — `member-day-perks#member-day-perks` (aliases: `gift-vouchers`)
+
+## member-day-perks-2
+
+- [Member Day perks](../docs/member-day-perks-2#member-day-perks) — `member-day-perks-2#member-day-perks`
+
+## membership-reward-points
+
+- [Membership & Reward Points](../docs/membership-reward-points#membership-reward-points) — `membership-reward-points#membership-reward-points`
 
 ## membership-tiers
 
 - [Membership Tiers](../docs/membership-tiers#membership-tiers) — `membership-tiers#membership-tiers`
 
-## non-refundable-items
+## mobile-payments
 
-- [Non-Refundable Items](../docs/non-refundable-items#non-refundable-items) — `non-refundable-items#non-refundable-items`
+- [Mobile Payments](../docs/mobile-payments#mobile-payments) — `mobile-payments#mobile-payments`
 
-## payment-authorization
+## modifying-an-order
 
-- [Payment Authorization](../docs/payment-authorization#payment-authorization) — `payment-authorization#payment-authorization`
+- [Modifying an Order](../docs/modifying-an-order#modifying-an-order) — `modifying-an-order#modifying-an-order`
 
-## pickup-identification
+## not-accepted
 
-- [Pickup Identification](../docs/pickup-identification#pickup-identification) — `pickup-identification#pickup-identification`
+- [Not Accepted](../docs/not-accepted#not-accepted) — `not-accepted#not-accepted`
 
-## price-match-eligibility
+## order-history-invoices
 
-- [Price Match Eligibility](../docs/price-match-eligibility#price-match-eligibility) — `price-match-eligibility#price-match-eligibility`
+- [Order History & Invoices](../docs/order-history-invoices#order-history-invoices) — `order-history-invoices#order-history-invoices`
 
-## product-reviews
+## order-management
 
-- [Product Reviews](../docs/product-reviews#product-reviews) — `product-reviews#product-reviews`
+- [Order Management](../docs/order-management#order-management) — `order-management#order-management`
 
-## purchase-and-delivery
+## password-rules
 
-- [Purchase and Delivery](../docs/purchase-and-delivery#purchase-and-delivery) — `purchase-and-delivery#purchase-and-delivery`
+- [Password Rules](../docs/password-rules#password-rules) — `password-rules#password-rules`
 
-## redeeming-a-gift-card
+## pausing
 
-- [Redeeming a Gift Card](../docs/redeeming-a-gift-card#redeeming-a-gift-card) — `redeeming-a-gift-card#redeeming-a-gift-card`
+- [Pausing](../docs/pausing#pausing) — `pausing#pausing`
+
+## payment-methods
+
+- [Payment Methods](../docs/payment-methods#payment-methods) — `payment-methods#payment-methods`
+
+## pickup-flow-deadline
+
+- [Pickup Flow & Deadline](../docs/pickup-flow-deadline#pickup-flow-deadline) — `pickup-flow-deadline#pickup-flow-deadline`
+
+## process
+
+- [Process](../docs/process#process) — `process#process`
+
+## product-warranty
+
+- [Product Warranty](../docs/product-warranty#product-warranty) — `product-warranty#product-warranty`
+
+## promo-code-expiry
+
+- [Promo Code Expiry](../docs/promo-code-expiry#promo-code-expiry) — `promo-code-expiry#promo-code-expiry`
+
+## promo-codes
+
+- [Promo Codes](../docs/promo-codes#promo-codes) — `promo-codes#promo-codes`
+
+## qa-count-zero-zh-006
+
+- [退款要多久才會入帳？](../docs/qa-count-zero-zh-006#退款要多久才會入帳) — `qa-count-zero-zh-006#退款要多久才會入帳`
+
+## qa-store-pickup-zh-003
+
+- [門市自取要帶什麼？](../docs/qa-store-pickup-zh-003#門市自取要帶什麼) — `qa-store-pickup-zh-003#門市自取要帶什麼`
+
+## qa-store-services-en-004
+
+- [Which stores offer in-store pickup?](../docs/qa-store-services-en-004#which-stores-offer-in-store-pickup) — `qa-store-services-en-004#which-stores-offer-in-store-pickup`
+
+## reactivating
+
+- [Reactivating](../docs/reactivating#reactivating) — `reactivating#reactivating`
 
 ## redeeming-points
 
 - [Redeeming Points](../docs/redeeming-points#redeeming-points) — `redeeming-points#redeeming-points`
 
-## refund-timeline
+## referrals
 
-- [Refund Timeline](../docs/refund-timeline#refund-timeline) — `refund-timeline#refund-timeline`
+- [Referrals](../docs/referrals#referrals) — `referrals#referrals`
 
-## replacement-process
+## refund-window
 
-- [Replacement Process](../docs/replacement-process#replacement-process) — `replacement-process#replacement-process`
+- [Refund Window](../docs/refund-window#refund-window) — `refund-window#refund-window`
 
-## reporting-damage
+## refunds-returns
 
-- [Reporting Damage](../docs/reporting-damage#reporting-damage) — `reporting-damage#reporting-damage`
+- [Refunds & Returns](../docs/refunds-returns#refunds-returns) — `refunds-returns#refunds-returns`
 
-## requesting-a-price-match
+## registration
 
-- [Requesting a Price Match](../docs/requesting-a-price-match#requesting-a-price-match) — `requesting-a-price-match#requesting-a-price-match`
+- [Registration](../docs/registration#registration) — `registration#registration`
 
-## reset-password
+## replacement-timing
 
-- [Reset Password](../docs/reset-password#reset-password) — `reset-password#reset-password`
+- [Replacement Timing](../docs/replacement-timing#replacement-timing) — `replacement-timing#replacement-timing`
 
-## restocking-fee
+## reporting-deadline-method
 
-- [Restocking Fee](../docs/restocking-fee#restocking-fee) — `restocking-fee#restocking-fee`
+- [Reporting Deadline & Method](../docs/reporting-deadline-method#reporting-deadline-method) — `reporting-deadline-method#reporting-deadline-method`
 
-## return-window
+## resolution-options
 
-- [Return Window](../docs/return-window#return-window) — `return-window#return-window`
+- [Resolution Options](../docs/resolution-options#resolution-options) — `resolution-options#resolution-options`
 
-## self-service-resources
+## response-time
 
-- [Self-Service Resources](../docs/self-service-resources#self-service-resources) — `self-service-resources#self-service-resources`
+- [Response Time](../docs/response-time#response-time) — `response-time#response-time`
 
-## setting-up-a-subscription
+## restrictions
 
-- [Setting Up a Subscription](../docs/setting-up-a-subscription#setting-up-a-subscription) — `setting-up-a-subscription#setting-up-a-subscription`
+- [Restrictions](../docs/restrictions#restrictions) — `restrictions#restrictions`
 
-## size-guide
+## return-deadline-reminder
 
-- [Size Guide](../docs/size-guide#size-guide) — `size-guide#size-guide`
+- [Return deadline reminder](../docs/return-deadline-reminder#return-deadline-reminder) — `return-deadline-reminder#return-deadline-reminder`
 
-## stacking-rules
+## return-shipping
 
-- [Stacking Rules](../docs/stacking-rules#stacking-rules) — `stacking-rules#stacking-rules`
+- [Return Shipping](../docs/return-shipping#return-shipping) — `return-shipping#return-shipping`
 
-## standard-shipping
+## rules
 
-- [Standard Shipping](../docs/standard-shipping#standard-shipping) — `standard-shipping#standard-shipping`
+- [Rules](../docs/rules#rules) — `rules#rules`
 
-## stock-availability
+## service-hours
 
-- [Stock Availability](../docs/stock-availability#stock-availability) — `stock-availability#stock-availability`
+- [Service Hours](../docs/service-hours#service-hours) — `service-hours#service-hours`
 
-## storage-guidelines
+## shipping-delivery
 
-- [Storage Guidelines](../docs/storage-guidelines#storage-guidelines) — `storage-guidelines#storage-guidelines`
+- [Shipping & Delivery](../docs/shipping-delivery#shipping-delivery) — `shipping-delivery#shipping-delivery`
 
-## subscription-pricing-changes
+## standard-home-delivery
 
-- [Subscription Pricing Changes](../docs/subscription-pricing-changes#subscription-pricing-changes) — `subscription-pricing-changes#subscription-pricing-changes`
+- [Standard Home Delivery](../docs/standard-home-delivery#standard-home-delivery) — `standard-home-delivery#standard-home-delivery`
 
-## supported-countries
+## store-locations-and-pickup-service
 
-- [Supported Countries](../docs/supported-countries#supported-countries) — `supported-countries#supported-countries`
+- [Store locations and pickup service](../docs/store-locations-and-pickup-service#store-locations-and-pickup-service) — `store-locations-and-pickup-service#store-locations-and-pickup-service` (aliases: `gift-vouchers`)
 
-## suspicious-activity
+## store-pickup
 
-- [Suspicious Activity](../docs/suspicious-activity#suspicious-activity) — `suspicious-activity#suspicious-activity`
+- [Store Pickup](../docs/store-pickup#store-pickup) — `store-pickup#store-pickup`
 
-## tracking-number
+## subscription-benefits
 
-- [Tracking Number](../docs/tracking-number#tracking-number) — `tracking-number#tracking-number`
+- [Subscription Benefits](../docs/subscription-benefits#subscription-benefits) — `subscription-benefits#subscription-benefits`
 
-## two-factor-authentication
+## subscription-orders
 
-- [Two-Factor Authentication](../docs/two-factor-authentication#two-factor-authentication) — `two-factor-authentication#two-factor-authentication`
+- [Subscription Orders](../docs/subscription-orders#subscription-orders) — `subscription-orders#subscription-orders`
 
-## volume-discounts
+## timing
 
-- [Volume Discounts](../docs/volume-discounts#volume-discounts) — `volume-discounts#volume-discounts`
+- [Timing](../docs/timing#timing) — `timing#timing`
 
-## warranty-claim
+## tracking
 
-- [Warranty Claim](../docs/warranty-claim#warranty-claim) — `warranty-claim#warranty-claim`
+- [Tracking](../docs/tracking#tracking) — `tracking#tracking`
 
-## warranty-implications
+## two-step-verification
 
-- [Warranty Implications](../docs/warranty-implications#warranty-implications) — `warranty-implications#warranty-implications`
+- [Two-Step Verification](../docs/two-step-verification#two-step-verification) — `two-step-verification#two-step-verification`
+
+## validity
+
+- [Validity](../docs/validity#validity) — `validity#validity`
+
+## warranty-exclusions
+
+- [Warranty Exclusions](../docs/warranty-exclusions#warranty-exclusions) — `warranty-exclusions#warranty-exclusions`
+
+## warranty-periods
+
+- [Warranty Periods](../docs/warranty-periods#warranty-periods) — `warranty-periods#warranty-periods`
+
+## what-to-bring
+
+- [What to Bring](../docs/what-to-bring#what-to-bring) — `what-to-bring#what-to-bring`
+
+## 不保固範圍
+
+- [不保固範圍](../docs/不保固範圍#不保固範圍) — `不保固範圍#不保固範圍`
+
+## 不支援的付款方式
+
+- [不支援的付款方式](../docs/不支援的付款方式#不支援的付款方式) — `不支援的付款方式#不支援的付款方式`
+
+## 不適用範圍
+
+- [不適用範圍](../docs/不適用範圍#不適用範圍) — `不適用範圍#不適用範圍`
 
 ## 不適用退款的情況
 
 - [不適用退款的情況](../docs/不適用退款的情況#不適用退款的情況) — `不適用退款的情況#不適用退款的情況`
 
-## 不適用門市自取的商品
-
-- [不適用門市自取的商品](../docs/不適用門市自取的商品#不適用門市自取的商品) — `不適用門市自取的商品#不適用門市自取的商品`
-
 ## 付款方式
 
 - [付款方式](../docs/付款方式#付款方式) — `付款方式#付款方式`
 
-## 例外情況與其他協助
+## 使用效期
 
-- [例外情況與其他協助](../docs/例外情況與其他協助#例外情況與其他協助) — `例外情況與其他協助#例外情況與其他協助`
+- [使用效期](../docs/使用效期#使用效期) — `使用效期#使用效期`
+
+## 使用方式
+
+- [使用方式](../docs/使用方式#使用方式) — `使用方式#使用方式`
+
+## 使用規則
+
+- [使用規則](../docs/使用規則#使用規則) — `使用規則#使用規則`
+
+## 使用限制
+
+- [使用限制](../docs/使用限制#使用限制) — `使用限制#使用限制`
 
 ## 促銷代碼
 
@@ -248,49 +400,41 @@
 
 - [保固期限](../docs/保固期限#保固期限) — `保固期限#保固期限`
 
-## 保固申請流程
+## 保固申請
 
-- [保固申請流程](../docs/保固申請流程#保固申請流程) — `保固申請流程#保固申請流程`
+- [保固申請](../docs/保固申請#保固申請) — `保固申請#保固申請`
 
-## 保固範圍
+## 保留期限
 
-- [保固範圍](../docs/保固範圍#保固範圍) — `保固範圍#保固範圍`
+- [保留期限](../docs/保留期限#保留期限) — `保留期限#保留期限`
 
-## 保留期限與後續處理
+## 信用卡
 
-- [保留期限與後續處理](../docs/保留期限與後續處理#保留期限與後續處理) — `保留期限與後續處理#保留期限與後續處理`
+- [信用卡](../docs/信用卡#信用卡) — `信用卡#信用卡`
 
-## 保養排程
+## 信用卡分期
 
-- [保養排程](../docs/保養排程#保養排程) — `保養排程#保養排程`
+- [信用卡分期](../docs/信用卡分期#信用卡分期) — `信用卡分期#信用卡分期`
 
-## 個人資料與偏好設定
+## 修改訂單
 
-- [個人資料與偏好設定](../docs/個人資料與偏好設定#個人資料與偏好設定) — `個人資料與偏好設定#個人資料與偏好設定`
-
-## 價格比對
-
-- [價格比對](../docs/價格比對#價格比對) — `價格比對#價格比對`
-
-## 價格調漲
-
-- [價格調漲](../docs/價格調漲#價格調漲) — `價格調漲#價格調漲`
-
-## 價格調降
-
-- [價格調降](../docs/價格調降#價格調降) — `價格調降#價格調降`
+- [修改訂單](../docs/修改訂單#修改訂單) — `修改訂單#修改訂單`
 
 ## 兩步驟驗證
 
 - [兩步驟驗證](../docs/兩步驟驗證#兩步驟驗證) — `兩步驟驗證#兩步驟驗證`
 
-## 出貨流程與交期
+## 出貨時間
 
-- [出貨流程與交期](../docs/出貨流程與交期#出貨流程與交期) — `出貨流程與交期#出貨流程與交期`
+- [出貨時間](../docs/出貨時間#出貨時間) — `出貨時間#出貨時間`
 
-## 分期付款
+## 到貨時效
 
-- [分期付款](../docs/分期付款#分期付款) — `分期付款#分期付款`
+- [到貨時效](../docs/到貨時效#到貨時效) — `到貨時效#到貨時效`
+
+## 取件流程與期限
+
+- [取件流程與期限](../docs/取件流程與期限#取件流程與期限) — `取件流程與期限#取件流程與期限`
 
 ## 取消訂單
 
@@ -300,141 +444,89 @@
 
 - [取消訂閱](../docs/取消訂閱#取消訂閱) — `取消訂閱#取消訂閱`
 
-## 取貨身分驗證
+## 取貨時效
 
-- [取貨身分驗證](../docs/取貨身分驗證#取貨身分驗證) — `取貨身分驗證#取貨身分驗證`
+- [取貨時效](../docs/取貨時效#取貨時效) — `取貨時效#取貨時效`
 
-## 合併訂單
+## 取貨需知
 
-- [合併訂單](../docs/合併訂單#合併訂單) — `合併訂單#合併訂單`
-
-## 哪些情況會使保固失效
-
-- [哪些情況會使保固失效](../docs/哪些情況會使保固失效#哪些情況會使保固失效) — `哪些情況會使保固失效#哪些情況會使保固失效`
+- [取貨需知](../docs/取貨需知#取貨需知) — `取貨需知#取貨需知`
 
 ## 商品保固
 
 - [商品保固](../docs/商品保固#商品保固) — `商品保固#商品保固`
 
-## 商品保養
+## 商品限制
 
-- [商品保養](../docs/商品保養#商品保養) — `商品保養#商品保養`
+- [商品限制](../docs/商品限制#商品限制) — `商品限制#商品限制`
 
-## 商品規格
+## 回報期限與方式
 
-- [商品規格](../docs/商品規格#商品規格) — `商品規格#商品規格`
+- [回報期限與方式](../docs/回報期限與方式#回報期限與方式) — `回報期限與方式#回報期限與方式`
 
-## 商品資訊
+## 回覆時效
 
-- [商品資訊](../docs/商品資訊#商品資訊) — `商品資訊#商品資訊`
-
-## 單次使用與技術問題
-
-- [單次使用與技術問題](../docs/單次使用與技術問題#單次使用與技術問題) — `單次使用與技術問題#單次使用與技術問題`
+- [回覆時效](../docs/回覆時效#回覆時效) — `回覆時效#回覆時效`
 
 ## 國際配送
 
 - [國際配送](../docs/國際配送#國際配送) — `國際配送#國際配送`
 
-## 地址簿管理
+## 客服管道
 
-- [地址簿管理](../docs/地址簿管理#地址簿管理) — `地址簿管理#地址簿管理`
+- [客服管道](../docs/客服管道#客服管道) — `客服管道#客服管道`
 
-## 如何使用促銷代碼
+## 密碼規則
 
-- [如何使用促銷代碼](../docs/如何使用促銷代碼#如何使用促銷代碼) — `如何使用促銷代碼#如何使用促銷代碼`
+- [密碼規則](../docs/密碼規則#密碼規則) — `密碼規則#密碼規則`
 
-## 媒體與合作
+## 帳號刪除
 
-- [媒體與合作](../docs/媒體與合作#媒體與合作) — `媒體與合作#媒體與合作`
+- [帳號刪除](../docs/帳號刪除#帳號刪除) — `帳號刪除#帳號刪除`
 
-## 存放建議
+## 帳號管理與安全
 
-- [存放建議](../docs/存放建議#存放建議) — `存放建議#存放建議`
-
-## 客服中心
-
-- [客服中心](../docs/客服中心#客服中心) — `客服中心#客服中心`
-
-## 密碼與安全建議
-
-- [密碼與安全建議](../docs/密碼與安全建議#密碼與安全建議) — `密碼與安全建議#密碼與安全建議`
-
-## 密碼重設
-
-- [密碼重設](../docs/密碼重設#密碼重設) — `密碼重設#密碼重設`
-
-## 審核與處理方式
-
-- [審核與處理方式](../docs/審核與處理方式#審核與處理方式) — `審核與處理方式#審核與處理方式`
-
-## 尺寸對照
-
-- [尺寸對照](../docs/尺寸對照#尺寸對照) — `尺寸對照#尺寸對照`
-
-## 帳號安全
-
-- [帳號安全](../docs/帳號安全#帳號安全) — `帳號安全#帳號安全`
-
-## 帳號管理
-
-- [帳號管理](../docs/帳號管理#帳號管理) — `帳號管理#帳號管理`
-
-## 常見問題排除
-
-- [常見問題排除](../docs/常見問題排除#常見問題排除) — `常見問題排除#常見問題排除`
-
-## 庫存與到貨查詢
-
-- [庫存與到貨查詢](../docs/庫存與到貨查詢#庫存與到貨查詢) — `庫存與到貨查詢#庫存與到貨查詢`
+- [帳號管理與安全](../docs/帳號管理與安全#帳號管理與安全) — `帳號管理與安全#帳號管理與安全`
 
 ## 快速到貨
 
 - [快速到貨](../docs/快速到貨#快速到貨) — `快速到貨#快速到貨`
 
-## 所需證明
+## 快閃特賣購物須知
 
-- [所需證明](../docs/所需證明#所需證明) — `所需證明#所需證明`
+- [快閃特賣購物須知](../docs/快閃特賣購物須知#快閃特賣購物須知) — `快閃特賣購物須知#快閃特賣購物須知`
 
-## 批量訂單
+## 排除品項
 
-- [批量訂單](../docs/批量訂單#批量訂單) — `批量訂單#批量訂單`
+- [排除品項](../docs/排除品項#排除品項) — `排除品項#排除品項`
 
-## 折抵與疊加規則
+## 推薦好友
 
-- [折抵與疊加規則](../docs/折抵與疊加規則#折抵與疊加規則) — `折抵與疊加規則#折抵與疊加規則`
+- [推薦好友](../docs/推薦好友#推薦好友) — `推薦好友#推薦好友`
 
-## 排除項目
+## 換貨時效
 
-- [排除項目](../docs/排除項目#排除項目) — `排除項目#排除項目`
+- [換貨時效](../docs/換貨時效#換貨時效) — `換貨時效#換貨時效`
 
-## 損壞商品處理
+## 損壞商品
 
-- [損壞商品處理](../docs/損壞商品處理#損壞商品處理) — `損壞商品處理#損壞商品處理`
+- [損壞商品](../docs/損壞商品#損壞商品) — `損壞商品#損壞商品`
 
-## 支援的付款方式
+## 搭配貨到付款
 
-- [支援的付款方式](../docs/支援的付款方式#支援的付款方式) — `支援的付款方式#支援的付款方式`
-
-## 效期
-
-- [效期](../docs/效期#效期) — `效期#效期`
-
-## 數量折扣
-
-- [數量折扣](../docs/數量折扣#數量折扣) — `數量折扣#數量折扣`
+- [搭配貨到付款](../docs/搭配貨到付款#搭配貨到付款) — `搭配貨到付款#搭配貨到付款`
 
 ## 暫停訂閱
 
 - [暫停訂閱](../docs/暫停訂閱#暫停訂閱) — `暫停訂閱#暫停訂閱`
 
-## 更換流程
+## 會員日優惠
 
-- [更換流程](../docs/更換流程#更換流程) — `更換流程#更換流程`
+- [會員日優惠](../docs/會員日優惠#會員日優惠) — `會員日優惠#會員日優惠`
 
-## 更換資格與其他規定
+## 會員日優惠-2
 
-- [更換資格與其他規定](../docs/更換資格與其他規定#更換資格與其他規定) — `更換資格與其他規定#更換資格與其他規定`
+- [會員日優惠](../docs/會員日優惠-2#會員日優惠) — `會員日優惠-2#會員日優惠`
 
 ## 會員等級
 
@@ -444,101 +536,69 @@
 
 - [會員與紅利點數](../docs/會員與紅利點數#會員與紅利點數) — `會員與紅利點數#會員與紅利點數`
 
+## 服務時間
+
+- [服務時間](../docs/服務時間#服務時間) — `服務時間#服務時間`
+
 ## 標準配送
 
 - [標準配送](../docs/標準配送#標準配送) — `標準配送#標準配送`
 
-## 注意事項
+## 登入保護
 
-- [注意事項](../docs/注意事項#注意事項) — `注意事項#注意事項`
-
-## 海外到貨時效
-
-- [海外到貨時效](../docs/海外到貨時效#海外到貨時效) — `海外到貨時效#海外到貨時效`
-
-## 清潔方式
-
-- [清潔方式](../docs/清潔方式#清潔方式) — `清潔方式#清潔方式`
-
-## 物流追蹤
-
-- [物流追蹤](../docs/物流追蹤#物流追蹤) — `物流追蹤#物流追蹤`
-
-## 申請流程
-
-- [申請流程](../docs/申請流程#申請流程) — `申請流程#申請流程`
-
-## 申請資格與最低訂購量
-
-- [申請資格與最低訂購量](../docs/申請資格與最低訂購量#申請資格與最低訂購量) — `申請資格與最低訂購量#申請資格與最低訂購量`
-
-## 略過單次出貨
-
-- [略過單次出貨](../docs/略過單次出貨#略過單次出貨) — `略過單次出貨#略過單次出貨`
-
-## 異常登入偵測
-
-- [異常登入偵測](../docs/異常登入偵測#異常登入偵測) — `異常登入偵測#異常登入偵測`
-
-## 發票與付款安全
-
-- [發票與付款安全](../docs/發票與付款安全#發票與付款安全) — `發票與付款安全#發票與付款安全`
+- [登入保護](../docs/登入保護#登入保護) — `登入保護#登入保護`
 
 ## 禮物卡
 
 - [禮物卡](../docs/禮物卡#禮物卡) — `禮物卡#禮物卡`
 
-## 管理訂閱
-
-- [管理訂閱](../docs/管理訂閱#管理訂閱) — `管理訂閱#管理訂閱`
-
-## 結帳折抵
-
-- [結帳折抵](../docs/結帳折抵#結帳折抵) — `結帳折抵#結帳折抵`
-
-## 線上購買-門市取貨
-
-- [線上購買、門市取貨](../docs/線上購買-門市取貨#線上購買-門市取貨) — `線上購買-門市取貨#線上購買-門市取貨`
-
-## 缺貨與待補貨商品
-
-- [缺貨與待補貨商品](../docs/缺貨與待補貨商品#缺貨與待補貨商品) — `缺貨與待補貨商品#缺貨與待補貨商品`
-
 ## 聯絡客服
 
 - [聯絡客服](../docs/聯絡客服#聯絡客服) — `聯絡客服#聯絡客服`
 
-## 聯絡資訊
+## 自取地點
 
-- [聯絡資訊](../docs/聯絡資訊#聯絡資訊) — `聯絡資訊#聯絡資訊`
+- [自取地點](../docs/自取地點#自取地點) — `自取地點#自取地點`
+
+## 與一般退貨的差異
+
+- [與一般退貨的差異](../docs/與一般退貨的差異#與一般退貨的差異) — `與一般退貨的差異#與一般退貨的差異`
+
+## 與紅利點數的關係
+
+- [與紅利點數的關係](../docs/與紅利點數的關係#與紅利點數的關係) — `與紅利點數的關係#與紅利點數的關係`
+
+## 處理選項
+
+- [處理選項](../docs/處理選項#處理選項) — `處理選項#處理選項`
+
+## 行動支付
+
+- [行動支付](../docs/行動支付#行動支付) — `行動支付#行動支付`
+
+## 訂單查詢與發票
+
+- [訂單查詢與發票](../docs/訂單查詢與發票#訂單查詢與發票) — `訂單查詢與發票#訂單查詢與發票`
 
 ## 訂單管理
 
 - [訂單管理](../docs/訂單管理#訂單管理) — `訂單管理#訂單管理`
 
-## 訂閱價格調整
+## 訂閱優惠
 
-- [訂閱價格調整](../docs/訂閱價格調整#訂閱價格調整) — `訂閱價格調整#訂閱價格調整`
+- [訂閱優惠](../docs/訂閱優惠#訂閱優惠) — `訂閱優惠#訂閱優惠`
 
 ## 訂閱訂單
 
 - [訂閱訂單](../docs/訂閱訂單#訂閱訂單) — `訂閱訂單#訂閱訂單`
 
-## 設定訂閱
+## 註冊方式
 
-- [設定訂閱](../docs/設定訂閱#設定訂閱) — `設定訂閱#設定訂閱`
+- [註冊方式](../docs/註冊方式#註冊方式) — `註冊方式#註冊方式`
 
-## 變更收件地址與電子信箱
+## 貨到付款
 
-- [變更收件地址與電子信箱](../docs/變更收件地址與電子信箱#變更收件地址與電子信箱) — `變更收件地址與電子信箱#變更收件地址與電子信箱`
-
-## 變更電子信箱
-
-- [變更電子信箱](../docs/變更電子信箱#變更電子信箱) — `變更電子信箱#變更電子信箱`
-
-## 購買與配送
-
-- [購買與配送](../docs/購買與配送#購買與配送) — `購買與配送#購買與配送`
+- [貨到付款](../docs/貨到付款#貨到付款) — `貨到付款#貨到付款`
 
 ## 超商代碼繳費
 
@@ -548,9 +608,9 @@
 
 - [超商取貨](../docs/超商取貨#超商取貨) — `超商取貨#超商取貨`
 
-## 退款政策
+## 超商取貨運費
 
-- [退款政策](../docs/退款政策#退款政策) — `退款政策#退款政策`
+- [超商取貨運費](../docs/超商取貨運費#超商取貨運費) — `超商取貨運費#超商取貨運費`
 
 ## 退款條件
 
@@ -564,49 +624,49 @@
 
 - [退款申請窗口](../docs/退款申請窗口#退款申請窗口) — `退款申請窗口#退款申請窗口`
 
-## 退貨收件地址
+## 退款與退貨
 
-- [退貨收件地址](../docs/退貨收件地址#退貨收件地址) — `退貨收件地址#退貨收件地址`
+- [退款與退貨](../docs/退款與退貨#退款與退貨) — `退款與退貨#退款與退貨`
 
-## 通報損壞
+## 退貨期限提醒
 
-- [通報損壞](../docs/通報損壞#通報損壞) — `通報損壞#通報損壞`
+- [退貨期限提醒](../docs/退貨期限提醒#退貨期限提醒) — `退貨期限提醒#退貨期限提醒`
 
-## 逾期通報的處理
+## 退貨運費
 
-- [逾期通報的處理](../docs/逾期通報的處理#逾期通報的處理) — `逾期通報的處理#逾期通報的處理`
+- [退貨運費](../docs/退貨運費#退貨運費) — `退貨運費#退貨運費`
 
-## 運費與費用計算
+## 逾期與補發
 
-- [運費與費用計算](../docs/運費與費用計算#運費與費用計算) — `運費與費用計算#運費與費用計算`
+- [逾期與補發](../docs/逾期與補發#逾期與補發) — `逾期與補發#逾期與補發`
+
+## 運費
+
+- [運費](../docs/運費#運費) — `運費#運費`
 
 ## 運送與配送
 
 - [運送與配送](../docs/運送與配送#運送與配送) — `運送與配送#運送與配送`
 
-## 適用條件
+## 適用品項與週期
 
-- [適用條件](../docs/適用條件#適用條件) — `適用條件#適用條件`
+- [適用品項與週期](../docs/適用品項與週期#適用品項與週期) — `適用品項與週期#適用品項與週期`
 
-## 適用條件與有效期限
+## 配送地區
 
-- [適用條件與有效期限](../docs/適用條件與有效期限#適用條件與有效期限) — `適用條件與有效期限#適用條件與有效期限`
-
-## 遺失補發
-
-- [遺失補發](../docs/遺失補發#遺失補發) — `遺失補發#遺失補發`
-
-## 配送國家與地區
-
-- [配送國家與地區](../docs/配送國家與地區#配送國家與地區) — `配送國家與地區#配送國家與地區`
+- [配送地區](../docs/配送地區#配送地區) — `配送地區#配送地區`
 
 ## 配送查詢
 
 - [配送查詢](../docs/配送查詢#配送查詢) — `配送查詢#配送查詢`
 
-## 配送限制與下單建議
+## 重新啟用
 
-- [配送限制與下單建議](../docs/配送限制與下單建議#配送限制與下單建議) — `配送限制與下單建議#配送限制與下單建議`
+- [重新啟用](../docs/重新啟用#重新啟用) — `重新啟用#重新啟用`
+
+## 門市據點與自取服務
+
+- [門市據點與自取服務](../docs/門市據點與自取服務#門市據點與自取服務) — `門市據點與自取服務#門市據點與自取服務` (aliases: `門市自取`)
 
 ## 門市自取
 
@@ -620,21 +680,13 @@
 
 - [關稅與稅費](../docs/關稅與稅費#關稅與稅費) — `關稅與稅費#關稅與稅費`
 
-## 關閉帳號
+## 面額與交付
 
-- [關閉帳號](../docs/關閉帳號#關閉帳號) — `關閉帳號#關閉帳號`
+- [面額與交付](../docs/面額與交付#面額與交付) — `面額與交付#面額與交付`
 
-## 顧客評論
+## 點數折抵
 
-- [顧客評論](../docs/顧客評論#顧客評論) — `顧客評論#顧客評論`
-
-## 餘額查詢與序號問題
-
-- [餘額查詢與序號問題](../docs/餘額查詢與序號問題#餘額查詢與序號問題) — `餘額查詢與序號問題#餘額查詢與序號問題`
-
-## 點數使用
-
-- [點數使用](../docs/點數使用#點數使用) — `點數使用#點數使用`
+- [點數折抵](../docs/點數折抵#點數折抵) — `點數折抵#點數折抵`
 
 ## 點數效期
 
@@ -643,3 +695,7 @@
 ## 點數累積
 
 - [點數累積](../docs/點數累積#點數累積) — `點數累積#點數累積`
+
+## 點數限制
+
+- [點數限制](../docs/點數限制#點數限制) — `點數限制#點數限制`

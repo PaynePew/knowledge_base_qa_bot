@@ -1,13 +1,13 @@
 # Refund Policy
 
-## Cancellation Window
+## Cancellation vs Return
 
-Customers can cancel an order within 24 hours after purchase if the order has not shipped yet. After the order ships, customers must request a return instead of a cancellation.
+Customers can cancel an order any time while it is still Processing (not yet dispatched). After the order ships, customers must request a return instead of a cancellation.
 
 ## Refund Timeline
 
-Approved refunds are processed within 5-7 business days. The exact arrival time depends on the customer's bank or card provider.
+Refund requests are reviewed by support within 3 business days. Approved refunds reach the original payment method within 5-7 business days.
 
 ## Non-Refundable Items
 
-Digital gift cards, final sale items, and personalized products are not refundable unless required by local law.
+Downloaded digital content, customized products (engraving, printing), and opened food or hygiene products are not refundable. Gift cards are non-refundable and cannot be exchanged for cash.

@@ -1,15 +1,22 @@
 # Damaged Items
 
-## Reporting Damage
+This document covers reporting and resolving damaged or defective deliveries.
 
-At Acme Shop, we understand that receiving a damaged item can be frustrating, and we are committed to making the reporting process as seamless as possible. If you receive a damaged delivery, please report it within 14 days of receipt to qualify for a replacement or refund. Start by logging into your Acme Shop account and navigating to the "Order History" section. Select the order in question, and click on "Report an Issue." You will be prompted to fill out a damage report form, where you should provide a detailed description of the damage, along with clear photos showing the item and its packaging. This information is crucial for us to process your claim promptly.
+## Reporting Deadline & Method
 
-Once your report is submitted, our customer service team will review it within 48 hours. If your claim is approved, you will receive an email with further instructions, which may include returning the damaged item at no cost to you. In cases where a return is not necessary, you will either receive a replacement or a refund, depending on your preference and item availability. Please note that items damaged due to misuse or improper handling after delivery are not eligible for a claim. For expedited claims, ensure all required documentation is complete and accurate.
+If an item arrives damaged or defective, report it within **48 hours** via **My Orders → Report a problem**, attaching photos of the item and the outer packaging; the photos must clearly show the damage.
 
-In rare cases, if you are unable to submit a claim within the 14-day window due to extenuating circumstances, please reach out to our customer service team directly through chat or by calling our helpline. While we generally adhere to our policy timeline, we review such situations on a case-by-case basis to determine if an exception can be made. Our goal is to ensure your satisfaction and resolve any issues swiftly.
+## Resolution Options
 
-## Replacement Process
+Once the report is approved, choose one:
 
-Once a damage report is approved by Acme Shop, the replacement process is promptly initiated. Within 1-2 business days, our team will dispatch a replacement item to the shipping address provided during your initial purchase. You will receive an email confirmation containing the replacement order details, including a new tracking number to monitor the shipment's progress. Replacement items are typically dispatched using standard shipping, which generally takes 3-7 business days. However, if you require expedited shipping, please contact our customer service team—additional fees may apply for this service.
+- **Free replacement**: same item, with shipping both ways covered by ACME Shop.
+- **Full refund**: including the original shipping fee, to the original payment method.
 
-Eligibility for a replacement is contingent upon reporting the damage within 30 days of receiving the item, and the item must be returned in its original packaging. Acme Shop covers the cost of return shipping for approved damage claims. In rare cases, such as if the replacement item is out of stock or discontinued, our team will offer you a full refund or a store credit equivalent to the purchase price of the damaged item. Please note that any promotional discounts or codes used during the initial purchase will not apply to the replacement item. For further assistance or to discuss specific concerns, our customer support team is available to help ensure a seamless replacement experience.
+## Replacement Timing
+
+Replacements are dispatched within **3 business days** of approval (measured to dispatch, not delivery).
+
+## Difference from Regular Returns
+
+Damaged/defective items are exempt from the "unused, complete packaging" return conditions, and ACME Shop covers the return shipping; see "Refunds & Returns".

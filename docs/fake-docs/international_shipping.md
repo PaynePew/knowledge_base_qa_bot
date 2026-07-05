@@ -1,23 +1,27 @@
 # International Shipping
 
-## Supported Countries
+This document covers international destinations, delivery times, fees, and restrictions.
 
-Acme Shop is committed to making our products accessible to customers worldwide, and we currently offer international shipping to a comprehensive list of countries. To determine if we ship to your location, please refer to the "Shipping Destinations" section during the checkout process on our website. Simply enter your address details, and our system will automatically confirm if your country is eligible for shipping. We continually strive to expand our reach, so if your country is not listed, please check back periodically or contact our customer support team for updates.
+## Destinations
 
-Shipping fees and delivery times vary depending on the destination country. Once you select your shipping destination, you'll be presented with available shipping options, including estimated delivery times and associated costs. Please note that some countries may have specific import restrictions or additional customs fees, which are not covered by Acme Shop. Customers are responsible for any additional charges incurred upon the arrival of their packages in their respective countries.
+ACME Shop currently ships to: **Japan, South Korea, Hong Kong, Macau, Singapore, Malaysia, the United States, and Canada**.
 
-In rare cases, international shipping may be temporarily unavailable to certain regions due to logistical challenges or external factors, such as political instability or natural disasters. We recommend keeping an eye on our website or subscribing to our newsletter for the latest updates on shipping availability and any potential disruptions. At Acme Shop, we are dedicated to ensuring a seamless shopping experience for all our international customers.
+## Delivery Times
 
-## Customs and Duties
+- Asia: **5–10 business days** after dispatch.
+- North America (US, Canada): **10–15 business days** after dispatch.
 
-When placing an international order with Acme Shop, it’s important to be aware of how import duties and taxes may be handled. These charges, often referred to as customs fees, are determined by the destination country and are typically based on the value and nature of the items being shipped. Acme Shop does not control these fees, as they are levied by the customs authority in the receiving country. Therefore, customers are responsible for paying any applicable duties and taxes upon receipt of their order. The exact amount can vary significantly depending on the country’s regulations, the order’s declared value, and the nature of the goods. We recommend checking with your local customs office for detailed information about potential charges.
+## Fees
 
-During the checkout process, Acme Shop provides an estimated delivery timeline, but please note that customs processing can add additional time to the arrival of your package. This time frame varies by country and can range from a few days to several weeks, depending on the efficiency of your local customs office. Some countries may allow you to pre-pay import duties and taxes at checkout, streamlining the process and potentially reducing any delays. However, this service is not available for all destinations. For countries where pre-payment is not an option, be prepared for your local customs office to contact you for payment of any applicable fees. In the rare event that your package is held indefinitely or returned to us due to non-payment of duties, Acme Shop will contact you to discuss available options.
+- Asia: from **NT$400**.
+- North America: from **NT$800**.
 
-## International Delivery Times
+The exact fee is calculated at checkout based on parcel weight. **Free-shipping offers do not apply to international orders.**
 
-At Acme Shop, we strive to ensure a seamless international shipping experience for our customers. Our international delivery times vary based on the destination country and the shipping method selected at checkout. Generally, standard international shipments take between 7 to 21 business days. For faster delivery, we offer express shipping options that typically reduce the transit time to 3 to 10 business days. Please note that these timeframes are estimates and exclude weekends, public holidays, and potential customs clearance delays.
+## Duties & Taxes
 
-To determine the exact delivery time for your order, consider the processing time, which usually ranges from 1 to 3 business days. Once your order is dispatched, you will receive a tracking number to monitor its journey. Certain destinations may require additional customs duties or taxes, which are not included in our shipping fees. These charges are the responsibility of the recipient and should be paid upon package arrival in the destination country.
+International orders ship **DDU**: destination duties and import taxes are **paid by the recipient**, collected by the local carrier at customs.
 
-We advise customers to place orders well in advance, especially during peak shopping seasons like Black Friday or the holiday period, as delivery times may be extended due to increased demand. For countries with known customs delays or remote delivery locations, we recommend opting for express shipping to ensure timely receipt. If you have further questions about delivery times to specific locations, our customer service team is available to assist you.
+## Excluded Items
+
+**Liquids** and **battery-powered products** cannot be shipped internationally; checkout automatically removes the international option for them.
