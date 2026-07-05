@@ -65,7 +65,7 @@ from .schemas import (
     TranscribeResponse,
 )
 from .transcriber import TranscribePathError
-from .transcriber import page_count_for_source as get_page_count_for_source
+from .transcriber import page_count_for_source_async as get_page_count_for_source_async
 from .transcriber import transcribe_source as run_transcribe
 
 router = APIRouter()
@@ -632,7 +632,7 @@ async def get_transcribe_job(job_id: str) -> TranscribeJobStatusResponse:
 
 
 @router.get("/transcribe/page-count", response_model=TranscribePageCountResponse)
-def transcribe_page_count(source: str) -> TranscribePageCountResponse:
+async def transcribe_page_count(source: str) -> TranscribePageCountResponse:
     """Return a staged raw/ PDF's page count and the configured page cap.
 
     Mechanical preflight (no model call) the Console's guarded Transcribe
@@ -641,15 +641,24 @@ def transcribe_page_count(source: str) -> TranscribePageCountResponse:
     ``/transcribe``'s validation chain, so a source that would 404/400 there
     404s/400s here too, before any confirm dialog is shown.
 
-    Shallow wrapper around ``transcriber.page_count_for_source`` (CODING_STANDARD
-    §2.3 — all domain logic lives in ``transcriber.py``).
+    ``async def`` + ``transcriber.page_count_for_source_async`` (issue #482)
+    rather than a plain sync route: a sync route is dispatched by Starlette
+    through the shared default anyio thread limiter (capacity 40, shared by
+    every other sync endpoint), and the underlying semaphore-bounded read has
+    no timeout — under a sustained flood, waiters would park a thread (and a
+    shared-limiter token) for the whole wait and starve /import, /transcribe,
+    /lint, /pages/reconcile. Dispatching through the dedicated limiter instead
+    keeps this endpoint's traffic off that shared pool entirely.
+
+    Shallow wrapper around ``transcriber.page_count_for_source_async``
+    (CODING_STANDARD §2.3 — all domain logic lives in ``transcriber.py``).
 
     Raises:
         HTTP 400: invalid filename / source path / unsupported extension.
         HTTP 404: the named file does not exist under ``raw/``.
     """
     try:
-        page_count, max_pages = get_page_count_for_source(source)
+        page_count, max_pages = await get_page_count_for_source_async(source)
     except TranscribePathError as exc:
         status_map = {
             "FileNotFoundError": 404,

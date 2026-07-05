@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``transcribe_available``, ``probe_has_text_layer``, ``page_count_for_source``, ``transcribe_pdf_bytes``, ``transcribe_pdf_bytes_concurrent``, ``transcribe_source``, ``transcribe_path``, ``get_transcribe_llm``, ``set_page_budget_hook``, ``get_page_budget_hook``, ``TranscribeSourceResult``, ``TranscribePathError``, ``TranscribeUnavailable``, ``TranscribePageLimitExceeded``, ``TranscribeBudgetExceeded``, ``TranscribeError``.
+"""Deep module per Ousterhout. Public surface: ``transcribe_available``, ``probe_has_text_layer``, ``page_count_for_source``, ``page_count_for_source_async``, ``transcribe_pdf_bytes``, ``transcribe_pdf_bytes_concurrent``, ``transcribe_source``, ``transcribe_path``, ``get_transcribe_llm``, ``set_page_budget_hook``, ``get_page_budget_hook``, ``TranscribeSourceResult``, ``TranscribePathError``, ``TranscribeUnavailable``, ``TranscribePageLimitExceeded``, ``TranscribeBudgetExceeded``, ``TranscribeError``.
 
 Transcribe — model-assisted PDF conversion (issue #426, ADR-0032). Sits
 beside ``importer.py`` as the second ``raw/`` -> ``docs/`` converter:
@@ -116,6 +116,7 @@ from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from typing import Literal
 
+import anyio
 import pdfplumber
 import pypdfium2 as pdfium
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -714,6 +715,42 @@ def page_count_for_source(source_filter: str) -> tuple[int, int]:
 
     max_pages = int(os.getenv("KB_TRANSCRIBE_MAX_PAGES", str(_DEFAULT_MAX_PAGES)))
     return page_count, max_pages
+
+
+# Dedicated anyio CapacityLimiter for the ASYNC route dispatch of
+# page_count_for_source (issue #482), sized to the same cap as
+# _page_count_semaphore. Starlette dispatches every SYNC route handler
+# through ``anyio.to_thread.run_sync(func)`` with NO explicit limiter, which
+# binds the call to anyio's process-wide DEFAULT thread limiter (capacity 40,
+# shared by every OTHER sync endpoint in this app — /import, /transcribe,
+# /lint, /pages/reconcile). A blocking, no-timeout
+# ``_page_count_semaphore.acquire()`` running inside that shared dispatch
+# parks the calling thread — and its default-limiter token — for the WHOLE
+# wait, so a sustained page-count flood can drain all 40 tokens and starve
+# every other sync endpoint even though only
+# ``KB_TRANSCRIBE_PAGE_COUNT_CONCURRENCY`` (4) callers ever run at once.
+# ``page_count_for_source_async`` dispatches through THIS limiter instead,
+# keeping page-count traffic off the shared default limiter entirely: a
+# waiter here yields the event loop (an async acquire) rather than holding a
+# worker thread from the shared pool.
+_page_count_thread_limiter = anyio.CapacityLimiter(_page_count_concurrency())
+
+
+async def page_count_for_source_async(source_filter: str) -> tuple[int, int]:
+    """Async dispatch wrapper around ``page_count_for_source`` (issue #482).
+
+    Identical validation, semaphore bound, and ``_pdfium_lock`` serialization
+    as ``page_count_for_source`` — this only changes HOW the call reaches a
+    worker thread, not what it does. ``GET /transcribe/page-count`` is
+    ``async def`` and awaits this instead of calling ``page_count_for_source``
+    directly, so a sustained page-count flood dispatches through
+    ``_page_count_thread_limiter`` (see its docstring) instead of Starlette's
+    shared default thread limiter — preventing that flood from starving other
+    sync endpoints' threadpool capacity.
+    """
+    return await anyio.to_thread.run_sync(
+        page_count_for_source, source_filter, limiter=_page_count_thread_limiter
+    )
 
 
 # ---------------------------------------------------------------------------

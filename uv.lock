@@ -1818,6 +1818,7 @@ name = "markdown-kb"
 version = "0.1.0"
 source = { virtual = "markdown_kb" }
 dependencies = [
+    { name = "anyio" },
     { name = "fastapi" },
     { name = "langchain-core" },
     { name = "langchain-openai" },
@@ -1841,6 +1842,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "anyio", specifier = "==4.13.0" },
     { name = "fastapi", specifier = "==0.136.3" },
     { name = "langchain-core", specifier = "==1.4.0" },
     { name = "langchain-openai", specifier = "==1.2.2" },
