@@ -16,6 +16,7 @@ members = ["markdown_kb", "vector_rag", "hybrid_kb", "eval/paraphrase_comparison
 [dependency-groups]
 dev = [
     "pytest>=9.0",
+    "pytest-timeout>=2.3",
     "httpx>=0.28",
 ]
 # Optional, eval-only: the Hybrid cross-encoder reranker (ADR-0019 / #310). Brings
@@ -64,6 +65,14 @@ pythonpath = [".", "markdown_kb"]
 # ``tests`` that collides with markdown_kb's on-pythonpath ``tests`` package.
 consider_namespace_packages = true
 addopts = "--strict-markers --import-mode=importlib"
+# CI hang-guard (issue #474): a per-test wall-clock cap so a deadlock/hang fails
+# with a full all-thread traceback instead of silently burning the job's full
+# time budget. ``thread`` method (not the default ``signal``) works off the main
+# thread and on Windows, and dumps every thread's stack on timeout — essential
+# for diagnosing the transcribe concurrency tests. 90s is far above any real
+# single-test cost; override per-test with @pytest.mark.timeout(N) if ever needed.
+timeout = 90
+timeout_method = "thread"
 markers = [
     "live: Opt-in live tests that make real OpenAI/embedding API calls; skipped by default.",
 ]
