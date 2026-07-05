@@ -10,6 +10,13 @@
 # once #332 made the default suite hermetic. fail-fast is off so a failure on
 # one OS still reports the other.
 #
+# DUPLICATION NOTE (issue #477): deploy.yml's `gate` job intentionally repeats
+# this exact test job (same matrix + steps) rather than sharing it via a reusable
+# `workflow_call`. A reusable workflow would rename the check contexts
+# (`test (os)` -> `test / test (os)`) and break branch protection's required
+# status-check pins, so the small duplication is deliberate. Keep the two in
+# sync if either changes.
+#
 # Hermeticity (#332): the two default-suite tests that previously made REAL
 # OpenAI calls now mock the LLM getter (lint C5 + the RAG-stack gateway test),
 # and the formerly Windows-only path-validation test now rejects drive-letter /
