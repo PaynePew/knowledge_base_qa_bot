@@ -1775,7 +1775,6 @@ function renderUploadCard(results) {
   return el("div", { class: "result-card" }, head, rows);
 }
 
-/* Import result card — renders ImportResponse (imported_sources + skipped_sources + failed_sources) */
 /* Import result card — renders ImportResponse (imported_sources + skipped_sources
    + failed_sources). issue #447: failures render FIRST (not buried after every
    success row) with a prominent tinted/accented treatment, and a NoTextLayer
@@ -1863,8 +1862,10 @@ function renderImportCard(data) {
     );
 
     if (f.error_type === "NoTextLayer" && rawName) {
-      bodyEl.append(transcribeAction(rawName, function(result) {
-        /* Turn THIS row into a normal success row in place. */
+      var actionsEl = transcribeAction(rawName, function(result) {
+        /* Turn THIS row into a normal success row in place, and drop the
+           now-irrelevant Transcribe action (issue #447: a leftover disabled
+           button under a success row would be dead, confusing chrome). */
         var docsName = result.docs_path ? result.docs_path.split(/[/\\]/).pop() : "";
         rowEl.classList.remove("rec-failed");
         idEl.textContent = docsName || rawName;
@@ -1873,6 +1874,7 @@ function renderImportCard(data) {
         ));
         labelEl.className = "label label-" + result.status; /* created | updated | skipped */
         labelEl.textContent = result.status;
+        actionsEl.remove();
 
         failed.splice(failed.indexOf(f), 1);
         imported.push({ raw_path: f.raw_path, docs_path: result.docs_path, status: result.status });
@@ -1884,7 +1886,8 @@ function renderImportCard(data) {
             lastImportedDocFilenames.push(docsName);
           }
         }
-      }));
+      });
+      bodyEl.append(actionsEl);
     }
 
     rows.append(rowEl);
@@ -1929,9 +1932,15 @@ function transcribeAction(source, onSuccess) {
         return resp.json();
       })
       .then(function(data) {
-        btn.disabled = false;
         statusMsgEl.textContent = "";
-        openTranscribeConfirm(source, data.page_count, data.max_pages, onSuccess);
+        /* btn stays disabled for as long as the confirm dialog is open or a
+           job is running for THIS row — openTranscribeConfirm re-enables it
+           on cancel/failure; on success the whole row (button included) is
+           discarded (see the onSuccess callback above), so nothing to
+           re-enable there. Without this, a second click while the dialog is
+           still open (pre-confirm) would fetch a second preflight and stack
+           a second confirm modal for the SAME source. */
+        openTranscribeConfirm(source, data.page_count, data.max_pages, btn, onSuccess);
       })
       .catch(function(err) {
         btn.disabled = false;
@@ -1949,8 +1958,12 @@ function transcribeAction(source, onSuccess) {
    determinate progress bar for the whole (tens-of-seconds) duration so the
    operator never faces a blank spinner (issue #447 first-class requirement).
    onSuccess(result) receives the completed TranscribeJobResultSchema entry;
-   the caller (renderImportCard) turns its own failure row into a success row. */
-function openTranscribeConfirm(source, pageCount, maxPages, onSuccess) {
+   the caller (renderImportCard) turns its own failure row into a success row.
+   triggerBtn is the row's own Transcribe button (kept disabled by
+   transcribeAction while this dialog is open) — re-enabled here on any exit
+   that did NOT actually submit a job, so cancelling never leaves the button
+   stuck disabled forever. */
+function openTranscribeConfirm(source, pageCount, maxPages, triggerBtn, onSuccess) {
   var chrome = LINT_CHROME[consoleLang];
   var overlay = el("div", { class: "reconcile-overlay" });
   var statusMsgEl = el("span", { class: "card-status-msg" });
@@ -1962,11 +1975,22 @@ function openTranscribeConfirm(source, pageCount, maxPages, onSuccess) {
   var cancelBtn = el("button", { class: "reconcile-cancel-btn", type: "button", text: chrome.transcribeCancel });
   var confirmBtn = el("button", { class: "transcribe-btn", type: "button", text: chrome.transcribeConfirm });
 
+  /* True once the batch job has actually been submitted (POST fired) — a
+     cancel/backdrop-click BEFORE that point re-enables triggerBtn (nothing
+     is running yet); AFTER that point the job keeps running in the
+     background regardless of the modal (issue #459 design), and its own
+     terminal callback (fail(), below) owns re-enabling triggerBtn instead. */
+  var jobSubmitted = false;
+
   function closeModal() { overlay.remove(); }
-  overlay.addEventListener("click", function(e) { if (e.target === overlay) closeModal(); });
+  function cancelAndClose() {
+    if (!jobSubmitted) triggerBtn.disabled = false;
+    closeModal();
+  }
+  overlay.addEventListener("click", function(e) { if (e.target === overlay) cancelAndClose(); });
   cancelBtn.addEventListener("click", function() {
     if (cancelBtn.disabled) return;
-    closeModal();
+    cancelAndClose();
   });
 
   function setProgress(pagesDone, pagesTotal) {
@@ -1979,6 +2003,7 @@ function openTranscribeConfirm(source, pageCount, maxPages, onSuccess) {
 
   confirmBtn.addEventListener("click", function() {
     if (confirmBtn.disabled || transcribeInFlight) return;
+    jobSubmitted = true;
     transcribeInFlight = true;
     confirmBtn.disabled = true;
     cancelBtn.disabled = true;
@@ -1991,6 +2016,7 @@ function openTranscribeConfirm(source, pageCount, maxPages, onSuccess) {
 
     function fail(message) {
       transcribeInFlight = false;
+      triggerBtn.disabled = false;
       statusMsgEl.textContent = "Error: " + message;
       statusMsgEl.className = "card-status-msg err";
       cancelBtn.disabled = false;
