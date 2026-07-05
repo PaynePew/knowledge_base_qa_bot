@@ -641,14 +641,10 @@ async def transcribe_page_count(source: str) -> TranscribePageCountResponse:
     ``/transcribe``'s validation chain, so a source that would 404/400 there
     404s/400s here too, before any confirm dialog is shown.
 
-    ``async def`` + ``transcriber.page_count_for_source_async`` (issue #482)
-    rather than a plain sync route: a sync route is dispatched by Starlette
-    through the shared default anyio thread limiter (capacity 40, shared by
-    every other sync endpoint), and the underlying semaphore-bounded read has
-    no timeout — under a sustained flood, waiters would park a thread (and a
-    shared-limiter token) for the whole wait and starve /import, /transcribe,
-    /lint, /pages/reconcile. Dispatching through the dedicated limiter instead
-    keeps this endpoint's traffic off that shared pool entirely.
+    ``async def`` + ``transcriber.page_count_for_source_async`` rather than a
+    plain sync route + ``page_count_for_source`` (issue #482) — see that
+    function's docstring for why a sync route here could starve other
+    endpoints' shared threadpool capacity.
 
     Shallow wrapper around ``transcriber.page_count_for_source_async``
     (CODING_STANDARD §2.3 — all domain logic lives in ``transcriber.py``).
