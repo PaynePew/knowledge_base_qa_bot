@@ -23,18 +23,45 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Pre-deploy gate (issue #477): run the SAME test suite CI runs, and block the
-  # deploy on it. Before this, deploy fired on `push: [main]` independently of
-  # ci.yml, so a red main still deployed to the live VPS (2026-07-05: main went
-  # red with a pdfium SIGSEGV for ~4h and deployed regardless). Reuses the single
-  # test definition so "deployable" means exactly "CI-green" — no drift.
+  # Pre-deploy gate (issue #477): run the SAME test suite ci.yml runs, and block
+  # the deploy on it. Before this, deploy fired on `push: [main]` independently
+  # of ci.yml, so a red main still deployed to the live VPS (2026-07-05: main
+  # went red with a pdfium SIGSEGV for ~4h and deployed regardless).
+  #
+  # This job intentionally DUPLICATES ci.yml's `test` job (same matrix + steps).
+  # A shared reusable `workflow_call` would rename ci's check contexts
+  # (`test (os)` -> `test / test (os)`) and break branch protection's required
+  # status-check pins, so the duplication is deliberate — keep it in sync with
+  # ci.yml if either changes.
   #
   # Only gates AUTOMATIC (push) deploys. A manual `workflow_dispatch` skips this
   # job and remains the documented override for force-deploying past a red/flaky
   # suite (issue #477 AC).
   gate:
     if: ${{ github.event_name == 'push' }}
-    uses: ./.github/workflows/test.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    env:
+      OPENAI_API_KEY: sk-ci-dummy-key-not-real
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Sync all workspace packages
+        run: uv sync --all-packages
+
+      - name: Run pytest (default markers — skips live tests)
+        run: uv run pytest
 
   build-and-deploy:
     needs: [gate]

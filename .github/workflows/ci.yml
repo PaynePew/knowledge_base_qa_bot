@@ -1,13 +1,32 @@
-# Minimal pytest gate (issue #324; refactored to a reusable workflow in #477).
+# Minimal pytest gate (issue #324).
 #
 # Runs the full default test suite (no -m live, no ruff gate — ruff was a
 # pre-existing repo-wide red tracked in issue #325) on every push and
 # pull_request to main so a red suite can't merge unnoticed.
 #
-# The test job itself now lives in the reusable ./.github/workflows/test.yml so
-# the deploy workflow's pre-deploy gate can call the identical suite (#477) and
-# the two can never drift. See test.yml for the platform matrix and hermeticity
-# notes.
+# Platforms: windows-latest + ubuntu-latest (matrix, fail-fast: false). Windows
+# is the project's trusted green baseline (the dev platform, 1552 passed);
+# ubuntu-latest matches the prod target (deploy.yml builds linux/amd64), added
+# once #332 made the default suite hermetic. fail-fast is off so a failure on
+# one OS still reports the other.
+#
+# DUPLICATION NOTE (issue #477): deploy.yml's `gate` job intentionally repeats
+# this exact test job (same matrix + steps) rather than sharing it via a reusable
+# `workflow_call`. A reusable workflow would rename the check contexts
+# (`test (os)` -> `test / test (os)`) and break branch protection's required
+# status-check pins, so the small duplication is deliberate. Keep the two in
+# sync if either changes.
+#
+# Hermeticity (#332): the two default-suite tests that previously made REAL
+# OpenAI calls now mock the LLM getter (lint C5 + the RAG-stack gateway test),
+# and the formerly Windows-only path-validation test now rejects drive-letter /
+# UNC paths under the Windows path flavour regardless of host OS — so the suite
+# no longer 401s and no longer depends on the platform. The earlier --deselect
+# workaround is therefore removed.
+#
+# The dummy OPENAI_API_KEY only satisfies OpenAI *client construction* (exercised
+# by non-live retry/config tests — #332 problem 3, left as-is per the issue);
+# -m live tests are skipped by default so no real API call is ever made.
 name: ci
 
 on:
@@ -18,4 +37,28 @@ on:
 
 jobs:
   test:
-    uses: ./.github/workflows/test.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    env:
+      # Not a real key — only needed so the OpenAI client constructor (exercised
+      # by non-live retry/config tests) succeeds. Live tests stay skipped.
+      OPENAI_API_KEY: sk-ci-dummy-key-not-real
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Sync all workspace packages
+        run: uv sync --all-packages
+
+      - name: Run pytest (default markers — skips live tests)
+        run: uv run pytest
