@@ -231,9 +231,10 @@ class DailyBudget:
         """
         key = day if day is not None else _utc_today()
         with self._lock:
-            if self._totals.get(key, 0.0) >= self.cap_usd:
+            current = self._totals.get(key, 0.0)
+            if current >= self.cap_usd:
                 return False
-            self._totals[key] = self._totals.get(key, 0.0) + (page_count * TRANSCRIBE_PAGE_USD)
+            self._totals[key] = current + (page_count * TRANSCRIBE_PAGE_USD)
             return True
 
     def day_total(self, *, day: str | None = None) -> float:
