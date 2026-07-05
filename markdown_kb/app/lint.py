@@ -121,9 +121,9 @@ every wikilink-resolution consumer uses the shared resolver):
   (remove-alias), and wires it into ``_REMEDIATION_TAXONOMY["C12"]``.
 
 Still read-only — this module never writes the ``aliases`` frontmatter
-field itself (that lives in the follow-up assign-alias endpoint); the
-preserve-across-re-ingest write path lives in ``ingest.py`` /
-``wiki_writer.py``.
+field itself (that lives in the assign-alias / remove-alias endpoints,
+``pages.py``); the preserve-across-re-ingest write path lives in
+``ingest.py`` / ``wiki_writer.py``.
 
 C3 display + reason-split suggested_action (issue #407, ADR-0029 decision 3)
 -----------------------------------------------------------------
