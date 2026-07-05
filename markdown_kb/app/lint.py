@@ -303,6 +303,22 @@ cache file is already rewritten each run from only that run's judged pairs
 content + same model + same prompt still hits the cache unchanged, so the
 #446 cost win is preserved.
 
+Slice scope (issue #483 — lint LLM singleton rebuilds on model change)
+-----------------------------------------------------------------
+Closes a gap #473 left open (flagged non-blocking by the independent Verdict
+agent on PR #480): ``get_lint_llm()``'s lazy singleton was never rebuilt once
+constructed, so an in-process ``OPENAI_LINT_MODEL`` change (no process
+restart) still salted the on-disk cache key with the NEW model (correctly
+forcing a re-judge, per #473) while ``_judge_page_pair`` kept calling the
+OLD model's cached client — the fresh verdict landed under the new salt but
+was actually computed by the stale model. ``get_lint_llm`` now tracks the
+resolved model name (``_lint_llm_model``) it built the singleton with and
+rebuilds whenever ``_resolve_lint_model_name()`` no longer matches, so the
+client and the salt can never drift apart. The normal env-change → restart
+deploy flow is unaffected (both start ``None``, one construction either
+way) and steady-state (model unchanged) still makes zero extra client
+constructions.
+
 Read-only invariant
 -------------------
 ``run_lint()`` does NOT modify wiki page frontmatter.  It writes:
@@ -336,7 +352,7 @@ Check execution order (cheapest to most expensive)
 10. C10 qa-schema-validity (read qa frontmatter)
 11. C5 page-pair LLM (F1∪F3 filter + LLM) — most expensive last
 
-Authorised by PRD #65 (Phase 5), GitHub issue #66 (Slice 5-1), GitHub issue #67 (Slice 5-2), GitHub issue #68 (Slice 5-3), GitHub issue #69 (Slice 5-4), GitHub issue #70 (Slice 5-5), PRD #78 (Phase 6), GitHub issue #82 (Slice 6-5 Phase 5 amendment), ADR-0023 (Lint Remediation Direct vs Authored), PRD #359 (Lint Remediation tier-A), GitHub issue #361 (Slice S1 — Lint Axis taxonomy), GitHub issue #363 (Slice S3 — Console axis grouping + per-row Direct Remediation + auto-relint), GitHub issue #365 (Slice S5 — Console zh/en language toggle), GitHub issue #408 (C3 Routed fix-the-Source flow, ADR-0029), and GitHub issue #446 (C5 content-hash verdict cache).
+Authorised by PRD #65 (Phase 5), GitHub issue #66 (Slice 5-1), GitHub issue #67 (Slice 5-2), GitHub issue #68 (Slice 5-3), GitHub issue #69 (Slice 5-4), GitHub issue #70 (Slice 5-5), PRD #78 (Phase 6), GitHub issue #82 (Slice 6-5 Phase 5 amendment), ADR-0023 (Lint Remediation Direct vs Authored), PRD #359 (Lint Remediation tier-A), GitHub issue #361 (Slice S1 — Lint Axis taxonomy), GitHub issue #363 (Slice S3 — Console axis grouping + per-row Direct Remediation + auto-relint), GitHub issue #365 (Slice S5 — Console zh/en language toggle), GitHub issue #408 (C3 Routed fix-the-Source flow, ADR-0029), GitHub issue #446 (C5 content-hash verdict cache), GitHub issue #473 (C5 verdict cache generation salt), and GitHub issue #483 (lint LLM singleton rebuilds on model change).
 """
 
 from __future__ import annotations
@@ -386,6 +402,15 @@ from .slugs import build_alias_resolution_map
 # Module-level sentinel; monkeypatched in tests.
 _lint_llm = None
 
+# The resolved model name ``_lint_llm`` was constructed with (issue #483).
+# ``get_lint_llm`` compares this against a fresh ``_resolve_lint_model_name()``
+# call on every invocation and rebuilds the singleton on a mismatch — without
+# this, an in-process ``OPENAI_LINT_MODEL`` change (no restart) would still
+# hand ``_judge_page_pair`` the OLD model's client while the #473 cache salt
+# had already moved on to the NEW model's key, so the fresh verdict stored
+# under the new salt would silently be computed by the stale model.
+_lint_llm_model: str | None = None
+
 # Best-effort C5 metrics for cost accounting / report honesty. Mutable lists so
 # _check_c5_page_pair can write them and run_lint can read-then-reset, without a
 # global statement (consistent with existing module-level patterns). Index 0
@@ -430,18 +455,27 @@ def get_lint_llm():
 
     Model resolution: see ``_resolve_lint_model_name``.
 
+    Rebuilds the singleton whenever the resolved model name differs from the
+    one the current singleton was built with (issue #483), so an in-process
+    ``OPENAI_LINT_MODEL`` change (no process restart) is judged by the NEW
+    model — matching the #473 cache salt, which already keys on the fresh
+    resolution. Steady state (model unchanged) still returns the cached
+    client with no extra construction.
+
     temperature=0 for determinism (structured output, reproducible runs).
     """
-    global _lint_llm
-    if _lint_llm is None:
+    global _lint_llm, _lint_llm_model
+    resolved_model = _resolve_lint_model_name()
+    if _lint_llm is None or _lint_llm_model != resolved_model:
         from langchain_openai import ChatOpenAI
 
         _lint_llm = ChatOpenAI(
-            model=_resolve_lint_model_name(),
+            model=resolved_model,
             temperature=0,
             timeout=60,
             max_retries=1,
         )
+        _lint_llm_model = resolved_model
     return _lint_llm
 
 

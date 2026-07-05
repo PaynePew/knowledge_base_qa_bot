@@ -458,6 +458,59 @@ class TestGenerationSaltInvalidation:
 
 
 # ---------------------------------------------------------------------------
+# LLM singleton rebuild on model change (issue #483) — the salt (#473) makes a
+# model swap re-judge, but the pre-#483 singleton kept serving the OLD model's
+# client under the NEW salt key unless the whole process restarted.
+# ---------------------------------------------------------------------------
+
+
+class _FakeChatOpenAI:
+    """Records the ``model=`` kwarg it was constructed with; no network calls."""
+
+    def __init__(self, *, model, **_kwargs):
+        self.model = model
+
+
+class TestLintLlmSingletonModelReset:
+    def _reset_singleton(self, monkeypatch):
+        import app.lint as lint_module
+
+        monkeypatch.setattr(lint_module, "_lint_llm", None)
+        monkeypatch.setattr(lint_module, "_lint_llm_model", None)
+        monkeypatch.setattr("langchain_openai.ChatOpenAI", _FakeChatOpenAI)
+        return lint_module
+
+    def test_rebuilds_when_resolved_model_changes(self, monkeypatch):
+        lint_module = self._reset_singleton(monkeypatch)
+
+        monkeypatch.setenv("OPENAI_LINT_MODEL", "gpt-4o-mini")
+        first = lint_module.get_lint_llm()
+        assert first.model == "gpt-4o-mini"
+
+        monkeypatch.setenv("OPENAI_LINT_MODEL", "gpt-4.1")
+        second = lint_module.get_lint_llm()
+
+        assert second.model == "gpt-4.1", (
+            "An in-process OPENAI_LINT_MODEL swap must rebuild the singleton with "
+            "the new model, not keep judging with the stale client under the new "
+            "cache salt (issue #483)"
+        )
+        assert second is not first
+
+    def test_does_not_rebuild_when_model_is_unchanged(self, monkeypatch):
+        lint_module = self._reset_singleton(monkeypatch)
+
+        monkeypatch.setenv("OPENAI_LINT_MODEL", "gpt-4o-mini")
+        first = lint_module.get_lint_llm()
+        second = lint_module.get_lint_llm()
+
+        assert second is first, (
+            "Steady state (unchanged model) must reuse the existing client — "
+            "no extra client construction per AC"
+        )
+
+
+# ---------------------------------------------------------------------------
 # AC3 — cache hits/misses and estimated cost visible in logs.
 # ---------------------------------------------------------------------------
 
