@@ -53,7 +53,9 @@ call and no corpus mutation, the same rationale that already leaves
 ``GET /read/*`` and ``GET /healthz*`` unclassified. ``POST
 /wiki/transcribe/batch`` is the one that actually starts real (billed) work,
 so it — not its poll/preflight siblings — is the path that needs the admin
-gate.
+gate. ``POST /wiki/import/jobs`` / ``GET /wiki/import/jobs/{job_id}``
+(issue #497) split identically: the submit starts the same billed work as
+``/wiki/import`` and is classified; its poll sibling stays unclassified.
 """
 
 from __future__ import annotations
@@ -131,6 +133,7 @@ ADMIN_PATHS: frozenset[str] = frozenset(
         "/wiki/ingest",
         "/wiki/lint",
         "/wiki/import",
+        "/wiki/import/jobs",  # issue #497: async submit for the SAME import surface as /wiki/import — classified for the same reason /wiki/transcribe/batch is (the submit, not its poll sibling, starts the billed work)
         "/wiki/transcribe",  # issue #460: forced Transcribe — same cost-exposure surface as /wiki/import's auto-route
         "/wiki/transcribe/batch",  # issue #447: async submit for the SAME force-transcribe surface as /wiki/transcribe — was absent from this set (issue #459 added the route after #460 classified only the sync one), so it bypassed the admin token/semaphore entirely until this line
         "/upload",

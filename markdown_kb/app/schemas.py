@@ -1121,6 +1121,36 @@ class ImportResponse(BaseModel):
     failed_sources: list[ImportFailureSchema] = []
 
 
+class ImportJobSubmitResponse(BaseModel):
+    """Response body for POST /import/jobs — the submitted job id (issue #497)."""
+
+    job_id: str
+
+
+class ImportJobStatusResponse(BaseModel):
+    """Response body for GET /import/jobs/{job_id} (issue #497).
+
+    ``pages_done`` / ``pages_total`` track auto-routed Transcribe pages across
+    the WHOLE run — the same server-owned numbers TranscribeJobStatusResponse
+    exposes (the Console Import progress bar's data source; §12.8 bans
+    client-guessed percentages, not real counts). ``pages_total`` grows
+    incrementally as each scanned file's page count is discovered; a run with
+    no scans keeps both at 0. ``files_done`` / ``files_total`` track
+    whole-run file progress (``files_total`` is 0 until the first file
+    finishes). ``result`` is the SAME ``ImportResponse`` the synchronous
+    ``POST /import`` returns, present only once ``status == "completed"``.
+    """
+
+    job_id: str
+    status: Literal["submitted", "working", "completed", "failed"]
+    files_done: int
+    files_total: int
+    pages_done: int
+    pages_total: int
+    result: ImportResponse | None = None
+    error: str | None = None
+
+
 # ---------------------------------------------------------------------------
 # /transcribe schemas (issue #426, ADR-0032)
 # ---------------------------------------------------------------------------

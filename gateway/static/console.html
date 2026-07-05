@@ -2131,18 +2131,24 @@ function openTranscribeConfirm(source, pageCount, maxPages, triggerBtn, onSucces
    invited a duplicate batch of the same PDF). Retries poll the SAME job_id;
    an unrecognised status is also bounded (issue #476 L5) rather than polled
    forever. */
-function pollTranscribeJob(jobId, onProgress, onDone, onError) {
+/* Generic submit-job poller (issue #497) — factored out of pollTranscribeJob
+   so the Import step's job polls with the SAME discipline transcribe
+   established (the guarantees documented above live HERE now). onTick(job)
+   fires on every successful poll; onDone(job) exactly once when status
+   turns terminal; onError(err) when retries are exhausted. kindLabel names
+   the job type in the unknown-status error text. */
+function pollJobStatus(statusUrl, kindLabel, onTick, onDone, onError) {
   var consecutiveFailures = 0;
   var unknownStatusTicks = 0;
   function tick() {
-    fetch("/wiki/transcribe/jobs/" + encodeURIComponent(jobId))
+    fetch(statusUrl)
       .then(function(resp) {
-        if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+        if (!resp.ok) return resp.text().then(function(t) { throw httpError(resp, t); });
         return resp.json();
       })
       .then(function(job) {
         consecutiveFailures = 0;
-        onProgress(job.pages_done, job.pages_total);
+        onTick(job);
         if (job.status === "completed" || job.status === "failed") {
           onDone(job);
           return;
@@ -2152,7 +2158,7 @@ function pollTranscribeJob(jobId, onProgress, onDone, onError) {
         } else {
           unknownStatusTicks += 1;
           if (unknownStatusTicks >= 5) {
-            onError(new Error("unknown transcribe job status: " + String(job.status)));
+            onError(new Error("unknown " + kindLabel + " job status: " + String(job.status)));
             return;
           }
         }
@@ -2165,6 +2171,14 @@ function pollTranscribeJob(jobId, onProgress, onDone, onError) {
       });
   }
   tick();
+}
+
+function pollTranscribeJob(jobId, onProgress, onDone, onError) {
+  pollJobStatus(
+    "/wiki/transcribe/jobs/" + encodeURIComponent(jobId), "transcribe",
+    function(job) { onProgress(job.pages_done, job.pages_total); },
+    onDone, onError
+  );
 }
 
 /* Ingest result card — renders IngestResponse (results + skipped_sources + failed_sources).
@@ -4765,6 +4779,21 @@ function renderCollisionDifferentiatePreview(modal, data, resultEl, closeModal, 
 }
 
 /* Generic error card — used by any step on network/HTTP error */
+/* Compose an honest Error from a non-ok fetch Response (issue #497). An edge
+   502/504 arrives with an EMPTY body, so the old "HTTP " + status + ": " + t
+   pattern rendered a bare "HTTP 502:" — which reads as a broken UI and says
+   nothing about what happened. Append the body only when there is one; for
+   the gateway-timeout family, say what the operator can actually conclude. */
+function httpError(resp, bodyText) {
+  var msg = "HTTP " + resp.status + (resp.statusText ? " " + resp.statusText : "");
+  if (bodyText && bodyText.trim()) return new Error(msg + ": " + bodyText.trim());
+  if (resp.status === 502 || resp.status === 504) {
+    return new Error(msg + " — the server did not answer in time; the operation " +
+      "may still be running server-side. Wait a moment, then Refresh before re-running.");
+  }
+  return new Error(msg);
+}
+
 function renderErrorCard(stepLabel, message) {
   return el("div", { class: "result-card" },
     el("div", { class: "result-card-head" },
@@ -4782,6 +4811,46 @@ function makeBusyCard(label) {
       el("span", { text: label + "…" })
     )
   );
+}
+
+/* Import job progress card (issue #497): busy row + a determinate per-page
+   bar that appears only once the poll reports real server-owned counts —
+   pages_done/pages_total are the auto-routed Transcribe pages (§12.8 bans a
+   client-GUESSED percentage, not a real server-reported count; same
+   exception as the Transcribe modal's bar), files k/N comes from the same
+   poll. Returns { card, update(job) }. */
+function makeImportProgressCard() {
+  var fillEl = el("div", { class: "transcribe-progress-fill", style: "width:0%" });
+  var trackEl = el("div", { class: "transcribe-progress-track" }, fillEl);
+  trackEl.style.display = "none";
+  var labelEl = el("div", { class: "transcribe-progress-label" });
+  labelEl.style.display = "none";
+  var card = el("div", { class: "result-card" },
+    el("div", { class: "busy-row" },
+      el("span", { class: "spinner" }),
+      el("span", { text: "Running Import…" })
+    ),
+    el("div", { style: "padding:0 16px 12px;" }, trackEl, labelEl)
+  );
+
+  function update(job) {
+    var parts = [];
+    if (job.files_total > 0) {
+      parts.push("file " + Math.min(job.files_done + 1, job.files_total) + "/" + job.files_total);
+    }
+    if (job.pages_total > 0) {
+      var pct = Math.min(Math.round((job.pages_done / job.pages_total) * 100), 100);
+      fillEl.style.width = pct + "%";
+      trackEl.style.display = "block";
+      parts.push(job.pages_done + "/" + job.pages_total + " pages transcribed");
+    }
+    if (parts.length > 0) {
+      labelEl.textContent = parts.join(" · ");
+      labelEl.style.display = "block";
+    }
+  }
+
+  return { card: card, update: update };
 }
 
 /* ============================================================
@@ -4919,33 +4988,61 @@ var STEP_DEFS = [
   {
     id: "import",
     label: "Import",
-    desc: "Import: convert HTML/TXT to Markdown — normalises raw sources before LLM synthesis.",
+    desc: "Import: convert HTML/TXT/PDF to Markdown — normalises raw sources before LLM synthesis (scanned PDFs auto-transcribe with per-page progress).",
     buildBody: null,
     run: function(resultEl, setStepBusy) {
+      /* issue #497: Import runs as a background job (POST /wiki/import/jobs
+         + poll) instead of one synchronous request. The ADR-0032 auto-route
+         transcribes a text-less PDF INSIDE the sync request — one vision
+         call per page, minutes for a real scan, long past the edge proxy's
+         window: the proxy then answered 502 with an empty body while the
+         server kept working. The job poll also carries the real
+         pages_done/pages_total, so the operator gets a determinate bar
+         instead of a minutes-long blank spinner. */
       setStepBusy(true);
-      resultEl.replaceChildren(makeBusyCard("Running Import"));
+      var progress = makeImportProgressCard();
+      resultEl.replaceChildren(progress.card);
 
-      fetch("/wiki/import", { method: "POST" })
+      function finishWithResult(data) {
+        resultEl.replaceChildren(renderImportCard(data));
+        /* Capture imported filenames for the Ingest step.
+           Extract the bare filename from docs_path (e.g. "docs/x.md" → "x.md").
+           imported_sources + skipped_sources both represent available docs/ files.
+           §12.5: extraction logic is trivial (basename), not business logic. */
+        var allImported = (data.imported_sources || []).concat(data.skipped_sources || []);
+        if (allImported.length > 0) {
+          lastImportedDocFilenames = allImported.map(function(r) {
+            var p = r.docs_path || "";
+            return p.split(/[/\\]/).pop();
+          }).filter(Boolean);
+        }
+        setStepBusy(false);
+      }
+      function fail(err) {
+        resultEl.replaceChildren(renderErrorCard("Import", err.message || String(err)));
+        setStepBusy(false);
+      }
+
+      fetch("/wiki/import/jobs", { method: "POST" })
         .then(function(resp) {
-          if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+          if (!resp.ok) return resp.text().then(function(t) { throw httpError(resp, t); });
           return resp.json();
         })
         .then(function(data) {
-          resultEl.replaceChildren(renderImportCard(data));
-          /* Capture imported filenames for the Ingest step.
-             Extract the bare filename from docs_path (e.g. "docs/x.md" → "x.md").
-             imported_sources + skipped_sources both represent available docs/ files.
-             §12.5: extraction logic is trivial (basename), not business logic. */
-          var allImported = (data.imported_sources || []).concat(data.skipped_sources || []);
-          if (allImported.length > 0) {
-            lastImportedDocFilenames = allImported.map(function(r) {
-              var p = r.docs_path || "";
-              return p.split(/[/\\]/).pop();
-            }).filter(Boolean);
-          }
+          pollJobStatus(
+            "/wiki/import/jobs/" + encodeURIComponent(data.job_id), "import",
+            progress.update,
+            function(job) {
+              if (job.status === "failed") {
+                fail(new Error(job.error || "import job failed"));
+                return;
+              }
+              finishWithResult(job.result || {});
+            },
+            fail
+          );
         })
-        .catch(function(err)  { resultEl.replaceChildren(renderErrorCard("Import", err.message || String(err))); })
-        .finally(function()   { setStepBusy(false); });
+        .catch(fail);
     },
   },
   {
