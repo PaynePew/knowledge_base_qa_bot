@@ -22,6 +22,7 @@ import yaml
 
 from app.lint import (
     LINT_CHECK_TAXONOMY,
+    RemediationAction,
     RemediationDescriptor,
     _check_c12_alias_collision,
     _render_report_markdown,
@@ -193,9 +194,9 @@ class TestC12SharedTaxonomyWiring:
         descriptor = remediation_for("C12")
         assert isinstance(descriptor, RemediationDescriptor)
         assert descriptor.tier == "direct"
-        # Foundation slice (issue #406): no assign-alias endpoint exists yet
-        # to wire an executable action to.
-        assert descriptor.actions == ()
+        # issue #491 (ADR-0030 extension): DELETE /pages/{slug}/aliases/{alias}
+        # (remove-alias) is the real fix — one call per ``claimed_by`` entry.
+        assert descriptor.actions == (RemediationAction("remove_alias", "claimed_by"),)
         assert descriptor.route is None
 
     def test_c12_renders_in_the_report_when_findings_exist(self, tmp_wiki_dir):

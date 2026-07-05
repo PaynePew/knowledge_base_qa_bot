@@ -2507,14 +2507,12 @@ var AXIS_CHECK_CODES = {
                 operation to confirm, only an existing workflow to carry the
                 finding's context into.
    C12 alias-collision (Coherence axis, issue #406/#409 foundation, wired to
-                the Console by issue #488) renders DETECTION + ADVISORY only:
-                the server taxonomy deliberately ships no RemediationAction
-                for C12 (lint.py _REMEDIATION_TAXONOMY - the fix is a
-                frontmatter hand-edit REMOVING the alias), and the existing
-                assign-alias endpoint is add-only - adding can never resolve
-                a collision (same-page add is an idempotent no-op, any other
-                page 409s). The one-click action arrives with the
-                alias-remove endpoint follow-up slice. */
+                the Console by issue #488) renders a real "direct" Remove
+                control since issue #491: the existing assign-alias endpoint
+                is add-only and can never resolve a collision (same-page add
+                is an idempotent no-op, any other page 409s), so the honest
+                fix is DELETE /pages/{slug}/aliases/{alias} — one call per
+                claimant a curator wants cleared (removeAliasAction below). */
 var LINT_CHECK_META = {
   C6:  { label: "stale",            tier: "direct",    findingsKey: "stale_pages" },
   C3:  { label: "failed-grounding", tier: "direct",    findingsKey: "failed_grounding" },
@@ -2628,7 +2626,9 @@ var LINT_CHROME = {
     deleteCancel:        "Cancel",
     deleteWorking:       "Deleting…",
     partialOrphanAdvisory: "Partial orphan — a Source still exists. Repair the citation; never delete.",
-    c12Advisory:         "Alias collisions are resolved by hand: remove the alias from the extra page(s) frontmatter (aliases field), then re-run lint. One-click remediation ships with the alias-remove endpoint (follow-up of #488).",
+    c12Remove:              "Remove alias",
+    c12RemoveChooseKeeper:  "Choose page to keep…",
+    c12RemoveKeepAndClear:  "Remove from the rest",
     fillViaImport:       "Fill via Import",
     verifyReask:         "Verify: re-ask",
     claimsNotRecorded:   "Claims not recorded.",
@@ -2709,7 +2709,9 @@ var LINT_CHROME = {
     deleteCancel:        "取消",
     deleteWorking:       "刪除中…",
     partialOrphanAdvisory: "部分孤立 — 仍有 Source 存在，請修正引用，勿刪除。",
-    c12Advisory:         "別名衝突需手動處理：至多保留一頁宣告此別名，於其餘頁面的 frontmatter aliases 欄位移除後重新 lint。一鍵修復隨 alias 移除端點的後續 slice 提供（#488 的 follow-up）。",
+    c12Remove:              "移除別名",
+    c12RemoveChooseKeeper:  "選擇保留的頁面…",
+    c12RemoveKeepAndClear:  "移除其餘頁面的別名",
     fillViaImport:       "透過匯入補齊",
     verifyReask:         "驗證：重新提問",
     claimsNotRecorded:   "未記錄相關聲明。",
@@ -3166,6 +3168,36 @@ function assignAliasRequest(pageSlug, alias) {
     if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
     return null;
   });
+}
+
+/* Remove-Alias write (issue #491, ADR-0030 extension) — the mirror-image of
+   assignAliasRequest above: the executable fix the C12 alias-collision
+   Remediation names (lint.py's _REMEDIATION_TAXONOMY["C12"]). Direct-class:
+   no LLM, one call clears one page's claim on one alias. A 404 (alias not
+   currently assigned to this page — AliasNotFound, e.g. a stale row after a
+   concurrent removal) surfaces verbatim through runLintRemediation's
+   existing err-status rendering (§12.5) — this wrapper never re-derives
+   eligibility itself. */
+function removeAliasRequest(pageSlug, alias) {
+  return fetch(
+    "/wiki/pages/" + encodeURIComponent(pageSlug) + "/aliases/" + encodeURIComponent(alias),
+    { method: "DELETE" }
+  ).then(function(resp) {
+    if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+    return null;
+  });
+}
+
+/* Sequential composite over removeAliasRequest — a C12 alias_vs_alias row
+   clears the alias from every claimant EXCEPT the curator-picked keeper in
+   one gesture, but the endpoint itself still takes one page at a time
+   (ADR-0030 "never batch" Invariant applied to remove-alias): chained, not
+   Promise.all, so a mid-sequence 404 surfaces through the SAME
+   runLintRemediation error path instead of a partial silent success. */
+function removeAliasFromClaimantsRequest(alias, claimants) {
+  return claimants.reduce(function(chain, pageSlug) {
+    return chain.then(function() { return removeAliasRequest(pageSlug, alias); });
+  }, Promise.resolve());
 }
 
 /* Candidate page list for the Assign-Alias picker — sourced from the
@@ -3961,13 +3993,61 @@ function renderLintCard(data, resultEl) {
      C8 and C9 render no actionsEl here: both checks' real actions live in
      the dedicated Curation Queue block instead — C8's Promote/Discard
      (issue #363 AC) and, since tier-B S4 (issue #380), C9's Re-file. */
-  /* C12 advisory element — chrome lookup lives OUTSIDE ROW_RENDERERS (the
-     bilingual-parity test pins that renderer bodies never touch
-     LINT_CHROME[consoleLang]; advisory strings are chrome, fetched here,
-     mirroring the C11 partial-orphan advisory). */
-  function c12AdvisoryEl() {
-    return el("div", { class: "lint-row-actions" },
-      el("span", { class: "card-status-msg", text: LINT_CHROME[consoleLang].c12Advisory }));
+  /* ── C12 alias-collision Remove control (issue #491) — chrome lookup lives
+     OUTSIDE ROW_RENDERERS (the bilingual-parity test pins that renderer
+     bodies never touch LINT_CHROME[consoleLang] directly), mirroring every
+     other row action defined in this scope (reingestAction, discardAction,
+     assignAliasAction above). Reuses runLintRemediation exactly like every
+     sibling Direct action, so a 404 (alias already removed by a concurrent
+     request — AliasNotFound) surfaces through its existing err-status
+     rendering verbatim (§12.5) — this function never re-derives eligibility
+     itself.
+
+     Two shapes, both keyed on ``finding.alias``:
+     - alias_vs_slug: the real page slug always wins resolution, so EVERY
+       declaring page in ``claimed_by`` is dead weight — one button clears
+       the alias from all of them (there is no valid "keeper").
+     - alias_vs_alias: the curator picks which page KEEPS the alias; a
+       second call removes it from every other claimant. Both branches issue
+       one DELETE per claimant, sequentially (never a server-side batch —
+       mirrors ADR-0030's "assign-alias never batches" Invariant applied to
+       its mirror-image remove). */
+  function removeAliasAction(finding) {
+    var alias = finding.alias;
+    var claimants = finding.claimed_by || [];
+    var statusMsgEl = el("span", { class: "card-status-msg" });
+
+    if (finding.kind === "alias_vs_slug") {
+      var removeBtn = el("button", { class: "remove-alias-btn", type: "button",
+        text: LINT_CHROME[consoleLang].c12Remove });
+      allButtons.push(removeBtn);
+      removeBtn.addEventListener("click", function() {
+        if (removeBtn.disabled || remediationInFlight) return;
+        runLintRemediation(
+          removeAliasFromClaimantsRequest(alias, claimants), removeBtn, statusMsgEl, resultEl, allButtons
+        );
+      });
+      return el("div", { class: "lint-row-actions" }, removeBtn, statusMsgEl);
+    }
+
+    // alias_vs_alias: curator picks which claimant KEEPS the alias.
+    var select = el("select", { class: "remove-alias-select" },
+      el("option", { value: "", text: LINT_CHROME[consoleLang].c12RemoveChooseKeeper }));
+    claimants.forEach(function(pageSlug) {
+      select.append(el("option", { value: pageSlug, text: pageSlug }));
+    });
+    var keepBtn = el("button", { class: "remove-alias-btn", type: "button",
+      text: LINT_CHROME[consoleLang].c12RemoveKeepAndClear, disabled: "" });
+    select.addEventListener("change", function() { keepBtn.disabled = !select.value; });
+    allButtons.push(keepBtn);
+    keepBtn.addEventListener("click", function() {
+      if (keepBtn.disabled || !select.value || remediationInFlight) return;
+      var rest = claimants.filter(function(pageSlug) { return pageSlug !== select.value; });
+      runLintRemediation(
+        removeAliasFromClaimantsRequest(alias, rest), keepBtn, statusMsgEl, resultEl, allButtons
+      );
+    });
+    return el("div", { class: "lint-row-actions" }, select, keepBtn, statusMsgEl);
   }
 
   var ROW_RENDERERS = {
@@ -4003,26 +4083,25 @@ function renderLintCard(data, resultEl) {
       return findingRow(i, f.base_slug, (f.pages_in_group || []).join(", "),
         "collision", "label-updated", collisionAction(f.base_slug, f.pages_in_group));
     },
-    /* ── C12 alias-collision (issue #488) — detection + advisory. Two
+    /* ── C12 alias-collision (issue #491) — a real Remove control. Two
        ``kind`` shapes, both keyed on ``f.alias``: ``alias_vs_slug`` (the
        alias matches an existing page's real slug, named by
-       ``f.slug_owner``) and ``alias_vs_alias`` (two+ pages independently
-       claim it, ``f.claimed_by`` lists them). Deliberately NO write control:
-       the add-only assign-alias endpoint cannot resolve a collision (adding
-       the alias to a page that already claims it is an idempotent no-op that
-       would render as a fake success; adding it to any other page is a
-       server 409), and the server's own remediation taxonomy carries no
-       action for C12 — the honest fix today is removing the alias from the
-       extra page's frontmatter. The one-click remediation lands with the
-       alias-remove endpoint (follow-up of #488), which upgrades this
-       advisory to a real control. */
+       ``f.slug_owner`` — the real page always wins, so EVERY declaring
+       page's claim in ``f.claimed_by`` is dead weight) and ``alias_vs_alias``
+       (two+ pages independently claim it, ``f.claimed_by`` lists them — the
+       curator picks which one keeps it). removeAliasAction (below) renders
+       the shape-appropriate control, wired to the real ``DELETE
+       /pages/{slug}/aliases/{alias}`` endpoint (ADR-0030 extension) — the
+       add-only assign-alias endpoint could never resolve a collision (adding
+       to a page that already claims it is an idempotent no-op; adding to any
+       other page 409s), so removal is the only honest fix. */
     C12: function(i, f) {
       var collidesWith = (f.claimed_by || []).join(", ") +
         (f.slug_owner ? " vs page slug " + f.slug_owner : "");
       return findingRow(i, f.alias,
         f.kind + " · claimed by: " + collidesWith + " · resolves to " + f.resolved_to,
         "alias-collision", "label-updated",
-        c12AdvisoryEl());
+        removeAliasAction(f));
     },
     C1: function(i, f) {
       return findingRow(i, f.query_canonical,

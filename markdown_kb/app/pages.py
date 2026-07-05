@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``delete_full_orphan``, ``add_alias``, ``get_resolution_map``, ``PageNotFound``, ``PageCorrupt``, ``PageNotFullOrphan``, ``InvalidAlias``, ``AliasCollision``.
+"""Deep module per Ousterhout. Public surface: ``delete_full_orphan``, ``add_alias``, ``remove_alias``, ``get_resolution_map``, ``PageNotFound``, ``PageCorrupt``, ``PageNotFullOrphan``, ``InvalidAlias``, ``AliasCollision``, ``AliasNotFound``.
 
 C11 Confirmed Remediation (tier-B S5, issue #381, ADR-0024/0025) — the first
 delete of a corpus-resident wiki page. ``DELETE /pages/{slug}`` (routes.py)
@@ -12,6 +12,15 @@ Invariant), and its collision check reuses the SAME shared resolver
 (``slugs.build_alias_resolution_map``) C2 and C12 already consult (ADR-0030
 Invariant: "every consumer of wikilink resolution uses the shared
 resolver").
+
+Issue #491 (ADR-0030 extension) adds ``remove_alias`` — the mirror-image
+operation: the executable fix the C12 alias-collision Remediation names.
+``DELETE /pages/{slug}/aliases/{alias}`` (routes.py) wraps it the same way.
+Direct-class, no LLM, never batches — one call clears one page's claim on
+one alias. Unlike ``add_alias`` there is no collision check (nothing to
+collide with when removing an entry); a request naming an alias the page
+never declared is refused (``AliasNotFound``, 404) rather than reported as a
+fake-success no-op.
 
 Predicate (ADR-0025, the only condition under which a live page may be
 deleted): the page is a **full orphan** — its ``sources`` frontmatter is
@@ -107,6 +116,19 @@ class AliasCollision(Exception):
         self.alias = alias
         self.owner = owner
         super().__init__(f"alias {alias!r} already resolves to page {owner!r}")
+
+
+class AliasNotFound(Exception):
+    """Raised when ``alias`` is not currently in ``slug``'s frontmatter
+    ``aliases`` list (route -> 404, issue #491). Removing an alias a page
+    never declared is refused honestly rather than reported as a
+    fake-success no-op — e.g. a stale Console row where the alias was
+    already removed by a concurrent request."""
+
+    def __init__(self, alias: str, slug: str) -> None:
+        self.alias = alias
+        self.slug = slug
+        super().__init__(f"alias {alias!r} is not assigned to page {slug!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -277,6 +299,76 @@ def add_alias(
             fm_text += "\n"
         write_text_atomic(path, prefix + fm_text + suffix)
         log_event("alias_assigned", f"slug={slug} alias={alias}")
+
+
+# ---------------------------------------------------------------------------
+# Remove-alias (issue #491, ADR-0030 extension)
+# ---------------------------------------------------------------------------
+
+
+def remove_alias(
+    slug: str,
+    alias: str,
+    *,
+    wiki_dir: Path | None = None,
+) -> None:
+    """Remove ``alias`` from the entities/concepts page ``slug``.
+
+    Direct-class curator mutation (issue #491) — the mirror-image of
+    ``add_alias``: no LLM involved, never batches, reversible via a
+    frontmatter hand-edit. This is the executable fix the C12
+    alias-collision Remediation names (``_REMEDIATION_TAXONOMY["C12"]`` in
+    ``lint.py``): the add-only assign-alias endpoint can never resolve a
+    collision (re-assigning to the same page no-ops, assigning to any other
+    page 409s), so the only real fix is removing the alias from whichever
+    page(s) should not keep it.
+
+    Same surgical frontmatter-only rewrite as ``add_alias`` —
+    ``wiki_writer.read_page_parts`` splits the page into
+    prefix/frontmatter/suffix so the sentinel comment, heading, body, and
+    citation line are preserved byte-for-byte; only the parsed frontmatter
+    dict's ``aliases`` list is mutated and the whole dict is re-serialised.
+
+    Unlike ``add_alias``, this performs no collision check — there is
+    nothing to collide with when removing an entry.
+
+    Args:
+        slug:     Target entities/concepts page slug.
+        alias:    The alias to remove.
+        wiki_dir: Root wiki directory. Defaults to ``indexer.WIKI_DIR``.
+
+    Raises:
+        PageNotFound: ``slug`` does not resolve to an entities/concepts
+            page, OR ``slug`` is not a bare filename component (issue #397
+            — see ``_find_page_path``; rejected before any filesystem
+            access).
+        PageCorrupt: the page exists but its frontmatter cannot be parsed.
+        AliasNotFound: ``alias`` is not currently in this page's ``aliases``
+            list — refused (404) rather than a fake-success no-op.
+    """
+    alias = alias.strip()
+    resolved_wiki = _resolve_wiki_dir(wiki_dir)
+
+    with _index_lock:
+        path = _find_page_path(slug, resolved_wiki)
+
+        parts = read_page_parts(path)
+        if parts is None:
+            raise PageCorrupt(slug)
+        prefix, fm, suffix = parts
+
+        existing_aliases = fm.get("aliases") or []
+        if not isinstance(existing_aliases, list):
+            existing_aliases = []
+        if alias not in existing_aliases:
+            raise AliasNotFound(alias, slug)
+
+        fm["aliases"] = [a for a in existing_aliases if a != alias]
+        fm_text = yaml.dump(fm, default_flow_style=False, allow_unicode=True)
+        if not fm_text.endswith("\n"):
+            fm_text += "\n"
+        write_text_atomic(path, prefix + fm_text + suffix)
+        log_event("alias_removed", f"slug={slug} alias={alias}")
 
 
 # ---------------------------------------------------------------------------

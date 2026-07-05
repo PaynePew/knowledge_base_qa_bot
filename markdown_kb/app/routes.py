@@ -6,7 +6,8 @@ HTTP wiring for /health, /index, /chat, /qa/{slug}/promote,
 /transcribe/page-count, /pages/reconcile, /pages/reconcile/apply, /pages/collision/merge,
 /pages/collision/merge/apply, /pages/collision/differentiate,
 /pages/collision/differentiate/apply, /pages/{slug} (DELETE),
-/pages/{slug}/aliases (POST), /pages/resolution-map (GET). No domain logic."""
+/pages/{slug}/aliases (POST), /pages/{slug}/aliases/{alias} (DELETE),
+/pages/resolution-map (GET). No domain logic."""
 
 from __future__ import annotations
 
@@ -1095,6 +1096,58 @@ def assign_alias(slug: str, request: AliasAssignRequest) -> None:
         raise HTTPException(
             status_code=409,
             detail=f"alias '{exc.alias}' already resolves to page '{exc.owner}'",
+        ) from exc
+
+
+# ---------------------------------------------------------------------------
+# /pages/{slug}/aliases/{alias} — remove-alias (issue #491, ADR-0030 extension)
+# ---------------------------------------------------------------------------
+
+
+@router.delete("/pages/{slug}/aliases/{alias}", status_code=204)
+def remove_alias(slug: str, alias: str) -> None:
+    """Curator endpoint: remove an alias from an existing entities/concepts page.
+
+    issue #491 (ADR-0030 extension) — the executable fix the C12
+    alias-collision Remediation names. Direct class (no LLM, no batch,
+    mirrors ``POST /pages/{slug}/aliases``'s own Invariant): one call clears
+    one page's claim on one alias. The Console's C12 row calls this once per
+    claimant page it wants cleared — never a server-side batch.
+
+    Shallow wrapper around ``pages.remove_alias`` (CODING_STANDARD §2.3 — all
+    domain logic lives in ``pages.py``). No reindex here — aliases never
+    enter the BM25 corpus (ADR-0030 Invariant); the Console's own re-lint
+    (client-side, ``include_c5=false``) is what refreshes the C12 finding.
+
+    Exception mapping:
+
+    - ``PageNotFound``   → ``404`` (slug has never been written, or was
+      deleted by a concurrent operation)
+    - ``PageCorrupt``    → ``500`` (orphan-visibility — surface broken
+      state rather than silently acting on it)
+    - ``AliasNotFound``  → ``404`` (alias is not currently assigned to this
+      page — refused honestly rather than a fake-success no-op, e.g. a
+      stale Console row after a concurrent removal)
+
+    Returns HTTP 204 No Content on success (mirrors ``POST
+    /pages/{slug}/aliases``).
+    """
+    try:
+        pages_module.remove_alias(slug, alias)
+    except pages_module.PageNotFound as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"wiki page '{slug}' not found under entities/ or concepts/",
+        ) from exc
+    except pages_module.PageCorrupt as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"wiki page '{slug}' has corrupt frontmatter: {exc}",
+        ) from exc
+    except pages_module.AliasNotFound as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"alias '{alias}' is not assigned to page '{slug}'",
         ) from exc
 
 

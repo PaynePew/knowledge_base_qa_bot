@@ -114,14 +114,16 @@ every wikilink-resolution consumer uses the shared resolver):
 - **``find_inbound_references``** (the C4 merge-apply reference guard) now
   counts an alias-mediated ``[[link]]`` as a real inbound reference.
 - **C12 alias-collision** fires on two shapes: an alias colliding with an
-  existing page slug, or two pages claiming the same alias. Advisory, Direct
-  remediation tier (no executable action yet — the assign-alias endpoint
-  that would wire one is a follow-up ticket; this is the foundation slice).
+  existing page slug, or two pages claiming the same alias. Direct
+  remediation tier; this foundation slice shipped no executable action (the
+  assign-alias endpoint is add-only and cannot resolve a collision) — issue
+  #491 later adds the real fix, ``DELETE /pages/{slug}/aliases/{alias}``
+  (remove-alias), and wires it into ``_REMEDIATION_TAXONOMY["C12"]``.
 
 Still read-only — this module never writes the ``aliases`` frontmatter
-field itself (that lives in the follow-up assign-alias endpoint); the
-preserve-across-re-ingest write path lives in ``ingest.py`` /
-``wiki_writer.py``.
+field itself (that lives in the assign-alias / remove-alias endpoints,
+``pages.py``); the preserve-across-re-ingest write path lives in
+``ingest.py`` / ``wiki_writer.py``.
 
 C3 display + reason-split suggested_action (issue #407, ADR-0029 decision 3)
 -----------------------------------------------------------------
@@ -2964,12 +2966,19 @@ class RemediationAction(NamedTuple):
     """One executable Remediation operation wired to an *existing* endpoint.
 
     ``verb`` is the curator-facing action name (``"reingest"``,
-    ``"reingest_retry"``, ``"discard"``, ``"promote"``, ``"delete"``).
+    ``"reingest_retry"``, ``"discard"``, ``"promote"``, ``"delete"``,
+    ``"remove_alias"``).
     ``target_field`` names the finding attribute that supplies the request
     value (e.g. ``StalePageFinding.source``, ``InvalidQaSchemaFinding.
     page_slug``) — a consumer reads this field off the finding to build the
     request body/path; the field name itself is never re-derived client-side
-    (CODING_STANDARD §12.5 no business logic in the client).
+    (CODING_STANDARD §12.5 no business logic in the client). C12's
+    ``remove_alias`` (issue #491) is the one action whose ``target_field``
+    (``"claimed_by"``) names a *list* rather than a scalar: ``DELETE
+    /pages/{slug}/aliases/{alias}`` takes one page slug at a time, so a
+    consumer calls it once per ``claimed_by`` entry it wants cleared —
+    ``AliasCollisionFinding.alias`` supplies the other path segment on every
+    call, never re-derived.
     ``force`` is ``True`` only for C3's retry re-ingest: without
     ``force=True`` on ``POST /ingest``, hash-skip idempotency (#93) no-ops
     the retry into a false fix (ADR-0023 Invariant).
@@ -3049,13 +3058,13 @@ class RemediationDescriptor(NamedTuple):
 # taxonomy (Console: a real "Fill via Import" control; CLI/MCP: the route as
 # text). ADR-0027 Invariant: a Routed remediation commits nothing itself.
 # C12 alias-collision (issue #406, ADR-0030) is ``"direct"`` — the fix is a
-# hand-edit of frontmatter, no LLM, no synthesis, reversible — but carries
-# NO action yet: the endpoint that would execute it (``POST
-# /pages/{slug}/aliases`` assign-alias, or a future frontmatter-edit route)
-# is explicitly out of scope for this foundation slice (issue #406 "no HTTP
-# surface, no UI"). A follow-up slice adds the real ``RemediationAction``
-# once that endpoint exists — until then this entry only classifies the
-# tier and supplies the zh/en label via the shared taxonomy.
+# hand-edit of frontmatter, no LLM, no synthesis, reversible. The foundation
+# slice (#406) shipped no action (the add-only assign-alias endpoint cannot
+# resolve a collision — re-assigning to the same page no-ops, any other page
+# 409s). Issue #491 (ADR-0030 extension) adds the real fix — ``DELETE
+# /pages/{slug}/aliases/{alias}`` (remove-alias) — and wires it here as a
+# ``remove_alias`` action targeting ``claimed_by`` (a per-claimant list; see
+# ``RemediationAction``'s docstring for the one-call-per-entry convention).
 # C3 (issue #408, ADR-0029 decisions 2-4) is the first entry carrying TWO
 # remediation classes: it stays ``"direct"`` (the ``reingest_retry`` action
 # below is unaffected — ``verifier_unavailable`` is a transient failure
@@ -3076,7 +3085,7 @@ _REMEDIATION_TAXONOMY: dict[str, RemediationDescriptor] = {
     "C11": RemediationDescriptor("confirmed", (RemediationAction("delete", "page_slug"),)),
     "C5": RemediationDescriptor("authored"),
     "C4": RemediationDescriptor("authored"),
-    "C12": RemediationDescriptor("direct"),
+    "C12": RemediationDescriptor("direct", (RemediationAction("remove_alias", "claimed_by"),)),
     "C1": RemediationDescriptor("routed", route="import"),
     "C2": RemediationDescriptor("routed", route="import"),
     "C8": RemediationDescriptor(
