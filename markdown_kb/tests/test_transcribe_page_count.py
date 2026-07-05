@@ -134,3 +134,68 @@ def test_route_bad_extension_maps_to_400(page_count_route_env):
 
     resp = client.get("/transcribe/page-count", params={"source": "not_a_pdf.txt"})
     assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Concurrency bound on page_count_for_source (issue #474 sub-issue C)
+# ---------------------------------------------------------------------------
+
+
+def test_page_count_bounded_by_process_wide_semaphore(page_count_env, monkeypatch):
+    """Peak in-flight raw-bytes reads never exceed the configured semaphore size.
+
+    Patches ``Path.read_bytes`` (the memory-holding phase _page_count_semaphore
+    guards, BEFORE the ``_pdfium_lock``-guarded pypdfium2 open) to record peak
+    concurrent callers, rather than patching pypdfium2 itself — a slow
+    ``PdfDocument`` fake would be serialized by ``_pdfium_lock`` regardless of
+    the semaphore size and could never show the semaphore's own bound.
+    """
+    import pathlib
+    import threading
+    import time
+
+    import app.transcriber as transcriber_module
+
+    monkeypatch.setattr(transcriber_module, "_page_count_semaphore", threading.BoundedSemaphore(2))
+
+    current = [0]
+    peak = [0]
+    lock = threading.Lock()
+    original_read_bytes = pathlib.Path.read_bytes
+
+    def _slow_read_bytes(self):
+        with lock:
+            current[0] += 1
+            peak[0] = max(peak[0], current[0])
+        time.sleep(0.03)
+        try:
+            return original_read_bytes(self)
+        finally:
+            with lock:
+                current[0] -= 1
+
+    monkeypatch.setattr(pathlib.Path, "read_bytes", _slow_read_bytes)
+
+    (page_count_env["raw_dir"] / "sample_english.pdf").write_bytes(
+        (FIXTURES / "sample_english.pdf").read_bytes()
+    )
+
+    results: list[tuple[int, int]] = []
+    results_lock = threading.Lock()
+
+    def _call():
+        result = transcriber_module.page_count_for_source("sample_english.pdf")
+        with results_lock:
+            results.append(result)
+
+    threads = [threading.Thread(target=_call) for _ in range(6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert peak[0] <= 2, f"expected peak concurrency <= 2, got {peak[0]}"
+    assert peak[0] > 1, "test is meaningless if calls never actually overlapped"
+    assert all(page_count == 1 for page_count, _max_pages in results), (
+        "a normal call must still return the correct page count once admitted"
+    )

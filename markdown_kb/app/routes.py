@@ -569,12 +569,21 @@ async def transcribe_batch(req: TranscribeBatchRequest) -> TranscribeBatchSubmit
 
     Shallow wrapper around ``transcribe_jobs.submit_batch`` (CODING_STANDARD
     §2.3 — all domain logic lives in ``transcribe_jobs.py`` /
-    ``transcriber.py``). Always returns HTTP 200 — per-source validation and
-    conversion failures are recorded in the job's ``results`` once it
-    completes, not raised here (mirrors ``POST /import``'s always-200
-    contract for batch failures).
+    ``transcriber.py``). Per-source validation and conversion failures are
+    recorded in the job's ``results`` once it completes, not raised here
+    (mirrors ``POST /import``'s always-200 contract for batch failures).
+
+    Raises:
+        HTTP 422: ``sources`` exceeds ``MAX_BATCH_SOURCES`` (Pydantic
+            boundary validation, issue #474 sub-issue B).
+        HTTP 503: the concurrent-batch-job cap (``KB_TRANSCRIBE_MAX_CONCURRENT_JOBS``,
+            issue #474 sub-issue A) is already reached — a clear rejection
+            instead of a silently over-subscribed background queue.
     """
-    job = transcribe_jobs.submit_batch(req.sources)
+    try:
+        job = transcribe_jobs.submit_batch(req.sources)
+    except TranscribePathError as exc:
+        raise HTTPException(status_code=503, detail=exc.message) from exc
     return TranscribeBatchSubmitResponse(job_id=job.job_id)
 
 
@@ -589,8 +598,10 @@ async def get_transcribe_job(job_id: str) -> TranscribeJobStatusResponse:
     Shallow wrapper around ``transcribe_jobs.status`` (CODING_STANDARD §2.3).
 
     Raises:
-        HTTP 404: no job with this id (never submitted, or the process
-            restarted — the registry is in-memory only).
+        HTTP 404: no job with this id — never submitted, the process
+            restarted (the registry is in-memory only), or the job was
+            evicted after ``KB_TRANSCRIBE_JOB_TTL_SECONDS`` past completion
+            (issue #474 sub-issue B).
     """
     job = transcribe_jobs.status(job_id)
     if job is None:

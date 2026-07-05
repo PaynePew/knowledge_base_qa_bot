@@ -1176,6 +1176,14 @@ class TranscribeResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+# Cap on the number of sources in one batch submission (issue #474
+# sub-issue B) — an unbounded list lets a single anonymous POST grow one
+# job's ``results`` (and therefore process memory) without limit. Orthogonal
+# to ``KB_TRANSCRIBE_MAX_CONCURRENT_JOBS`` (``transcribe_jobs.py``), which
+# bounds how many BATCHES may run at once, not how big one batch is.
+MAX_BATCH_SOURCES: int = 50
+
+
 class TranscribeBatchRequest(BaseModel):
     """Request body for POST /transcribe/batch.
 
@@ -1183,10 +1191,12 @@ class TranscribeBatchRequest(BaseModel):
     per-file contract as ``TranscribeRequest.source``). Unlike ``POST
     /transcribe`` this returns immediately with a job id — see
     ``TranscribeBatchSubmitResponse`` — instead of blocking for the whole
-    batch's duration (issue #459 item 5).
+    batch's duration (issue #459 item 5). Capped at ``MAX_BATCH_SOURCES``
+    entries — FastAPI/Pydantic reject an over-long list with HTTP 422
+    before ``submit_batch`` ever sees it (issue #474 sub-issue B).
     """
 
-    sources: list[str]
+    sources: list[str] = Field(max_length=MAX_BATCH_SOURCES)
 
 
 class TranscribeBatchSubmitResponse(BaseModel):

@@ -158,3 +158,120 @@ def test_batch_continues_after_one_source_fails(jobs_env, monkeypatch):
     assert len(final.results) == 2
     assert all(r.status == "failed" for r in final.results)
     assert all(r.error_type == "TranscribePageLimitExceeded" for r in final.results)
+
+
+# ---------------------------------------------------------------------------
+# Concurrent-job cap (issue #474 sub-issue A)
+# ---------------------------------------------------------------------------
+
+
+def test_submit_batch_rejects_when_concurrent_job_cap_reached(jobs_env, monkeypatch):
+    """A second submit while the cap's worth of jobs are still active is rejected clearly."""
+    from app import transcribe_jobs
+    from app.transcriber import TranscribePathError
+
+    monkeypatch.setenv("KB_TRANSCRIBE_MAX_CONCURRENT_JOBS", "1")
+    (jobs_env["raw_dir"] / "a.pdf").write_bytes((FIXTURES / "sample_english.pdf").read_bytes())
+    (jobs_env["raw_dir"] / "b.pdf").write_bytes((FIXTURES / "sample_english.pdf").read_bytes())
+
+    async def _run():
+        first = transcribe_jobs.submit_batch(["a.pdf"])
+        # No await has run yet, so the scheduled Task has not started —
+        # `first` is still status="submitted" and must count as active.
+        assert first.status == "submitted"
+        with pytest.raises(TranscribePathError) as exc_info:
+            transcribe_jobs.submit_batch(["b.pdf"])
+        return exc_info.value
+
+    exc = asyncio.run(_run())
+    assert exc.error_type == "TranscribeJobCapacityExceeded"
+
+
+def test_submit_batch_allows_second_job_under_cap(jobs_env, monkeypatch):
+    """A cap of 2 admits two concurrently-active jobs without rejection."""
+    from app import transcribe_jobs
+
+    monkeypatch.setenv("KB_TRANSCRIBE_MAX_CONCURRENT_JOBS", "2")
+    (jobs_env["raw_dir"] / "a.pdf").write_bytes((FIXTURES / "sample_english.pdf").read_bytes())
+    (jobs_env["raw_dir"] / "b.pdf").write_bytes((FIXTURES / "sample_english.pdf").read_bytes())
+
+    async def _run():
+        first = transcribe_jobs.submit_batch(["a.pdf"])
+        second = transcribe_jobs.submit_batch(["b.pdf"])
+        return first, second
+
+    first, second = asyncio.run(_run())
+    assert first.job_id != second.job_id
+
+
+def test_submit_batch_allows_new_job_once_previous_completes(jobs_env, monkeypatch):
+    """The cap only counts ACTIVE jobs — a terminal job frees a slot."""
+    from app import transcribe_jobs
+
+    monkeypatch.setenv("KB_TRANSCRIBE_MAX_CONCURRENT_JOBS", "1")
+    (jobs_env["raw_dir"] / "a.pdf").write_bytes((FIXTURES / "sample_english.pdf").read_bytes())
+    (jobs_env["raw_dir"] / "b.pdf").write_bytes((FIXTURES / "sample_english.pdf").read_bytes())
+
+    async def _run():
+        first = transcribe_jobs.submit_batch(["a.pdf"])
+        await _poll_until_terminal(first.job_id)
+        second = transcribe_jobs.submit_batch(["b.pdf"])
+        return second
+
+    second = asyncio.run(_run())
+    assert second.job_id
+
+
+# ---------------------------------------------------------------------------
+# Terminal-job eviction (issue #474 sub-issue B)
+# ---------------------------------------------------------------------------
+
+
+def test_terminal_job_evicted_once_ttl_elapses(jobs_env, monkeypatch):
+    """A completed job past its TTL is swept on the next submit_batch call."""
+    from app import transcribe_jobs
+
+    monkeypatch.setenv("KB_TRANSCRIBE_JOB_TTL_SECONDS", "10")
+    fake_now = [0.0]
+    # Patch the job-TTL clock seam, NOT time.monotonic — patching the latter
+    # also freezes the asyncio loop clock and deadlocks _poll_until_terminal's
+    # asyncio.sleep (the #474 ubuntu CI hang). See transcribe_jobs._now.
+    monkeypatch.setattr(transcribe_jobs, "_now", lambda: fake_now[0])
+
+    (jobs_env["raw_dir"] / "a.pdf").write_bytes((FIXTURES / "sample_english.pdf").read_bytes())
+    (jobs_env["raw_dir"] / "b.pdf").write_bytes((FIXTURES / "sample_english.pdf").read_bytes())
+
+    async def _run():
+        first = transcribe_jobs.submit_batch(["a.pdf"])
+        await _poll_until_terminal(first.job_id)
+        fake_now[0] = 100.0  # well past the 10s TTL
+        transcribe_jobs.submit_batch(["b.pdf"])  # sweeps at the top of submit_batch
+        return first.job_id
+
+    first_job_id = asyncio.run(_run())
+    assert transcribe_jobs.status(first_job_id) is None
+
+
+def test_terminal_job_not_evicted_before_ttl_elapses(jobs_env, monkeypatch):
+    """A completed job still inside its TTL window survives a sweep."""
+    from app import transcribe_jobs
+
+    monkeypatch.setenv("KB_TRANSCRIBE_JOB_TTL_SECONDS", "10")
+    fake_now = [0.0]
+    # Patch the job-TTL clock seam, NOT time.monotonic — patching the latter
+    # also freezes the asyncio loop clock and deadlocks _poll_until_terminal's
+    # asyncio.sleep (the #474 ubuntu CI hang). See transcribe_jobs._now.
+    monkeypatch.setattr(transcribe_jobs, "_now", lambda: fake_now[0])
+
+    (jobs_env["raw_dir"] / "a.pdf").write_bytes((FIXTURES / "sample_english.pdf").read_bytes())
+    (jobs_env["raw_dir"] / "b.pdf").write_bytes((FIXTURES / "sample_english.pdf").read_bytes())
+
+    async def _run():
+        first = transcribe_jobs.submit_batch(["a.pdf"])
+        await _poll_until_terminal(first.job_id)
+        fake_now[0] = 5.0  # inside the 10s TTL
+        transcribe_jobs.submit_batch(["b.pdf"])
+        return first.job_id
+
+    first_job_id = asyncio.run(_run())
+    assert transcribe_jobs.status(first_job_id) is not None

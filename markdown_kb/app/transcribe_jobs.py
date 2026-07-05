@@ -36,12 +36,37 @@ guards the increment since those callbacks do not run on the event loop
 thread. ``pages_total`` grows incrementally as each file's own page count
 becomes known (its first ``on_page_done`` call), since a batch's total page
 count isn't known until each PDF has been opened.
+
+Concurrent-job cap (issue #474 sub-issue A): ``ProdMiddleware.admin_sem``
+(``gateway/app/middleware.py``) only holds ``KB_MAX_ADMIN`` for the
+``await self.app(...)`` call — for this route that is just ``submit_batch``
+scheduling a Task and returning, not the multi-minute batch it starts. The
+admin semaphore therefore never bounds how many ``_run_batch`` coroutines
+run at once. ``submit_batch`` enforces its own ceiling
+(``KB_TRANSCRIBE_MAX_CONCURRENT_JOBS``, default
+``_DEFAULT_MAX_CONCURRENT_JOBS``) by counting jobs still in
+``submitted``/``working`` state and raising a typed ``TranscribePathError``
+(``error_type="TranscribeJobCapacityExceeded"``) when the ceiling is already
+reached — a clear rejection at submit time rather than a silently-queued
+invisible job.
+
+Job-store eviction (issue #474 sub-issue B): ``_JOBS`` retained every job
+forever (only the test-only ``_reset_jobs`` cleared it), so an anonymous
+submit loop grows it without bound. ``_evict_terminal_jobs`` sweeps
+``completed``/``failed`` jobs whose ``completed_at`` is older than
+``KB_TRANSCRIBE_JOB_TTL_SECONDS`` (default ``_DEFAULT_JOB_TTL_SECONDS``) —
+mirrors ``gateway/app/conversation_store.py``'s TTL-sweep-over-a-snapshot
+idiom (CODING_STANDARD §2.6). Run opportunistically at the top of
+``submit_batch`` (the same call site that grows the registry) rather than a
+background task loop.
 """
 
 from __future__ import annotations
 
 import asyncio
+import os
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal
@@ -89,6 +114,10 @@ class TranscribeJob:
         error:        Set only if the batch coroutine itself raised
                       unexpectedly (should not happen in normal operation —
                       per-source failures land in ``results`` instead).
+        completed_at: ``time.monotonic()`` value when ``status`` last became
+                      "completed" or "failed"; ``None`` while still
+                      submitted/working. Read by ``_evict_terminal_jobs``
+                      (issue #474 sub-issue B) — never set back to ``None``.
         _task:        Strong reference to the asyncio.Task (prevents GC).
         _lock:        Guards pages_done/pages_total against concurrent
                       updates from page-worker threads.
@@ -100,6 +129,7 @@ class TranscribeJob:
     pages_total: int = 0
     results: list[TranscribeJobResult] = field(default_factory=list)
     error: str | None = None
+    completed_at: float | None = None
     _task: asyncio.Task | None = field(default=None, repr=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
@@ -113,6 +143,87 @@ _JOBS: dict[str, TranscribeJob] = {}
 # Strong-reference set: prevents GC from cancelling Tasks before they finish.
 # Each task removes itself via add_done_callback.
 _TASKS: set[asyncio.Task] = set()
+
+# ---------------------------------------------------------------------------
+# Concurrent-job cap (issue #474 sub-issue A)
+# ---------------------------------------------------------------------------
+
+# Same order of magnitude as the Gateway's KB_MAX_ADMIN default (2) — see the
+# module docstring for why admin_sem cannot cover this instead.
+_DEFAULT_MAX_CONCURRENT_JOBS = 2
+
+
+def _max_concurrent_jobs() -> int:
+    """Max number of batch jobs allowed in submitted/working state at once.
+
+    Override with ``KB_TRANSCRIBE_MAX_CONCURRENT_JOBS``; default
+    ``_DEFAULT_MAX_CONCURRENT_JOBS``. Read at call time (no restart needed),
+    mirroring ``transcriber._page_concurrency``'s env-parsing shape.
+    """
+    raw = os.getenv("KB_TRANSCRIBE_MAX_CONCURRENT_JOBS")
+    if raw is None:
+        return _DEFAULT_MAX_CONCURRENT_JOBS
+    try:
+        value = int(raw)
+    except ValueError:
+        return _DEFAULT_MAX_CONCURRENT_JOBS
+    return value if value > 0 else _DEFAULT_MAX_CONCURRENT_JOBS
+
+
+# ---------------------------------------------------------------------------
+# Terminal-job eviction (issue #474 sub-issue B)
+# ---------------------------------------------------------------------------
+
+_DEFAULT_JOB_TTL_SECONDS = 15 * 60  # 15 minutes
+
+
+def _job_ttl_seconds() -> int:
+    """Idle TTL, in seconds, before a completed/failed job is evicted from ``_JOBS``.
+
+    Override with ``KB_TRANSCRIBE_JOB_TTL_SECONDS``; default
+    ``_DEFAULT_JOB_TTL_SECONDS``. Read at call time (no restart needed).
+    """
+    raw = os.getenv("KB_TRANSCRIBE_JOB_TTL_SECONDS")
+    if raw is None:
+        return _DEFAULT_JOB_TTL_SECONDS
+    try:
+        value = int(raw)
+    except ValueError:
+        return _DEFAULT_JOB_TTL_SECONDS
+    return value if value > 0 else _DEFAULT_JOB_TTL_SECONDS
+
+
+def _now() -> float:
+    """Monotonic clock for job-TTL bookkeeping (``completed_at`` + eviction).
+
+    A single indirection so a test can freeze the TTL clock WITHOUT
+    monkeypatching the global ``time.monotonic`` — patching that also freezes
+    the asyncio event loop's own clock (``BaseEventLoop.time``), which stalls
+    ``asyncio.sleep`` and deadlocks any coroutine that polls (the #474 ubuntu
+    CI hang: a frozen loop clock never fired ``_poll_until_terminal``'s sleep
+    OR its own timeout). Tests patch ``transcribe_jobs._now`` instead.
+    """
+    return time.monotonic()
+
+
+def _evict_terminal_jobs() -> None:
+    """Delete completed/failed jobs whose TTL has elapsed.
+
+    Mirrors ``gateway/app/conversation_store.py``'s ``evict_expired`` idiom
+    (CODING_STANDARD §2.6): sweeps over a **snapshot** of keys so deleting
+    entries mid-sweep never raises ``RuntimeError: dictionary changed size
+    during iteration``. Called at the top of ``submit_batch`` — the same
+    call site that grows ``_JOBS`` — rather than a background task loop.
+    """
+    ttl = _job_ttl_seconds()
+    now = _now()
+    expired = [
+        job_id
+        for job_id, job in list(_JOBS.items())
+        if job.completed_at is not None and now - job.completed_at > ttl
+    ]
+    for job_id in expired:
+        del _JOBS[job_id]
 
 
 # ---------------------------------------------------------------------------
@@ -191,9 +302,11 @@ async def _run_batch(job: TranscribeJob, sources: list[str]) -> None:
     except Exception as exc:  # noqa: BLE001 - last-resort guard against a bug in the loop itself
         job.status = "failed"
         job.error = str(exc)[:200]
+        job.completed_at = _now()
         return
 
     job.status = "completed"
+    job.completed_at = _now()
 
 
 # ---------------------------------------------------------------------------
@@ -208,9 +321,26 @@ def submit_batch(sources: list[str]) -> TranscribeJob:
     ``_run_batch(job, sources)``, keeps a strong reference to prevent GC
     cancellation, registers the Job in ``_JOBS``, and returns it.
 
+    First sweeps expired terminal jobs (``_evict_terminal_jobs``, issue #474
+    sub-issue B), then rejects with a typed ``TranscribePathError``
+    (``error_type="TranscribeJobCapacityExceeded"``) if the number of jobs
+    still in submitted/working state is already at ``_max_concurrent_jobs()``
+    (issue #474 sub-issue A) — a clear rejection rather than a silently
+    over-subscribed background queue.
+
     MUST be called from inside a running event loop (i.e. from an ``async
     def`` route handler).
     """
+    _evict_terminal_jobs()
+
+    active = sum(1 for job in _JOBS.values() if job.status in ("submitted", "working"))
+    cap = _max_concurrent_jobs()
+    if active >= cap:
+        raise TranscribePathError(
+            f"{active} transcribe batch job(s) already running (cap={cap}); retry later",
+            error_type="TranscribeJobCapacityExceeded",
+        )
+
     job_id = uuid4().hex
     job = TranscribeJob(job_id=job_id)
     _JOBS[job_id] = job
