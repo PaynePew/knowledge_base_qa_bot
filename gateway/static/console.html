@@ -447,6 +447,72 @@
   .label-failed-grounding { color: var(--fail); }
   .label-skipped-hash { color: var(--ink-3); }
 
+  /* ── Prominent Import failure row (issue #447) ──────────────
+     Failures used to be a plain .rec row identical to a success row except
+     for the .label-failed text colour — easy to miss inside a busy Import
+     card. Failed rows now render FIRST (see renderImportCard) with a tinted
+     background + left accent bar, and show BOTH the error_type (small mono
+     badge) and the full error_message (not one or the other). */
+  .rec-failed {
+    background: #fdf1ef;
+    border-left: 3px solid var(--fail);
+  }
+  .rec-failed .crumb { color: var(--ink); }
+  .rec-failed .error-type {
+    display: inline-block;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    letter-spacing: .04em;
+    color: var(--fail);
+    text-transform: uppercase;
+    margin-right: 6px;
+  }
+
+  /* Transcribe action (issue #447, ADR-0032) — offered on a NoTextLayer (and
+     Transcribe-family) Import failure row. Same filled-accent "this
+     executes" treatment as .assign-alias-btn / .reconcile-btn. */
+  .transcribe-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--accent);
+    color: #fff;
+    border: 0;
+    padding: 4px 10px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .04em;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: opacity .15s ease;
+  }
+  .transcribe-btn:hover:not(:disabled) { opacity: .82; }
+  .transcribe-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+  /* Transcribe progress bar (issue #447/#459) — a REAL determinate bar
+     driven by GET /wiki/transcribe/jobs/{job_id}'s pages_done/pages_total
+     (the server-owned page-completion count, issue #459 AC4), not a
+     client-guessed percentage — CODING_STANDARD §12.8 bans the latter, not
+     a real server-reported count (the same "client owns the count"
+     exception that already authorises the pipeline's own "Batch k/N"). */
+  .transcribe-progress-track {
+    width: 100%;
+    height: 8px;
+    background: var(--rule-2);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-top: 8px;
+  }
+  .transcribe-progress-fill {
+    height: 100%;
+    background: var(--accent);
+    transition: width .2s ease;
+  }
+  .transcribe-progress-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    color: var(--ink-3);
+    margin-top: 4px;
+  }
+
   /* ── Spinner (busy state) ────────────────────────────────── */
   @keyframes spin { to { transform: rotate(360deg); } }
   .spinner {
@@ -1709,30 +1775,38 @@ function renderUploadCard(results) {
   return el("div", { class: "result-card" }, head, rows);
 }
 
-/* Import result card — renders ImportResponse (imported_sources + skipped_sources + failed_sources) */
+/* Import result card — renders ImportResponse (imported_sources + skipped_sources
+   + failed_sources). issue #447: failures render FIRST (not buried after every
+   success row) with a prominent tinted/accented treatment, and a NoTextLayer
+   failure offers a guarded Transcribe action that turns its OWN row into a
+   normal success row in place on completion — no full card re-fetch, since
+   ImportResponse is a one-shot batch result with nothing to re-GET. */
 function renderImportCard(data) {
   var imported = data.imported_sources || [];
   var skipped  = data.skipped_sources  || [];
   var failed   = data.failed_sources   || [];
 
-  /* Summary line */
-  var parts = [];
-  if (imported.length > 0) parts.push(imported.length + " imported");
-  if (skipped.length > 0)  parts.push(skipped.length  + " skipped");
-  if (failed.length > 0)   parts.push(failed.length   + " failed");
-  var summaryText = parts.join(" · ") || "0 files";
+  var badgeTextEl = el("span", { text: "" });
+  var badgeEl = el("span", { class: "badge" }, el("span", { class: "dot" }), badgeTextEl);
 
-  var badgeClass = failed.length > 0  ? "badge badge-fail"
-                 : skipped.length > 0 ? "badge badge-warn"
-                 : "badge badge-ok";
+  /* Recomputed on load AND after a Transcribe success turns a failure into a
+     success — keeps the head badge/counts honest without a full re-render. */
+  function updateSummary() {
+    var parts = [];
+    if (imported.length > 0) parts.push(imported.length + " imported");
+    if (skipped.length > 0)  parts.push(skipped.length  + " skipped");
+    if (failed.length > 0)   parts.push(failed.length   + " failed");
+    badgeTextEl.textContent = parts.join(" · ") || "0 files";
+    badgeEl.className = failed.length > 0  ? "badge badge-fail"
+                      : skipped.length > 0 ? "badge badge-warn"
+                      : "badge badge-ok";
+  }
+  updateSummary();
 
   var head = el("div", { class: "result-card-head" },
     el("span", { text: "Import" }),
     el("span", { text: "·" }),
-    el("span", { class: badgeClass },
-      el("span", { class: "dot" }),
-      el("span", { text: summaryText })
-    )
+    badgeEl
   );
 
   var rows = el("div");
@@ -1763,26 +1837,268 @@ function renderImportCard(data) {
     ));
   }
 
-  /* Helper: build a row from ImportFailureSchema */
+  /* Helper: build a row from ImportFailureSchema — prominent treatment
+     (issue #447): the row itself carries .rec-failed (tinted background +
+     accent bar), and shows the error_type as a small badge ALONGSIDE the
+     full error_message, never one in place of the other. A NoTextLayer
+     failure additionally offers a guarded Transcribe action; on success the
+     row mutates itself into a normal success row in place (label, id, crumb)
+     and the new doc feeds lastImportedDocFilenames so Ingest picks it up,
+     exactly like a normal Import success would. */
   function makeFailureRow(f) {
     rowIndex++;
     var rawName = f.raw_path ? f.raw_path.split(/[/\\]/).pop() : f.raw_path;
-    var bodyEl  = el("div", { class: "body" },
-      el("div", { class: "id",   text: rawName || f.raw_path }),
-      el("div", { class: "crumb", text: f.error_message || f.error_type })
+    var idEl    = el("div", { class: "id", text: rawName || f.raw_path });
+    var crumbEl = el("div", { class: "crumb" },
+      el("span", { class: "error-type", text: f.error_type }),
+      document.createTextNode(f.error_message || "")
     );
-    rows.append(el("div", { class: "rec" },
+    var bodyEl  = el("div", { class: "body" }, idEl, crumbEl);
+    var labelEl = el("div", { class: "label label-failed", text: "failed" });
+    var rowEl   = el("div", { class: "rec rec-failed" },
       el("div", { class: "num", text: String(rowIndex).padStart(2, "0") }),
       bodyEl,
-      el("div", { class: "label label-failed", text: "failed" })
-    ));
+      labelEl
+    );
+
+    if (f.error_type === "NoTextLayer" && rawName) {
+      var actionsEl = transcribeAction(rawName, function(result) {
+        /* Turn THIS row into a normal success row in place, and drop the
+           now-irrelevant Transcribe action (issue #447: a leftover disabled
+           button under a success row would be dead, confusing chrome). */
+        var docsName = result.docs_path ? result.docs_path.split(/[/\\]/).pop() : "";
+        rowEl.classList.remove("rec-failed");
+        idEl.textContent = docsName || rawName;
+        crumbEl.replaceChildren(document.createTextNode(
+          rawName + " → " + docsName + " · " + LINT_CHROME[consoleLang].transcribeSuccess
+        ));
+        labelEl.className = "label label-" + result.status; /* created | updated | skipped */
+        labelEl.textContent = result.status;
+        actionsEl.remove();
+
+        failed.splice(failed.indexOf(f), 1);
+        imported.push({ raw_path: f.raw_path, docs_path: result.docs_path, status: result.status });
+        updateSummary();
+
+        if (docsName) {
+          if (!lastImportedDocFilenames) lastImportedDocFilenames = [];
+          if (lastImportedDocFilenames.indexOf(docsName) === -1) {
+            lastImportedDocFilenames.push(docsName);
+          }
+        }
+      });
+      bodyEl.append(actionsEl);
+    }
+
+    rows.append(rowEl);
   }
 
+  failed.forEach(makeFailureRow);
   imported.forEach(makeSourceRow);
   skipped.forEach(makeSourceRow);
-  failed.forEach(makeFailureRow);
 
   return el("div", { class: "result-card" }, head, rows);
+}
+
+/* ── Transcribe action (issue #447, ADR-0032) ─────────────────────────────
+   Offered on a NoTextLayer Import failure row. Uses the SAME async
+   batch+poll job #459 built (POST /wiki/transcribe/batch + GET
+   .../jobs/{job_id}) rather than the synchronous POST /wiki/transcribe,
+   because only the job status exposes pages_done/pages_total — the real,
+   server-owned progress data the confirm modal's progress bar renders
+   (CODING_STANDARD §12.8 bans a CLIENT-GUESSED percentage, not a real
+   server-reported count — the same exception that already authorises the
+   pipeline's own "Batch k/N" indicator). Only one Transcribe run at a time
+   (mirrors the Lint card's remediationInFlight guard). */
+var transcribeInFlight = false;
+
+function transcribeAction(source, onSuccess) {
+  var btn = el("button", { class: "transcribe-btn", type: "button",
+    text: LINT_CHROME[consoleLang].transcribe });
+  var statusMsgEl = el("span", { class: "card-status-msg" });
+
+  btn.addEventListener("click", function() {
+    if (btn.disabled || transcribeInFlight) return;
+    btn.disabled = true;
+    statusMsgEl.textContent = LINT_CHROME[consoleLang].transcribeChecking;
+    statusMsgEl.className = "card-status-msg";
+
+    /* Mechanical preflight (no model call, issue #447) — names the REAL page
+       count + configured cap in the confirm step rather than guessing one
+       client-side (§12.5). */
+    fetch("/wiki/transcribe/page-count?source=" + encodeURIComponent(source))
+      .then(function(resp) {
+        if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+        return resp.json();
+      })
+      .then(function(data) {
+        statusMsgEl.textContent = "";
+        /* btn stays disabled for as long as the confirm dialog is open or a
+           job is running for THIS row — openTranscribeConfirm re-enables it
+           on cancel/failure; on success the whole row (button included) is
+           discarded (see the onSuccess callback above), so nothing to
+           re-enable there. Without this, a second click while the dialog is
+           still open (pre-confirm) would fetch a second preflight and stack
+           a second confirm modal for the SAME source. */
+        openTranscribeConfirm(source, data.page_count, data.max_pages, btn, onSuccess);
+      })
+      .catch(function(err) {
+        btn.disabled = false;
+        statusMsgEl.textContent = "Error: " + (err.message || String(err));
+        statusMsgEl.className = "card-status-msg err";
+      });
+  });
+
+  return el("div", { class: "lint-row-actions" }, btn, statusMsgEl);
+}
+
+/* Confirmed-operation dialog (mirrors openDeleteOrphanConfirm's shape) —
+   names the operation, the real page count, and the page cap BEFORE it
+   runs. On Confirm: submits the batch job, then polls it, updating a real
+   determinate progress bar for the whole (tens-of-seconds) duration so the
+   operator never faces a blank spinner (issue #447 first-class requirement).
+   onSuccess(result) receives the completed TranscribeJobResultSchema entry;
+   the caller (renderImportCard) turns its own failure row into a success row.
+   triggerBtn is the row's own Transcribe button (kept disabled by
+   transcribeAction while this dialog is open) — re-enabled here on any exit
+   that did NOT actually submit a job, so cancelling never leaves the button
+   stuck disabled forever. */
+function openTranscribeConfirm(source, pageCount, maxPages, triggerBtn, onSuccess) {
+  var chrome = LINT_CHROME[consoleLang];
+  var overlay = el("div", { class: "reconcile-overlay" });
+  var statusMsgEl = el("span", { class: "card-status-msg" });
+  var progressFillEl = el("div", { class: "transcribe-progress-fill", style: "width:0%" });
+  var progressTrackEl = el("div", { class: "transcribe-progress-track" }, progressFillEl);
+  progressTrackEl.style.display = "none";
+  var progressLabelEl = el("span", { class: "transcribe-progress-label" });
+  progressLabelEl.style.display = "none";
+  var cancelBtn = el("button", { class: "reconcile-cancel-btn", type: "button", text: chrome.transcribeCancel });
+  var confirmBtn = el("button", { class: "transcribe-btn", type: "button", text: chrome.transcribeConfirm });
+
+  /* True once the batch job has actually been submitted (POST fired) — a
+     cancel/backdrop-click BEFORE that point re-enables triggerBtn (nothing
+     is running yet); AFTER that point the job keeps running in the
+     background regardless of the modal (issue #459 design), and its own
+     terminal callback (fail(), below) owns re-enabling triggerBtn instead. */
+  var jobSubmitted = false;
+
+  function closeModal() { overlay.remove(); }
+  function cancelAndClose() {
+    if (!jobSubmitted) triggerBtn.disabled = false;
+    closeModal();
+  }
+  overlay.addEventListener("click", function(e) { if (e.target === overlay) cancelAndClose(); });
+  cancelBtn.addEventListener("click", function() {
+    if (cancelBtn.disabled) return;
+    cancelAndClose();
+  });
+
+  function setProgress(pagesDone, pagesTotal) {
+    var denominator = pagesTotal > 0 ? pagesTotal : pageCount;
+    var pct = denominator > 0 ? Math.round((pagesDone / denominator) * 100) : 0;
+    progressFillEl.style.width = pct + "%";
+    progressLabelEl.textContent = chrome.transcribeProgress
+      .replace("{done}", String(pagesDone)).replace("{total}", String(denominator));
+  }
+
+  confirmBtn.addEventListener("click", function() {
+    if (confirmBtn.disabled || transcribeInFlight) return;
+    jobSubmitted = true;
+    transcribeInFlight = true;
+    confirmBtn.disabled = true;
+    cancelBtn.disabled = true;
+    statusMsgEl.replaceChildren(el("span", { class: "spinner" }),
+      document.createTextNode(" " + chrome.transcribeWorking));
+    statusMsgEl.className = "card-status-msg";
+    progressTrackEl.style.display = "block";
+    progressLabelEl.style.display = "block";
+    setProgress(0, 0);
+
+    function fail(message) {
+      transcribeInFlight = false;
+      triggerBtn.disabled = false;
+      statusMsgEl.textContent = "Error: " + message;
+      statusMsgEl.className = "card-status-msg err";
+      cancelBtn.disabled = false;
+      cancelBtn.textContent = chrome.transcribeClose;
+    }
+
+    fetch("/wiki/transcribe/batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sources: [source] }),
+    })
+      .then(function(resp) {
+        if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+        return resp.json();
+      })
+      .then(function(data) {
+        pollTranscribeJob(
+          data.job_id,
+          setProgress,
+          function(job) {
+            var result = (job.results || [])[0];
+            if (job.status === "completed" && result && result.status !== "failed") {
+              transcribeInFlight = false;
+              closeModal();
+              onSuccess(result);
+            } else {
+              var reason = job.error ||
+                (result && (result.error_message || result.error_type)) ||
+                "unknown error";
+              fail(reason);
+            }
+          },
+          function(err) { fail(err.message || String(err)); }
+        );
+      })
+      .catch(function(err) {
+        confirmBtn.disabled = false;
+        fail(err.message || String(err));
+      });
+  });
+
+  var modal = el("div", { class: "reconcile-modal" },
+    el("div", { class: "reconcile-modal-head" },
+      el("span", { text: chrome.transcribeConfirmTitle + ": " + source })),
+    el("div", { class: "reconcile-modal-body" },
+      el("p", { text: chrome.transcribeConfirmBody
+        .replace("{filename}", source)
+        .replace("{pageCount}", String(pageCount))
+        .replace("{maxPages}", String(maxPages)) }),
+      progressTrackEl, progressLabelEl
+    ),
+    el("div", { class: "reconcile-actions" }, confirmBtn, cancelBtn, statusMsgEl)
+  );
+  overlay.append(modal);
+  document.body.append(overlay);
+}
+
+/* Generic poller for GET /wiki/transcribe/jobs/{job_id} (issue #459 AC5).
+   Recursive setTimeout (never setInterval) so a slow response can never
+   overlap the next poll. onProgress(pagesDone, pagesTotal) fires on every
+   tick — real, server-reported numbers, never a client-guessed percentage
+   (CODING_STANDARD §12.8). onDone(job) fires exactly once, when status is
+   "completed" or "failed"; onError(err) fires on a network/HTTP failure
+   (the poll surfaces a failure rather than silently going quiet). */
+function pollTranscribeJob(jobId, onProgress, onDone, onError) {
+  function tick() {
+    fetch("/wiki/transcribe/jobs/" + encodeURIComponent(jobId))
+      .then(function(resp) {
+        if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+        return resp.json();
+      })
+      .then(function(job) {
+        onProgress(job.pages_done, job.pages_total);
+        if (job.status === "completed" || job.status === "failed") {
+          onDone(job);
+        } else {
+          setTimeout(tick, 800);
+        }
+      })
+      .catch(function(err) { onError(err); });
+  }
+  tick();
 }
 
 /* Ingest result card — renders IngestResponse (results + skipped_sources + failed_sources).
@@ -2267,6 +2583,19 @@ var LINT_CHROME = {
     c5SuggestedAction:     "Suggested action:",
     c5Expand:              "Show more",
     c5Collapse:            "Show less",
+    /* issue #447: guarded Transcribe action on a NoTextLayer Import failure —
+       confirm step names the real page count + page cap (fetched from GET
+       /wiki/transcribe/page-count), never a client-guessed bound. */
+    transcribe:              "Transcribe",
+    transcribeChecking:      "Checking page count…",
+    transcribeConfirmTitle:  "Transcribe scanned PDF",
+    transcribeConfirmBody:   "“{filename}” has {pageCount} page(s) (limit {maxPages}). This runs model-assisted OCR (ADR-0032) — cost is metered per page against the shared daily demo budget and the request is refused before any charge if the cap or the page limit would be exceeded.",
+    transcribeConfirm:       "Transcribe",
+    transcribeCancel:        "Cancel",
+    transcribeWorking:       "Transcribing…",
+    transcribeProgress:      "{done}/{total} pages",
+    transcribeSuccess:       "Transcribed — now in docs/",
+    transcribeClose:         "Close",
   },
   zh: {
     reingest:        "重新匯入",
@@ -2316,6 +2645,16 @@ var LINT_CHROME = {
     c5SuggestedAction:     "建議動作:",
     c5Expand:              "顯示更多",
     c5Collapse:            "顯示較少",
+    transcribe:              "轉錄",
+    transcribeChecking:      "正在確認頁數…",
+    transcribeConfirmTitle:  "轉錄掃描 PDF",
+    transcribeConfirmBody:   "「{filename}」共 {pageCount} 頁(上限 {maxPages} 頁)。此操作會執行模型輔助 OCR(ADR-0032)— 費用依頁數計入共用的每日展示預算,若將超過預算上限或頁數上限,會在產生任何費用前直接拒絕。",
+    transcribeConfirm:       "開始轉錄",
+    transcribeCancel:        "取消",
+    transcribeWorking:       "轉錄中…",
+    transcribeProgress:      "{done}/{total} 頁",
+    transcribeSuccess:       "已轉錄 — 已加入 docs/",
+    transcribeClose:         "關閉",
   },
 };
 

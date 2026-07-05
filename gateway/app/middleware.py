@@ -43,6 +43,15 @@ gated even at a $0.00 budget estimate. ``POST /wiki/qa/promote-batch``
 slug — but is classified as ``ADMIN_PATHS`` for the same reason as the
 delete path: no LLM call, but a batch of live-corpus mutations plus a BM25
 reindex is exactly the kind of write the admin gate exists for.
+
+``GET /wiki/transcribe/jobs/{job_id}`` and ``GET /wiki/transcribe/page-count``
+(issue #447) are deliberately left OUT of both sets — each is a read-only,
+in-memory or mechanical lookup (job-status poll; PDF page count) with no LLM
+call and no corpus mutation, the same rationale that already leaves
+``GET /read/*`` and ``GET /healthz*`` unclassified. ``POST
+/wiki/transcribe/batch`` is the one that actually starts real (billed) work,
+so it — not its poll/preflight siblings — is the path that needs the admin
+gate.
 """
 
 from __future__ import annotations
@@ -109,6 +118,7 @@ ADMIN_PATHS: frozenset[str] = frozenset(
         "/wiki/lint",
         "/wiki/import",
         "/wiki/transcribe",  # issue #460: forced Transcribe — same cost-exposure surface as /wiki/import's auto-route
+        "/wiki/transcribe/batch",  # issue #447: async submit for the SAME force-transcribe surface as /wiki/transcribe — was absent from this set (issue #459 added the route after #460 classified only the sync one), so it bypassed the admin token/semaphore entirely until this line
         "/upload",
         "/hybrid/index",  # ADR-0022: operator-triggered dense re-embed (issue #348)
         "/wiki/pages/reconcile",  # ADR-0028: C5 reconcile draft — LLM draft + grounding (issue #376)
