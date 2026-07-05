@@ -638,6 +638,39 @@ def _transcribe_one_page(page_png: bytes, page_num: int) -> str:
 # Public API — page-count preflight (issue #447)
 # ---------------------------------------------------------------------------
 
+_DEFAULT_PAGE_COUNT_CONCURRENCY = 4
+
+
+def _page_count_concurrency() -> int:
+    """Max concurrent in-flight ``page_count_for_source`` calls, process-wide.
+
+    Override with ``KB_TRANSCRIBE_PAGE_COUNT_CONCURRENCY``; default
+    ``_DEFAULT_PAGE_COUNT_CONCURRENCY`` (4). Read once, at module import,
+    into the module-level ``_page_count_semaphore`` below — same "read once
+    so tests can drain/restore it" idiom as ``_page_concurrency`` /
+    ``_page_semaphore`` (issue #459) and ``gateway/app/middleware.py``'s
+    ``admin_sem``/``read_sem``. ``GET /transcribe/page-count`` is
+    deliberately left OUT of ``ProdMiddleware``'s classified path sets
+    (read-only, no LLM call, no corpus mutation — see that module's
+    docstring), so nothing else bounds how many concurrent callers each hold
+    a raw PDF (up to ``upload.MAX_UPLOAD_BYTES``, 10 MB) in memory while
+    opening it under ``_pdfium_lock`` (issue #474 sub-issue C: an anonymous
+    flood of this endpoint is a memory/lock-contention DoS on the demo box).
+    """
+    raw = os.getenv("KB_TRANSCRIBE_PAGE_COUNT_CONCURRENCY")
+    if raw is None:
+        return _DEFAULT_PAGE_COUNT_CONCURRENCY
+    try:
+        value = int(raw)
+    except ValueError:
+        return _DEFAULT_PAGE_COUNT_CONCURRENCY
+    return value if value > 0 else _DEFAULT_PAGE_COUNT_CONCURRENCY
+
+
+# Process-wide (not per-call) semaphore — see _page_count_concurrency docstring.
+# BoundedSemaphore catches an accidental over-release (a programming error).
+_page_count_semaphore = threading.BoundedSemaphore(_page_count_concurrency())
+
 
 def page_count_for_source(source_filter: str) -> tuple[int, int]:
     """Return ``(page_count, max_pages)`` for a raw/ PDF, with NO model call.
@@ -652,25 +685,32 @@ def page_count_for_source(source_filter: str) -> tuple[int, int]:
     Transcribe action (issue #447) to name the real page count in its confirm
     step rather than guessing one client-side (CODING_STANDARD §12.5).
 
-    Every pypdfium2 touch goes through ``_pdfium_lock`` (issue #468), same as
-    the concurrent page-worker pool, since this can run concurrently with an
-    in-flight batch job's own page workers.
+    ``_page_count_semaphore`` (issue #474 sub-issue C) bounds how many callers
+    may hold a raw PDF's bytes in memory + have it open in PDFium at once —
+    acquired BEFORE ``read_bytes`` so a caller waiting for a free slot holds
+    no buffer at all, only blocks briefly (a normal single call still returns
+    the correct page count once its turn comes). Every pypdfium2 touch also
+    goes through ``_pdfium_lock`` (issue #468), same as the concurrent
+    page-worker pool, since this can run concurrently with an in-flight batch
+    job's own page workers.
 
     Raises ``TranscribePathError`` for the same validation failures as
     ``transcribe_source`` (missing file, bad extension, path traversal, ...).
     """
     raw_path = _resolve_pdf_source(source_filter)
-    try:
-        raw_bytes = raw_path.read_bytes()
-    except OSError as exc:
-        raise TranscribePathError(str(exc)[:200], error_type="IOError") from exc
 
-    with _pdfium_lock:
-        pdf = pdfium.PdfDocument(raw_bytes)
+    with _page_count_semaphore:
         try:
-            page_count = len(pdf)
-        finally:
-            pdf.close()
+            raw_bytes = raw_path.read_bytes()
+        except OSError as exc:
+            raise TranscribePathError(str(exc)[:200], error_type="IOError") from exc
+
+        with _pdfium_lock:
+            pdf = pdfium.PdfDocument(raw_bytes)
+            try:
+                page_count = len(pdf)
+            finally:
+                pdf.close()
 
     max_pages = int(os.getenv("KB_TRANSCRIBE_MAX_PAGES", str(_DEFAULT_MAX_PAGES)))
     return page_count, max_pages
