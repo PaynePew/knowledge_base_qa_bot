@@ -147,3 +147,47 @@ def test_unknown_job_id_returns_404(batch_route_env):
     client = batch_route_env["client"]
     resp = client.get("/transcribe/jobs/does-not-exist")
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Resource-exhaustion hardening (issue #474)
+# ---------------------------------------------------------------------------
+
+
+def test_submit_over_concurrent_job_cap_returns_503(batch_route_env, monkeypatch):
+    """Sub-issue A: submitting past the concurrent-job cap is a clear 503, not a hang.
+
+    Pre-seeds one "working" job directly in the registry rather than racing a
+    real background task's completion time against the second HTTP call —
+    deterministic, and exercises exactly the cap check + its 503 mapping.
+    """
+    from app import transcribe_jobs
+
+    monkeypatch.setenv("KB_TRANSCRIBE_MAX_CONCURRENT_JOBS", "1")
+    transcribe_jobs._JOBS["seed"] = transcribe_jobs.TranscribeJob(job_id="seed", status="working")
+
+    client = batch_route_env["client"]
+    resp = client.post("/transcribe/batch", json={"sources": ["a.pdf"]})
+    assert resp.status_code == 503
+
+
+def test_batch_request_rejects_over_long_sources_list(batch_route_env):
+    """Sub-issue B: an over-long ``sources`` list is a 422, not accepted."""
+    from app.schemas import MAX_BATCH_SOURCES
+
+    client = batch_route_env["client"]
+    sources = [f"file_{i}.pdf" for i in range(MAX_BATCH_SOURCES + 1)]
+
+    resp = client.post("/transcribe/batch", json={"sources": sources})
+    assert resp.status_code == 422
+
+
+def test_batch_request_accepts_sources_list_at_the_cap(batch_route_env):
+    """The cap itself is still a valid request (off-by-one guard)."""
+    from app.schemas import MAX_BATCH_SOURCES
+
+    client = batch_route_env["client"]
+    sources = [f"file_{i}.pdf" for i in range(MAX_BATCH_SOURCES)]
+
+    resp = client.post("/transcribe/batch", json={"sources": sources})
+    assert resp.status_code == 200
