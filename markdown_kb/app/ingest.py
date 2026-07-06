@@ -436,7 +436,12 @@ def _synthesize_longform_drafts(
     an author-written one), never in how it is synthesized, grounded, or
     written.
 
-    The Hub Page is generated AFTER chapter slugs are resolved so its
+    The hub SLUG is reserved BEFORE chapter slugs are resolved: when a
+    chapter heading slugifies to the source stem (typical: an intro Section
+    whose machine-materialized heading IS the document title), the whole-book
+    entry page must keep ``<stem>`` and the colliding CHAPTER takes the
+    ``<stem>-2`` suffix — not the other way around. The Hub Page's CONTENT
+    is still generated AFTER chapter slugs are resolved so its
     programmatically-appended chapter-link list cites the FINAL
     (collision-resolved) slugs — every hub wikilink is guaranteed to resolve
     to a real chapter page written in the same batch (no Red Links among
@@ -445,10 +450,12 @@ def _synthesize_longform_drafts(
     Returns ``[hub_draft, *chapter_drafts]`` in that order.
     """
     raw_chapter_drafts = _synthesize_concept_drafts(sections)
-    chapter_drafts = _resolve_draft_slugs(raw_chapter_drafts, sections, used_slugs)
 
     hub_raw_slug = slugify(source_stem)
     hub_slug = resolve_slug_collision(used_slugs, hub_raw_slug)
+
+    chapter_drafts = _resolve_draft_slugs(raw_chapter_drafts, sections, used_slugs)
+
     hub_draft = generate_hub_page(
         sections,
         source_stem=source_stem,
@@ -459,6 +466,27 @@ def _synthesize_longform_drafts(
     hub_draft = hub_draft.model_copy(update={"slug": hub_slug, "frontmatter": hub_fm})
 
     return [hub_draft, *chapter_drafts]
+
+
+def _frontmatter_enriched_chars(source_metadata: dict) -> int:
+    """Read a Longform Source's persisted ``enriched_chars`` frontmatter value.
+
+    Structure Enrichment (issue #512) materializes chapter headings at
+    Import/Transcribe time; issue #513's observability wiring persists the
+    summed heading-line length as ``enriched_chars:`` next to
+    ``structure: enriched`` (see ``importer._render_output``). Ingest never
+    sees the pre-enrichment text, so this frontmatter value is the ONLY
+    source of truth for the ``enriched_chars`` surfaced on
+    ``IngestSourceResult`` and the ``ingest_source`` log line.
+
+    Fail-safe: anything that is not a plain int (bool included — YAML happily
+    parses ``enriched_chars: true``) reads as 0, so a hand-edited or legacy
+    (pre-#513) enriched Source can never break ingest.
+    """
+    value = source_metadata.get("enriched_chars", 0)
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    return 0
 
 
 def _derive_unsupported_claims(result: GroundingResult | None) -> list[str]:
@@ -814,8 +842,14 @@ def ingest_sources(
         try:
             raw_source_text = source_path.read_text(encoding="utf-8")
             source_metadata, source_content = split_frontmatter(raw_source_text)
+            # Issue #513 observability: a Longform Source carries the size of
+            # the heading structure enrichment added in its own frontmatter
+            # (written next to `structure: enriched` at Import/Transcribe
+            # time); every other Source reports 0.
+            enriched_chars = 0
             if source_metadata.get("structure") == "enriched":
                 source_type = "longform"
+                enriched_chars = _frontmatter_enriched_chars(source_metadata)
             else:
                 source_type = classify_source(source_content)
                 batch._llm_call_count += 1
@@ -936,7 +970,7 @@ def ingest_sources(
             f" pages_deleted={len(deleted)}"
             f" sections_count={sections_count}"
             f" uncarried_chars={uncarried_chars}"
-            f" enriched_chars=0",
+            f" enriched_chars={enriched_chars}",
         )
         # Determine status for this IngestSourceResult: 'created' if any pages
         # were freshly written, 'updated' if existing pages were overwritten.
@@ -954,6 +988,7 @@ def ingest_sources(
                 status=result_status,
                 sections_count=sections_count,
                 uncarried_chars=uncarried_chars,
+                enriched_chars=enriched_chars,
             )
         )
 
@@ -1117,9 +1152,13 @@ async def aingest_sources(
             # by its own `structure: enriched` frontmatter — see the matching
             # comment in ingest_sources' Step 4 for why this is NOT re-derived
             # via the longform predicate here. classify_source is an LLM call
-            # — run in thread so it doesn't block the loop.
+            # — run in thread so it doesn't block the loop. Issue #513
+            # observability: read the persisted enriched_chars alongside the
+            # marker (same as the sync path); every other Source reports 0.
+            enriched_chars = 0
             if source_metadata.get("structure") == "enriched":
                 source_type = "longform"
+                enriched_chars = _frontmatter_enriched_chars(source_metadata)
             else:
                 source_type = await asyncio.to_thread(classify_source, source_content)
                 batch._llm_call_count += 1
@@ -1263,7 +1302,7 @@ async def aingest_sources(
             f" pages_deleted={len(deleted)}"
             f" sections_count={sections_count}"
             f" uncarried_chars={uncarried_chars}"
-            f" enriched_chars=0",
+            f" enriched_chars={enriched_chars}",
         )
         result_status = "updated" if write_result.pages_updated else "created"
         batch.results.append(
@@ -1276,6 +1315,7 @@ async def aingest_sources(
                 status=result_status,
                 sections_count=sections_count,
                 uncarried_chars=uncarried_chars,
+                enriched_chars=enriched_chars,
             )
         )
 

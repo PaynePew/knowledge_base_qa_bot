@@ -332,8 +332,12 @@ class IngestSourceResult(BaseModel):
     the parse did not carry into any Section (see
     `indexer.count_uncarried_chars`) — normally 0 after issue #509 (preamble
     becomes a Section); non-zero flags a new parse/Section gap.
-    `enriched_chars` is the character count added by Structure Enrichment
-    (ADR-0033 decision 2); always 0 until issue #512 ships.
+    `enriched_chars` is the character count of heading structure added by
+    Structure Enrichment (ADR-0033 decision 2, issue #512) — the summed
+    length of the `## title` heading lines it materialized into the Source,
+    persisted in the Source's frontmatter (`enriched_chars:`, next to
+    `structure: enriched`) at Import/Transcribe time and read back at ingest
+    (issue #513). 0 for any Source that was never enriched.
     """
 
     source: str  # bare filename, e.g. "refund_policy.md"

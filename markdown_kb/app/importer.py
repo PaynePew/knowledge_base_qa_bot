@@ -958,6 +958,7 @@ def _process_one_source(
         origin="transcribed" if transcribe_model is not None else None,
         transcribe_model=transcribe_model,
         structure_enriched=structure_enriched,
+        enriched_chars=enrichment.enriched_chars,
     )
 
     # Atomic write — IOError for os.replace failure
@@ -1158,6 +1159,7 @@ def _render_output(
     origin: str | None = None,
     transcribe_model: str | None = None,
     structure_enriched: bool = False,
+    enriched_chars: int = 0,
 ) -> str:
     """Build the full docs/*.md content: YAML frontmatter + converted body.
 
@@ -1174,6 +1176,13 @@ def _render_output(
     materialized LLM-proposed chapter headings into ``md_body`` — the
     default ``False`` emits nothing extra, so every non-longform Source's
     output stays byte-identical to before this issue.
+
+    ``enriched_chars`` (issue #513 observability wiring) persists
+    ``EnrichmentResult.enriched_chars`` — the summed length of the heading
+    lines enrichment inserted — as an ``enriched_chars:`` line right next to
+    ``structure: enriched``, so ingest can read it back into
+    ``IngestSourceResult.enriched_chars``. Only written when
+    ``structure_enriched`` is True; ignored otherwise.
     """
     # Compute relative raw path for the frontmatter (relative to REPO_ROOT)
     try:
@@ -1197,6 +1206,7 @@ def _render_output(
         frontmatter += f"transcribe_model: {transcribe_model}\n"
     if structure_enriched:
         frontmatter += "structure: enriched\n"
+        frontmatter += f"enriched_chars: {enriched_chars}\n"
     frontmatter += "---\n"
     return frontmatter + "\n" + md_body + "\n"
 
@@ -1231,6 +1241,7 @@ def render_output(
     origin: str | None = None,
     transcribe_model: str | None = None,
     structure_enriched: bool = False,
+    enriched_chars: int = 0,
 ) -> str:
     """Public alias for ``_render_output`` — see that function for the frontmatter contract."""
     return _render_output(
@@ -1241,6 +1252,7 @@ def render_output(
         origin=origin,
         transcribe_model=transcribe_model,
         structure_enriched=structure_enriched,
+        enriched_chars=enriched_chars,
     )
 
 

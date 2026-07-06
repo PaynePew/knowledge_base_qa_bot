@@ -34,6 +34,11 @@ Tests:
   sibling (`aingest_sources`) takes the same route — the two pre-flight
   ladders are hand-duplicated (see the DRIFT GUARD comments in ingest.py) so
   this guards against the async branch drifting from the sync one.
+- test_malformed_enriched_chars_frontmatter_reads_as_zero: the issue #513
+  enriched_chars frontmatter read fails safe to 0 on a non-int value.
+- test_hub_keeps_stem_slug_when_chapter_heading_collides: the hub slug is
+  reserved before chapter slugs, so a chapter heading that slugifies to the
+  source stem takes `<stem>-2` while the hub keeps `<stem>`.
 """
 
 from __future__ import annotations
@@ -51,6 +56,11 @@ FIXED_BODY = (
     "setup through the central conflict to its resolution."
 )
 
+# enriched_chars mirrors what importer._render_output persists next to the
+# structure marker at Import/Transcribe time (issue #513): the summed length
+# of the heading lines Structure Enrichment inserted.
+_BOOK_ENRICHED_CHARS = 27
+
 _BOOK_FRONTMATTER = (
     "---\n"
     "imported_from: raw/my_book.pdf\n"
@@ -60,6 +70,7 @@ _BOOK_FRONTMATTER = (
     "origin: transcribed\n"
     "transcribe_model: gpt-4o\n"
     "structure: enriched\n"
+    f"enriched_chars: {_BOOK_ENRICHED_CHARS}\n"
     "---\n"
 )
 
@@ -164,6 +175,16 @@ def test_longform_source_writes_hub_and_chapter_pages(tmp_path, monkeypatch):
     assert len(result.pages_written) == 4, result.pages_written
     assert len(result.pages_created) == 4, result.pages_created
     assert result.pages_deleted == []
+
+    # Issue #513 integration AC: the response carries the enriched_chars the
+    # Source's frontmatter persisted at Import/Transcribe time, and the
+    # ingest_source log line carries the same real value (not a hardcoded 0).
+    assert result.enriched_chars == _BOOK_ENRICHED_CHARS, result
+    import app.logger as logger_module
+
+    log_text = logger_module.LOG_PATH.read_text(encoding="utf-8")
+    assert f"enriched_chars={_BOOK_ENRICHED_CHARS}" in log_text, log_text
+    assert "enriched_chars=0" not in log_text, log_text
 
     hub_path = wiki_dir / "entities" / "my-book.md"
     chapter_paths = [
@@ -309,6 +330,8 @@ def test_non_longform_source_uses_existing_classify_route(tmp_path, monkeypatch)
     # Byte-identical to the pre-#513 route: exactly ONE page (not hub + N).
     assert len(result.pages_written) == 1, result.pages_written
     assert result.sections_count == 1
+    # A never-enriched Source always reports enriched_chars=0 (issue #513).
+    assert result.enriched_chars == 0, result
     # classify_source's _ClassifierOutput schema WAS requested — proves the
     # existing classify route ran, not the longform bypass.
     from app.templates import _ClassifierOutput
@@ -377,6 +400,8 @@ def test_aingest_sources_longform_writes_hub_and_chapter_pages(tmp_path, monkeyp
     result = batch.results[0]
     assert result.sections_count == 3, result
     assert len(result.pages_written) == 4, result.pages_written
+    # Issue #513: the async ladder reads the persisted enriched_chars too.
+    assert result.enriched_chars == _BOOK_ENRICHED_CHARS, result
 
     hub_path = wiki_dir / "entities" / "my-book.md"
     assert hub_path.exists()
@@ -384,3 +409,76 @@ def test_aingest_sources_longform_writes_hub_and_chapter_pages(tmp_path, monkeyp
     for slug in ("chapter-one", "chapter-two", "chapter-three"):
         assert f"[[{slug}]]" in hub_content
         assert (wiki_dir / "concepts" / f"{slug}.md").exists()
+
+
+# ---------------------------------------------------------------------------
+# Issue #513 — enriched_chars frontmatter guard: non-int values read as 0
+# ---------------------------------------------------------------------------
+
+
+def test_malformed_enriched_chars_frontmatter_reads_as_zero(tmp_path, monkeypatch):
+    """A hand-edited (or legacy pre-#513) enriched Source whose
+    ``enriched_chars`` is not a plain int must fail safe to 0, never break
+    the ingest."""
+    docs_dir = tmp_path / "docs"
+    wiki_dir = tmp_path / "wiki"
+    frontmatter = _BOOK_FRONTMATTER.replace(
+        f"enriched_chars: {_BOOK_ENRICHED_CHARS}\n", "enriched_chars: not-a-number\n"
+    )
+    docs_dir.mkdir(parents=True)
+    (docs_dir / "my_book.md").write_text(frontmatter + _BOOK_BODY_3_CHAPTERS, encoding="utf-8")
+
+    fake_llm = _make_fake_llm()
+    monkeypatch.setattr(templates_module, "_ingest_llm", fake_llm)
+    monkeypatch.setattr(templates_module, "get_ingest_llm", lambda: fake_llm)
+    monkeypatch.setattr(indexer_module, "WIKI_DIR", wiki_dir)
+
+    batch = ingest_module.ingest_sources(["my_book.md"], docs_dir=docs_dir, wiki_dir=wiki_dir)
+
+    assert batch.failed_sources == [], batch.failed_reasons
+    assert len(batch.results) == 1
+    result = batch.results[0]
+    # Still takes the longform route (marker intact) — only the count is 0.
+    assert len(result.pages_written) == 4, result.pages_written
+    assert result.enriched_chars == 0, result
+
+
+# ---------------------------------------------------------------------------
+# Issue #513 follow-up — hub keeps the <stem> slug on a chapter collision
+# ---------------------------------------------------------------------------
+
+
+def test_hub_keeps_stem_slug_when_chapter_heading_collides(tmp_path, monkeypatch):
+    """A chapter whose heading slugifies to the source stem (typical: an
+    intro Section whose machine-materialized heading IS the document title)
+    must NOT steal the hub's slug: the whole-book entry page keeps
+    ``<stem>`` and the colliding chapter takes ``<stem>-2``."""
+    docs_dir = tmp_path / "docs"
+    wiki_dir = tmp_path / "wiki"
+    body = (
+        "\n"
+        "## My Book\n\n"
+        "An introductory chapter whose heading is the document title itself.\n\n"
+        "## Chapter Two\n\n"
+        "The second chapter develops the central conflict.\n"
+    )
+    _write_book(docs_dir, body=body)
+
+    fake_llm = _make_fake_llm()
+    monkeypatch.setattr(templates_module, "_ingest_llm", fake_llm)
+    monkeypatch.setattr(templates_module, "get_ingest_llm", lambda: fake_llm)
+    monkeypatch.setattr(indexer_module, "WIKI_DIR", wiki_dir)
+
+    batch = ingest_module.ingest_sources(["my_book.md"], docs_dir=docs_dir, wiki_dir=wiki_dir)
+
+    assert batch.failed_sources == [], batch.failed_reasons
+    hub_path = wiki_dir / "entities" / "my-book.md"
+    colliding_chapter_path = wiki_dir / "concepts" / "my-book-2.md"
+    assert hub_path.exists(), "hub must keep the <stem> slug"
+    assert colliding_chapter_path.exists(), "colliding chapter must take <stem>-2"
+    assert not (wiki_dir / "entities" / "my-book-2.md").exists()
+
+    # Hub links still cite the FINAL chapter slugs — no Red Links.
+    hub_content = hub_path.read_text(encoding="utf-8")
+    assert "[[my-book-2]]" in hub_content, hub_content
+    assert "[[chapter-two]]" in hub_content, hub_content

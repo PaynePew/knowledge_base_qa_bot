@@ -97,3 +97,8 @@ def test_force_transcribe_wires_structure_enrichment(transcribe_env, monkeypatch
     assert "## Part One" in content
     assert "## Part Two" in content
     assert result.origin == "transcribed"
+
+    # Issue #513: the forced-Transcribe entry persists enriched_chars next to
+    # the structure marker exactly like importer.py's auto-route.
+    expected_enriched_chars = len("## Part One") + len("## Part Two")
+    assert f"enriched_chars: {expected_enriched_chars}" in content
