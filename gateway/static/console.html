@@ -1634,13 +1634,16 @@
          resets to the committed seed on every deploy and on the ~2-day cron reset. -->
     <div class="demo-reset-banner" role="status" aria-label="Demo environment notice">
       <span class="demo-reset-icon">&#9432;</span>
-      <span class="demo-reset-text"><strong>Demo environment</strong> — changes are real but ephemeral. This console resets to the seeded knowledge base periodically (~2 days) and on each deploy.</span>
+      <!-- issue #498: strong/body split into two bound spans so the JS
+           i18n toggle (bindText, see I18N_BOUND below) can retro-switch
+           each in place while keeping the <strong> emphasis structure. -->
+      <span class="demo-reset-text"><strong id="banner-demo-strong">Demo environment</strong><span id="banner-demo-text"> — changes are real but ephemeral. This console resets to the seeded knowledge base periodically (~2 days) and on each deploy.</span></span>
     </div>
 
     <!-- Staleness guard: warns when Ingest ran but Index hasn't been rebuilt (#173) -->
     <div id="staleness-banner" class="staleness-banner" role="alert" aria-live="polite">
       <span class="stale-icon">&#9888;</span>
-      <span class="stale-msg">Section Index may be stale — Ingest has run since the last Index build. Run the Index step to rebuild.</span>
+      <span id="staleness-msg" class="stale-msg">Section Index may be stale — Ingest has run since the last Index build. Run the Index step to rebuild.</span>
     </div>
 
     <!-- Routed Coverage Fill context banner (tier-B S7, issue #383, ADR-0027):
@@ -1728,22 +1731,23 @@ function el(tag, props) {
 
 /* Upload result card — matches Phase 15 S1 logic, now inside the stepper panel */
 function renderUploadCard(results) {
+  var chrome = LINT_CHROME[consoleLang];
   var written  = results.filter(function(r) { return r.status === "written";  }).length;
   var rejected = results.filter(function(r) { return r.status === "rejected"; }).length;
   var errors   = results.filter(function(r) { return r.status === "error";    }).length;
 
   var parts = [];
-  if (written > 0)  parts.push(written  + " written");
-  if (rejected > 0) parts.push(rejected + " rejected");
-  if (errors > 0)   parts.push(errors   + " error" + (errors !== 1 ? "s" : ""));
-  var summaryText = parts.join(" · ") || "0 files";
+  if (written > 0)  parts.push(written  + " " + chrome.uploadWordWritten);
+  if (rejected > 0) parts.push(rejected + " " + chrome.uploadWordRejected);
+  if (errors > 0)   parts.push(errors   + " " + (errors !== 1 ? chrome.uploadWordErrors : chrome.uploadWordError));
+  var summaryText = parts.join(" · ") || chrome.uploadZeroFiles;
 
   var badgeClass = errors > 0 ? "badge badge-fail"
                  : rejected > 0 ? "badge badge-warn"
                  : "badge badge-ok";
 
   var head = el("div", { class: "result-card-head" },
-    el("span", { text: "Upload" }),
+    el("span", { text: chrome.stepUploadLabel }),
     el("span", { text: "·" }),
     el("span", { class: badgeClass },
       el("span", { class: "dot" }),
@@ -1764,11 +1768,11 @@ function renderUploadCard(results) {
          succeeded here, instead of looking for it (in vain) on the Import card. */
       var lastSeg = r.target_dir ? r.target_dir.split(/[/\\]/).filter(Boolean).pop() : "";
       if (lastSeg === "docs") {
-        labelText = "in docs";
-        subtitle  = "→ docs/ · saved, no Import needed";
+        labelText = chrome.uploadInDocsLabel;
+        subtitle  = chrome.uploadInDocsCrumb;
       } else {
-        labelText = "staged";
-        subtitle  = "→ raw/ · run Import to convert";
+        labelText = chrome.uploadStagedLabel;
+        subtitle  = chrome.uploadStagedCrumb;
       }
     } else if ((r.status === "rejected" || r.status === "error") && r.reason) {
       subtitle = r.reason;
@@ -1796,6 +1800,7 @@ function renderUploadCard(results) {
    normal success row in place on completion — no full card re-fetch, since
    ImportResponse is a one-shot batch result with nothing to re-GET. */
 function renderImportCard(data) {
+  var chrome = LINT_CHROME[consoleLang];
   var imported = data.imported_sources || [];
   var skipped  = data.skipped_sources  || [];
   var failed   = data.failed_sources   || [];
@@ -1807,10 +1812,10 @@ function renderImportCard(data) {
      success — keeps the head badge/counts honest without a full re-render. */
   function updateSummary() {
     var parts = [];
-    if (imported.length > 0) parts.push(imported.length + " imported");
-    if (skipped.length > 0)  parts.push(skipped.length  + " skipped");
-    if (failed.length > 0)   parts.push(failed.length   + " failed");
-    badgeTextEl.textContent = parts.join(" · ") || "0 files";
+    if (imported.length > 0) parts.push(imported.length + " " + chrome.importCardImported);
+    if (skipped.length > 0)  parts.push(skipped.length  + " " + chrome.importCardSkipped);
+    if (failed.length > 0)   parts.push(failed.length   + " " + chrome.importCardFailed);
+    badgeTextEl.textContent = parts.join(" · ") || chrome.importCardZeroFiles;
     badgeEl.className = failed.length > 0  ? "badge badge-fail"
                       : skipped.length > 0 ? "badge badge-warn"
                       : "badge badge-ok";
@@ -1818,7 +1823,7 @@ function renderImportCard(data) {
   updateSummary();
 
   var head = el("div", { class: "result-card-head" },
-    el("span", { text: "Import" }),
+    el("span", { text: chrome.importCardWord }),
     el("span", { text: "·" }),
     badgeEl
   );
@@ -1868,7 +1873,7 @@ function renderImportCard(data) {
       document.createTextNode(f.error_message || "")
     );
     var bodyEl  = el("div", { class: "body" }, idEl, crumbEl);
-    var labelEl = el("div", { class: "label label-failed", text: "failed" });
+    var labelEl = el("div", { class: "label label-failed", text: chrome.importCardFailedLabel });
     var rowEl   = el("div", { class: "rec rec-failed" },
       el("div", { class: "num", text: String(rowIndex).padStart(2, "0") }),
       bodyEl,
@@ -2200,6 +2205,7 @@ function pollTranscribeJob(jobId, onProgress, onDone, onError) {
    card — they are a cross-page Lint C2 finding, not present in IngestResponse; AC amended.)
    §12.4: all server-derived text via textContent. */
 function renderIngestCard(data, batchLabel) {
+  var chrome = LINT_CHROME[consoleLang];
   var results  = data.results          || [];
   var skipped  = data.skipped_sources  || [];
   var failed   = data.failed_sources   || [];
@@ -2210,11 +2216,11 @@ function renderIngestCard(data, batchLabel) {
   if (results.length > 0) {
     var liveCount   = results.filter(function(r) { return r.status !== "skipped"; }).length;
     var skippedCount = skipped.length;
-    if (liveCount > 0)   parts.push(liveCount + " ingested");
-    if (skippedCount > 0) parts.push(skippedCount + " unchanged");
+    if (liveCount > 0)   parts.push(liveCount + " " + chrome.ingestCardIngested);
+    if (skippedCount > 0) parts.push(skippedCount + " " + chrome.ingestCardUnchanged);
   }
-  if (failed.length > 0) parts.push(failed.length + " failed");
-  var summaryText = parts.join(" · ") || "0 sources";
+  if (failed.length > 0) parts.push(failed.length + " " + chrome.ingestCardFailed);
+  var summaryText = parts.join(" · ") || chrome.ingestCardZeroSources;
   if (batchLabel) summaryText = batchLabel + " · " + summaryText;
 
   var hasFailures = failed.length > 0 || grounding_failed.length > 0;
@@ -2223,7 +2229,7 @@ function renderIngestCard(data, batchLabel) {
                   : "badge badge-ok";
 
   var head = el("div", { class: "result-card-head" },
-    el("span", { text: "Ingest" }),
+    el("span", { text: chrome.ingestCardWord }),
     el("span", { text: "·" }),
     el("span", { class: badgeClass },
       el("span", { class: "dot" }),
@@ -2236,8 +2242,8 @@ function renderIngestCard(data, batchLabel) {
 
   /* Helper: grounding label for a page slug */
   function groundingLabel(slug) {
-    if (grounding_failed.indexOf(slug) !== -1) return "failed grounding";
-    return "grounded";
+    if (grounding_failed.indexOf(slug) !== -1) return chrome.ingestCardFailedGrounding;
+    return chrome.ingestCardGrounded;
   }
   function groundingLabelClass(slug) {
     if (grounding_failed.indexOf(slug) !== -1) return "label label-failed-grounding";
@@ -2254,7 +2260,7 @@ function renderIngestCard(data, batchLabel) {
         el("div", { class: "num", text: String(rowIndex).padStart(2, "0") }),
         el("div", { class: "body" },
           el("div", { class: "id",   text: r.source }),
-          el("div", { class: "crumb", text: "no pages written" })
+          el("div", { class: "crumb", text: chrome.ingestCardNoPagesWritten })
         ),
         el("div", { class: "label label-failed-grounding", text: r.status || "?" })
       ));
@@ -2294,9 +2300,9 @@ function renderIngestCard(data, batchLabel) {
       el("div", { class: "num", text: String(rowIndex).padStart(2, "0") }),
       el("div", { class: "body" },
         el("div", { class: "id",   text: r.source }),
-        el("div", { class: "crumb", text: "unchanged (hash match)" })
+        el("div", { class: "crumb", text: chrome.ingestCardUnchangedHashCrumb })
       ),
-      el("div", { class: "label label-skipped-hash", text: "skipped" })
+      el("div", { class: "label label-skipped-hash", text: chrome.ingestCardSkippedLabel })
     ));
   });
 
@@ -2308,7 +2314,7 @@ function renderIngestCard(data, batchLabel) {
       el("div", { class: "body" },
         el("div", { class: "id",   text: sourceName })
       ),
-      el("div", { class: "label label-failed-grounding", text: "failed" })
+      el("div", { class: "label label-failed-grounding", text: chrome.ingestCardFailedLabel })
     ));
   });
 
@@ -2377,9 +2383,9 @@ function runIngestBatches(sourceNames, resultEl, setStepBusy) {
 
     var batchSources = batches[batchIndex];
     var batchLabel   = totalBatches > 1
-      ? "Batch " + (batchIndex + 1) + "/" + totalBatches
+      ? LINT_CHROME[consoleLang].ingestBatchPrefix + (batchIndex + 1) + "/" + totalBatches
       : null;
-    var spinnerLabel = batchLabel ? batchLabel + "…" : "Running Ingest…";
+    var spinnerLabel = batchLabel ? batchLabel + "…" : LINT_CHROME[consoleLang].genRunningIngest;
 
     /* Show indeterminate spinner with honest batch label (no fake %) */
     resultEl.replaceChildren(makeBusyCard(spinnerLabel));
@@ -2411,13 +2417,13 @@ function runIngestBatches(sourceNames, resultEl, setStepBusy) {
             failed_sources:             accumulatedFailed,
             pages_with_failed_grounding: accumulatedGrFailed,
           };
-          resultEl.replaceChildren(renderIngestCard(partial, batchLabel + " done"));
+          resultEl.replaceChildren(renderIngestCard(partial, batchLabel + LINT_CHROME[consoleLang].ingestBatchDoneSuffix));
         }
         runBatch(batchIndex + 1);
       })
       .catch(function(err) {
         setStepBusy(false);
-        resultEl.replaceChildren(renderErrorCard("Ingest", err.message || String(err)));
+        resultEl.replaceChildren(renderErrorCard(LINT_CHROME[consoleLang].ingestCardWord, err.message || String(err)));
       });
   }
 
@@ -2426,6 +2432,7 @@ function runIngestBatches(sourceNames, resultEl, setStepBusy) {
 
 /* Index result card — renders IndexResponse (files_indexed / sections_indexed / wiki_index_written) */
 function renderIndexCard(data) {
+  var chrome = LINT_CHROME[consoleLang];
   var filesIndexed    = data.files_indexed    != null ? data.files_indexed    : "?";
   var sectionsIndexed = data.sections_indexed != null ? data.sections_indexed : "?";
   var written         = data.wiki_index_written === true;
@@ -2435,10 +2442,10 @@ function renderIndexCard(data) {
   var summaryText = filesIndexed + " file" + (filesIndexed !== 1 ? "s" : "") +
                     " · " + sectionsIndexed + " section" + (sectionsIndexed !== 1 ? "s" : "");
   var badgeClass = wikiError ? "badge badge-warn" : "badge badge-ok";
-  var badgeLabel = wikiError ? "index partial" : "index rebuilt";
+  var badgeLabel = wikiError ? chrome.indexCardPartial : chrome.indexCardRebuilt;
 
   var head = el("div", { class: "result-card-head" },
-    el("span", { text: "Index" }),
+    el("span", { text: chrome.indexCardWord }),
     el("span", { text: "·" }),
     el("span", { class: badgeClass },
       el("span", { class: "dot" }),
@@ -2451,16 +2458,16 @@ function renderIndexCard(data) {
   bodyEl.append(el("div", { class: "rec" },
     el("div", { class: "num", text: "01" }),
     el("div", { class: "body" },
-      el("div", { class: "id",   text: "Files indexed" }),
-      el("div", { class: "crumb", text: "wiki/ Markdown files parsed" })
+      el("div", { class: "id",   text: chrome.indexCardFilesIndexed }),
+      el("div", { class: "crumb", text: chrome.indexCardFilesIndexedCrumb })
     ),
     el("div", { class: "label label-created", text: String(filesIndexed) })
   ));
   bodyEl.append(el("div", { class: "rec" },
     el("div", { class: "num", text: "02" }),
     el("div", { class: "body" },
-      el("div", { class: "id",   text: "Sections indexed" }),
-      el("div", { class: "crumb", text: "searchable BM25 units" })
+      el("div", { class: "id",   text: chrome.indexCardSectionsIndexed }),
+      el("div", { class: "crumb", text: chrome.indexCardSectionsIndexedCrumb })
     ),
     el("div", { class: "label label-created", text: String(sectionsIndexed) })
   ));
@@ -2469,19 +2476,19 @@ function renderIndexCard(data) {
     bodyEl.append(el("div", { class: "rec" },
       el("div", { class: "num", text: "03" }),
       el("div", { class: "body" },
-        el("div", { class: "id",   text: "Wiki Index written" }),
+        el("div", { class: "id",   text: chrome.indexCardWikiWritten }),
         el("div", { class: "crumb", text: wikiPath })
       ),
-      el("div", { class: "label label-created", text: "ok" })
+      el("div", { class: "label label-created", text: chrome.indexCardOk })
     ));
   } else if (wikiError) {
     bodyEl.append(el("div", { class: "rec" },
       el("div", { class: "num", text: "03" }),
       el("div", { class: "body" },
-        el("div", { class: "id",   text: "Wiki Index write failed" }),
+        el("div", { class: "id",   text: chrome.indexCardWikiWriteFailed }),
         el("div", { class: "crumb", text: wikiError })
       ),
-      el("div", { class: "label label-error", text: "warn" })
+      el("div", { class: "label label-error", text: chrome.indexCardWarn })
     ));
   }
 
@@ -2622,7 +2629,20 @@ var LINT_CHECK_LABEL_ZH = {
 /* Remediation button verbs + Lint-card section/empty-state chrome, per
    language (issue #365 AC: "button verbs / section chrome / empty
    states"). langToggleLabel is the header button's own text — it names the
-   language a click WOULD switch to, not the current one. */
+   language a click WOULD switch to, not the current one.
+
+   issue #498: this dictionary now covers operator-facing chrome for the
+   WHOLE console (pipeline stepper, Upload/Import/Ingest/Index/RAG/Hybrid
+   result cards, Curation Queue, draft/refile/flag cards, the Browse file
+   viewer, banners) — not just the Lint card. New keys use a region-prefix
+   naming convention (e.g. step, upload, queue, draft, edit, refileCard,
+   importCard, ingestCard, indexCard, rag, hybrid, browse, viewer, banner,
+   modal — each followed by a capitalised word, no literal slashes here so
+   this comment block can't be mistaken for a regex/prematurely close) so
+   the growing dictionary stays navigable. Server-derived values (r.status,
+   f.reason, slugs, paths, filenames, raw server error detail) are NEVER
+   wrapped here — only chrome this file itself authors (§12.5 / issue #365
+   convention). */
 var LINT_CHROME = {
   en: {
     reingest:        "Re-ingest",
@@ -2706,6 +2726,196 @@ var LINT_CHROME = {
     transcribeClose:         "Close",
     transcribePollLost:      "lost contact with the running job; it may still be running on the server — not retrying, to avoid a duplicate charge",
     transcribeDialogOpen:    "another Transcribe dialog is open",
+
+    /* issue #498: pipeline stepper (STEP_DEFS + step track/panels, bound via
+       bindText — see I18N_BOUND below) */
+    stepUploadLabel: "Upload",
+    stepImportLabel: "Import",
+    stepIngestLabel: "Ingest",
+    stepIndexLabel:  "Index",
+    stepLintLabel:   "Lint",
+    stepUploadDesc: "Upload: stage source files for processing — entry point; .md goes to docs/, HTML/TXT/PDF needs Import.",
+    stepImportDesc: "Import: convert HTML/TXT/PDF to Markdown — normalises raw sources before LLM synthesis (scanned PDFs auto-transcribe with per-page progress).",
+    stepIngestDesc: "Ingest: an LLM synthesises a curated wiki page from a Source, grounding-checked — builds the knowledge layer.",
+    stepIndexDesc:  "Index: rebuild the BM25 search index from wiki pages — makes curated knowledge retrievable.",
+    stepLintDesc:   "Lint: audit the wiki for orphans and red links locally — keeps the knowledge base coherent (Deep audit adds the LLM contradiction check).",
+    stepRun:             "Run",
+    stepPipelineHeader:  "Pipeline",
+
+    /* issue #498: Upload drop zone + Upload result card */
+    uploadChooseFiles:  "Choose files",
+    uploadDragDrop:      "Drag and drop files here",
+    uploadOrClickToSelect: "or click to select files",
+    uploadAcceptLine: "Accepts .html · .txt · .md · .pdf — max 10 MB each. HTML/TXT/PDF stage into the inbox for Import; MD goes straight to docs/.",
+    uploadInDocsLabel:   "in docs",
+    uploadInDocsCrumb:   "→ docs/ · saved, no Import needed",
+    uploadStagedLabel:   "staged",
+    uploadStagedCrumb:   "→ raw/ · run Import to convert",
+    uploadZeroFiles:     "0 files",
+    uploadWordWritten:   "written",
+    uploadWordRejected:  "rejected",
+    uploadWordError:     "error",
+    uploadWordErrors:    "errors",
+
+    /* issue #498: generic busy / progress / error chrome shared across
+       multiple steps */
+    genWorking:          "Working…",
+    genUploading:        "Uploading",
+    genRunningIngest:    "Running Ingest…",
+    genRunningImport:    "Running Import…",
+    genRebuildingIndex:  "Rebuilding Section Index…",
+    genRunningLint:      "Running Lint audit…",
+    genRunningDeepAudit: "Running deep audit (C5)",
+    genRebuildingRag:    "Rebuilding RAG index…",
+    genRebuildingHybrid: "Rebuilding Hybrid dense arm…",
+    genFilePageOf:       "file {done}/{total}",
+    genPagesTranscribed: "{done}/{total} pages transcribed",
+    /* issue #497 / #498: honest empty-body 502/504 fallback (httpError) */
+    httpTimeoutFallback: " — the server did not answer in time; the operation may still be running server-side. Wait a moment, then Refresh before re-running.",
+    cardErrorSuffix:     " — error",
+
+    /* issue #498: Import result card */
+    importCardWord:      "Import",
+    importCardImported:  "imported",
+    importCardSkipped:   "skipped",
+    importCardFailed:    "failed",
+    importCardZeroFiles: "0 files",
+    importCardFailedLabel: "failed",
+
+    /* issue #498: Ingest result card */
+    ingestCardWord:        "Ingest",
+    ingestCardIngested:    "ingested",
+    ingestCardUnchanged:   "unchanged",
+    ingestCardFailed:      "failed",
+    ingestCardZeroSources: "0 sources",
+    ingestCardNoPagesWritten: "no pages written",
+    ingestCardUnchangedHashCrumb: "unchanged (hash match)",
+    ingestCardSkippedLabel: "skipped",
+    ingestCardFailedLabel:  "failed",
+    ingestCardGrounded:     "grounded",
+    ingestCardFailedGrounding: "failed grounding",
+    ingestBatchPrefix:      "Batch ",
+    ingestBatchDoneSuffix:  " done",
+
+    /* issue #498: Index result card */
+    indexCardWord:            "Index",
+    indexCardRebuilt:         "index rebuilt",
+    indexCardPartial:         "index partial",
+    indexCardFilesIndexed:    "Files indexed",
+    indexCardFilesIndexedCrumb: "wiki/ Markdown files parsed",
+    indexCardSectionsIndexed: "Sections indexed",
+    indexCardSectionsIndexedCrumb: "searchable BM25 units",
+    indexCardWikiWritten:     "Wiki Index written",
+    indexCardWikiWriteFailed: "Wiki Index write failed",
+    indexCardOk:              "ok",
+    indexCardWarn:            "warn",
+
+    /* issue #498: Curation Queue chrome */
+    queueHeaderLabel:   "Curation Queue",
+    queueEmpty:         "No curation items — all Filed Answers are clean.",
+    queueRefresh:       "Refresh",
+    queueRefreshing:    "Refreshing…",
+    queueC8Header:      "Promotion Candidates (C8)",
+    queueC9Header:      "Stale Filed Answers (C9)",
+    queueC10Header:     "Invalid QA Schema (C10)",
+    queueC8Desc: "Promote: a curator approves a draft Filed Answer so it becomes retrievable — the bot starts answering matching questions with it. Discard: remove an inert (draft) entry from the queue — refused for live answers (server decides eligibility).",
+    queuePromoteAll:    "Promote all",
+    queuePromoteBatchPrefix: "Promoted ",
+
+    /* issue #498: C8 draft card (Promote/Discard/Edit) */
+    draftPromote:   "Promote",
+    draftDiscard:   "Discard",
+    draftEdit:      "Edit",
+    draftPromoting: "Promoting…",
+    draftDiscarding: "Discarding…",
+    draftLoading:    "Loading…",
+    draftSrcLabel:   "sources:",
+    draftNoneListed: "(none listed)",
+    draftUnknown:    "(unknown)",
+    draftBodyLoadFailed: "(could not load answer body)",
+    draftWhatItMeans: "Promoting this answer means: the bot will answer similar questions with this approved answer.",
+    draftPromoteSuccess: 'Promoted — ask "{question}" in chat, it now cites this page.',
+
+    /* issue #498: Edit form (draft card) */
+    editQuestionLabel: "Question",
+    editAnswerLabel:   "Answer",
+    editSave:          "Save",
+    editCancel:        "Cancel",
+    editSaving:        "Saving…",
+    editSaved:         "Saved — edit passed the grounding check.",
+    editRejectedHead:  "Edit rejected — the grounding check failed:",
+    editNoDetail:      "(no detail returned)",
+
+    /* issue #498: C9 Re-file flag card */
+    refileCardLabel: "Re-file",
+    refileCardRefiling: "Re-filing…",
+    refileCardSuccess: "Re-filed as a draft — old answer left the corpus. Click Refresh to review it under Promotion Candidates (C8).",
+    refileCardFailurePrefix: "Cannot re-ground (reason: ",
+    refileCardFailureSuffix: ") — nothing changed, this page keeps serving.",
+
+    /* issue #498: shared discard helper (doDiscard) */
+    discardLiveRefused: "Cannot discard: page is live (status=live). Use re-ingest to refresh.",
+    discardSuccess:     "Discarded.",
+
+    /* issue #498: RAG rebuild track */
+    ragIndexHead:      "RAG Index",
+    ragRebuilt:        "rebuilt",
+    ragFilesIndexed:   "Files indexed",
+    ragFilesIndexedCrumb: "docs/ files embedded",
+    ragChunksIndexed:  "Chunks indexed",
+    ragChunksIndexedCrumb: "vector units stored",
+    ragTrackLabel:     "RAG Track",
+    ragTrackNote:      "— independent of Wiki pipeline; runs against docs/ only",
+    ragPanelTitle:     "RAG Index",
+    ragPanelDesc:      "RAG rebuild: re-embed docs/ into the vector index — makes raw sources retrievable via semantic search; runs in parallel.",
+    ragRebuildBtn:     "Rebuild",
+
+    /* issue #498: Hybrid dense rebuild track */
+    hybridIndexHead:   "Hybrid Dense Index",
+    hybridSectionsIndexed: "Sections indexed",
+    hybridSectionsIndexedCrumb: "wiki/ Sections re-embedded into dense arm",
+    hybridTrackLabel:  "Hybrid Track",
+    hybridTrackNote:   "— dense arm only; BM25 arm updates automatically on promote (ADR-0022)",
+    hybridPanelTitle:  "Hybrid Dense Index",
+    hybridPanelDesc:   "Hybrid dense rebuild: re-embed the wiki Section corpus into the dense arm — refreshes only the dense arm; the BM25 arm already updates on promote.",
+
+    /* issue #498: Browse file browser + viewer */
+    browseSectionLabel: "Browse",
+    browseRoot:          "root",
+    browseLoadingRoots:  "Loading roots…",
+    browseLoadingPathPrefix: "Loading ",
+    browseFailedToLoadPrefix: "Failed to load: ",
+    browseEmptyDirectory: "(empty directory)",
+    viewerLoading:       "loading…",
+    viewerClose:         "close",
+    viewerRaw:           "raw",
+    viewerFailedPrefix:  "Failed: ",
+
+    /* issue #498: banners (static HTML, bound via bindText) */
+    bannerDemoStrong: "Demo environment",
+    bannerDemoText: " — changes are real but ephemeral. This console resets to the seeded knowledge base periodically (~2 days) and on each deploy.",
+    bannerStaleText: "Section Index may be stale — Ingest has run since the last Index build. Run the Index step to rebuild.",
+
+    /* issue #498: honest-miss offer template (checkCoverageFillOutcome /
+       coverageFillOutcomeBanner) — {newPages}/{target} are replaced, never
+       re-derived (§12.5). */
+    coverageFillOutcomeText: "Fill via Import: imported and ingested — new pages: {newPages} — but [[{target}]] is still unresolved.",
+    coverageFillOfferBtn: "Make [[{target}]] an alias of {page}?",
+
+    /* issue #498: reconcile/collision modal chrome (headers + column labels) */
+    reconcileModalWord:        "Reconcile",
+    mergeModalWord:            "Merge",
+    mergeModalArrow:           " ← ",
+    differentiateModalWord:    "Differentiate",
+    modalErrorSuffix:          " — error",
+    modalGeneratingDraft:      "Generating draft…",
+    modalCurrentSuffix:        " — current",
+    modalDraftEditableSuffix:  " — draft (editable)",
+    modalMergedDraftEditableSuffix: " — merged draft (editable)",
+    modalDifferentiatedDraftEditableSuffix: " — differentiated draft (editable)",
+    modalGrounded:             "grounded",
+    modalGroundingFailed:      "grounding failed",
+    modalVariantsDeletedPrefix: "Variants deleted on apply (only if reference-free): ",
   },
   zh: {
     reingest:        "重新匯入",
@@ -2771,6 +2981,174 @@ var LINT_CHROME = {
     transcribeClose:         "關閉",
     transcribePollLost:      "與執行中的工作失去連線；伺服器端可能仍在執行 — 為避免重複收費，不會自動重跑",
     transcribeDialogOpen:    "另一個轉錄視窗已開啟",
+
+    stepUploadLabel: "上傳",
+    stepImportLabel: "匯入",
+    stepIngestLabel: "合成",
+    stepIndexLabel:  "索引",
+    stepLintLabel:   "檢查",
+    stepUploadDesc: "上傳:暫存來源檔案以供處理 — 流程起點;.md 直接進 docs/,HTML/TXT/PDF 需要匯入。",
+    stepImportDesc: "匯入:將 HTML/TXT/PDF 轉換為 Markdown — 在 LLM 合成前先正規化原始來源(掃描版 PDF 會自動轉錄並顯示逐頁進度)。",
+    stepIngestDesc: "合成:由 LLM 根據 Source 合成一則具引證檢核的 wiki 頁面 — 建構知識層。",
+    stepIndexDesc:  "索引:從 wiki 頁面重建 BM25 搜尋索引 — 讓已整理的知識可被檢索。",
+    stepLintDesc:   "檢查:在本地稽核 wiki 的孤立頁面與失效連結 — 維持知識庫一致性(深度稽核會加入 LLM 矛盾檢查)。",
+    stepRun:             "執行",
+    stepPipelineHeader:  "流程",
+
+    uploadChooseFiles:  "選擇檔案",
+    uploadDragDrop:      "拖放檔案到這裡",
+    uploadOrClickToSelect: "或點擊選擇檔案",
+    uploadAcceptLine: "接受 .html、.txt、.md、.pdf — 每個檔案上限 10 MB。HTML/TXT/PDF 會暫存至收件匣待匯入;MD 直接進 docs/。",
+    uploadInDocsLabel:   "已在 docs",
+    uploadInDocsCrumb:   "→ docs/ · 已儲存,無需匯入",
+    uploadStagedLabel:   "已暫存",
+    uploadStagedCrumb:   "→ raw/ · 執行匯入以轉換",
+    uploadZeroFiles:     "0 個檔案",
+    uploadWordWritten:   "已寫入",
+    uploadWordRejected:  "已拒絕",
+    uploadWordError:     "錯誤",
+    uploadWordErrors:    "錯誤",
+
+    genWorking:          "處理中…",
+    genUploading:        "上傳中",
+    genRunningIngest:    "正在執行合成…",
+    genRunningImport:    "正在執行匯入…",
+    genRebuildingIndex:  "正在重建 Section 索引…",
+    genRunningLint:      "正在執行檢查稽核…",
+    genRunningDeepAudit: "正在執行深度稽核(C5)",
+    genRebuildingRag:    "正在重建 RAG 索引…",
+    genRebuildingHybrid: "正在重建 Hybrid dense arm…",
+    genFilePageOf:       "檔案 {done}/{total}",
+    genPagesTranscribed: "已轉錄 {done}/{total} 頁",
+    httpTimeoutFallback: " — 伺服器未即時回應;此操作可能仍在伺服器端執行中。請稍候並重新整理,再重新執行。",
+    cardErrorSuffix:     " — 錯誤",
+
+    importCardWord:      "匯入",
+    importCardImported:  "已匯入",
+    importCardSkipped:   "已略過",
+    importCardFailed:    "失敗",
+    importCardZeroFiles: "0 個檔案",
+    importCardFailedLabel: "失敗",
+
+    ingestCardWord:        "合成",
+    ingestCardIngested:    "已合成",
+    ingestCardUnchanged:   "未變動",
+    ingestCardFailed:      "失敗",
+    ingestCardZeroSources: "0 個來源",
+    ingestCardNoPagesWritten: "未寫入任何頁面",
+    ingestCardUnchangedHashCrumb: "未變動(hash 相符)",
+    ingestCardSkippedLabel: "已略過",
+    ingestCardFailedLabel:  "失敗",
+    ingestCardGrounded:     "已通過引證檢核",
+    ingestCardFailedGrounding: "引證檢核失敗",
+    ingestBatchPrefix:      "批次 ",
+    ingestBatchDoneSuffix:  " 完成",
+
+    indexCardWord:            "索引",
+    indexCardRebuilt:         "索引已重建",
+    indexCardPartial:         "索引部分完成",
+    indexCardFilesIndexed:    "已索引檔案數",
+    indexCardFilesIndexedCrumb: "已解析的 wiki/ Markdown 檔案",
+    indexCardSectionsIndexed: "已索引 Section 數",
+    indexCardSectionsIndexedCrumb: "可搜尋的 BM25 單位",
+    indexCardWikiWritten:     "Wiki 索引已寫入",
+    indexCardWikiWriteFailed: "Wiki 索引寫入失敗",
+    indexCardOk:              "正常",
+    indexCardWarn:            "警告",
+
+    queueHeaderLabel:   "Curation Queue",
+    queueEmpty:         "沒有待處理項目 — 所有已歸檔回答皆正常。",
+    queueRefresh:       "重新整理",
+    queueRefreshing:    "重新整理中…",
+    queueC8Header:      "待升級草稿（C8）",
+    queueC9Header:      "資料過舊的已歸檔回答（C9）",
+    queueC10Header:     "QA 格式錯誤（C10）",
+    queueC8Desc: "升等:由人工審核者核准一則草稿版已歸檔回答,使其成為可被檢索 — 機器人開始以此回答相符的問題。捨棄:從佇列移除一則未生效(草稿)項目 — 已生效的回答會被伺服器拒絕捨棄(由伺服器決定是否允許)。",
+    queuePromoteAll:    "全部升等",
+    queuePromoteBatchPrefix: "已升等 ",
+
+    draftPromote:   "升等",
+    draftDiscard:   "捨棄",
+    draftEdit:      "編輯",
+    draftPromoting: "升等中…",
+    draftDiscarding: "捨棄中…",
+    draftLoading:    "載入中…",
+    draftSrcLabel:   "來源:",
+    draftNoneListed: "(無列出項目)",
+    draftUnknown:    "(未知)",
+    draftBodyLoadFailed: "(無法載入回答內容)",
+    draftWhatItMeans: "升等此回答代表:機器人往後會以此核准的回答回覆類似的問題。",
+    draftPromoteSuccess: "已升等 — 在對話中詢問「{question}」，現在會引用此頁面。",
+
+    editQuestionLabel: "問題",
+    editAnswerLabel:   "回答",
+    editSave:          "儲存",
+    editCancel:        "取消",
+    editSaving:        "儲存中…",
+    editSaved:         "已儲存 — 已通過引證檢核。",
+    editRejectedHead:  "編輯遭拒 — 引證檢核未通過:",
+    editNoDetail:      "(無詳細資訊)",
+
+    refileCardLabel: "重新歸檔",
+    refileCardRefiling: "重新歸檔中…",
+    refileCardSuccess: "已重新歸檔為草稿 — 舊回答已離開知識庫。請點擊重新整理,在待升級草稿（C8）下檢視。",
+    refileCardFailurePrefix: "無法通過引證檢核(原因:",
+    refileCardFailureSuffix: ")— 未做任何變更,此頁面繼續服務中。",
+
+    discardLiveRefused: "無法捨棄:此頁面已生效(status=live)。請改用重新匯入以更新內容。",
+    discardSuccess:     "已捨棄。",
+
+    ragIndexHead:      "RAG 索引",
+    ragRebuilt:        "已重建",
+    ragFilesIndexed:   "已索引檔案數",
+    ragFilesIndexedCrumb: "已嵌入的 docs/ 檔案",
+    ragChunksIndexed:  "已索引區塊數",
+    ragChunksIndexedCrumb: "已儲存的向量單位",
+    ragTrackLabel:     "RAG 軌道",
+    ragTrackNote:      "— 獨立於 Wiki 流程之外;僅針對 docs/ 執行",
+    ragPanelTitle:     "RAG 索引",
+    ragPanelDesc:      "RAG 重建:將 docs/ 重新嵌入向量索引 — 讓原始來源可透過語意搜尋檢索;與其他流程平行執行。",
+    ragRebuildBtn:     "重建",
+
+    hybridIndexHead:   "Hybrid Dense 索引",
+    hybridSectionsIndexed: "已索引 Section 數",
+    hybridSectionsIndexedCrumb: "已重新嵌入 dense arm 的 wiki/ Section",
+    hybridTrackLabel:  "Hybrid 軌道",
+    hybridTrackNote:   "— 僅限 dense arm;BM25 arm 已在升等時自動更新（ADR-0022）",
+    hybridPanelTitle:  "Hybrid Dense 索引",
+    hybridPanelDesc:   "Hybrid dense 重建:將 wiki Section 語料重新嵌入 dense arm — 僅重整 dense arm;BM25 arm 已在升等時自動更新。",
+
+    browseSectionLabel: "瀏覽",
+    browseRoot:          "根目錄",
+    browseLoadingRoots:  "正在載入根目錄…",
+    browseLoadingPathPrefix: "正在載入 ",
+    browseFailedToLoadPrefix: "載入失敗:",
+    browseEmptyDirectory: "(空目錄)",
+    viewerLoading:       "載入中…",
+    viewerClose:         "關閉",
+    viewerRaw:           "原始檔",
+    viewerFailedPrefix:  "失敗:",
+
+    bannerDemoStrong: "展示環境",
+    bannerDemoText: " — 所做的變更是真實的,但暫時性。此展示環境會定期(約每 2 天)以及每次部署時重置為種子知識庫。",
+    bannerStaleText: "Section 索引可能已過時 — 自上次建立索引後已執行過合成。請執行索引步驟以重建。",
+
+    coverageFillOutcomeText: "透過匯入補齊:已匯入並合成 — 新增頁面:{newPages} — 但 [[{target}]] 仍未解析。",
+    coverageFillOfferBtn: "將 [[{target}]] 指派為 {page} 的別名？",
+
+    reconcileModalWord:        "協調",
+    mergeModalWord:            "合併",
+    mergeModalArrow:           " ← ",
+    differentiateModalWord:    "區分",
+    modalErrorSuffix:          " — 錯誤",
+    modalGeneratingDraft:      "產生草稿中…",
+    modalCurrentSuffix:        " — 目前版本",
+    modalDraftEditableSuffix:  " — 草稿（可編輯）",
+    modalMergedDraftEditableSuffix: " — 合併後草稿（可編輯）",
+    modalDifferentiatedDraftEditableSuffix: " — 區分後草稿（可編輯）",
+    modalGrounded:             "已通過引證檢核",
+    modalGroundingFailed:      "引證檢核失敗",
+    modalVariantsDeletedPrefix: "套用後將刪除以下變體（僅在未被引用時）：",
   },
 };
 
@@ -2921,10 +3299,17 @@ function checkCoverageFillOutcome(lintData) {
      rather than a plain string — text is the same honest-miss message this
      always built (still unresolved, new pages named), and target/newPages
      additionally let renderLintCard upgrade the report into an executable
-     "make [[target]] an alias of <newPage>?" offer per newly-minted page. */
+     "make [[target]] an alias of <newPage>?" offer per newly-minted page.
+     issue #498: the English literal stays (test_ui_console_routed_coverage_
+     fill.py::test_honest_miss_message_reports_new_pages_and_unresolved_target
+     pins "still unresolved" verbatim in this function's body) — the zh
+     branch builds the same message from LINT_CHROME.zh.coverageFillOutcomeText
+     via the {newPages}/{target} template. */
   lastCoverageFillOutcome = {
-    text: "Fill via Import: imported and ingested — new pages: " + newPages +
-      " — but [[" + fill.target + "]] is still unresolved.",
+    text: consoleLang === "zh"
+      ? LINT_CHROME.zh.coverageFillOutcomeText.replace("{newPages}", newPages).replace("{target}", fill.target)
+      : "Fill via Import: imported and ingested — new pages: " + newPages +
+        " — but [[" + fill.target + "]] is still unresolved.",
     target: fill.target,
     newPages: lastIngestedPageSlugs.slice(),
   };
@@ -3021,7 +3406,7 @@ function showFixSourceBanner(finding) {
         viewStatusEl.className = "card-status-msg";
         openFile(finding.source_path, c3SourceFilename(finding), {
           onError: function(message) {
-            viewStatusEl.textContent = "Failed: " + message;
+            viewStatusEl.textContent = LINT_CHROME[consoleLang].viewerFailedPrefix + message;
             viewStatusEl.className = "card-status-msg err";
           }
         });
@@ -3102,14 +3487,37 @@ function checkFixSourceOutcome(lintData) {
   }
 }
 
-/* Applies consoleLang to <html lang> (accessibility) and the header toggle
-   button's own label. Looked up fresh by id each call rather than a cached
-   reference — it is called once at boot and again on every toggle click, so
-   there is no hot-path cost to avoiding a second module-level DOM handle. */
+/* issue #498: registry for BOOT-TIME static chrome — elements built once
+   (pipeline stepper, drop zone, RAG/Hybrid track panels, Browse section
+   label, banners) rather than re-rendered on every Lint/Curation-Queue
+   refresh. Dynamic render functions look up LINT_CHROME[consoleLang]
+   directly at render time (design decision #2) and need no entry here;
+   this registry exists only so applyConsoleLang() can retro-switch chrome
+   that was minted once at boot in whatever language was active then. */
+var I18N_BOUND = [];
+
+/* Registers `elem` for retro-switching and sets its initial text from
+   LINT_CHROME[consoleLang][key]. Returns `elem` so call sites can inline
+   it inside an el(...) tree (mirrors el()'s own "return the node" shape). */
+function bindText(elem, key) {
+  I18N_BOUND.push({ el: elem, key: key });
+  elem.textContent = LINT_CHROME[consoleLang][key];
+  return elem;
+}
+
+/* Applies consoleLang to <html lang> (accessibility), the header toggle
+   button's own label, and every boot-time-bound element registered via
+   bindText (issue #498). Looked up fresh by id each call rather than a
+   cached reference — it is called once at boot and again on every toggle
+   click, so there is no hot-path cost to avoiding a second module-level DOM
+   handle. */
 function applyConsoleLang() {
   document.documentElement.lang = consoleLang === "zh" ? "zh-Hant" : "en";
   var btn = document.getElementById("lang-toggle");
   if (btn) btn.textContent = LINT_CHROME[consoleLang].langToggleLabel;
+  I18N_BOUND.forEach(function(entry) {
+    entry.el.textContent = LINT_CHROME[consoleLang][entry.key];
+  });
 }
 
 /* ── In-flight guard + durability notice (issue #364) ──────────────
@@ -3411,7 +3819,7 @@ function runLintRemediation(requestPromise, btn, statusMsgEl, resultEl, siblingB
   var buttons = siblingButtons || [btn];
   remediationInFlight = true;
   buttons.forEach(function(b) { b.disabled = true; });
-  statusMsgEl.replaceChildren(el("span", { class: "spinner" }), document.createTextNode("Working…"));
+  statusMsgEl.replaceChildren(el("span", { class: "spinner" }), document.createTextNode(LINT_CHROME[consoleLang].genWorking));
   statusMsgEl.className = "card-status-msg";
 
   requestPromise
@@ -3584,7 +3992,7 @@ function renderLintCard(data, resultEl) {
   var badgeLabel  = total === "?" ? "?" : (total + " finding" + (total !== 1 ? "s" : ""));
 
   var head = el("div", { class: "result-card-head" },
-    el("span", { text: "Lint" }),
+    el("span", { text: LINT_CHROME[consoleLang].stepLintLabel }),
     el("span", { text: "·" }),
     el("span", { class: badgeClass },
       el("span", { class: "dot" }),
@@ -3871,7 +4279,8 @@ function renderLintCard(data, resultEl) {
 
     outcome.newPages.forEach(function(pageSlug) {
       var btn = el("button", { class: "assign-alias-offer-btn", type: "button",
-        text: "Make [[" + outcome.target + "]] an alias of " + pageSlug + "?" });
+        text: LINT_CHROME[consoleLang].coverageFillOfferBtn
+          .replace("{target}", outcome.target).replace("{page}", pageSlug) });
       var statusMsgEl = el("span", { class: "card-status-msg" });
       allButtons.push(btn);
       btn.addEventListener("click", function() {
@@ -4334,12 +4743,13 @@ function openDeleteOrphanConfirm(slug, resultEl, siblingButtons) {
    card so a later card re-render never disturbs an open modal). Closed via
    the Cancel/Close button or a backdrop click. */
 function openReconcileModal(pageA, pageB, resultEl, siblingButtons, finding) {
+  var chrome = LINT_CHROME[consoleLang];
   var overlay = el("div", { class: "reconcile-overlay" });
   var modal = el("div", { class: "reconcile-modal" },
-    el("div", { class: "reconcile-modal-head" }, el("span", { text: "Reconcile: " + pageA + " / " + pageB })),
+    el("div", { class: "reconcile-modal-head" }, el("span", { text: chrome.reconcileModalWord + ": " + pageA + " / " + pageB })),
     el("div", { class: "reconcile-modal-body" },
       el("span", { class: "spinner" }),
-      document.createTextNode(" Generating draft…")
+      document.createTextNode(" " + chrome.modalGeneratingDraft)
     )
   );
   overlay.append(modal);
@@ -4360,7 +4770,7 @@ function openReconcileModal(pageA, pageB, resultEl, siblingButtons, finding) {
     .then(function(data) { renderReconcilePreview(modal, data, resultEl, closeModal, siblingButtons, finding); })
     .catch(function(err) {
       modal.replaceChildren(
-        el("div", { class: "reconcile-modal-head" }, el("span", { text: "Reconcile — error" })),
+        el("div", { class: "reconcile-modal-head" }, el("span", { text: chrome.reconcileModalWord + chrome.modalErrorSuffix })),
         el("div", { class: "reconcile-modal-body reconcile-error", text: err.message || String(err) }),
         el("div", { class: "reconcile-actions" },
           el("button", { class: "reconcile-cancel-btn", type: "button",
@@ -4382,6 +4792,7 @@ function openReconcileModal(pageA, pageB, resultEl, siblingButtons, finding) {
    is disabled for the duration of the apply request — same no-double-submit
    guarantee every other remediation on the card already gets. */
 function renderReconcilePreview(modal, data, resultEl, closeModal, siblingButtons, finding) {
+  var chrome = LINT_CHROME[consoleLang];
   // issue #443: the conflict panel (both quoted claims, full summary,
   // suggested_action) rendered above the editable drafts — same evidence,
   // same shared c5ConflictPanel() as the C5 finding row. `finding` is the
@@ -4399,7 +4810,7 @@ function renderReconcilePreview(modal, data, resultEl, closeModal, siblingButton
   var groundingEl = el("div", { class: "reconcile-grounding" },
     el("span", { class: passed ? "badge badge-ok" : "badge badge-fail" },
       el("span", { class: "dot" }),
-      el("span", { text: passed ? "grounded" : "grounding failed" })
+      el("span", { text: passed ? chrome.modalGrounded : chrome.modalGroundingFailed })
     )
   );
   var unsupported = (data.grounding && data.grounding.unsupported_claims) || [];
@@ -4479,21 +4890,21 @@ function renderReconcilePreview(modal, data, resultEl, closeModal, siblingButton
   });
 
   modal.replaceChildren(
-    el("div", { class: "reconcile-modal-head" }, el("span", { text: "Reconcile: " + data.page_a + " / " + data.page_b })),
+    el("div", { class: "reconcile-modal-head" }, el("span", { text: chrome.reconcileModalWord + ": " + data.page_a + " / " + data.page_b })),
     el("div", { class: "reconcile-modal-body" },
       conflictPanelEl,
       groundingEl,
       el("div", { class: "reconcile-columns" },
         el("div", { class: "reconcile-col" },
-          el("div", { class: "reconcile-col-head", text: data.page_a + " — current" }),
+          el("div", { class: "reconcile-col-head", text: data.page_a + chrome.modalCurrentSuffix }),
           el("pre", { class: "reconcile-old", text: data.old_content_a }),
-          el("div", { class: "reconcile-col-head", text: data.page_a + " — draft (editable)" }),
+          el("div", { class: "reconcile-col-head", text: data.page_a + chrome.modalDraftEditableSuffix }),
           textareaA
         ),
         el("div", { class: "reconcile-col" },
-          el("div", { class: "reconcile-col-head", text: data.page_b + " — current" }),
+          el("div", { class: "reconcile-col-head", text: data.page_b + chrome.modalCurrentSuffix }),
           el("pre", { class: "reconcile-old", text: data.old_content_b }),
-          el("div", { class: "reconcile-col-head", text: data.page_b + " — draft (editable)" }),
+          el("div", { class: "reconcile-col-head", text: data.page_b + chrome.modalDraftEditableSuffix }),
           textareaB
         )
       )
@@ -4511,15 +4922,17 @@ function renderReconcilePreview(modal, data, resultEl, closeModal, siblingButton
    "differentiate" — collisionAction() above builds the right list per
    button before calling this. */
 function openCollisionModal(mode, baseSlug, groupSlugs, resultEl, siblingButtons) {
+  var chrome = LINT_CHROME[consoleLang];
+  var titleWord = mode === "merge" ? chrome.mergeModalWord : chrome.differentiateModalWord;
   var title = mode === "merge"
-    ? "Merge: " + baseSlug + " ← " + groupSlugs.join(", ")
-    : "Differentiate: " + groupSlugs.join(", ");
+    ? chrome.mergeModalWord + ": " + baseSlug + chrome.mergeModalArrow + groupSlugs.join(", ")
+    : chrome.differentiateModalWord + ": " + groupSlugs.join(", ");
   var overlay = el("div", { class: "reconcile-overlay" });
   var modal = el("div", { class: "reconcile-modal" },
     el("div", { class: "reconcile-modal-head" }, el("span", { text: title })),
     el("div", { class: "reconcile-modal-body" },
       el("span", { class: "spinner" }),
-      document.createTextNode(" Generating draft…")
+      document.createTextNode(" " + chrome.modalGeneratingDraft)
     )
   );
   overlay.append(modal);
@@ -4548,7 +4961,7 @@ function openCollisionModal(mode, baseSlug, groupSlugs, resultEl, siblingButtons
     })
     .catch(function(err) {
       modal.replaceChildren(
-        el("div", { class: "reconcile-modal-head" }, el("span", { text: title + " — error" })),
+        el("div", { class: "reconcile-modal-head" }, el("span", { text: titleWord + chrome.modalErrorSuffix })),
         el("div", { class: "reconcile-modal-body reconcile-error", text: err.message || String(err) }),
         el("div", { class: "reconcile-actions" },
           el("button", { class: "reconcile-cancel-btn", type: "button",
@@ -4583,6 +4996,7 @@ function _finishCollisionApply(resultEl, closeModal) {
    HONESTLY — who references what — rather than a generic error (ADR-0028
    AC: "guard refusals render honestly"). */
 function renderCollisionMergePreview(modal, data, resultEl, closeModal, siblingButtons) {
+  var chrome = LINT_CHROME[consoleLang];
   var textareaBase = el("textarea", { class: "reconcile-textarea", rows: "10" });
   textareaBase.value = data.content_base;
 
@@ -4590,7 +5004,7 @@ function renderCollisionMergePreview(modal, data, resultEl, closeModal, siblingB
   var groundingEl = el("div", { class: "reconcile-grounding" },
     el("span", { class: passed ? "badge badge-ok" : "badge badge-fail" },
       el("span", { class: "dot" }),
-      el("span", { text: passed ? "grounded" : "grounding failed" })
+      el("span", { text: passed ? chrome.modalGrounded : chrome.modalGroundingFailed })
     )
   );
   var unsupported = (data.grounding && data.grounding.unsupported_claims) || [];
@@ -4679,20 +5093,20 @@ function renderCollisionMergePreview(modal, data, resultEl, closeModal, siblingB
 
   modal.replaceChildren(
     el("div", { class: "reconcile-modal-head" },
-      el("span", { text: "Merge: " + data.base_slug + " ← " + data.variant_slugs.join(", ") })),
+      el("span", { text: chrome.mergeModalWord + ": " + data.base_slug + chrome.mergeModalArrow + data.variant_slugs.join(", ") })),
     el("div", { class: "reconcile-modal-body" },
       groundingEl,
       guardEl,
       el("div", { class: "reconcile-columns" },
         el("div", { class: "reconcile-col" },
-          el("div", { class: "reconcile-col-head", text: data.base_slug + " — current" }),
+          el("div", { class: "reconcile-col-head", text: data.base_slug + chrome.modalCurrentSuffix }),
           el("pre", { class: "reconcile-old", text: data.old_content_base }),
-          el("div", { class: "reconcile-col-head", text: data.base_slug + " — merged draft (editable)" }),
+          el("div", { class: "reconcile-col-head", text: data.base_slug + chrome.modalMergedDraftEditableSuffix }),
           textareaBase
         )
       ),
       el("div", { class: "reconcile-col-head",
-        text: "Variants deleted on apply (only if reference-free): " + data.variant_slugs.join(", ") })
+        text: chrome.modalVariantsDeletedPrefix + data.variant_slugs.join(", ") })
     ),
     el("div", { class: "reconcile-actions" }, applyBtn, cancelBtn, statusMsgEl)
   );
@@ -4702,6 +5116,7 @@ function renderCollisionMergePreview(modal, data, resultEl, closeModal, siblingB
    one old-vs-editable column PER group member — nobody is deleted on this
    path, so there is no reference guard to render. */
 function renderCollisionDifferentiatePreview(modal, data, resultEl, closeModal, siblingButtons) {
+  var chrome = LINT_CHROME[consoleLang];
   var textareas = {};
   var columnsEl = el("div", { class: "reconcile-columns" });
   data.slugs.forEach(function(slug) {
@@ -4710,9 +5125,9 @@ function renderCollisionDifferentiatePreview(modal, data, resultEl, closeModal, 
     textareas[slug] = ta;
     columnsEl.append(
       el("div", { class: "reconcile-col" },
-        el("div", { class: "reconcile-col-head", text: slug + " — current" }),
+        el("div", { class: "reconcile-col-head", text: slug + chrome.modalCurrentSuffix }),
         el("pre", { class: "reconcile-old", text: data.old_content[slug] }),
-        el("div", { class: "reconcile-col-head", text: slug + " — differentiated draft (editable)" }),
+        el("div", { class: "reconcile-col-head", text: slug + chrome.modalDifferentiatedDraftEditableSuffix }),
         ta
       )
     );
@@ -4722,7 +5137,7 @@ function renderCollisionDifferentiatePreview(modal, data, resultEl, closeModal, 
   var groundingEl = el("div", { class: "reconcile-grounding" },
     el("span", { class: passed ? "badge badge-ok" : "badge badge-fail" },
       el("span", { class: "dot" }),
-      el("span", { text: passed ? "grounded" : "grounding failed" })
+      el("span", { text: passed ? chrome.modalGrounded : chrome.modalGroundingFailed })
     )
   );
   var unsupported = (data.grounding && data.grounding.unsupported_claims) || [];
@@ -4786,7 +5201,7 @@ function renderCollisionDifferentiatePreview(modal, data, resultEl, closeModal, 
 
   modal.replaceChildren(
     el("div", { class: "reconcile-modal-head" },
-      el("span", { text: "Differentiate: " + data.slugs.join(", ") })),
+      el("span", { text: chrome.differentiateModalWord + ": " + data.slugs.join(", ") })),
     el("div", { class: "reconcile-modal-body" }, groundingEl, columnsEl),
     el("div", { class: "reconcile-actions" }, applyBtn, cancelBtn, statusMsgEl)
   );
@@ -4802,8 +5217,7 @@ function httpError(resp, bodyText) {
   var msg = "HTTP " + resp.status + (resp.statusText ? " " + resp.statusText : "");
   if (bodyText && bodyText.trim()) return new Error(msg + ": " + bodyText.trim());
   if (resp.status === 502 || resp.status === 504) {
-    return new Error(msg + " — the server did not answer in time; the operation " +
-      "may still be running server-side. Wait a moment, then Refresh before re-running.");
+    return new Error(msg + LINT_CHROME[consoleLang].httpTimeoutFallback);
   }
   return new Error(msg);
 }
@@ -4811,7 +5225,7 @@ function httpError(resp, bodyText) {
 function renderErrorCard(stepLabel, message) {
   return el("div", { class: "result-card" },
     el("div", { class: "result-card-head" },
-      el("span", { text: stepLabel + " — error" })
+      el("span", { text: stepLabel + LINT_CHROME[consoleLang].cardErrorSuffix })
     ),
     el("div", { style: "padding:12px 16px; font-size:13px; color:var(--fail);", text: message })
   );
@@ -4834,6 +5248,7 @@ function makeBusyCard(label) {
    exception as the Transcribe modal's bar), files k/N comes from the same
    poll. Returns { card, update(job) }. */
 function makeImportProgressCard() {
+  var chrome = LINT_CHROME[consoleLang];
   var fillEl = el("div", { class: "transcribe-progress-fill", style: "width:0%" });
   var trackEl = el("div", { class: "transcribe-progress-track" }, fillEl);
   trackEl.style.display = "none";
@@ -4842,7 +5257,7 @@ function makeImportProgressCard() {
   var card = el("div", { class: "result-card" },
     el("div", { class: "busy-row" },
       el("span", { class: "spinner" }),
-      el("span", { text: "Running Import…" })
+      el("span", { text: chrome.genRunningImport })
     ),
     el("div", { style: "padding:0 16px 12px;" }, trackEl, labelEl)
   );
@@ -4850,13 +5265,17 @@ function makeImportProgressCard() {
   function update(job) {
     var parts = [];
     if (job.files_total > 0) {
-      parts.push("file " + Math.min(job.files_done + 1, job.files_total) + "/" + job.files_total);
+      parts.push(chrome.genFilePageOf
+        .replace("{done}", String(Math.min(job.files_done + 1, job.files_total)))
+        .replace("{total}", String(job.files_total)));
     }
     if (job.pages_total > 0) {
       var pct = Math.min(Math.round((job.pages_done / job.pages_total) * 100), 100);
       fillEl.style.width = pct + "%";
       trackEl.style.display = "block";
-      parts.push(job.pages_done + "/" + job.pages_total + " pages transcribed");
+      parts.push(chrome.genPagesTranscribed
+        .replace("{done}", String(job.pages_done))
+        .replace("{total}", String(job.pages_total)));
     }
     if (parts.length > 0) {
       labelEl.textContent = parts.join(" · ");
@@ -4921,7 +5340,7 @@ function buildUploadBody(resultEl) {
     if (uploadBusy) return;
     setUploadBusy(true);
 
-    resultEl.replaceChildren(makeBusyCard("Uploading " + files.length + " file" + (files.length !== 1 ? "s" : "")));
+    resultEl.replaceChildren(makeBusyCard(LINT_CHROME[consoleLang].genUploading + " " + files.length + " file" + (files.length !== 1 ? "s" : "")));
 
     var formData = new FormData();
     for (var i = 0; i < files.length; i++) {
@@ -4934,7 +5353,7 @@ function buildUploadBody(resultEl) {
         return resp.json();
       })
       .then(function(data) { resultEl.replaceChildren(renderUploadCard(data.results || [])); })
-      .catch(function(err)  { resultEl.replaceChildren(renderErrorCard("Upload", err.message || String(err))); })
+      .catch(function(err)  { resultEl.replaceChildren(renderErrorCard(LINT_CHROME[consoleLang].stepUploadLabel, err.message || String(err))); })
       .finally(function()   { setUploadBusy(false); });
   }
 
@@ -4942,17 +5361,17 @@ function buildUploadBody(resultEl) {
     if (fileInput.files && fileInput.files.length > 0) handleFiles(Array.from(fileInput.files));
   });
 
-  var dropBtn = el("button", { class: "drop-btn", type: "button", text: "Choose files",
+  var dropBtn = bindText(el("button", { class: "drop-btn", type: "button",
     onclick: function() { if (!uploadBusy) fileInput.click(); }
-  });
+  }), "uploadChooseFiles");
 
   var dropZone = el("div", { class: "drop-zone" },
     el("div", { class: "drop-hint" },
-      el("strong", { text: "Drag and drop files here" }),
+      bindText(el("strong"), "uploadDragDrop"),
       el("br"),
-      "or click to select files"
+      bindText(el("span"), "uploadOrClickToSelect")
     ),
-    el("div", { class: "drop-ext", text: "Accepts .html · .txt · .md · .pdf — max 10 MB each. HTML/TXT/PDF stage into the inbox for Import; MD goes straight to docs/." }),
+    bindText(el("div", { class: "drop-ext" }), "uploadAcceptLine"),
     dropBtn,
     fileInput
   );
@@ -4991,8 +5410,8 @@ var lastImportedDocFilenames = null;
 var STEP_DEFS = [
   {
     id: "upload",
-    label: "Upload",
-    desc: "Upload: stage source files for processing — entry point; .md goes to docs/, HTML/TXT/PDF needs Import.",
+    labelKey: "stepUploadLabel",
+    descKey: "stepUploadDesc",
     buildBody: function(resultEl) {
       return buildUploadBody(resultEl);
     },
@@ -5001,8 +5420,8 @@ var STEP_DEFS = [
   },
   {
     id: "import",
-    label: "Import",
-    desc: "Import: convert HTML/TXT/PDF to Markdown — normalises raw sources before LLM synthesis (scanned PDFs auto-transcribe with per-page progress).",
+    labelKey: "stepImportLabel",
+    descKey: "stepImportDesc",
     buildBody: null,
     run: function(resultEl, setStepBusy) {
       /* issue #497: Import runs as a background job (POST /wiki/import/jobs
@@ -5061,8 +5480,8 @@ var STEP_DEFS = [
   },
   {
     id: "ingest",
-    label: "Ingest",
-    desc: "Ingest: an LLM synthesises a curated wiki page from a Source, grounding-checked — builds the knowledge layer.",
+    labelKey: "stepIngestLabel",
+    descKey: "stepIngestDesc",
     buildBody: null,
     run: function(resultEl, setStepBusy) {
       /* Phase 15 S3 (#172): single-batch-call rule (§12.8 / ADR-0011).
@@ -5087,13 +5506,13 @@ var STEP_DEFS = [
   },
   {
     id: "index",
-    label: "Index",
-    desc: "Index: rebuild the BM25 search index from wiki pages — makes curated knowledge retrievable.",
+    labelKey: "stepIndexLabel",
+    descKey: "stepIndexDesc",
     buildBody: null,
     run: function(resultEl, setStepBusy) {
       /* Phase 15 S4 (#173): real IndexResponse card + staleness guard clear */
       setStepBusy(true);
-      resultEl.replaceChildren(makeBusyCard("Rebuilding Section Index…"));
+      resultEl.replaceChildren(makeBusyCard(LINT_CHROME[consoleLang].genRebuildingIndex));
 
       fetch("/wiki/index", { method: "POST" })
         .then(function(resp) {
@@ -5101,7 +5520,7 @@ var STEP_DEFS = [
           return resp.json();
         })
         .then(function(data) { resultEl.replaceChildren(renderIndexCard(data)); })
-        .catch(function(err)  { resultEl.replaceChildren(renderErrorCard("Index", err.message || String(err))); })
+        .catch(function(err)  { resultEl.replaceChildren(renderErrorCard(LINT_CHROME[consoleLang].indexCardWord, err.message || String(err))); })
         .finally(function()   {
           setStepBusy(false);
           markIndexDone(); /* staleness guard: clear stale signal after Index run */
@@ -5110,8 +5529,8 @@ var STEP_DEFS = [
   },
   {
     id: "lint",
-    label: "Lint",
-    desc: "Lint: audit the wiki for orphans and red links locally — keeps the knowledge base coherent (Deep audit adds the LLM contradiction check).",
+    labelKey: "stepLintLabel",
+    descKey: "stepLintDesc",
     buildBody: null,
     run: function(resultEl, setStepBusy) {
       /* Phase 15 S4 (#173): real LintResponse card with per-check grouped findings */
@@ -5126,7 +5545,7 @@ var STEP_DEFS = [
          checkCoverageFillOutcome / checkFixSourceOutcome / renderLintCard
          inside THIS function's own body. */
       setStepBusy(true);
-      resultEl.replaceChildren(makeBusyCard("Running Lint audit…"));
+      resultEl.replaceChildren(makeBusyCard(LINT_CHROME[consoleLang].genRunningLint));
 
       fetch("/wiki/lint?include_c5=false", { method: "POST" })
         .then(function(resp) {
@@ -5145,7 +5564,7 @@ var STEP_DEFS = [
           lastLintData = data;
           renderCurationQueue(document.getElementById("curation-queue-root"), data);
         })
-        .catch(function(err)  { resultEl.replaceChildren(renderErrorCard("Lint", err.message || String(err))); })
+        .catch(function(err)  { resultEl.replaceChildren(renderErrorCard(LINT_CHROME[consoleLang].stepLintLabel, err.message || String(err))); })
         .finally(function()   { setStepBusy(false); });
     },
     deepAudit: function(resultEl, setStepBusy) {
@@ -5155,7 +5574,7 @@ var STEP_DEFS = [
          they do today, in the same card (AC "same card, same downstream
          flows"); only include_c5 and the busy label differ. */
       setStepBusy(true);
-      resultEl.replaceChildren(makeBusyCard("Running deep audit (C5)"));
+      resultEl.replaceChildren(makeBusyCard(LINT_CHROME[consoleLang].genRunningDeepAudit));
 
       fetch("/wiki/lint?include_c5=true", { method: "POST" })
         .then(function(resp) {
@@ -5177,7 +5596,7 @@ var STEP_DEFS = [
           lastLintData = data;
           renderCurationQueue(document.getElementById("curation-queue-root"), data);
         })
-        .catch(function(err)  { resultEl.replaceChildren(renderErrorCard("Lint", err.message || String(err))); })
+        .catch(function(err)  { resultEl.replaceChildren(renderErrorCard(LINT_CHROME[consoleLang].stepLintLabel, err.message || String(err))); })
         .finally(function()   { setStepBusy(false); });
     },
   },
@@ -5194,7 +5613,7 @@ function buildPipeline(rootEl) {
     trackItems.push(
       el("span", { class: "step-pill" + (i === 0 ? " active" : ""), id: "track-" + step.id },
         el("span", { class: "step-num", text: String(i + 1) }),
-        el("span", { text: step.label })
+        bindText(el("span"), step.labelKey)
       )
     );
   });
@@ -5231,8 +5650,8 @@ function buildPipeline(rootEl) {
 
     /* Header */
     var headLeft = el("div", { style: "display:flex; align-items:center; gap:12px; min-width:0; flex:1;" },
-      el("span", { class: "step-panel-title", text: step.label }),
-      el("span", { class: "step-panel-desc",  text: step.desc })
+      bindText(el("span", { class: "step-panel-title" }), step.labelKey),
+      bindText(el("span", { class: "step-panel-desc" }), step.descKey)
     );
 
     var headEl;
@@ -5240,9 +5659,9 @@ function buildPipeline(rootEl) {
       /* Upload: no Run button in the header — controlled inside the drop zone */
       headEl = el("div", { class: "step-panel-head" }, headLeft);
     } else {
-      runBtn = el("button", { class: "run-btn", type: "button", text: "Run",
+      runBtn = bindText(el("button", { class: "run-btn", type: "button",
         onclick: function() { step.run(resultEl, setStepBusy); }
-      });
+      }), "stepRun");
       var headActions = [runBtn];
       if (step.deepAudit) {
         /* issue #441: Lint-only second control — the on-demand C5
@@ -5250,10 +5669,17 @@ function buildPipeline(rootEl) {
            Wrapped together with runBtn in .step-panel-actions below so
            .step-panel-head's space-between layout still sees exactly two
            flex children regardless of how many action buttons a step has. */
+        /* issue #498: keeps the pinned literal `text: LINT_CHROME[consoleLang].
+           deepAudit,` prop (test_ui_console_lint_fast_default.py::
+           test_deep_audit_button_wired_only_when_step_defines_it asserts it
+           verbatim) — registered into I18N_BOUND directly (rather than via
+           the bindText() helper, which would drop the literal prop) so the
+           toggle still retro-switches this button's label. */
         deepAuditBtn = el("button", { class: "deep-audit-btn", type: "button",
           text: LINT_CHROME[consoleLang].deepAudit,
           onclick: function() { step.deepAudit(resultEl, setStepBusy); }
         });
+        I18N_BOUND.push({ el: deepAuditBtn, key: "deepAudit" });
         headActions.push(deepAuditBtn);
       }
       headEl = el("div", { class: "step-panel-head" }, headLeft,
@@ -5273,7 +5699,7 @@ function buildPipeline(rootEl) {
 
   rootEl.append(
     el("div", { class: "pipeline" },
-      el("div", { class: "pipeline-header", text: "Pipeline" }),
+      bindText(el("div", { class: "pipeline-header" }), "stepPipelineHeader"),
       track,
       panels
     )
@@ -5313,6 +5739,7 @@ var lintResultEl = null;
 /* ── Curation Queue renderer ──────────────────────────────── */
 function renderCurationQueue(rootEl, lintData) {
   if (!rootEl) return;
+  var chrome = LINT_CHROME[consoleLang];
   if (!lintData || !lintData.findings) {
     /* No data yet — clear the queue section */
     rootEl.replaceChildren();
@@ -5329,10 +5756,10 @@ function renderCurationQueue(rootEl, lintData) {
     rootEl.replaceChildren(
       el("div", { class: "curation-queue" },
         el("div", { class: "queue-header" },
-          el("span", { class: "queue-header-label", text: "Curation Queue" }),
+          el("span", { class: "queue-header-label", text: chrome.queueHeaderLabel }),
           makeRefreshBtn()
         ),
-        el("div", { class: "queue-empty", text: "No curation items — all Filed Answers are clean." })
+        el("div", { class: "queue-empty", text: chrome.queueEmpty })
       )
     );
     return;
@@ -5343,7 +5770,7 @@ function renderCurationQueue(rootEl, lintData) {
   /* ── Header ─────────────────────────────────────────────── */
   queueEl.append(
     el("div", { class: "queue-header" },
-      el("span", { class: "queue-header-label", text: "Curation Queue" }),
+      el("span", { class: "queue-header-label", text: chrome.queueHeaderLabel }),
       makeRefreshBtn()
     )
   );
@@ -5352,15 +5779,22 @@ function renderCurationQueue(rootEl, lintData) {
   if (candidates.length > 0) {
     /* ADR-0021 per-action one-liner for Promote and Discard (§12.4: textContent only).
        Promote: the human gate of ADR-0020's validated write-back loop.
-       Discard: inert-only server decision; refused for live answers. */
+       Discard: inert-only server decision; refused for live answers.
+       issue #498: the English literal stays at creation (test_ui_console_
+       lint_bilingual.py::test_console_promote_line_operator_copy pins the
+       exact `class: "queue-section-desc",\n  text: "..."` shape via regex),
+       overwritten via .textContent for zh right after — same convention as
+       discardAllAction (issue #365). */
+    var c8DescEl = el("p", { class: "queue-section-desc",
+      text: "Promote: a curator approves a draft Filed Answer so it becomes retrievable — the bot starts answering matching questions with it. Discard: remove an inert (draft) entry from the queue — refused for live answers (server decides eligibility)." });
+    if (consoleLang === "zh") c8DescEl.textContent = LINT_CHROME.zh.queueC8Desc;
     var c8Section = el("div", { class: "queue-section" },
       el("div", { class: "queue-section-head" },
-        el("span", { text: "Promotion Candidates (C8)" }),
+        el("span", { text: chrome.queueC8Header }),
         el("span", { class: "label label-created", text: String(candidates.length) }),
         promoteAllAction(candidates.map(function(f) { return f.slug; }))
       ),
-      el("p", { class: "queue-section-desc",
-        text: "Promote: a curator approves a draft Filed Answer so it becomes retrievable — the bot starts answering matching questions with it. Discard: remove an inert (draft) entry from the queue — refused for live answers (server decides eligibility)." })
+      c8DescEl
     );
     if (lastPromoteBatchResult) {
       c8Section.append(renderPromoteBatchSummary(lastPromoteBatchResult));
@@ -5381,15 +5815,18 @@ function renderCurationQueue(rootEl, lintData) {
 
     var c9Section = el("div", { class: "queue-section" },
       el("div", { class: "queue-section-head" },
-        el("span", { text: "Stale Filed Answers (C9)" }),
+        el("span", { text: chrome.queueC9Header }),
         el("span", { class: "label label-updated", text: String(staleSlugs.length) })
       )
     );
     staleSlugs.forEach(function(slug) {
       var f = staleMap[slug];
-      var drift = f.max_drift_days != null ? f.max_drift_days.toFixed(1) + "d drift" : "";
-      var hint = "Re-file: re-derive this answer from the current entities/concepts and " +
-        "stage it as a fresh draft for review — the old answer leaves the corpus.";
+      var driftUnit = consoleLang === "zh" ? "天" : "d drift";
+      var drift = f.max_drift_days != null ? f.max_drift_days.toFixed(1) + driftUnit : "";
+      var hint = consoleLang === "zh"
+        ? "重新歸檔:根據目前的實體/概念重新推導此回答,並暫存為新草稿供審核 — 舊回答將離開知識庫。"
+        : "Re-file: re-derive this answer from the current entities/concepts and " +
+          "stage it as a fresh draft for review — the old answer leaves the corpus.";
       c9Section.append(buildRefileFlagCard(
         /* slug */ f.page_slug,
         /* subtitle */ drift + (drift ? " — " : "") + hint
@@ -5410,7 +5847,7 @@ function renderCurationQueue(rootEl, lintData) {
 
     var c10Section = el("div", { class: "queue-section" },
       el("div", { class: "queue-section-head" },
-        el("span", { text: "Invalid QA Schema (C10)" }),
+        el("span", { text: chrome.queueC10Header }),
         el("span", { class: "label label-failed", text: String(invalidSlugs.length) })
       )
     );
@@ -5419,7 +5856,9 @@ function renderCurationQueue(rootEl, lintData) {
       var propSummary = items.map(function(i) {
         return i.property_name + "=" + i.offending_value;
       }).join("; ");
-      var hint = "Fix the frontmatter property or Discard to clear this invalid entry.";
+      var hint = consoleLang === "zh"
+        ? "請修正 frontmatter 屬性,或按捨棄以清除這筆無效項目。"
+        : "Fix the frontmatter property or Discard to clear this invalid entry.";
       c10Section.append(buildFlagCard(
         /* icon */ "!",
         /* slug */ slug,
@@ -5480,19 +5919,20 @@ function handleStaleDraftGone(cardEl, statusMsgEl) {
    Re-runs lint and refreshes the queue without opening the
    full pipeline stepper — keeps the queue self-contained.    */
 function makeRefreshBtn() {
+  var chrome = LINT_CHROME[consoleLang];
   var btn = el("button", {
     class: "queue-refresh-btn",
     type: "button",
-    text: "Refresh"
+    text: chrome.queueRefresh
   });
   btn.addEventListener("click", function() {
     btn.disabled = true;
-    btn.textContent = "Refreshing…";
+    btn.textContent = chrome.queueRefreshing;
 
     refreshCurationQueueFast()
       .catch(function() {
         btn.disabled = false;
-        btn.textContent = "Refresh";
+        btn.textContent = chrome.queueRefresh;
       });
   });
   return btn;
@@ -5507,8 +5947,9 @@ function makeRefreshBtn() {
    so a promote-all in flight also blocks a concurrent Lint-card batch, and
    vice versa — one guard, one durability story, across both cards. */
 function promoteAllAction(slugs) {
+  var chrome = LINT_CHROME[consoleLang];
   var btn = el("button", { class: "promote-btn queue-batch-btn", type: "button",
-    text: "Promote all (" + slugs.length + ")" });
+    text: chrome.queuePromoteAll + " (" + slugs.length + ")" });
   var statusMsgEl = el("span", { class: "card-status-msg" });
 
   btn.addEventListener("click", function() {
@@ -5518,7 +5959,9 @@ function promoteAllAction(slugs) {
     statusMsgEl.replaceChildren(
       el("span", { class: "spinner" }),
       document.createTextNode(
-        "Promoting " + slugs.length + " draft" + (slugs.length !== 1 ? "s" : "") + "…"
+        consoleLang === "zh"
+          ? "正在升等 " + slugs.length + " 則草稿…"
+          : "Promoting " + slugs.length + " draft" + (slugs.length !== 1 ? "s" : "") + "…"
       )
     );
     statusMsgEl.className = "card-status-msg";
@@ -5560,7 +6003,7 @@ function renderPromoteBatchSummary(result) {
   var promotedCount = result.promoted.length;
   var summaryEl = el("div", { class: "promote-batch-summary" },
     el("span", { class: "card-status-msg ok",
-      text: "Promoted " + promotedCount + (promotedCount ? ": " + result.promoted.join(", ") : "") })
+      text: LINT_CHROME[consoleLang].queuePromoteBatchPrefix + promotedCount + (promotedCount ? ": " + result.promoted.join(", ") : "") })
   );
   if (result.skipped.length > 0) {
     var skipList = el("ul", { class: "promote-batch-skipped" });
@@ -5599,6 +6042,7 @@ function extractQaBodyFromFileContent(content) {
               a per-item failure list, rendered inline; nothing else on
               the card changes when an edit is rejected.               */
 function buildDraftCard(f) {
+  var chrome = LINT_CHROME[consoleLang];
   /* slug, question, count, age_days, cited_count come from PromotionCandidateFinding */
   var slug = f.slug;
   var currentQuestion = f.question || "";
@@ -5615,18 +6059,23 @@ function buildDraftCard(f) {
   var promoteBtn = el("button", {
     class: "promote-btn",
     type: "button",
-    text: "Promote"
+    text: chrome.draftPromote
   });
   var discardBtn = el("button", {
     class: "discard-btn",
     type: "button",
-    text: "Discard"
+    text: chrome.draftDiscard
   });
+  /* issue #498: "Edit" stays a pinned English literal at creation
+     (test_ui_console_qa_edit.py::test_edit_button_present_in_draft_card
+     asserts `text: "Edit"` verbatim) — overwritten via .textContent for
+     zh right after, same convention as discardAllAction (issue #365). */
   var editBtn = el("button", {
     class: "edit-btn",
     type: "button",
     text: "Edit"
   });
+  if (consoleLang === "zh") editBtn.textContent = LINT_CHROME.zh.draftEdit;
 
   function setActionBusy(v) {
     actionBusy = v;
@@ -5638,7 +6087,7 @@ function buildDraftCard(f) {
   promoteBtn.addEventListener("click", function() {
     if (actionBusy || editing) return;
     setActionBusy(true);
-    statusMsgEl.textContent = "Promoting…";
+    statusMsgEl.textContent = chrome.draftPromoting;
     statusMsgEl.className = "card-status-msg";
 
     fetch("/wiki/qa/" + encodeURIComponent(slug) + "/promote", { method: "POST" })
@@ -5653,8 +6102,15 @@ function buildDraftCard(f) {
       .then(function(data) {
         if (data === null) return; /* stale-draft branch already handled above */
         /* Gate legibility (issue #379 / ADR-0026): close the loop with the
-           observable consequence instead of a bare "now live" confirmation. */
-        statusMsgEl.textContent = 'Promoted — ask "' + currentQuestion + '" in chat, it now cites this page.';
+           observable consequence instead of a bare "now live" confirmation.
+           issue #498: the English literal stays (test_ui_console_qa_edit.py::
+           test_post_promote_message_closes_the_loop_with_observable_consequence
+           pins "in chat" / "it now cites this page" / currentQuestion in this
+           function's body) — the zh branch carries the same consequence via
+           the {question} template instead of overwriting after the fact. */
+        statusMsgEl.textContent = consoleLang === "zh"
+          ? LINT_CHROME.zh.draftPromoteSuccess.replace("{question}", currentQuestion)
+          : 'Promoted — ask "' + currentQuestion + '" in chat, it now cites this page.';
         statusMsgEl.className = "card-status-msg ok";
         promoteBtn.disabled = true;
         discardBtn.disabled = true;
@@ -5672,17 +6128,17 @@ function buildDraftCard(f) {
   discardBtn.addEventListener("click", function() {
     if (actionBusy || editing) return;
     setActionBusy(true);
-    statusMsgEl.textContent = "Discarding…";
+    statusMsgEl.textContent = chrome.draftDiscarding;
     statusMsgEl.className = "card-status-msg";
     doDiscard(slug, cardEl, statusMsgEl, setActionBusy);
   });
 
   /* Answer body + sources: fetch asynchronously from the S5 read API */
   var bodyPlaceholder = el("div", { class: "draft-card-body" });
-  bodyPlaceholder.textContent = "Loading…";
+  bodyPlaceholder.textContent = chrome.draftLoading;
 
   var sourcesEl = el("div", { class: "draft-card-sources" },
-    el("span", { class: "src-label", text: "sources:" })
+    el("span", { class: "src-label", text: chrome.draftSrcLabel })
   );
   /* cited_count from PromotionCandidateFinding — we can't list the IDs from
      the finding alone; the actual IDs live in the file frontmatter which the
@@ -5730,14 +6186,14 @@ function buildDraftCard(f) {
             sourcesEl.append(el("span", { text: s }));
           });
         } else {
-          sourcesEl.append(el("span", { text: "(none listed)" }));
+          sourcesEl.append(el("span", { text: chrome.draftNoneListed }));
         }
       }
     })
     .catch(function() {
-      bodyPlaceholder.textContent = "(could not load answer body)";
+      bodyPlaceholder.textContent = chrome.draftBodyLoadFailed;
       currentBodyText = "";
-      sourcesEl.append(el("span", { text: "(unknown)" }));
+      sourcesEl.append(el("span", { text: chrome.draftUnknown }));
     });
 
   /* ── Edit form (issue #379 / ADR-0026 decision 2) ──────────
@@ -5749,13 +6205,13 @@ function buildDraftCard(f) {
   var bodyTextarea = el("textarea", {});
   var validationErrorsEl = el("div", { class: "edit-validation-errors" });
   validationErrorsEl.style.display = "none";
-  var saveBtn = el("button", { class: "promote-btn", type: "button", text: "Save" });
-  var cancelBtn = el("button", { class: "discard-btn", type: "button", text: "Cancel" });
+  var saveBtn = el("button", { class: "promote-btn", type: "button", text: chrome.editSave });
+  var cancelBtn = el("button", { class: "discard-btn", type: "button", text: chrome.editCancel });
 
   var editFormEl = el("div", { class: "draft-card-edit-form" },
-    el("label", { text: "Question" }),
+    el("label", { text: chrome.editQuestionLabel }),
     questionInput,
-    el("label", { text: "Answer" }),
+    el("label", { text: chrome.editAnswerLabel }),
     bodyTextarea,
     validationErrorsEl,
     el("div", { class: "edit-form-actions" }, saveBtn, cancelBtn)
@@ -5790,7 +6246,7 @@ function buildDraftCard(f) {
   saveBtn.addEventListener("click", function() {
     saveBtn.disabled = true;
     cancelBtn.disabled = true;
-    statusMsgEl.textContent = "Saving…";
+    statusMsgEl.textContent = chrome.editSaving;
     statusMsgEl.className = "card-status-msg";
 
     fetch("/wiki/qa/" + encodeURIComponent(slug), {
@@ -5809,7 +6265,7 @@ function buildDraftCard(f) {
           currentBodyText = bodyTextarea.value;
           questionEl.textContent = currentQuestion;
           bodyPlaceholder.textContent = currentBodyText || "(no body)";
-          statusMsgEl.textContent = "Saved — edit passed the grounding check.";
+          statusMsgEl.textContent = chrome.editSaved;
           statusMsgEl.className = "card-status-msg ok";
           closeEditForm();
           return;
@@ -5817,12 +6273,12 @@ function buildDraftCard(f) {
         if (result.status === 422) {
           var failures = (result.data.detail && result.data.detail.failures) || [];
           validationErrorsEl.replaceChildren();
-          validationErrorsEl.append(el("div", { text: "Edit rejected — the grounding check failed:" }));
+          validationErrorsEl.append(el("div", { text: chrome.editRejectedHead }));
           var ul = el("ul", {});
           if (failures.length > 0) {
             failures.forEach(function(c) { ul.append(el("li", { text: c })); });
           } else {
-            ul.append(el("li", { text: "(no detail returned)" }));
+            ul.append(el("li", { text: chrome.editNoDetail }));
           }
           validationErrorsEl.append(ul);
           validationErrorsEl.style.display = "block";
@@ -5850,6 +6306,15 @@ function buildDraftCard(f) {
 
   var questionEl = el("div", { class: "draft-card-question", text: currentQuestion });
 
+  /* issue #498: English literal stays (test_ui_console_qa_edit.py::
+     test_card_states_what_promoting_does_in_operator_language pins "the bot
+     will answer similar questions with this approved answer" verbatim in
+     buildDraftCard's body) — overwritten via .textContent for zh right
+     after, same convention as discardAllAction (issue #365). */
+  var whatItMeansEl = el("div", { class: "draft-card-what-it-means",
+    text: "Promoting this answer means: the bot will answer similar questions with this approved answer." });
+  if (consoleLang === "zh") whatItMeansEl.textContent = chrome.draftWhatItMeans;
+
   var cardEl = el("div", { class: "draft-card" },
     el("div", { class: "draft-card-head" },
       questionEl,
@@ -5857,8 +6322,7 @@ function buildDraftCard(f) {
     ),
     bodyPlaceholder,
     sourcesEl,
-    el("div", { class: "draft-card-what-it-means",
-      text: "Promoting this answer means: the bot will answer similar questions with this approved answer." }),
+    whatItMeansEl,
     editFormEl,
     el("div", { class: "draft-card-actions" },
       promoteBtn,
@@ -5878,6 +6342,7 @@ function buildDraftCard(f) {
    it now renders via the dedicated buildRefileFlagCard below, which has
    its own POST /refile action instead of a discard toggle.)            */
 function buildFlagCard(icon, slug, subtitle, showDiscard, onDiscard) {
+  var chrome = LINT_CHROME[consoleLang];
   var actionBusy = false;
   var statusMsgEl = el("span", { class: "card-status-msg" });
 
@@ -5886,13 +6351,13 @@ function buildFlagCard(icon, slug, subtitle, showDiscard, onDiscard) {
     dBtn = el("button", {
       class: "discard-btn",
       type: "button",
-      text: "Discard"
+      text: chrome.draftDiscard
     });
     dBtn.addEventListener("click", function() {
       if (actionBusy) return;
       actionBusy = true;
       dBtn.disabled = true;
-      statusMsgEl.textContent = "Discarding…";
+      statusMsgEl.textContent = chrome.draftDiscarding;
       statusMsgEl.className = "card-status-msg";
       if (onDiscard) onDiscard(cardEl);
     });
@@ -5929,15 +6394,21 @@ function buildFlagCard(icon, slug, subtitle, showDiscard, onDiscard) {
    mirrors C10's buildFlagCard/doDiscard convention of marking the card
    in place and leaving Refresh to the curator. */
 function buildRefileFlagCard(slug, subtitle) {
+  var chrome = LINT_CHROME[consoleLang];
   var actionBusy = false;
   var statusMsgEl = el("span", { class: "card-status-msg" });
+  /* issue #498: "Re-file" stays a pinned English literal at creation
+     (test_ui_console_qa_refile.py::test_refile_button_present_and_posts_to_
+     refile_endpoint asserts `text: "Re-file"` verbatim) — overwritten via
+     .textContent for zh right after (issue #365 convention). */
   var refileBtn = el("button", { class: "edit-btn", type: "button", text: "Re-file" });
+  if (consoleLang === "zh") refileBtn.textContent = LINT_CHROME.zh.refileCardLabel;
 
   refileBtn.addEventListener("click", function() {
     if (actionBusy) return;
     actionBusy = true;
     refileBtn.disabled = true;
-    statusMsgEl.textContent = "Re-filing…";
+    statusMsgEl.textContent = chrome.refileCardRefiling;
     statusMsgEl.className = "card-status-msg";
 
     fetch("/wiki/qa/" + encodeURIComponent(slug) + "/refile", { method: "POST" })
@@ -5946,8 +6417,16 @@ function buildRefileFlagCard(slug, subtitle) {
       })
       .then(function(result) {
         if (result.ok) {
-          statusMsgEl.textContent =
-            "Re-filed as a draft — old answer left the corpus. Click Refresh to review it under Promotion Candidates (C8).";
+          /* issue #498: English literal stays (test_ui_console_qa_refile.py::
+             test_success_marks_card_and_reports_observable_consequence pins
+             "left the corpus" / "Promotion Candidates" verbatim in this
+             function's success branch) — the zh case uses its own full
+             sentence from the dict instead of overwriting after the fact,
+             since the pinned substrings only need to be PRESENT somewhere
+             in the source, which the English branch below still satisfies. */
+          statusMsgEl.textContent = consoleLang === "zh"
+            ? chrome.refileCardSuccess
+            : "Re-filed as a draft — old answer left the corpus. Click Refresh to review it under Promotion Candidates (C8).";
           statusMsgEl.className = "card-status-msg ok";
           cardEl.style.opacity = "0.6";
           var slugEl = cardEl.querySelector(".flag-slug");
@@ -5956,8 +6435,12 @@ function buildRefileFlagCard(slug, subtitle) {
         }
         if (result.status === 422) {
           var reason = (result.data.detail && result.data.detail.reason) || "unknown";
-          statusMsgEl.textContent =
-            "Cannot re-ground (reason: " + reason + ") — nothing changed, this page keeps serving.";
+          /* issue #498: English literal stays (test_ui_console_qa_refile.py::
+             test_422_renders_honest_reground_failure_and_reenables_button
+             pins "Cannot re-ground" / "nothing changed" verbatim). */
+          statusMsgEl.textContent = consoleLang === "zh"
+            ? chrome.refileCardFailurePrefix + reason + chrome.refileCardFailureSuffix
+            : "Cannot re-ground (reason: " + reason + ") — nothing changed, this page keeps serving.";
           statusMsgEl.className = "card-status-msg err";
           actionBusy = false;
           refileBtn.disabled = false;
@@ -6002,8 +6485,13 @@ function doDiscard(slug, cardEl, statusMsgEl, setActionBusy) {
   fetch("/wiki/qa/" + encodeURIComponent(slug), { method: "DELETE" })
     .then(function(resp) {
       if (resp.status === 409) {
-        /* Server refused — this page is live (ADR-0012 §12.5 server decides) */
+        /* Server refused — this page is live (ADR-0012 §12.5 server decides).
+           issue #498: English literal stays (test_ui_console_stale_draft_
+           404.py::test_discard_self_heals_on_404 pins "Cannot discard: page
+           is live" verbatim in this function's body) — overwritten via the
+           zh dict right after, same convention as discardAllAction. */
         var msg = "Cannot discard: page is live (status=live). Use re-ingest to refresh.";
+        if (consoleLang === "zh") msg = LINT_CHROME.zh.discardLiveRefused;
         if (statusMsgEl) {
           statusMsgEl.textContent = msg;
           statusMsgEl.className = "card-status-msg err";
@@ -6030,7 +6518,7 @@ function doDiscard(slug, cardEl, statusMsgEl, setActionBusy) {
       }
       /* 204 No Content — success */
       if (statusMsgEl) {
-        statusMsgEl.textContent = "Discarded.";
+        statusMsgEl.textContent = LINT_CHROME[consoleLang].discardSuccess;
         statusMsgEl.className = "card-status-msg ok";
       }
       cardEl.style.opacity = "0.5";
@@ -6049,6 +6537,21 @@ function doDiscard(slug, cardEl, statusMsgEl, setActionBusy) {
 }
 
 /* ── Boot ──────────────────────────────────────────────────── */
+
+/* issue #498: bind the static-HTML banners (demo reset + staleness) so the
+   header language toggle can retro-switch them exactly like every other
+   boot-time chrome element (I18N_BOUND / bindText, see applyConsoleLang
+   above). These elements already exist in the server-rendered HTML above
+   the <script> tag, so they are safe to grab by id immediately. */
+(function bindStaticBanners() {
+  var demoStrongEl = document.getElementById("banner-demo-strong");
+  if (demoStrongEl) bindText(demoStrongEl, "bannerDemoStrong");
+  var demoTextEl = document.getElementById("banner-demo-text");
+  if (demoTextEl) bindText(demoTextEl, "bannerDemoText");
+  var staleMsgEl = document.getElementById("staleness-msg");
+  if (staleMsgEl) bindText(staleMsgEl, "bannerStaleText");
+})();
+
 buildPipeline(document.getElementById("pipeline-root"));
 
 /* zh/en Console header language toggle (issue #365) — wired after
@@ -6071,6 +6574,15 @@ buildPipeline(document.getElementById("pipeline-root"));
       // after remediationInFlight is cleared).
       if (lastLintData && lintResultEl && !remediationInFlight) {
         lintResultEl.replaceChildren(renderLintCard(lastLintData, lintResultEl));
+      }
+      /* issue #498: the Curation Queue (C8 draft cards, C9 refile cards, C10
+         flag cards) is driven by the SAME lastLintData and re-renders in
+         place on toggle, mirroring the Lint card guard immediately above —
+         a remediation in flight would mint fresh (enabled) Promote/Discard/
+         Edit/Re-file buttons and defeat the #364 no-double-submit guard, so
+         it is skipped under the identical !remediationInFlight condition. */
+      if (lastLintData && !remediationInFlight) {
+        renderCurationQueue(document.getElementById("curation-queue-root"), lastLintData);
       }
     });
   }
@@ -6100,10 +6612,11 @@ function buildRagTrack(rootEl) {
     if (ragRunBtn) ragRunBtn.disabled = busy;
   }
 
-  ragRunBtn = el("button", { class: "run-btn", type: "button", text: "Rebuild",
+  ragRunBtn = bindText(el("button", { class: "run-btn", type: "button",
     onclick: function() {
+      var chrome = LINT_CHROME[consoleLang];
       setRagBusy(true);
-      ragResultEl.replaceChildren(makeBusyCard("Rebuilding RAG index…"));
+      ragResultEl.replaceChildren(makeBusyCard(chrome.genRebuildingRag));
 
       fetch("/rag/index", { method: "POST" })
         .then(function(resp) {
@@ -6118,26 +6631,26 @@ function buildRagTrack(rootEl) {
                             " · " + chunksIdx + " chunk" + (chunksIdx !== 1 ? "s" : "");
           var card = el("div", { class: "result-card" },
             el("div", { class: "result-card-head" },
-              el("span", { text: "RAG Index" }),
+              el("span", { text: chrome.ragIndexHead }),
               el("span", { text: "·" }),
               el("span", { class: "badge badge-ok" },
                 el("span", { class: "dot" }),
-                el("span", { text: "rebuilt" })
+                el("span", { text: chrome.ragRebuilt })
               )
             ),
             el("div", { class: "rec" },
               el("div", { class: "num", text: "01" }),
               el("div", { class: "body" },
-                el("div", { class: "id",   text: "Files indexed" }),
-                el("div", { class: "crumb", text: "docs/ files embedded" })
+                el("div", { class: "id",   text: chrome.ragFilesIndexed }),
+                el("div", { class: "crumb", text: chrome.ragFilesIndexedCrumb })
               ),
               el("div", { class: "label label-created", text: String(filesIdx) })
             ),
             el("div", { class: "rec" },
               el("div", { class: "num", text: "02" }),
               el("div", { class: "body" },
-                el("div", { class: "id",   text: "Chunks indexed" }),
-                el("div", { class: "crumb", text: "vector units stored" })
+                el("div", { class: "id",   text: chrome.ragChunksIndexed }),
+                el("div", { class: "crumb", text: chrome.ragChunksIndexedCrumb })
               ),
               el("div", { class: "label label-created", text: String(chunksIdx) })
             )
@@ -6145,15 +6658,15 @@ function buildRagTrack(rootEl) {
           ragResultEl.replaceChildren(card);
         })
         .catch(function(err) {
-          ragResultEl.replaceChildren(renderErrorCard("RAG Index", err.message || String(err)));
+          ragResultEl.replaceChildren(renderErrorCard(LINT_CHROME[consoleLang].ragIndexHead, err.message || String(err)));
         })
         .finally(function() { setRagBusy(false); });
     }
-  });
+  }), "ragRebuildBtn");
 
   var headLeft = el("div", { style: "display:flex; align-items:center; gap:12px; min-width:0; flex:1;" },
-    el("span", { class: "step-panel-title", text: "RAG Index" }),
-    el("span", { class: "step-panel-desc",  text: "RAG rebuild: re-embed docs/ into the vector index — makes raw sources retrievable via semantic search; runs in parallel." })
+    bindText(el("span", { class: "step-panel-title" }), "ragPanelTitle"),
+    bindText(el("span", { class: "step-panel-desc" }), "ragPanelDesc")
   );
   var headEl = el("div", { class: "step-panel-head" }, headLeft, ragRunBtn);
   var panel  = el("div", { class: "step-panel" }, headEl, ragResultEl);
@@ -6161,8 +6674,8 @@ function buildRagTrack(rootEl) {
   rootEl.append(
     el("div", { class: "rag-track" },
       el("div", { class: "rag-track-header" },
-        el("span", { text: "RAG Track" }),
-        el("span", { class: "rag-track-note", text: "— independent of Wiki pipeline; runs against docs/ only" })
+        bindText(el("span"), "ragTrackLabel"),
+        bindText(el("span", { class: "rag-track-note" }), "ragTrackNote")
       ),
       panel
     )
@@ -6188,10 +6701,11 @@ function buildHybridTrack(rootEl) {
     if (hybridRunBtn) hybridRunBtn.disabled = busy;
   }
 
-  hybridRunBtn = el("button", { class: "run-btn", type: "button", text: "Rebuild",
+  hybridRunBtn = bindText(el("button", { class: "run-btn", type: "button",
     onclick: function() {
+      var chrome = LINT_CHROME[consoleLang];
       setHybridBusy(true);
-      hybridResultEl.replaceChildren(makeBusyCard("Rebuilding Hybrid dense arm…"));
+      hybridResultEl.replaceChildren(makeBusyCard(chrome.genRebuildingHybrid));
 
       fetch("/hybrid/index", { method: "POST" })
         .then(function(resp) {
@@ -6203,18 +6717,18 @@ function buildHybridTrack(rootEl) {
           var sectionsIdx = data.sections_indexed != null ? data.sections_indexed : "?";
           var card = el("div", { class: "result-card" },
             el("div", { class: "result-card-head" },
-              el("span", { text: "Hybrid Dense Index" }),
+              el("span", { text: chrome.hybridIndexHead }),
               el("span", { text: "·" }),
               el("span", { class: "badge badge-ok" },
                 el("span", { class: "dot" }),
-                el("span", { text: "rebuilt" })
+                el("span", { text: chrome.ragRebuilt })
               )
             ),
             el("div", { class: "rec" },
               el("div", { class: "num", text: "01" }),
               el("div", { class: "body" },
-                el("div", { class: "id",   text: "Sections indexed" }),
-                el("div", { class: "crumb", text: "wiki/ Sections re-embedded into dense arm" })
+                el("div", { class: "id",   text: chrome.hybridSectionsIndexed }),
+                el("div", { class: "crumb", text: chrome.hybridSectionsIndexedCrumb })
               ),
               el("div", { class: "label label-created", text: String(sectionsIdx) })
             )
@@ -6222,15 +6736,15 @@ function buildHybridTrack(rootEl) {
           hybridResultEl.replaceChildren(card);
         })
         .catch(function(err) {
-          hybridResultEl.replaceChildren(renderErrorCard("Hybrid Dense Index", err.message || String(err)));
+          hybridResultEl.replaceChildren(renderErrorCard(LINT_CHROME[consoleLang].hybridIndexHead, err.message || String(err)));
         })
         .finally(function() { setHybridBusy(false); });
     }
-  });
+  }), "ragRebuildBtn");
 
   var headLeft = el("div", { style: "display:flex; align-items:center; gap:12px; min-width:0; flex:1;" },
-    el("span", { class: "step-panel-title", text: "Hybrid Dense Index" }),
-    el("span", { class: "step-panel-desc",  text: "Hybrid dense rebuild: re-embed the wiki Section corpus into the dense arm — refreshes only the dense arm; the BM25 arm already updates on promote." })
+    bindText(el("span", { class: "step-panel-title" }), "hybridPanelTitle"),
+    bindText(el("span", { class: "step-panel-desc" }), "hybridPanelDesc")
   );
   var headEl = el("div", { class: "step-panel-head" }, headLeft, hybridRunBtn);
   var panel  = el("div", { class: "step-panel" }, headEl, hybridResultEl);
@@ -6238,8 +6752,8 @@ function buildHybridTrack(rootEl) {
   rootEl.append(
     el("div", { class: "hybrid-track" },
       el("div", { class: "hybrid-track-header" },
-        el("span", { text: "Hybrid Track" }),
-        el("span", { class: "hybrid-track-note", text: "— dense arm only; BM25 arm updates automatically on promote (ADR-0022)" })
+        bindText(el("span"), "hybridTrackLabel"),
+        bindText(el("span", { class: "hybrid-track-note" }), "hybridTrackNote")
       ),
       panel
     )
@@ -6311,7 +6825,7 @@ var entriesEl = el("div", { class: "browser-entries" });
 var fileViewerEl = el("div", { id: "file-viewer-container" });
 
 browserSection.append(
-  el("div", { class: "section-label", text: "Browse" }),
+  bindText(el("div", { class: "section-label" }), "browseSectionLabel"),
   breadcrumbEl,
   entriesEl,
   fileViewerEl
@@ -6325,10 +6839,10 @@ function renderBreadcrumb(relpath) {
 
   /* Root crumb — always a clickable button when inside a subpath */
   if (relpath === "") {
-    kids.push(el("span", { class: "crumb-current", text: "root" }));
+    kids.push(el("span", { class: "crumb-current", text: LINT_CHROME[consoleLang].browseRoot }));
   } else {
     kids.push(el("button", {
-      class: "crumb-btn", type: "button", text: "root",
+      class: "crumb-btn", type: "button", text: LINT_CHROME[consoleLang].browseRoot,
       onclick: function() { navigateTo(""); }
     }));
   }
@@ -6377,7 +6891,7 @@ function navigateTo(relpath) {
     entriesEl.replaceChildren(
       el("div", { class: "busy-row" },
         el("span", { class: "spinner" }),
-        el("span", { text: relpath ? "Loading " + relpath + "…" : "Loading roots…" })
+        el("span", { text: relpath ? LINT_CHROME[consoleLang].browseLoadingPathPrefix + relpath + "…" : LINT_CHROME[consoleLang].browseLoadingRoots })
       )
     );
   }
@@ -6417,7 +6931,7 @@ function navigateTo(relpath) {
       entriesEl.classList.remove("is-loading");
       entriesEl.replaceChildren(
         el("div", { class: "busy-row" },
-          el("span", { style: "color:var(--fail);", text: "Failed to load: " + (err.message || String(err)) })
+          el("span", { style: "color:var(--fail);", text: LINT_CHROME[consoleLang].browseFailedToLoadPrefix + (err.message || String(err)) })
         )
       );
     })
@@ -6428,7 +6942,7 @@ function navigateTo(relpath) {
 function renderEntries(entries) {
   if (entries.length === 0) {
     entriesEl.replaceChildren(
-      el("div", { class: "browser-empty", text: "(empty directory)" })
+      el("div", { class: "browser-empty", text: LINT_CHROME[consoleLang].browseEmptyDirectory })
     );
     return;
   }
@@ -6460,7 +6974,7 @@ function renderEntries(entries) {
           openFile(entry.relpath, entry.name, {
             onError: function(message) {
               if (!noticeEl) return;
-              noticeEl.textContent = "Failed: " + message;
+              noticeEl.textContent = LINT_CHROME[consoleLang].viewerFailedPrefix + message;
               noticeEl.classList.add("visible");
             }
           });
@@ -6576,7 +7090,7 @@ function openFile(relpath, name) {
   var loadingViewer = el("div", { class: "file-viewer" },
     el("div", { class: "file-viewer-head" },
       el("span", { class: "file-name", text: relpath }),
-      el("span", { text: "loading…" })
+      el("span", { text: LINT_CHROME[consoleLang].viewerLoading })
     )
   );
   fileViewerEl.replaceChildren(loadingViewer);
@@ -6602,7 +7116,7 @@ function openFile(relpath, name) {
          a [[wikilink]] becomes a safely-constructed <a>/<span>, never raw HTML. */
       var content = data.content;
       var closeBtn = el("button", {
-        class: "file-viewer-close", type: "button", text: "close",
+        class: "file-viewer-close", type: "button", text: LINT_CHROME[consoleLang].viewerClose,
         onclick: function() { fileViewerEl.replaceChildren(); }
       });
 
@@ -6611,7 +7125,7 @@ function openFile(relpath, name) {
 
       var contentViewer = el("div", { class: "file-viewer" },
         el("div", { class: "file-viewer-head" },
-          el("span", { text: "raw" }),
+          el("span", { text: LINT_CHROME[consoleLang].viewerRaw }),
           el("span", { text: "·" }),
           el("span", { class: "file-name", text: relpath }),
           closeBtn
@@ -6628,7 +7142,7 @@ function openFile(relpath, name) {
       var message = err.message || String(err);
       var errorViewer = el("div", { class: "file-viewer" },
         el("div", { class: "file-viewer-head" },
-          el("span", { style: "color:var(--fail);", text: "Failed: " + message })
+          el("span", { style: "color:var(--fail);", text: LINT_CHROME[consoleLang].viewerFailedPrefix + message })
         )
       );
       fileViewerEl.replaceChildren(errorViewer);
