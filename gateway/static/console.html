@@ -2295,7 +2295,7 @@ function renderIngestCard(data, batchLabel) {
       return;
     }
 
-    pages.forEach(function(pageRelPath) {
+    pages.forEach(function(pageRelPath, pageIdx) {
       rowIndex++;
       var pageName = pageRelPath.split("/").pop().replace(/\.md$/, "");
       var slug = pageName;
@@ -2308,6 +2308,23 @@ function renderIngestCard(data, batchLabel) {
       var crumbParts = [r.source];
       if (r.status === "updated") crumbParts.push("updated");
       else if (r.status === "created") crumbParts.push("created");
+
+      /* Structure visibility (issue #511, ADR-0033 observability decision): the
+         counts belong to the whole Source, not any one page — shown once, on
+         the Source's first page row. uncarried/enriched are anomaly signals
+         (normally 0 after issue #509 / until issue #512 ships) so they only
+         render when non-zero. */
+      if (pageIdx === 0) {
+        crumbParts.push(
+          chrome.ingestCardSectionsCrumb.replace("{n}", String(r.sections_count || 0))
+        );
+        if (r.uncarried_chars) {
+          crumbParts.push(chrome.ingestCardUncarriedCharsCrumb.replace("{n}", String(r.uncarried_chars)));
+        }
+        if (r.enriched_chars) {
+          crumbParts.push(chrome.ingestCardEnrichedCharsCrumb.replace("{n}", String(r.enriched_chars)));
+        }
+      }
 
       var bodyEl = el("div", { class: "body" },
         el("div", { class: "id",   text: pageName }),
@@ -2324,11 +2341,13 @@ function renderIngestCard(data, batchLabel) {
   /* Skipped (hash-match, unchanged) rows */
   skipped.forEach(function(r) {
     rowIndex++;
+    var skippedCrumb = chrome.ingestCardUnchangedHashCrumb + " · " +
+      chrome.ingestCardSectionsCrumb.replace("{n}", String(r.sections_count || 0));
     rows.append(el("div", { class: "rec" },
       el("div", { class: "num", text: String(rowIndex).padStart(2, "0") }),
       el("div", { class: "body" },
         el("div", { class: "id",   text: r.source }),
-        el("div", { class: "crumb", text: chrome.ingestCardUnchangedHashCrumb })
+        el("div", { class: "crumb", text: skippedCrumb })
       ),
       el("div", { class: "label label-skipped-hash", text: chrome.ingestCardSkippedLabel })
     ));
@@ -2825,6 +2844,13 @@ var LINT_CHROME = {
     ingestBatchPrefix:      "Batch ",
     ingestBatchDoneSuffix:  " done",
 
+    /* issue #511 (ADR-0033 observability decision): structure visibility on
+       the Ingest card — Section count always shown; uncarried/enriched are
+       anomaly signals shown only when non-zero. */
+    ingestCardSectionsCrumb:       "{n} section(s)",
+    ingestCardUncarriedCharsCrumb: "{n} char(s) not carried into a Section",
+    ingestCardEnrichedCharsCrumb:  "+{n} char(s) from Structure Enrichment",
+
     /* issue #498: Index result card */
     indexCardWord:            "Index",
     indexCardRebuilt:         "index rebuilt",
@@ -3079,6 +3105,10 @@ var LINT_CHROME = {
     ingestCardFailedGrounding: "引證檢核失敗",
     ingestBatchPrefix:      "批次 ",
     ingestBatchDoneSuffix:  " 完成",
+
+    ingestCardSectionsCrumb:       "{n} 個 Section",
+    ingestCardUncarriedCharsCrumb: "{n} 個字元未納入任何 Section",
+    ingestCardEnrichedCharsCrumb:  "結構強化新增 {n} 個字元",
 
     indexCardWord:            "索引",
     indexCardRebuilt:         "索引已重建",
