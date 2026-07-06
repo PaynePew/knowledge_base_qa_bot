@@ -2311,9 +2311,11 @@ function renderIngestCard(data, batchLabel) {
 
       /* Structure visibility (issue #511, ADR-0033 observability decision): the
          counts belong to the whole Source, not any one page — shown once, on
-         the Source's first page row. uncarried/enriched are anomaly signals
-         (normally 0 after issue #509 / until issue #512 ships) so they only
-         render when non-zero. */
+         the Source's first page row. uncarried_chars is an anomaly signal
+         (normally 0 after issue #509; non-zero flags a parse gap). enriched_chars
+         is 0 for any Source that was never Structure-Enriched (issue #512) and
+         reports the real heading-structure size for one that was (issue #513) —
+         both render only when non-zero to keep the crumb quiet on the common case. */
       if (pageIdx === 0) {
         crumbParts.push(
           chrome.ingestCardSectionsCrumb.replace("{n}", String(r.sections_count || 0))

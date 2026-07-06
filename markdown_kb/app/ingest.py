@@ -489,6 +489,24 @@ def _frontmatter_enriched_chars(source_metadata: dict) -> int:
     return 0
 
 
+def _skip_path_enriched_chars(source_path: Path) -> int:
+    """Read a hash-skipped Source's persisted ``enriched_chars`` (issue #523).
+
+    The hash-skip exit (both ``ingest_sources`` and ``aingest_sources``) never
+    reaches the classify step below, so without this it silently defaulted to
+    the ``IngestSourceResult`` schema's ``enriched_chars: int = 0`` — a
+    hash-skipped enriched Source reported 0 even though it HAD persisted
+    frontmatter, contradicting the schema docstring's "0 for any Source that
+    was never enriched". Mirrors the classify step's check (`structure:
+    enriched` -> ``_frontmatter_enriched_chars``) so the skip and classify
+    exits agree.
+    """
+    source_metadata, _ = split_frontmatter(source_path.read_text(encoding="utf-8"))
+    if source_metadata.get("structure") == "enriched":
+        return _frontmatter_enriched_chars(source_metadata)
+    return 0
+
+
 def _derive_unsupported_claims(result: GroundingResult | None) -> list[str]:
     """Union of claims[] entries where supported=False with the flat list.
 
@@ -811,6 +829,7 @@ def ingest_sources(
                     status="skipped",
                     sections_count=sections_count,
                     uncarried_chars=uncarried_chars,
+                    enriched_chars=_skip_path_enriched_chars(source_path),
                 )
             )
             continue
@@ -1141,6 +1160,7 @@ async def aingest_sources(
                     status="skipped",
                     sections_count=sections_count,
                     uncarried_chars=uncarried_chars,
+                    enriched_chars=_skip_path_enriched_chars(source_path),
                 )
             )
             continue
