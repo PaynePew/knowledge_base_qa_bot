@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``parse_markdown``, ``parse_markdown_body``, ``split_frontmatter``, ``build_index``, ``load_index_json``, ``search``, ``slugify``, ``Section`` (dataclass), plus the module-level ``sections`` list (read by ``retrieval.py``).
+"""Deep module per Ousterhout. Public surface: ``parse_markdown``, ``parse_markdown_body``, ``split_frontmatter``, ``count_uncarried_chars``, ``build_index``, ``load_index_json``, ``search``, ``slugify``, ``Section`` (dataclass), plus the module-level ``sections`` list (read by ``retrieval.py``).
 
 Markdown Section Index builder.
 
@@ -732,6 +732,55 @@ def parse_markdown_body(
         )
 
     return result
+
+
+def count_uncarried_chars(path: Path, sections: list[Section]) -> int:
+    """Count non-whitespace body characters ``parse_markdown`` did not carry
+    into any emitted ``Section`` for this Source (issue #511 observability).
+
+    The 63-page-book incident (ADR-0033) showed a degenerate parse can report
+    plain success (``pages_created=1``) while most of a Source's text never
+    reached a Section, with nothing flagging it. Rule 11 (issue #509) closed
+    the one known silent-drop path (the preamble); the two remaining
+    "no Section emitted" branches — a whitespace-only preamble (rule 11) and
+    a non-leaf heading with a whitespace-only body (rule 6) — by their own
+    qualifying condition already contribute zero non-whitespace characters.
+    So a healthy Source parses to 0 here today; a non-zero result flags a
+    NEW gap between the raw body and ``Section.content`` — exactly the
+    failure class the incident made invisible.
+
+    Re-derives the same heading/fence line classification ``parse_markdown``
+    uses (rules 2-4), read-only and without reconstructing the heading stack:
+    every line outside a fenced code block that matches ``HEADING_RE`` is a
+    heading line (its text becomes ``Section.heading``, never body); every
+    other line is body. Frontmatter is stripped first via
+    ``split_frontmatter``, the same convention ``parse_markdown`` rule 2
+    applies inline.
+
+    Args:
+        path: The Source file parse_markdown was called on.
+        sections: The Section list parse_markdown returned for ``path``.
+
+    Returns:
+        Non-negative count of non-whitespace characters present in the body
+        but absent from every Section's content.
+    """
+    raw = path.read_text(encoding="utf-8")
+    _, body = split_frontmatter(raw)
+
+    body_chars = 0
+    in_fence = False
+    for line in body.splitlines():
+        if line.startswith("```"):
+            in_fence = not in_fence
+            body_chars += sum(1 for ch in line if not ch.isspace())
+            continue
+        if not in_fence and HEADING_RE.match(line):
+            continue  # heading line: text becomes Section.heading, not body
+        body_chars += sum(1 for ch in line if not ch.isspace())
+
+    captured_chars = sum(sum(1 for ch in sec.content if not ch.isspace()) for sec in sections)
+    return max(0, body_chars - captured_chars)
 
 
 # ---------------------------------------------------------------------------

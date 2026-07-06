@@ -66,6 +66,8 @@ Wiki Log (Slice #4 — five new kind values):
 - ingest_grounding_failed emitted per page with failed grounding.
 - ingest_error emitted per Source-level failure (replaces prior ad-hoc kinds).
 - ingest_skipped emitted per hash-match no-op (Phase 3 amendment #93).
+- ingest_source additionally carries sections_count/uncarried_chars/
+  enriched_chars (issue #511, ADR-0033 observability decision).
 
 See PRD #28 for the full pipeline design.
 """
@@ -81,7 +83,13 @@ from pathlib import Path
 from ._paths import DOCS_DIR
 from .errors import LLMError
 from .grounding import GroundingResult, verify
-from .indexer import _index_lock, parse_markdown, slugify, split_frontmatter
+from .indexer import (
+    _index_lock,
+    count_uncarried_chars,
+    parse_markdown,
+    slugify,
+    split_frontmatter,
+)
 from .logger import log_event
 from .schemas import GroundingFailure, IngestSourceResult
 from .templates import (
@@ -667,6 +675,13 @@ def ingest_sources(
             batch.failed_sources.append(source_name)
             continue
 
+        # Issue #511 (ADR-0033 observability decision): compute the structure
+        # visibility numbers up front, right after a successful parse, so they
+        # are available on BOTH exit paths that construct an IngestSourceResult
+        # below (fresh/updated write, and hash-skip).
+        sections_count = len(sections)
+        uncarried_chars = count_uncarried_chars(source_path, sections)
+
         # Per-section HARD token cap — fail fast before any LLM call.
         #
         # classify_source operates on build_outline(content), which bounds the
@@ -715,6 +730,8 @@ def ingest_sources(
                     source=source_name,
                     pages_written=[],
                     status="skipped",
+                    sections_count=sections_count,
+                    uncarried_chars=uncarried_chars,
                 )
             )
             continue
@@ -843,7 +860,10 @@ def ingest_sources(
             f"source={source_name} type={source_type}"
             f" pages_created={len(write_result.pages_created)}"
             f" pages_updated={len(write_result.pages_updated)}"
-            f" pages_deleted={len(deleted)}",
+            f" pages_deleted={len(deleted)}"
+            f" sections_count={sections_count}"
+            f" uncarried_chars={uncarried_chars}"
+            f" enriched_chars=0",
         )
         # Determine status for this IngestSourceResult: 'created' if any pages
         # were freshly written, 'updated' if existing pages were overwritten.
@@ -859,6 +879,8 @@ def ingest_sources(
                 pages_updated=write_result.pages_updated,
                 pages_deleted=deleted,
                 status=result_status,
+                sections_count=sections_count,
+                uncarried_chars=uncarried_chars,
             )
         )
 
@@ -970,6 +992,11 @@ async def aingest_sources(
             batch.failed_sources.append(source_name)
             continue
 
+        # Issue #511: same up-front computation as the sync path (kept in
+        # step, see the DRIFT GUARD note above this per-Source pre-flight).
+        sections_count = len(sections)
+        uncarried_chars = count_uncarried_chars(source_path, sections)
+
         section_cap = _max_section_tokens()
         oversized_section: str | None = None
         for _sec in sections:
@@ -1000,7 +1027,13 @@ async def aingest_sources(
                 f"source={source_name} slugs_checked={slugs_checked} docs_body_hash={docs_body_hash}",
             )
             batch.skipped_sources.append(
-                IngestSourceResult(source=source_name, pages_written=[], status="skipped")
+                IngestSourceResult(
+                    source=source_name,
+                    pages_written=[],
+                    status="skipped",
+                    sections_count=sections_count,
+                    uncarried_chars=uncarried_chars,
+                )
             )
             continue
 
@@ -1138,7 +1171,10 @@ async def aingest_sources(
             f"source={source_name} type={source_type}"
             f" pages_created={len(write_result.pages_created)}"
             f" pages_updated={len(write_result.pages_updated)}"
-            f" pages_deleted={len(deleted)}",
+            f" pages_deleted={len(deleted)}"
+            f" sections_count={sections_count}"
+            f" uncarried_chars={uncarried_chars}"
+            f" enriched_chars=0",
         )
         result_status = "updated" if write_result.pages_updated else "created"
         batch.results.append(
@@ -1149,6 +1185,8 @@ async def aingest_sources(
                 pages_updated=write_result.pages_updated,
                 pages_deleted=deleted,
                 status=result_status,
+                sections_count=sections_count,
+                uncarried_chars=uncarried_chars,
             )
         )
 
