@@ -52,7 +52,7 @@ Authorized by [`prd.md`](prd.md) (Phase 1, indexer), [ADR-0003](adr/0003-w2-laye
 
 | Kind | When fired | Summary template |
 |---|---|---|
-| `parse_warning` | Frontmatter unavailable / unparseable, or a non-leaf heading has no body content | `frontmatter present in <file> but PyYAML is not installed` or `frontmatter parse failed in <file>: <ExcType>` or `non-leaf heading with no body in <file>: '<heading>'` |
+| `parse_warning` | Frontmatter unavailable / unparseable, a non-leaf heading has no body content, or a pre-heading preamble was captured as its own Section (ADR-0033 decision 1, issue #509) | `frontmatter present in <file> but PyYAML is not installed` or `frontmatter parse failed in <file>: <ExcType>` or `non-leaf heading with no body in <file>: '<heading>'` or `preamble captured as Section in <file>: '<section_id>'` |
 | `index_loaded` | Section Index rehydrated from `.kb/index.json` on app startup | `files=N sections=M` |
 | `index_built` | `build_index()` completed successfully | `files=N sections=M` |
 | `wiki_layer_empty` | `build_index()` ran on the default `SOURCE_DIRS` and both `wiki/entities/` and `wiki/concepts/` resolved to zero sections (ADR-0006). Distinct ops signal from `index_missing` so Phase 5 `/lint` can tell "system deployed but never ingested" apart from a normal cannot-confirm. `/chat` output is unchanged. | `entities=0 concepts=0` |

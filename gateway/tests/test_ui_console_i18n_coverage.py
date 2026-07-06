@@ -200,7 +200,9 @@ def test_c8_c9_c10_queue_headers_align_with_lint_check_label_zh_vocabulary():
 
 def test_i18n_bound_registry_and_bind_text_helper_exist():
     text = _console_text()
-    assert "var I18N_BOUND = [];" in text, "console.html must define the I18N_BOUND registry (issue #498)"
+    assert "var I18N_BOUND = [];" in text, (
+        "console.html must define the I18N_BOUND registry (issue #498)"
+    )
     fn = _extract_function(text, "bindText")
     assert "I18N_BOUND.push(" in fn
     assert "elem.textContent = LINT_CHROME[consoleLang][key];" in fn
