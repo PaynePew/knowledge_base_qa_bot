@@ -713,6 +713,24 @@
   .staleness-banner .stale-icon { font-size: 13px; flex-shrink: 0; }
   .staleness-banner .stale-msg { flex: 1; }
 
+  /* ── Daily budget usage banner (issue #510) ─────────────────── */
+  .budget-usage-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    background: var(--bg);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    margin-bottom: 16px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .03em;
+    color: var(--ink-2);
+  }
+  .budget-usage-banner .budget-usage-icon { font-size: 13px; flex-shrink: 0; }
+  .budget-usage-banner .budget-usage-text { flex: 1; }
+
   /* ── RAG rebuild panel ───────────────────────────────────── */
   .rag-track {
     margin-top: 32px;
@@ -1638,6 +1656,16 @@
            i18n toggle (bindText, see I18N_BOUND below) can retro-switch
            each in place while keeping the <strong> emphasis structure. -->
       <span class="demo-reset-text"><strong id="banner-demo-strong">Demo environment</strong><span id="banner-demo-text"> — changes are real but ephemeral. This console resets to the seeded knowledge base periodically (~2 days) and on each deploy.</span></span>
+    </div>
+
+    <!-- Daily budget usage display (issue #510) — populated on boot from the
+         read-only, never-charging GET /healthz/budget probe (renderBudgetUsage,
+         see Boot below). The ledger was previously invisible until a heavy
+         request got a 503; this makes today's estimated spend visible ahead
+         of that. -->
+    <div id="budget-usage-banner" class="budget-usage-banner" role="status" aria-live="polite">
+      <span class="budget-usage-icon">&#9432;</span>
+      <span id="budget-usage-text" class="budget-usage-text">Loading budget…</span>
     </div>
 
     <!-- Staleness guard: warns when Ingest ran but Index hasn't been rebuilt (#173) -->
@@ -2896,6 +2924,14 @@ var LINT_CHROME = {
     bannerDemoText: " — changes are real but ephemeral. This console resets to the seeded knowledge base periodically (~2 days) and on each deploy.",
     bannerStaleText: "Section Index may be stale — Ingest has run since the last Index build. Run the Index step to rebuild.",
 
+    /* issue #510: daily budget usage banner (renderBudgetUsage) — {spent}/
+       {cap}/{remaining} are pre-formatted "$X.XX" strings, never re-derived
+       here (§12.5). Loading/error text is a fallback for the brief window
+       before GET /healthz/budget resolves, or if it fails. */
+    budgetUsageLoading: "Loading budget…",
+    budgetUsageError:   "Budget usage unavailable",
+    budgetUsageText:    "Today's usage: {spent} / {cap} (remaining {remaining})",
+
     /* issue #498: honest-miss offer template (checkCoverageFillOutcome /
        coverageFillOutcomeBanner) — {newPages}/{target} are replaced, never
        re-derived (§12.5). */
@@ -3132,6 +3168,10 @@ var LINT_CHROME = {
     bannerDemoStrong: "展示環境",
     bannerDemoText: " — 所做的變更是真實的,但暫時性。此展示環境會定期(約每 2 天)以及每次部署時重置為種子知識庫。",
     bannerStaleText: "Section 索引可能已過時 — 自上次建立索引後已執行過合成。請執行索引步驟以重建。",
+
+    budgetUsageLoading: "正在載入預算資訊…",
+    budgetUsageError:   "無法取得預算使用量",
+    budgetUsageText:    "今日已使用:{spent} / {cap}(剩餘 {remaining})",
 
     coverageFillOutcomeText: "透過匯入補齊:已匯入並合成 — 新增頁面:{newPages} — 但 [[{target}]] 仍未解析。",
     coverageFillOfferBtn: "將 [[{target}]] 指派為 {page} 的別名？",
@@ -3518,6 +3558,11 @@ function applyConsoleLang() {
   I18N_BOUND.forEach(function(entry) {
     entry.el.textContent = LINT_CHROME[consoleLang][entry.key];
   });
+  /* issue #510: re-render the budget usage banner in the new language too —
+     it is driven by lastBudgetSnapshot (fetched once at boot) rather than
+     I18N_BOUND, since its text is templated with server-derived numbers, not
+     static chrome. */
+  renderBudgetUsage(lastBudgetSnapshot);
 }
 
 /* ── In-flight guard + durability notice (issue #364) ──────────────
@@ -6546,6 +6591,54 @@ function doDiscard(slug, cardEl, statusMsgEl, setActionBusy) {
 }
 
 /* ── Boot ──────────────────────────────────────────────────── */
+
+/* Daily budget usage display (issue #510). ``lastBudgetSnapshot`` holds the
+   most recent GET /healthz/budget response (or ``false`` if that fetch
+   failed); ``null`` means it has not resolved yet. ``renderBudgetUsage`` is
+   the single render path — called once when the boot-time fetch below
+   resolves, and again from applyConsoleLang() on every language toggle so
+   the number stays templated in whichever language is active, without
+   re-fetching. */
+var lastBudgetSnapshot = null;
+
+function renderBudgetUsage(snapshot) {
+  var textEl = document.getElementById("budget-usage-text");
+  if (!textEl) return;
+  var chrome = LINT_CHROME[consoleLang];
+  if (snapshot === null) {
+    textEl.textContent = chrome.budgetUsageLoading;
+    return;
+  }
+  if (snapshot === false) {
+    textEl.textContent = chrome.budgetUsageError;
+    return;
+  }
+  var fmt = function(n) { return "$" + Number(n).toFixed(2); };
+  textEl.textContent = chrome.budgetUsageText
+    .replace("{spent}", fmt(snapshot.spent_estimate))
+    .replace("{cap}", fmt(snapshot.cap))
+    .replace("{remaining}", fmt(snapshot.remaining));
+}
+
+/* Fetches the read-only, never-charging GET /healthz/budget probe once at
+   boot. A failure (network blip, non-2xx) degrades to the bilingual
+   "unavailable" text rather than leaving the pre-JS "Loading budget…"
+   fallback on screen forever. */
+(function loadBudgetUsage() {
+  fetch("/healthz/budget")
+    .then(function(resp) {
+      if (!resp.ok) throw new Error("bad status " + resp.status);
+      return resp.json();
+    })
+    .then(function(data) {
+      lastBudgetSnapshot = data;
+      renderBudgetUsage(lastBudgetSnapshot);
+    })
+    .catch(function() {
+      lastBudgetSnapshot = false;
+      renderBudgetUsage(lastBudgetSnapshot);
+    });
+})();
 
 /* issue #498: bind the static-HTML banners (demo reset + staleness) so the
    header language toggle can retro-switch them exactly like every other
