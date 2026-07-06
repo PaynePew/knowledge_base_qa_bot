@@ -127,6 +127,8 @@ The optional cross-encoder **reranker** (ADR-0019, `KB_HYBRID_RERANK`, default-o
 
 **Core macro-average** hit@3: Stack C **0.924** → Stack C+rerank **0.960** (Δ +0.036).
 
+![rerank_hit_rate_at_3](charts/rerank_hit_rate_at_3.png)
+
 ### Structural Probes (per type, hit@3)
 
 | Paraphrase Type | hit@3 (C) | hit@3 (C+rerank) | Δ (rerank) |
