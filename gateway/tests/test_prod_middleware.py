@@ -355,7 +355,7 @@ def test_transcribe_budget_hook_charges_ledger_then_trips_cap(monkeypatch):
     running total reaches the cap the NEXT file is rejected before any
     vision-model call for it.
     """
-    monkeypatch.setenv("KB_DAILY_USD_CAP", "1.0")
+    monkeypatch.setenv("KB_DAILY_USD_CAP", "0.5")
     _fresh_app()
 
     from markdown_kb.app import transcriber as transcriber_mod
@@ -366,13 +366,14 @@ def test_transcribe_budget_hook_charges_ledger_then_trips_cap(monkeypatch):
     assert hook is not None
 
     before = budget_mod.budget.day_total()
-    # 63-page scan at the default $0.01/page = $0.63 — under the $1.00 cap.
+    # 63-page scan at the recalibrated default $0.005/page (issue #510) =
+    # $0.315 — under the $0.50 cap.
     hook(63)
     after_one = budget_mod.budget.day_total()
     assert after_one == pytest.approx(before + 63 * budget_mod.TRANSCRIBE_PAGE_USD)
     assert budget_mod.budget.over_cap() is False
 
-    # A second 63-page scan pushes the running total to $1.26 — over the cap.
+    # A second 63-page scan pushes the running total to $0.63 — over the cap.
     hook(63)
     assert budget_mod.budget.over_cap() is True
 
