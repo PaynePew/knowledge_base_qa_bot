@@ -5,7 +5,7 @@ Markdown Section Index builder.
 Parses Markdown files under SOURCE_DIRS into Sections, builds a BM25 inverted
 index in memory, and persists it as pretty-printed JSON to .kb/index.json.
 
-The parse_markdown function follows the 10-rule body-bearing spec documented
+The parse_markdown function follows the 11-rule body-bearing spec documented
 in its docstring below.
 """
 
@@ -418,7 +418,7 @@ def parse_markdown(path: Path, source_id: str | None = None) -> list[Section]:
     ``refund-policy.md#cancellation-window``). When omitted, the full filename
     (``path.name``) is used — preserving the existing behaviour for docs/.
 
-    See CONTEXT.md > Section for the formal definition. The 10-rule spec:
+    See CONTEXT.md > Section for the formal definition. The 11-rule spec:
 
     1.  Read the file as UTF-8.
     2.  If the file starts with `---\\n`, strip and parse the YAML frontmatter
@@ -458,6 +458,18 @@ def parse_markdown(path: Path, source_id: str | None = None) -> list[Section]:
         from the heading text and (b) the same for the body content, with
         STOP_WORDS removed. The same tokenization applies to query strings
         at retrieval time.
+    11. (Issue #509 / ADR-0033 decision 1.) Non-whitespace body content that
+        appears BEFORE the first heading of a heading-bearing Source (the
+        "preamble") becomes its own Section instead of being silently
+        dropped: `id={source_prefix}#intro` (literal `intro` anchor, subject
+        to the same collision-suffix convention as rule 9 — a real `intro`
+        heading later in the same Source gets `-2`, never a silent
+        overwrite), `heading=path.stem`, `heading_path=[path.stem]`,
+        `content=` the stripped preamble body. Emit a
+        `log_event("parse_warning", ...)` whenever this Section is created.
+        A whitespace-only preamble produces neither a Section nor a warning.
+        A zero-heading Source (rule 7) is unaffected — there is no "first
+        heading" to precede.
     """
     # Import here to avoid circular dependency at module level; logger imports
     # nothing from indexer.
@@ -514,6 +526,12 @@ def parse_markdown(path: Path, source_id: str | None = None) -> list[Section]:
     used_slugs: dict[str, int] = {}  # slug → next suffix counter
     in_fence = False
     found_any_heading = False
+    # Rule 11: lines accumulated before the first heading is ever pushed.
+    # ``stack`` is only ever empty during this pre-heading phase — once the
+    # first heading pushes, at least one entry stays on the stack until EOF
+    # (a same-depth sibling pops the old one and pushes the new one in the
+    # same step, with no line consumed in between).
+    preamble_lines: list[str] = []
 
     def _make_id(slug: str) -> str:
         """Apply collision-safe suffix and track usage."""
@@ -522,6 +540,44 @@ def parse_markdown(path: Path, source_id: str | None = None) -> list[Section]:
             return f"{source_prefix}#{slug}"
         used_slugs[slug] += 1
         return f"{source_prefix}#{slug}-{used_slugs[slug]}"
+
+    def _accumulate(line: str) -> None:
+        """Append a content line to the open heading's body, or to the
+        preamble buffer when no heading has opened yet."""
+        if stack:
+            stack[-1]["body_lines"].append(line)
+        else:
+            preamble_lines.append(line)
+
+    def _emit_preamble() -> None:
+        """Emit the pre-heading preamble as its own Section (Rule 11).
+
+        Called exactly once, right when the first heading is matched — before
+        that heading is pushed — so the ``intro`` slug registers in
+        ``used_slugs`` ahead of any real heading in the Source (a later
+        literal "Intro" heading collides and gets the `-2` suffix per rule 9).
+        """
+        raw_preamble = "".join(preamble_lines)
+        content = raw_preamble.strip()
+        if not content:
+            return
+        heading_text = path.stem
+        sec_id = _make_id("intro")
+        result.append(
+            Section(
+                id=sec_id,
+                file=source_prefix,
+                heading=heading_text,
+                heading_path=[heading_text],
+                content=content,
+                tokens=tokenize(heading_text) + tokenize(raw_preamble),
+                metadata=_section_metadata(metadata, heading_text, content),
+            )
+        )
+        log_event(
+            "parse_warning",
+            f"preamble captured as Section in {filename}: '{sec_id}'",
+        )
 
     def _emit(entry: dict) -> None:
         """Emit a Section for a closed heading if it qualifies under rule 5."""
@@ -561,19 +617,21 @@ def parse_markdown(path: Path, source_id: str | None = None) -> list[Section]:
         if stripped.startswith("```"):
             in_fence = not in_fence
             # Add the fence line itself to the current heading's body
-            if stack:
-                stack[-1]["body_lines"].append(line)
+            _accumulate(line)
             continue
 
         if in_fence:
             # Inside a fence: treat as content, not a heading
-            if stack:
-                stack[-1]["body_lines"].append(line)
+            _accumulate(line)
             continue
 
         # Rule 4: outside fences, try to match a heading
         m = HEADING_RE.match(stripped)
         if m:
+            if not found_any_heading:
+                # Rule 11: flush the preamble before the first heading is
+                # processed, so its `#intro` slug is registered first.
+                _emit_preamble()
             found_any_heading = True
             new_depth = len(m.group(1))
             heading_text = m.group(2)
@@ -600,9 +658,9 @@ def parse_markdown(path: Path, source_id: str | None = None) -> list[Section]:
                 }
             )
         else:
-            # Content line — accumulate on current heading's body
-            if stack:
-                stack[-1]["body_lines"].append(line)
+            # Content line — accumulate on current heading's body, or the
+            # preamble buffer before any heading has opened (rule 11)
+            _accumulate(line)
 
     # Pop remaining headings off the stack (end of file)
     while stack:
