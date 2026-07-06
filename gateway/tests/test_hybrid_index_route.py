@@ -7,8 +7,8 @@ Acceptance criteria tested:
   AC2 — After POST /hybrid/index, a wiki Section is findable via the dense arm
          (dense↔BM25 ids re-align by construction after a full re-embed).
   AC3 — /hybrid/index is in ADMIN_PATHS (admin semaphore + kill-switch + budget cap)
-         and in _COST_ESTIMATES at ~$0.50; a request with KB_ADMIN_TOKEN set but no
-         Bearer token is 401.
+         and in _COST_ESTIMATES at ~$0.10 (recalibrated from $0.50, issue #510); a
+         request with KB_ADMIN_TOKEN set but no Bearer token is 401.
 
 All tests are hermetic:
   * Fake embeddings (offline _FakeEmbeddings — real FAISS build/search path, no OpenAI).
@@ -60,9 +60,10 @@ def _redirect_hybrid_paths(tmp_path, monkeypatch):
     The gateway conftest autouse already redirects markdown_kb wiki paths;
     this adds the hybrid_kb-specific paths that POST /hybrid/index writes.
 
-    Also resets the gateway budget singleton before and after each test.
-    POST /hybrid/index is priced at $0.50; without resetting, 6 tests exhaust
-    the $3.00 default cap and contaminate subsequent gateway tests with 503s.
+    Also resets the gateway budget singleton before and after each test so a
+    charge from one test never bleeds into the next test's budget-cap
+    assertions (POST /hybrid/index is a heavy admin path and charges the
+    ledger on every admitted request, issue #510 recalibration notwithstanding).
     """
     import gateway.app.budget as _budget_mod
 
@@ -164,13 +165,18 @@ def test_hybrid_index_in_admin_paths():
     )
 
 
-def test_hybrid_index_cost_estimate_approx_fifty_cents():
-    """/hybrid/index has a ~$0.50 cost estimate in _COST_ESTIMATES (AC3)."""
+def test_hybrid_index_cost_estimate_approx_ten_cents():
+    """/hybrid/index has a ~$0.10 cost estimate in _COST_ESTIMATES (AC3).
+
+    Recalibrated from $0.50 (issue #510) — the original estimate was wide
+    enough that two small-corpus re-embeds alone charged $1.00 of the $3.00
+    daily cap against sub-cent real embedding cost.
+    """
     from gateway.app.budget import estimate_cost
 
     cost = estimate_cost("/hybrid/index")
-    assert cost == pytest.approx(0.50), (
-        f"/hybrid/index estimate must be ~$0.50; got {cost} (ADR-0022 / issue #348 AC3)"
+    assert cost == pytest.approx(0.10), (
+        f"/hybrid/index estimate must be ~$0.10; got {cost} (issue #510 recalibration)"
     )
 
 

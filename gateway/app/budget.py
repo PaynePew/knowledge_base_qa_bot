@@ -21,15 +21,15 @@ Per-endpoint estimate table (USD per request, deliberately generous):
     | /chat/stream     | 0.02     | one grounded answer: draft + verify LLM round   |
     | /wiki/chat       | 0.02     | same answer round on the Wiki stack             |
     | /rag/chat        | 0.02     | same answer round on the RAG stack              |
-    | /wiki/lint       | 0.15     | C5 contradiction audit fans out to ~30 LLM pairs|
+    | /wiki/lint       | 0.03     | C5 fans out to ~30 gpt-5-mini-class pairs, sub-cent each (recalibrated, issue #510 — see below) |
     | /wiki/ingest     | 0.10     | classify-on-outline + per-section LLM passes    |
     | /wiki/import     | 0.10     | mechanical conversion flat floor (Transcribe's per-page cost is charged on top, see below) |
     | /wiki/import/jobs | 0.10    | same Import surface as /wiki/import, just async (issue #497) — same flat floor, same per-page hook on top |
     | /wiki/transcribe | 0.00     | true cost is charged per-page (see below), not a flat estimate |
     | /wiki/transcribe/batch | 0.00 | same force-transcribe surface as /wiki/transcribe, just async (issue #447); true cost is the SAME per-page hook, not a second flat estimate |
     | /wiki/index      | 0.05     | Wiki re-index touches the corpus                |
-    | /rag/index       | 0.50     | re-embeds the WHOLE corpus (many embed calls)   |
-    | /hybrid/index    | 0.50     | re-embeds the WHOLE wiki Section corpus         |
+    | /rag/index       | 0.10     | re-embeds the WHOLE corpus; text-embedding-3-small is fractions of a cent/1k tokens even at full-corpus size (recalibrated, issue #510 — see below) |
+    | /hybrid/index    | 0.10     | re-embeds the WHOLE wiki Section corpus; same embedding-cost basis as /rag/index (recalibrated, issue #510) |
     | /upload          | 0.01     | staging bytes; tiny, but heavy-gated for safety |
     | /wiki/pages/reconcile       | 0.05 | C5 draft over two pages' Source union + grounding check |
     | /wiki/pages/reconcile/apply | 0.02 | grounding re-check on the submitted final content       |
@@ -61,6 +61,25 @@ The numbers are intentionally above plausible real cost on a small demo corpus
 (GPT-class answer rounds are sub-cent; ``text-embedding-3-small`` re-embeds are
 fractions of a cent per thousand tokens).  Overestimating keeps the demo safely
 under the $3/day in-app ceiling and the $15/mo provider hard limit.
+
+Recalibration (issue #510): the original estimates above were generous enough
+to be accounting fiction — a normal demo day (6 Lint runs, 3 Ingests, one
+Import, one Upload, two small-corpus re-embeds, a 63-page Transcribe batch,
+and several chat answers) tripped the $3.00 ``KB_DAILY_USD_CAP`` even though
+real spend that day was under $0.40. Three offenders accounted for almost all
+of the gap: ``/wiki/lint`` (six runs at the old $0.15 charged $0.90 for ZERO
+LLM calls — Lint is LLM-free by default since issue #441; only Deep audit
+(C5) calls the LLM, and even then the ~30-pair estimate above already caps
+the fan-out), and ``/rag/index`` / ``/hybrid/index`` (two small-corpus
+re-embeds at the old $0.50 each charged $1.00 against sub-cent real cost).
+Recalibrated: ``/wiki/lint`` $0.15 → $0.03, ``/rag/index`` and
+``/hybrid/index`` $0.50 → $0.10 each, ``KB_TRANSCRIBE_PAGE_USD`` default
+$0.01/page → $0.005/page (see ``_read_transcribe_page_cost`` below) — each
+new number is still a conservative multiple of plausible real cost, just no
+longer wide enough to fabricate a budget crisis out of routine demo traffic.
+``KB_DAILY_USD_CAP`` itself is unchanged ($3.00). Precise token metering
+remains the documented follow-up (see the module docstring's opening
+paragraph) — this slice only corrects the flat-estimate multipliers.
 
 Per-page Transcribe charging (issue #460): Transcribe (ADR-0032) makes one
 vision-model call per PDF page, so a flat per-request estimate radically
@@ -103,15 +122,15 @@ _COST_ESTIMATES: dict[str, float] = {
     "/chat/stream": 0.02,
     "/wiki/chat": 0.02,
     "/rag/chat": 0.02,
-    "/wiki/lint": 0.15,
+    "/wiki/lint": 0.03,  # recalibrated 0.15 -> 0.03, issue #510 (see docstring)
     "/wiki/ingest": 0.10,
     "/wiki/import": 0.10,
     "/wiki/import/jobs": 0.10,
     "/wiki/transcribe": 0.00,
     "/wiki/transcribe/batch": 0.00,
     "/wiki/index": 0.05,
-    "/rag/index": 0.50,
-    "/hybrid/index": 0.50,
+    "/rag/index": 0.10,  # recalibrated 0.50 -> 0.10, issue #510 (see docstring)
+    "/hybrid/index": 0.10,  # recalibrated 0.50 -> 0.10, issue #510 (see docstring)
     "/upload": 0.01,
     "/wiki/pages/reconcile": 0.05,
     "/wiki/pages/reconcile/apply": 0.02,
@@ -146,17 +165,22 @@ DAILY_USD_CAP = _read_cap()
 
 
 def _read_transcribe_page_cost() -> float:
-    """Read ``KB_TRANSCRIBE_PAGE_USD`` at construction time (default $0.01/page).
+    """Read ``KB_TRANSCRIBE_PAGE_USD`` at construction time (default $0.005/page).
 
     ADR-0032 estimates real Transcribe cost (``gpt-5-mini``) at ~$2 per 1,000
-    pages (~$0.002/page); $0.01/page keeps the same generous overestimate
-    margin (~5x) as the rest of this module's flat per-endpoint estimates.
+    pages (~$0.002/page); $0.005/page keeps a still-conservative ~2.5x
+    overestimate margin. Recalibrated down from the original $0.01/page
+    (~5x margin, issue #510): that margin was wide enough that a single
+    63-page scan alone charged $0.63 of the $3.00 daily cap against ~$0.13 of
+    plausible real cost, materially contributing to the cap tripping on a
+    day with well under $1 of real spend (see the module docstring's
+    "Recalibration (issue #510)" paragraph).
     """
-    raw = os.getenv("KB_TRANSCRIBE_PAGE_USD", "0.01")
+    raw = os.getenv("KB_TRANSCRIBE_PAGE_USD", "0.005")
     try:
         return float(raw)
     except ValueError:
-        return 0.01
+        return 0.005
 
 
 # Module-level default, read once at import (restart to apply a new value).
@@ -189,6 +213,10 @@ class DailyBudget:
         (issue #472 — the Transcribe page-budget hook's admission check).
       - ``over_cap(day=None)``      — True once ``day``'s total reaches the cap.
       - ``day_total(day=None)``     — current accumulated USD for ``day``.
+      - ``snapshot(day=None)``      — read-only ``{day, spent_estimate, cap,
+        remaining}`` dict for ``GET /healthz/budget`` (issue #510). Never
+        charges; one lock acquisition so the four fields describe the same
+        instant even under concurrent charge()/charge_pages() callers.
 
     The store is a ``{day: total}`` dict.  Old days are never pruned (one float
     per calendar day is negligible for a demo lifetime); a lookup for a day with
@@ -258,6 +286,31 @@ class DailyBudget:
         the event-loop middleware's single-threaded check before ``charge``).
         """
         return self.day_total(day=day) >= self.cap_usd
+
+    def snapshot(self, *, day: str | None = None) -> dict[str, str | float]:
+        """Return a read-only ``{day, spent_estimate, cap, remaining}`` dict.
+
+        Backs ``GET /healthz/budget`` (issue #510) — an unauthenticated,
+        never-charging probe so the daily ledger is visible before it trips
+        a 503, not just after. Reads ``spent`` under the same lock every
+        mutation holds, so it never observes a torn read mid-charge.
+        ``remaining`` is clamped at 0.0: the ledger can briefly exceed
+        ``cap_usd`` (a request is charged only AFTER it is admitted past the
+        over-cap gate, so the admission that crosses the cap posts its own
+        charge on top — see ``ProdMiddleware.__call__``), and a negative
+        "remaining" would read as a display bug rather than the truthful
+        "$0 left" it is.
+        """
+        key = day if day is not None else _utc_today()
+        cap = self.cap_usd  # set once at construction; immutable, no lock needed
+        with self._lock:
+            spent = self._totals.get(key, 0.0)
+        return {
+            "day": key,
+            "spent_estimate": spent,
+            "cap": cap,
+            "remaining": max(cap - spent, 0.0),
+        }
 
 
 # Module-level singleton — the one accumulator the middleware shares across

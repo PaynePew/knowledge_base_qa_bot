@@ -17,9 +17,10 @@ The Gateway is a thin parent ASGI app that:
   - Installs ``ProdMiddleware`` (issue #269): read/admin concurrency caps, a
     daily USD budget guard, an optional admin-token kill-switch, and a
     graceful OpenAI-quota→503 mapping for non-streaming heavy paths.
-  - Exposes ``GET /healthz`` (always 200 liveness) and ``GET /healthz/shed``
+  - Exposes ``GET /healthz`` (always 200 liveness), ``GET /healthz/shed``
     (200 normally, 503 when the read semaphore is saturated — edge-active
-    health check).
+    health check), and ``GET /healthz/budget`` (read-only, unauthenticated,
+    never-charging daily USD ledger snapshot — issue #510).
   - Runs a ``lifespan`` that enters both mounted sub-apps' own lifespans on
     startup (issue #398): ``app.mount()`` does NOT propagate the ASGI
     lifespan protocol into a mounted sub-app, so without this a cold Gateway
@@ -181,6 +182,21 @@ def healthz_shed() -> Response:
     if read_saturated():
         return JSONResponse({"status": "shedding"}, status_code=503)
     return JSONResponse({"status": "ok"})
+
+
+@app.get("/healthz/budget", include_in_schema=False)
+def healthz_budget() -> JSONResponse:
+    """Read-only daily USD budget ledger snapshot (issue #510).
+
+    Returns ``{"day", "spent_estimate", "cap", "remaining"}`` for the current
+    UTC day. Unauthenticated (like the other ``/healthz*`` probes) and NEVER
+    charges the ledger — it is a pure read via ``DailyBudget.snapshot()``,
+    thread-safe against concurrent ``charge()`` / ``charge_pages()`` callers
+    on the event loop and worker threads (issue #472). Before this endpoint
+    the ledger was invisible until a request already got the 503 — this is
+    the Console's data source for showing today's usage ahead of that.
+    """
+    return JSONResponse(_budget.budget.snapshot())
 
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
