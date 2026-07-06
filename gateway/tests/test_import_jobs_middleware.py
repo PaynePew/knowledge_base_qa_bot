@@ -38,9 +38,7 @@ def test_import_jobs_submit_priced_like_sync_import():
     assert "/wiki/import/jobs" in _COST_ESTIMATES, (
         "/wiki/import/jobs must have an explicit cost estimate (issue #497)"
     )
-    assert estimate_cost("/wiki/import/jobs") == pytest.approx(
-        estimate_cost("/wiki/import")
-    )
+    assert estimate_cost("/wiki/import/jobs") == pytest.approx(estimate_cost("/wiki/import"))
 
 
 def test_import_jobs_poll_is_deliberately_unclassified():
