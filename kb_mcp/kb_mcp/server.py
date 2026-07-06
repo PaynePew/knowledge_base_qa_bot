@@ -603,7 +603,7 @@ def kb_lint_v1(
         "           e.g. 'refund_policy.md'\n\n"
         "Returns on success: "
         "{source, pages_created, pages_overwritten, grounding_failed_pages, "
-        "failed, status}\n"
+        "failed, status, sections_count, uncarried_chars, enriched_chars}\n"
         "  pages_created         — list of wiki page paths written for the first time\n"
         "  pages_overwritten     — list of paths that already existed and were "
         "overwritten (cross-call slug collision is visible here, not silent — "
@@ -617,7 +617,13 @@ def kb_lint_v1(
         "  reason                — present only on failure: a human-readable cause "
         "(e.g. the Source exceeds the ingest size limit). Report it to the user "
         "instead of retrying\n"
-        "  status                — 'created', 'updated', 'skipped', or 'failed'\n\n"
+        "  status                — 'created', 'updated', 'skipped', or 'failed'\n"
+        "  sections_count        — number of Sections the parse produced for this "
+        "Source (issue #511)\n"
+        "  uncarried_chars       — non-whitespace body characters the parse did not "
+        "carry into any Section; normally 0 (issue #511)\n"
+        "  enriched_chars        — characters added by Structure Enrichment; always 0 "
+        "until issue #512 ships\n\n"
         "Returns isError=true on LLM failure:\n"
         "  {code, message} where code is 'LLM_UNAVAILABLE' (retryable) or\n"
         "  'LLM_ERROR' (non-retryable, report message to user).\n\n"
@@ -744,6 +750,9 @@ async def kb_ingest_v1(
             "grounding_failed_pages": batch.pages_with_failed_grounding,
             "failed": False,
             "status": src_result.status,
+            "sections_count": src_result.sections_count,
+            "uncarried_chars": src_result.uncarried_chars,
+            "enriched_chars": src_result.enriched_chars,
         }
     else:
         # Skipped (hash-match no-op)
@@ -755,6 +764,9 @@ async def kb_ingest_v1(
             "grounding_failed_pages": [],
             "failed": False,
             "status": skipped.status if skipped else "skipped",
+            "sections_count": skipped.sections_count if skipped else 0,
+            "uncarried_chars": skipped.uncarried_chars if skipped else 0,
+            "enriched_chars": skipped.enriched_chars if skipped else 0,
         }
 
     await _progress(3, 3, message=f"Done: {source!r}")

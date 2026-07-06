@@ -323,6 +323,17 @@ class IngestSourceResult(BaseModel):
 
     Meaningful population added in Slice #3 (orphan handling + created preservation).
     Phase 3 amendment (#93) adds `status` for skip/created/updated discrimination.
+
+    Issue #511 (ADR-0033 "Ingest observability" decision) adds three fields so
+    a degenerate parse is visible at the API surface instead of silently
+    reporting plain success:
+    `sections_count` is the number of Sections `parse_markdown` produced for
+    this Source. `uncarried_chars` is the non-whitespace body character count
+    the parse did not carry into any Section (see
+    `indexer.count_uncarried_chars`) — normally 0 after issue #509 (preamble
+    becomes a Section); non-zero flags a new parse/Section gap.
+    `enriched_chars` is the character count added by Structure Enrichment
+    (ADR-0033 decision 2); always 0 until issue #512 ships.
     """
 
     source: str  # bare filename, e.g. "refund_policy.md"
@@ -334,6 +345,11 @@ class IngestSourceResult(BaseModel):
     # Phase 3 amendment (#93): status discriminates skip from write outcomes.
     # Default "created" for backward compat with callers that don't set it.
     status: Literal["created", "updated", "skipped"] = "created"
+    # Issue #511: additive observability fields, all default 0 for backward
+    # compat with callers that don't set them.
+    sections_count: int = 0
+    uncarried_chars: int = 0
+    enriched_chars: int = 0
 
 
 class IngestRequest(BaseModel):

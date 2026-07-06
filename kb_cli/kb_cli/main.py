@@ -323,7 +323,7 @@ def _print_ingest_batch(batch: object) -> None:
     """Render an ``IngestBatchResult`` to stdout with per-source progress lines.
 
     Format per successful source:
-        Ingested refund_policy.md: 2 page(s) created.
+        Ingested refund_policy.md: 2 page(s) created (3 section(s)).
 
     Format for grounding-failed pages (fail-soft — page still written):
         Warning: page 'cancellation-window' failed grounding check.
@@ -334,6 +334,14 @@ def _print_ingest_batch(batch: object) -> None:
     Called after ``ingest_sources`` returns so all per-source outcomes are
     available.  The grounding-failure lines follow the source summary so a
     shell script can ``grep "Warning:"`` to detect non-fatal issues.
+
+    Issue #511 (ADR-0033 "Ingest observability" decision, ADR-0017 CLI parity):
+    every source line carries its Section count; a source whose parse did not
+    carry all its body text into a Section (normally none, post issue #509)
+    or that gained Structure Enrichment characters (issue #512, not yet
+    wired) gets an additional ``Warning:``/note line — shell scripts already
+    ``grep "Warning:"`` for the grounding case above, so a real parse-coverage
+    regression is caught the same way.
     """
     from markdown_kb.app.ingest import IngestBatchResult
 
@@ -343,11 +351,27 @@ def _print_ingest_batch(batch: object) -> None:
     # here — skipped sources are carried in ``skipped_sources``, not ``results``.
     for src_result in batch.results:
         page_count = len(src_result.pages_written)
-        typer.echo(f"Ingested {src_result.source}: {page_count} page(s) {src_result.status}.")
+        typer.echo(
+            f"Ingested {src_result.source}: {page_count} page(s) {src_result.status} "
+            f"({src_result.sections_count} section(s))."
+        )
+        if src_result.uncarried_chars:
+            typer.echo(
+                f"Warning: {src_result.source} has {src_result.uncarried_chars} "
+                "character(s) the parse did not carry into any Section."
+            )
+        if src_result.enriched_chars:
+            typer.echo(
+                f"{src_result.source}: Structure Enrichment added "
+                f"{src_result.enriched_chars} character(s)."
+            )
 
     # Per skipped source (hash-match no-op)
     for skipped in batch.skipped_sources:
-        typer.echo(f"Skipped {skipped.source}: source unchanged (hash match).")
+        typer.echo(
+            f"Skipped {skipped.source}: source unchanged (hash match, "
+            f"{skipped.sections_count} section(s))."
+        )
 
     # Per failed source.  Surface the deep module's reason (e.g. the size guard)
     # when present, otherwise the generic line.
