@@ -30,10 +30,15 @@ Tests:
   route — one page, classifier invoked (AC 3).
 - test_build_index_includes_hub_and_chapter_pages: the wiki BM25 index picks
   up the hub + chapter pages via the existing SOURCE_DIRS scan (AC 5).
+- test_aingest_sources_longform_writes_hub_and_chapter_pages: the ASYNC
+  sibling (`aingest_sources`) takes the same route — the two pre-flight
+  ladders are hand-duplicated (see the DRIFT GUARD comments in ingest.py) so
+  this guards against the async branch drifting from the sync one.
 """
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -344,3 +349,38 @@ def test_build_index_includes_hub_and_chapter_pages(tmp_path, monkeypatch):
 
     assert files_indexed == 4, "Expected the hub page + 3 chapter pages to be indexed"
     assert sections_indexed == 4
+
+
+# ---------------------------------------------------------------------------
+# Async sibling — aingest_sources takes the same longform route
+# ---------------------------------------------------------------------------
+
+
+def test_aingest_sources_longform_writes_hub_and_chapter_pages(tmp_path, monkeypatch):
+    """aingest_sources' hand-duplicated pre-flight ladder (DRIFT GUARD comments
+    in ingest.py) must route a Longform Source identically to ingest_sources."""
+    docs_dir = tmp_path / "docs"
+    wiki_dir = tmp_path / "wiki"
+    _write_book(docs_dir)
+
+    fake_llm = _make_fake_llm()
+    monkeypatch.setattr(templates_module, "_ingest_llm", fake_llm)
+    monkeypatch.setattr(templates_module, "get_ingest_llm", lambda: fake_llm)
+    monkeypatch.setattr(indexer_module, "WIKI_DIR", wiki_dir)
+
+    batch = asyncio.run(
+        ingest_module.aingest_sources(["my_book.md"], docs_dir=docs_dir, wiki_dir=wiki_dir)
+    )
+
+    assert batch.failed_sources == [], batch.failed_reasons
+    assert len(batch.results) == 1
+    result = batch.results[0]
+    assert result.sections_count == 3, result
+    assert len(result.pages_written) == 4, result.pages_written
+
+    hub_path = wiki_dir / "entities" / "my-book.md"
+    assert hub_path.exists()
+    hub_content = hub_path.read_text(encoding="utf-8")
+    for slug in ("chapter-one", "chapter-two", "chapter-three"):
+        assert f"[[{slug}]]" in hub_content
+        assert (wiki_dir / "concepts" / f"{slug}.md").exists()
