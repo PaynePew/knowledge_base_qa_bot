@@ -1010,6 +1010,7 @@ def _force_transcribe(
         origin="transcribed",
         transcribe_model=model_name,
         structure_enriched=enrichment.enriched,
+        enriched_chars=enrichment.enriched_chars,
     )
 
     try:

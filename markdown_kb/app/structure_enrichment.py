@@ -179,12 +179,18 @@ class EnrichmentResult:
     ``structure: enriched``. ``reason`` carries a truncated failure summary
     when enrichment was attempted (``is_longform`` fired) but failed —
     ``None`` when the Source bypassed enrichment (not longform) or when it
-    succeeded.
+    succeeded. ``enriched_chars`` (issue #513 observability wiring) is the
+    summed length of the inserted ``## title`` heading lines — the size of
+    the structure this pass ADDED (furniture removal is reported separately
+    via the ``structure_enrichment_applied`` log event); always 0 when
+    ``enriched`` is False. Callers persist it in the ``docs/`` frontmatter
+    next to ``structure: enriched`` so ingest can surface it later.
     """
 
     body: str
     enriched: bool
     reason: str | None = None
+    enriched_chars: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -426,7 +432,7 @@ def _propose_chapters(text: str) -> list[_ChapterProposal]:
 # ---------------------------------------------------------------------------
 
 
-def _emit_chapter(title: str, chunk: str, cap: int) -> str:
+def _emit_chapter(title: str, chunk: str, cap: int) -> tuple[str, int]:
     """Render one ``## title`` heading + body.
 
     When ``chunk`` estimates over ``cap``, mechanically re-splits it at
@@ -435,9 +441,14 @@ def _emit_chapter(title: str, chunk: str, cap: int) -> str:
     "oversized proposals re-split mechanically at paragraph boundaries"). A
     single paragraph that alone exceeds the cap is emitted as its own
     (oversized) part — paragraphs are not split mid-sentence.
+
+    Returns ``(rendered, heading_chars)`` — ``heading_chars`` is the summed
+    length of the inserted heading lines (issue #513: feeds
+    ``EnrichmentResult.enriched_chars``).
     """
     if ingest_module.estimate_tokens(chunk) <= cap:
-        return f"## {title}\n\n{chunk.strip()}\n\n"
+        heading_line = f"## {title}"
+        return f"{heading_line}\n\n{chunk.strip()}\n\n", len(heading_line)
 
     paragraphs = [p for p in re.split(r"\n\s*\n", chunk.strip()) if p.strip()]
     parts: list[str] = []
@@ -455,10 +466,13 @@ def _emit_chapter(title: str, chunk: str, cap: int) -> str:
         parts.append("\n\n".join(current))
 
     rendered = []
+    heading_chars = 0
     for i, part in enumerate(parts, start=1):
         part_title = title if i == 1 else f"{title} (cont. {i})"
-        rendered.append(f"## {part_title}\n\n{part.strip()}\n\n")
-    return "".join(rendered)
+        heading_line = f"## {part_title}"
+        heading_chars += len(heading_line)
+        rendered.append(f"{heading_line}\n\n{part.strip()}\n\n")
+    return "".join(rendered), heading_chars
 
 
 # Anchor matching happens in a whitespace-free, punctuation-folded space:
@@ -506,7 +520,7 @@ def _normalized_text_with_offsets(text: str) -> tuple[str, list[int]]:
 
 def _materialize_headings(
     text: str, chapters: list[_ChapterProposal], *, filename: str
-) -> tuple[str, int]:
+) -> tuple[str, int, int]:
     """Insert literal ATX headings at the proposed chapter boundaries.
 
     Locates each ``boundary_anchor`` by substring search in the normalized
@@ -523,7 +537,9 @@ def _materialize_headings(
     Each chapter span is rendered via ``_emit_chapter``, which applies the
     mechanical per-section token-cap fallback.
 
-    Returns ``(enriched_text, anchors_skipped)``.
+    Returns ``(enriched_text, anchors_skipped, enriched_chars)`` —
+    ``enriched_chars`` is the summed length of every inserted heading line
+    (issue #513: feeds ``EnrichmentResult.enriched_chars``).
     """
     norm_text, offsets = _normalized_text_with_offsets(text)
 
@@ -552,10 +568,13 @@ def _materialize_headings(
 
     cap = ingest_module.max_section_tokens()
     pieces: list[str] = [text[: positions[0][0]]]
+    enriched_chars = 0
     for i, (start, title) in enumerate(positions):
         end = positions[i + 1][0] if i + 1 < len(positions) else len(text)
-        pieces.append(_emit_chapter(title, text[start:end], cap))
-    return "".join(pieces), skipped
+        rendered, heading_chars = _emit_chapter(title, text[start:end], cap)
+        pieces.append(rendered)
+        enriched_chars += heading_chars
+    return "".join(pieces), skipped, enriched_chars
 
 
 # ---------------------------------------------------------------------------
@@ -586,7 +605,7 @@ def enrich_structure(body: str, *, filename: str = "source") -> EnrichmentResult
     try:
         stripped, furniture_removed = _strip_page_furniture(body)
         chapters = _propose_chapters(stripped)
-        enriched_body, anchors_skipped = _materialize_headings(
+        enriched_body, anchors_skipped, enriched_chars = _materialize_headings(
             stripped, chapters, filename=filename
         )
     except Exception as exc:
@@ -609,4 +628,6 @@ def enrich_structure(body: str, *, filename: str = "source") -> EnrichmentResult
     if anchors_skipped:
         summary += f" anchors_skipped={anchors_skipped}"
     log_event("structure_enrichment_applied", summary)
-    return EnrichmentResult(body=enriched_body, enriched=True, reason=None)
+    return EnrichmentResult(
+        body=enriched_body, enriched=True, reason=None, enriched_chars=enriched_chars
+    )

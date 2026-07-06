@@ -274,6 +274,7 @@ def test_enrich_structure_bypasses_well_headed_source_byte_identical(monkeypatch
     assert result.enriched is False
     assert result.reason is None
     assert result.body == body
+    assert result.enriched_chars == 0
 
 
 def test_enrich_structure_materializes_headings_at_proposed_boundaries(monkeypatch):
@@ -308,6 +309,13 @@ def test_enrich_structure_materializes_headings_at_proposed_boundaries(monkeypat
     assert "Chapter One begins here." in sections[0].content
     assert "Chapter Two starts now." in sections[1].content
     assert "Chapter Three opens here." in sections[2].content
+
+    # Issue #513: enriched_chars is the summed length of the inserted
+    # `## title` heading lines — never the furniture-removal count.
+    expected_enriched_chars = sum(
+        len(f"## {title}") for title in ("Chapter One", "Chapter Two", "Chapter Three")
+    )
+    assert result.enriched_chars == expected_enriched_chars
 
 
 def _fixed_len_paragraph(prefix: str, target_len: int) -> str:
@@ -356,6 +364,10 @@ def test_enrich_structure_oversized_chapter_mechanically_resplit(monkeypatch):
         assert sec.heading.startswith(("Intro", "Big Chapter"))
         assert se.ingest_module.estimate_tokens(sec.content) <= cap
 
+    # Issue #513: the mechanical re-split's `(cont. N)` heading lines count
+    # toward enriched_chars too — every inserted heading line does.
+    assert result.enriched_chars == sum(len(f"## {sec.heading}") for sec in sections)
+
 
 def test_enrich_structure_fails_soft_on_llm_error(monkeypatch):
     fake_chain = MagicMock()
@@ -373,6 +385,7 @@ def test_enrich_structure_fails_soft_on_llm_error(monkeypatch):
     assert result.body == body, "Un-enriched transcript must be returned byte-identical on failure"
     assert result.reason is not None
     assert "simulated model failure" in result.reason
+    assert result.enriched_chars == 0, "fail-soft must never report added structure"
 
 
 def test_enrich_structure_fails_soft_on_unfindable_boundary_anchor(monkeypatch):

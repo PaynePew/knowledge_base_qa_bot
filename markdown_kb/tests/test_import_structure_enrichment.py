@@ -109,6 +109,7 @@ def test_well_headed_source_bypasses_enrichment(import_env, monkeypatch):
 
     content = (docs_dir / "handbook.md").read_text(encoding="utf-8")
     assert "structure: enriched" not in content
+    assert "enriched_chars" not in content, "bypass must stay byte-identical (issue #513)"
     assert body in content
 
 
@@ -142,6 +143,11 @@ def test_longform_source_gains_structure_enriched_frontmatter(import_env, monkey
     assert "## Part One" in content
     assert "## Part Two" in content
     assert content.index("## Part One") < content.index("## Part Two")
+
+    # Issue #513: the summed inserted-heading-line length is persisted right
+    # next to the structure marker so ingest can read it back later.
+    expected_enriched_chars = len("## Part One") + len("## Part Two")
+    assert f"enriched_chars: {expected_enriched_chars}" in content
 
 
 # ---------------------------------------------------------------------------
@@ -210,6 +216,7 @@ def test_enrichment_failure_fails_soft_and_reports_degradation(import_env, monke
 
     content = (docs_dir / "report.md").read_text(encoding="utf-8")
     assert "structure: enriched" not in content
+    assert "enriched_chars" not in content, "fail-soft must not persist enriched_chars"
     assert body in content, "Un-enriched transcript must still be written on enrichment failure"
 
     assert "structure_enrichment_failed" in _log_kinds(import_env["log_path"])
