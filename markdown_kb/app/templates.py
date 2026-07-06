@@ -516,8 +516,10 @@ def generate_hub_page(
         now:              Override UTC timestamp for testing.
 
     Returns:
-        A WikiPageDraft with type="entity" — the caller (ingest.py) assigns
-        the collision-resolved slug the same way the entity route does.
+        A WikiPageDraft with type="entity" and slug/frontmatter.id both set
+        to ``slugify(source_stem)`` — the caller (ingest.py) overrides BOTH
+        with the collision-resolved slug before writing, exactly like every
+        chapter draft's ``_resolve_draft_slugs`` post-pass.
     """
     if now is None:
         now = datetime.datetime.now(datetime.UTC)
