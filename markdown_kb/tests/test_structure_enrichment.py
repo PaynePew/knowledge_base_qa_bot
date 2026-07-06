@@ -133,6 +133,81 @@ def test_is_longform_true_oversized_section(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Longform predicate — heading-density leg (issue #521)
+# ---------------------------------------------------------------------------
+
+
+def _two_stray_title_transcript() -> str:
+    """The real #521 prod byte-shape: a ~25K-char transcript whose only
+    structure is the SAME ``#`` book title surviving transcription twice, at
+    ~3% and ~60% of the body (蘇格拉底的申辯, gpt-5-mini re-transcription)."""
+    title = "# 苏格拉底的申辩篇"
+    pre = CJK_FILLER * 19  # ~740 chars of preamble (~3%)
+    mid = CJK_FILLER * 360  # ~14K chars — under the 6000-token section cap
+    tail = CJK_FILLER * 250  # ~9.8K chars — under the cap too
+    return f"{pre}\n\n{title}\n\n{mid}\n\n{title}\n\n{tail}\n"
+
+
+def _well_headed_handbook_same_length() -> str:
+    """A handbook of the SAME ~25K-char length but healthy heading density
+    (one heading per ~1.5K chars) — must stay out of enrichment entirely."""
+    return "\n\n".join(f"## 第{i + 1}章 手冊章節\n\n{CJK_FILLER * 38}" for i in range(17))
+
+
+def test_two_stray_title_fixture_defeats_the_original_three_legs():
+    """Pins WHY #521 needs the density leg: the real prod shape slips past
+    legs 1/3/4 individually — only chars-per-heading catches it."""
+    body = _two_stray_title_transcript()
+    stripped = body.strip()
+    assert 24000 <= len(stripped) <= 27000
+
+    headings = se._heading_positions(body)
+    assert [h[2] for h in headings] == ["苏格拉底的申辩篇"] * 2
+    assert headings[0][0] / len(stripped) < 0.05  # first title at ~3%
+    assert 0.5 < headings[1][0] / len(stripped) < 0.7  # second at ~60%
+
+    # Leg 1 misses: 2 headings > KB_LONGFORM_MAX_HEADINGS (1).
+    assert len(headings) > se._max_headings_threshold()
+    # Preamble leg misses: share ~0.03, nowhere near 0.5.
+    preamble_share = len(body[: headings[0][0]].strip()) / len(stripped)
+    assert preamble_share < 0.05
+    # Oversized-section leg misses: every Section under KB_INGEST_MAX_SECTION_TOKENS.
+    cap = se.ingest_module.max_section_tokens()
+    sections = indexer_module.parse_markdown_body(body, source_prefix="transcript.md")
+    assert all(se.ingest_module.estimate_tokens(sec.content) <= cap for sec in sections)
+
+    # Density leg fires: ~12.5K chars per heading > 8000 default.
+    assert (len(stripped) / len(headings)) > se._KB_LONGFORM_CHARS_PER_HEADING_DEFAULT
+    assert se.is_longform(body) is True
+
+
+@pytest.mark.parametrize(
+    ("body_factory", "env_value", "expected"),
+    [
+        pytest.param(_two_stray_title_transcript, None, True, id="two-stray-titles-fires"),
+        pytest.param(
+            _well_headed_handbook_same_length, None, False, id="same-length-handbook-passes"
+        ),
+        pytest.param(
+            _two_stray_title_transcript, "30000", False, id="env-raised-threshold-disarms"
+        ),
+        pytest.param(
+            _well_headed_handbook_same_length, "1000", True, id="env-lowered-threshold-arms"
+        ),
+    ],
+)
+def test_is_longform_heading_density_leg(monkeypatch, body_factory, env_value, expected):
+    """Table-driven density leg: real two-stray-titles shape fires, an equally
+    long well-headed handbook does not, and KB_LONGFORM_CHARS_PER_HEADING
+    overrides the 8000 default in both directions."""
+    if env_value is None:
+        monkeypatch.delenv("KB_LONGFORM_CHARS_PER_HEADING", raising=False)
+    else:
+        monkeypatch.setenv("KB_LONGFORM_CHARS_PER_HEADING", env_value)
+    assert se.is_longform(body_factory()) is expected
+
+
+# ---------------------------------------------------------------------------
 # Page-furniture stripping
 # ---------------------------------------------------------------------------
 
