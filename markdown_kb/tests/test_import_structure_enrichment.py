@@ -24,9 +24,15 @@ import pytest
 
 FILLER = "Lorem ipsum filler text about nothing in particular. "
 
+# Word-unique prefixes: real prose paragraphs never repeat modulo digits, so
+# fixtures must not either (the furniture detector masks digit runs).
+WORDS = ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel"]
+
 
 def _long_zero_heading_body(paragraphs: int = 8) -> str:
-    body = "\n\n".join(f"Paragraph {i} opens here. " + (FILLER * 6) for i in range(paragraphs))
+    body = "\n\n".join(
+        f"Paragraph {WORDS[i]} opens here. " + (FILLER * 6) for i in range(paragraphs)
+    )
     assert len(body.strip()) >= 2000
     return body
 
@@ -116,8 +122,8 @@ def test_longform_source_gains_structure_enriched_frontmatter(import_env, monkey
 
     body = _long_zero_heading_body()
     chapters = [
-        SimpleNamespace(title="Part One", boundary_anchor="Paragraph 0 opens here."),
-        SimpleNamespace(title="Part Two", boundary_anchor="Paragraph 4 opens here."),
+        SimpleNamespace(title="Part One", boundary_anchor="Paragraph alpha opens here."),
+        SimpleNamespace(title="Part Two", boundary_anchor="Paragraph echo opens here."),
     ]
     fake_llm = _fake_llm_with_chapters(chapters)
     monkeypatch.setattr(se, "get_enrichment_llm", lambda: fake_llm)
@@ -147,7 +153,10 @@ def test_reimport_unchanged_source_does_not_reenrich(import_env, monkeypatch):
     import app.structure_enrichment as se
 
     body = _long_zero_heading_body()
-    chapters = [SimpleNamespace(title="Only Part", boundary_anchor="Paragraph 0 opens here.")]
+    chapters = [
+        SimpleNamespace(title="Part One", boundary_anchor="Paragraph alpha opens here."),
+        SimpleNamespace(title="Part Two", boundary_anchor="Paragraph echo opens here."),
+    ]
     fake_llm = _fake_llm_with_chapters(chapters)
     monkeypatch.setattr(se, "get_enrichment_llm", lambda: fake_llm)
 

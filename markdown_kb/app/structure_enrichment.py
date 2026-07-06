@@ -13,17 +13,18 @@ or one heading, a dominant preamble share, or any single Section over
 boundaries + titles, materialized as literal ATX headings directly into the
 body text (never as side metadata — see ADR-0033 § "Materializing into docs/
 is the load-bearing choice"). The same pass deterministically strips *page
-furniture* (running headers/footers/page numbers repeating verbatim across
-the document) before the LLM call, since furniture pollutes both the
-proposal input and the eventual Section corpus.
+furniture* (running headers/footers/page numbers repeating across pages,
+modulo \\xa0-padding width and incrementing page counters) before the LLM
+call, since furniture pollutes both the proposal input and the eventual
+Section corpus.
 
 The predicate never keys on filename, byte size, or page count (ADR-0033) —
 a well-headed handbook of any length bypasses this module entirely, byte-
 identically: ``is_longform`` returns ``False`` and ``enrich_structure`` never
 calls the LLM.
 
-Enrichment failure (LLM error, malformed proposal, unfindable boundary
-anchor) fails SOFT: ``enrich_structure`` returns the ORIGINAL body unchanged
+Enrichment failure (LLM error, malformed proposal, too few findable
+boundary anchors) fails SOFT: ``enrich_structure`` returns the ORIGINAL body unchanged
 (``enriched=False``) — the caller writes the un-enriched transcript exactly
 as Import/Transcribe would have without this module, per ADR-0033's
 "enrichment failure fails soft" contract. Idempotency comes from the
@@ -75,10 +76,39 @@ _KB_LONGFORM_PREAMBLE_SHARE_DEFAULT = 0.5  # preamble share strictly above this 
 _KB_LONGFORM_MIN_CHARS_DEFAULT = 2000
 
 # Deterministic page-furniture repeat-detector: a line must repeat at least
-# this many times (exact match, outside code fences, not a heading, not a
-# horizontal rule) to be treated as running-header/footer/page-number
-# residue and stripped. See _strip_page_furniture.
+# this many times (same NORMALIZED key — whitespace runs incl. \xa0 collapsed,
+# digit runs masked — outside code fences, not a heading, not a horizontal
+# rule) to be treated as running-header/footer/page-number residue and
+# stripped. See _strip_page_furniture.
 _KB_STRUCTURE_FURNITURE_MIN_REPEATS_DEFAULT = 3
+
+# Anti-false-positive floor for the repeat-detector: a normalized key shorter
+# than this is never furniture (standalone CJK chapter numerals like 「一」/
+# 「二」 are body STRUCTURE, not residue) — EXCEPT the pure page-counter shape
+# ("2/63", "3/63", … => masked "#/#"), which is furniture at any length.
+_KB_STRUCTURE_FURNITURE_MIN_CHARS_DEFAULT = 5
+
+# Key normalization for the repeat-detector. Real furniture repeats with
+# per-page variation: \xa0 padding of differing widths and page counters whose
+# numbers increment every page — never byte-identical. Python's ``\s`` is
+# Unicode-aware, so it already covers \xa0.
+_FURNITURE_WS_RE = re.compile(r"\s+")
+_FURNITURE_DIGITS_RE = re.compile(r"\d+")
+_FURNITURE_PAGE_COUNTER_RE = re.compile(r"^#\s*/\s*#$")
+
+# OCR confusable folding, applied BEFORE digit masking so the whole
+# confusable class collapses into the digit mask. Observed live on the real
+# scanned-book transcript: the SAME share-URL footer came back as
+# ``…ivlBArkl2l…``, ``…ivIBArkl2…``, ``…ivIBArkl2I…`` across pages —
+# l/I/1 jitter split one footer into five sub-threshold variants.
+_FURNITURE_CONFUSABLES_TABLE = str.maketrans({"l": "1", "I": "1"})
+
+# A truncated furniture line (OCR drops the trailing token: ``…晚上10:21``
+# without the usual ``Document``) is corroborated by its full form: a key
+# repeating at least this many times that is a PREFIX of a confirmed
+# furniture key is furniture too. Kept above 1 so a unique body line (e.g.
+# the book title, which running headers embed) is never swept up.
+_FURNITURE_PREFIX_MIN_REPEATS = 2
 
 # Same ATX heading pattern as indexer.HEADING_RE, reimplemented locally
 # (precedent: templates.build_outline does the same) so this module stays
@@ -110,7 +140,7 @@ def _min_chars_threshold() -> int:
 
 
 def _furniture_min_repeats() -> int:
-    """Minimum exact-repeat count for a line to be treated as page furniture.
+    """Minimum normalized-key repeat count for a line to be treated as page furniture.
 
     Override: ``KB_STRUCTURE_FURNITURE_MIN_REPEATS``.
     """
@@ -118,6 +148,19 @@ def _furniture_min_repeats() -> int:
         os.getenv(
             "KB_STRUCTURE_FURNITURE_MIN_REPEATS",
             str(_KB_STRUCTURE_FURNITURE_MIN_REPEATS_DEFAULT),
+        )
+    )
+
+
+def _furniture_min_chars() -> int:
+    """Minimum normalized-key length for a non-page-counter line to be furniture-eligible.
+
+    Override: ``KB_STRUCTURE_FURNITURE_MIN_CHARS``.
+    """
+    return int(
+        os.getenv(
+            "KB_STRUCTURE_FURNITURE_MIN_CHARS",
+            str(_KB_STRUCTURE_FURNITURE_MIN_CHARS_DEFAULT),
         )
     )
 
@@ -215,44 +258,84 @@ def is_longform(body: str, *, filename: str = "source") -> bool:
 # ---------------------------------------------------------------------------
 
 
+def _furniture_key(line: str) -> str:
+    """Normalized repeat-detection key: whitespace runs (incl. \\xa0) collapsed
+    to one space, OCR confusables (l/I/1) folded, digit runs masked to ``#``.
+
+    Real furniture is never byte-identical across pages — timestamps and URLs
+    carry \\xa0 padding whose width varies per page, page counters ("2/63",
+    "3/63", …) increment, and OCR jitters l/I/1 within URLs — but all of it
+    collapses to ONE key here.
+    """
+    collapsed = _FURNITURE_WS_RE.sub(" ", line).strip()
+    folded = collapsed.translate(_FURNITURE_CONFUSABLES_TABLE)
+    return _FURNITURE_DIGITS_RE.sub("#", folded)
+
+
 def _strip_page_furniture(body: str) -> tuple[str, int]:
-    """Strip lines that repeat verbatim across the document (running headers/
-    footers/page numbers — ADR-0033's "34 identical timestamp/URL/page-counter
-    lines" case).
+    """Strip lines that repeat across the document (running headers/footers/
+    page numbers — ADR-0033's "34 repeated timestamp/URL/page-counter lines"
+    case).
 
     Deterministic repeat-detection, NOT an LLM call: a line (outside code
-    fences, non-blank, not a heading, not a horizontal rule) that recurs
-    at least ``KB_STRUCTURE_FURNITURE_MIN_REPEATS`` times identically is
-    treated as furniture and every occurrence is dropped. Headings and
-    horizontal rules are excluded from candidacy so a legitimately repeated
-    structural marker (e.g. ``---``) is never mistaken for furniture.
+    fences, non-blank, not a heading, not a horizontal rule) whose NORMALIZED
+    key (see ``_furniture_key``: whitespace incl. \\xa0 collapsed, digit runs
+    masked) recurs at least ``KB_STRUCTURE_FURNITURE_MIN_REPEATS`` times is
+    treated as furniture and every occurrence is dropped. Guards against
+    false positives:
+
+    - Headings and horizontal rules are excluded from candidacy, so a
+      legitimately repeated structural marker (e.g. ``---``) is never
+      mistaken for furniture.
+    - A normalized key shorter than ``KB_STRUCTURE_FURNITURE_MIN_CHARS`` is
+      never furniture (standalone CJK chapter numerals — 「一」,「二」 — are
+      body structure), EXCEPT the pure page-counter shape (``2/63`` =>
+      masked ``#/#``), which is furniture at any length.
+
+    One recovery rule: a key repeating >= ``_FURNITURE_PREFIX_MIN_REPEATS``
+    times that is a PREFIX of a confirmed furniture key is furniture too —
+    OCR occasionally drops a furniture line's trailing token, leaving a
+    truncated variant below the main threshold.
 
     Returns ``(stripped_body, lines_removed)``.
     """
     raw_lines = body.splitlines(keepends=False)
+    min_chars = _furniture_min_chars()
 
     in_fence = False
-    candidacy: list[bool] = []
+    keys: list[str | None] = []  # None => not a furniture candidate
     for text in raw_lines:
         if text.startswith("```"):
             in_fence = not in_fence
-            candidacy.append(False)
+            keys.append(None)
             continue
-        key = text.strip()
-        candidacy.append(
-            not in_fence and bool(key) and not _HEADING_RE.match(text) and not _HR_RE.match(key)
-        )
+        if in_fence or _HEADING_RE.match(text) or _HR_RE.match(text.strip()):
+            keys.append(None)
+            continue
+        key = _furniture_key(text)
+        if not key:
+            keys.append(None)
+            continue
+        if len(key) < min_chars and not _FURNITURE_PAGE_COUNTER_RE.match(key):
+            keys.append(None)
+            continue
+        keys.append(key)
 
-    counts: Counter[str] = Counter(
-        text.strip() for text, candidate in zip(raw_lines, candidacy, strict=True) if candidate
-    )
+    counts: Counter[str] = Counter(key for key in keys if key is not None)
     threshold = _furniture_min_repeats()
     furniture_keys = {key for key, count in counts.items() if count >= threshold}
+    furniture_keys |= {
+        key
+        for key, count in counts.items()
+        if key not in furniture_keys
+        and count >= _FURNITURE_PREFIX_MIN_REPEATS
+        and any(full_key.startswith(key) for full_key in furniture_keys)
+    }
 
     kept: list[str] = []
     removed = 0
-    for text, candidate in zip(raw_lines, candidacy, strict=True):
-        if candidate and text.strip() in furniture_keys:
+    for text, key in zip(raw_lines, keys, strict=True):
+        if key is not None and key in furniture_keys:
             removed += 1
             continue
         kept.append(text)
@@ -378,26 +461,89 @@ def _emit_chapter(title: str, chunk: str, cap: int) -> str:
     return "".join(rendered)
 
 
-def _materialize_headings(text: str, chapters: list[_ChapterProposal], *, filename: str) -> str:
+# Anchor matching happens in a whitespace-free, punctuation-folded space:
+# scanned CJK text renders with \xa0 padding and arbitrary line wrapping, so
+# the LLM's "verbatim" anchor essentially never matches byte-for-byte. Common
+# CJK punctuation is folded to its half-width form on BOTH sides — the model
+# routinely swaps 全形/半形 (e.g. ， vs ,) when quoting scanned text.
+_ANCHOR_FOLD_TABLE = str.maketrans(
+    {
+        "，": ",",
+        "。": ".",
+        "：": ":",
+        "；": ";",
+        "！": "!",
+        "？": "?",
+        "（": "(",
+        "）": ")",
+    }
+)
+
+
+def _normalize_anchor(anchor: str) -> str:
+    """Fold ``anchor`` into the normalized search space: drop ALL whitespace
+    (``str.isspace`` — covers \\xa0 and newlines), fold CJK punctuation widths."""
+    return "".join(ch for ch in anchor if not ch.isspace()).translate(_ANCHOR_FOLD_TABLE)
+
+
+def _normalized_text_with_offsets(text: str) -> tuple[str, list[int]]:
+    """Return ``text`` in the normalized search space plus an offset map.
+
+    ``offsets[i]`` is the ORIGINAL character index of normalized character
+    ``i``, so a match position in the normalized space maps straight back to
+    the original document. The fold table is 1:1 per character, so the map
+    stays aligned through ``translate``.
+    """
+    chars: list[str] = []
+    offsets: list[int] = []
+    for i, ch in enumerate(text):
+        if ch.isspace():
+            continue
+        chars.append(ch)
+        offsets.append(i)
+    return "".join(chars).translate(_ANCHOR_FOLD_TABLE), offsets
+
+
+def _materialize_headings(
+    text: str, chapters: list[_ChapterProposal], *, filename: str
+) -> tuple[str, int]:
     """Insert literal ATX headings at the proposed chapter boundaries.
 
-    Locates each ``boundary_anchor`` by exact substring search, anchors the
-    heading to the START of that anchor's line, and requires boundaries to
-    be strictly increasing in document order. Raises ``ValueError`` (caught
-    by ``enrich_structure``'s fail-soft wrapper) if an anchor cannot be
-    found or boundaries are not monotonic — a malformed LLM proposal must
-    never silently corrupt the document.
+    Locates each ``boundary_anchor`` by substring search in the normalized
+    space (whitespace incl. \\xa0 removed, CJK punctuation width folded — see
+    ``_normalize_anchor``), maps the hit back to the original offset, and
+    anchors the heading to the START of that anchor's line. A chapter whose
+    anchor cannot be found is SKIPPED, not fatal; materialization proceeds
+    when at least 2 usable boundaries remain, otherwise raises ``ValueError``
+    (caught by ``enrich_structure``'s fail-soft wrapper) with the failure
+    counts. Boundaries in the usable subset must still be strictly
+    increasing in document order — a malformed LLM proposal must never
+    silently corrupt the document.
 
     Each chapter span is rendered via ``_emit_chapter``, which applies the
     mechanical per-section token-cap fallback.
+
+    Returns ``(enriched_text, anchors_skipped)``.
     """
+    norm_text, offsets = _normalized_text_with_offsets(text)
+
     positions: list[tuple[int, str]] = []
+    skipped = 0
     for chapter in chapters:
-        idx = text.find(chapter.boundary_anchor)
+        norm_anchor = _normalize_anchor(chapter.boundary_anchor)
+        idx = norm_text.find(norm_anchor) if norm_anchor else -1
         if idx == -1:
-            raise ValueError(f"boundary anchor not found in text: {chapter.boundary_anchor!r}")
-        line_start = text.rfind("\n", 0, idx) + 1
+            skipped += 1
+            continue
+        original_idx = offsets[idx]
+        line_start = text.rfind("\n", 0, original_idx) + 1
         positions.append((line_start, chapter.title))
+
+    if len(positions) < 2:
+        raise ValueError(
+            f"{skipped}/{len(chapters)} boundary anchors not found; "
+            f"{len(positions)} usable boundaries (need >= 2 to materialize)"
+        )
 
     positions.sort(key=lambda p: p[0])
     for i in range(1, len(positions)):
@@ -409,7 +555,7 @@ def _materialize_headings(text: str, chapters: list[_ChapterProposal], *, filena
     for i, (start, title) in enumerate(positions):
         end = positions[i + 1][0] if i + 1 < len(positions) else len(text)
         pieces.append(_emit_chapter(title, text[start:end], cap))
-    return "".join(pieces)
+    return "".join(pieces), skipped
 
 
 # ---------------------------------------------------------------------------
@@ -428,10 +574,11 @@ def enrich_structure(body: str, *, filename: str = "source") -> EnrichmentResult
     When longform, deterministically strips page furniture, calls the
     enrichment LLM for a chapter outline, and materializes the proposed
     headings (with mechanical re-split fallback for oversized chapters).
-    Any failure along that path (LLM error, malformed proposal, unfindable
-    boundary anchor) fails SOFT: returns the ORIGINAL, un-enriched ``body``
-    with ``enriched=False`` and a truncated ``reason`` — import/transcribe
-    still succeeds with the un-enriched transcript (ADR-0033).
+    Any failure along that path (LLM error, malformed proposal, fewer than
+    2 findable boundary anchors) fails SOFT: returns the ORIGINAL,
+    un-enriched ``body`` with ``enriched=False`` and a truncated ``reason``
+    — import/transcribe still succeeds with the un-enriched transcript
+    (ADR-0033).
     """
     if not is_longform(body, filename=filename):
         return EnrichmentResult(body=body, enriched=False, reason=None)
@@ -439,11 +586,13 @@ def enrich_structure(body: str, *, filename: str = "source") -> EnrichmentResult
     try:
         stripped, furniture_removed = _strip_page_furniture(body)
         chapters = _propose_chapters(stripped)
-        enriched_body = _materialize_headings(stripped, chapters, filename=filename)
+        enriched_body, anchors_skipped = _materialize_headings(
+            stripped, chapters, filename=filename
+        )
     except Exception as exc:
         # Fail-soft boundary (ADR-0033): any failure here — LLM error, malformed
-        # proposal, unfindable anchor — degrades to the un-enriched transcript
-        # rather than aborting the whole Import/Transcribe call.
+        # proposal, too few findable anchors — degrades to the un-enriched
+        # transcript rather than aborting the whole Import/Transcribe call.
         reason = str(exc)[:200]
         log_event(
             "structure_enrichment_failed",
@@ -451,8 +600,13 @@ def enrich_structure(body: str, *, filename: str = "source") -> EnrichmentResult
         )
         return EnrichmentResult(body=body, enriched=False, reason=reason)
 
-    log_event(
-        "structure_enrichment_applied",
-        f"source={filename} chapters={len(chapters)} furniture_lines_removed={furniture_removed}",
+    # Summary format is registered in project-docs/log-kinds.md; the
+    # anchors_skipped field is appended only in the degraded-but-recovered
+    # case (some anchors unfindable, >= 2 usable boundaries remained).
+    summary = (
+        f"source={filename} chapters={len(chapters)} furniture_lines_removed={furniture_removed}"
     )
+    if anchors_skipped:
+        summary += f" anchors_skipped={anchors_skipped}"
+    log_event("structure_enrichment_applied", summary)
     return EnrichmentResult(body=enriched_body, enriched=True, reason=None)

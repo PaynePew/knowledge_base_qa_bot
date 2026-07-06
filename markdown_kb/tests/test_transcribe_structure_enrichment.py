@@ -26,6 +26,10 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures" / "raw_import"
 
 FILLER = "Lorem ipsum filler text about nothing in particular. "
 
+# Word-unique prefixes: real prose paragraphs never repeat modulo digits, so
+# fixtures must not either (the furniture detector masks digit runs).
+WORDS = ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel"]
+
 
 def test_transcribe_system_prompt_has_page_furniture_rule():
     import app.transcriber as transcriber_module
@@ -67,7 +71,7 @@ def test_force_transcribe_wires_structure_enrichment(transcribe_env, monkeypatch
     import app.structure_enrichment as se
     import app.transcriber as transcriber_module
 
-    long_body = "\n\n".join(f"Paragraph {i} opens here. " + (FILLER * 6) for i in range(8))
+    long_body = "\n\n".join(f"Paragraph {WORDS[i]} opens here. " + (FILLER * 6) for i in range(8))
     assert len(long_body.strip()) >= 2000
 
     fake_transcribe_llm = SimpleNamespace(
@@ -75,7 +79,10 @@ def test_force_transcribe_wires_structure_enrichment(transcribe_env, monkeypatch
     )
     monkeypatch.setattr(transcriber_module, "get_transcribe_llm", lambda: fake_transcribe_llm)
 
-    chapters = [SimpleNamespace(title="Part One", boundary_anchor="Paragraph 0 opens here.")]
+    chapters = [
+        SimpleNamespace(title="Part One", boundary_anchor="Paragraph alpha opens here."),
+        SimpleNamespace(title="Part Two", boundary_anchor="Paragraph echo opens here."),
+    ]
     fake_enrichment_llm = _fake_llm_with_chapters(chapters)
     monkeypatch.setattr(se, "get_enrichment_llm", lambda: fake_enrichment_llm)
 
@@ -88,4 +95,5 @@ def test_force_transcribe_wires_structure_enrichment(transcribe_env, monkeypatch
     content = (transcribe_env["docs_dir"] / "sample_english.md").read_text(encoding="utf-8")
     assert "structure: enriched" in content
     assert "## Part One" in content
+    assert "## Part Two" in content
     assert result.origin == "transcribed"
