@@ -94,11 +94,14 @@ def test_modal_exit_owns_trigger_reenable():
 
 
 def test_poll_retries_transient_failures():
-    """pollTranscribeJob retries a bounded number of consecutive failures on
-    the same job_id before surfacing onError."""
-    body = _function_body("pollTranscribeJob")
+    """The shared job poller retries a bounded number of consecutive failures
+    on the same job_id before surfacing onError. (The retry discipline moved
+    from pollTranscribeJob into the generic pollJobStatus when the Import job
+    joined the same submit/poll pattern — issue #497; the M2 guarantee is
+    unchanged, transcribe polls THROUGH this function.)"""
+    body = _function_body("pollJobStatus")
     assert "consecutiveFailures" in body, (
-        "pollTranscribeJob must count consecutive poll failures (issue #476 M2)"
+        "pollJobStatus must count consecutive poll failures (issue #476 M2)"
     )
     catch_match = re.search(r"\.catch\(function\(err\) \{(.*?)\n      \}\);", body, re.DOTALL)
     assert catch_match is not None
@@ -182,9 +185,11 @@ def test_failure_hides_progress_bar():
 
 
 def test_unknown_status_has_bounded_backstop():
-    body = _function_body("pollTranscribeJob")
+    # Lives in the generic pollJobStatus since issue #497 (see the M2 test's
+    # note); transcribe and import both poll through it.
+    body = _function_body("pollJobStatus")
     assert "unknownStatusTicks" in body, (
-        "pollTranscribeJob must bound polling on an unrecognised status (issue #476 L5)"
+        "pollJobStatus must bound polling on an unrecognised status (issue #476 L5)"
     )
     assert '"submitted"' in body and '"working"' in body, (
         "the non-terminal statuses the poller recognises are the server's "

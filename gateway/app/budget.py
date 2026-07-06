@@ -24,6 +24,7 @@ Per-endpoint estimate table (USD per request, deliberately generous):
     | /wiki/lint       | 0.15     | C5 contradiction audit fans out to ~30 LLM pairs|
     | /wiki/ingest     | 0.10     | classify-on-outline + per-section LLM passes    |
     | /wiki/import     | 0.10     | mechanical conversion flat floor (Transcribe's per-page cost is charged on top, see below) |
+    | /wiki/import/jobs | 0.10    | same Import surface as /wiki/import, just async (issue #497) — same flat floor, same per-page hook on top |
     | /wiki/transcribe | 0.00     | true cost is charged per-page (see below), not a flat estimate |
     | /wiki/transcribe/batch | 0.00 | same force-transcribe surface as /wiki/transcribe, just async (issue #447); true cost is the SAME per-page hook, not a second flat estimate |
     | /wiki/index      | 0.05     | Wiki re-index touches the corpus                |
@@ -105,6 +106,7 @@ _COST_ESTIMATES: dict[str, float] = {
     "/wiki/lint": 0.15,
     "/wiki/ingest": 0.10,
     "/wiki/import": 0.10,
+    "/wiki/import/jobs": 0.10,
     "/wiki/transcribe": 0.00,
     "/wiki/transcribe/batch": 0.00,
     "/wiki/index": 0.05,

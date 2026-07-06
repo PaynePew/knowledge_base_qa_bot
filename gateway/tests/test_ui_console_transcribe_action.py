@@ -182,8 +182,10 @@ def test_progress_bar_driven_by_real_server_reported_counts():
 
 
 def test_poll_uses_recursive_settimeout_not_setinterval():
+    # The tick loop lives in the generic pollJobStatus since issue #497;
+    # pollTranscribeJob delegates to it.
     text = _console_text()
-    body = _function_body(text, "pollTranscribeJob")
+    body = _function_body(text, "pollJobStatus")
     assert "setTimeout(tick" in body
     assert "setInterval(" not in body
 

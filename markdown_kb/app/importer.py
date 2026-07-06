@@ -103,6 +103,7 @@ import io
 import re
 import time
 import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path, PureWindowsPath
 from typing import Literal
@@ -259,7 +260,12 @@ class ImportPathError(Exception):
 # ---------------------------------------------------------------------------
 
 
-def import_sources(source_filter: str | None) -> ImportBatchResult:
+def import_sources(
+    source_filter: str | None,
+    *,
+    on_source_done: Callable[[int, int], None] | None = None,
+    on_transcribe_page: Callable[[str, int, int], None] | None = None,
+) -> ImportBatchResult:
     """Convert raw sources to Markdown docs.
 
     ``source_filter=None``: batch mode — globs ``raw/**/*.{html,txt}`` recursively.
@@ -267,6 +273,21 @@ def import_sources(source_filter: str | None) -> ImportBatchResult:
 
     NFC normalization is applied to ``source_filter`` (single-mode) and to
     each glob basename (batch mode) on entry.
+
+    Progress callbacks (issue #497 — the async ``import_jobs`` runner renders
+    a real, server-owned progress bar from these; both default to ``None``
+    and cost nothing when absent):
+
+    - ``on_source_done(done, total)`` fires after EACH source finishes
+      (success or failure), with the 1-based count of processed sources and
+      the batch's total.
+    - ``on_transcribe_page(source_basename, done_for_source, total_for_source)``
+      fires per transcribed page when a text-less PDF auto-routes to
+      Transcribe (ADR-0032) — the same per-page callback contract as
+      ``transcriber.transcribe_pdf_bytes_concurrent``'s ``on_page_done``,
+      prefixed with the source's basename so a batch-level aggregator can
+      track per-file totals. Called from page-worker THREADS: implementations
+      must be thread-safe.
 
     Returns an ``ImportBatchResult`` summarising all outcomes.
     Wiki Log events are emitted: ``import_batch_started``, ``import_source``
@@ -297,10 +318,14 @@ def import_sources(source_filter: str | None) -> ImportBatchResult:
     # Track docs basenames seen in this batch for FilenameCollision detection.
     seen_docs_basenames: dict[str, str] = {}
 
-    for raw_path in raw_paths:
+    for done, raw_path in enumerate(raw_paths, start=1):
         # NFC-normalize the stem used for output filename (batch glob basenames).
         stem = unicodedata.normalize("NFC", raw_path.stem)
-        _process_one_source(raw_path, stem, result, seen_docs_basenames)
+        _process_one_source(
+            raw_path, stem, result, seen_docs_basenames, on_transcribe_page=on_transcribe_page
+        )
+        if on_source_done is not None:
+            on_source_done(done, len(raw_paths))
 
     _emit_batch_completed(result, batch_start)
     return result
@@ -575,6 +600,8 @@ def _process_one_source(
     stem: str,
     result: ImportBatchResult,
     seen_docs_basenames: dict[str, str],
+    *,
+    on_transcribe_page: Callable[[str, int, int], None] | None = None,
 ) -> None:
     """Convert one raw source and write its Markdown output to docs/.
 
@@ -814,8 +841,16 @@ def _process_one_source(
                     # Process-wide bounded concurrent pool (issue #459) — this
                     # auto-route is exactly the path that measured 30+ minutes
                     # (and an OOM) on a 63-page scanned PDF sequentially.
+                    page_cb = None
+                    if on_transcribe_page is not None:
+                        # Bind this source's basename so the batch-level
+                        # aggregator (import_jobs) can track per-file totals
+                        # (issue #497).
+                        def page_cb(done: int, total: int, _name: str = basename) -> None:
+                            on_transcribe_page(_name, done, total)
+
                     md_body, transcribe_model = transcriber_module.transcribe_pdf_bytes_concurrent(
-                        raw_bytes
+                        raw_bytes, on_page_done=page_cb
                     )
                 except transcriber_module.TranscribePageLimitExceeded as exc:
                     failure = ImportFailure(

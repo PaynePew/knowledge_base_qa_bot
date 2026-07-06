@@ -13,11 +13,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
+from . import import_jobs, transcribe_jobs
 from . import indexer as _indexer
 from . import pages as pages_module
 from . import qa as qa_module
 from . import reconcile as reconcile_module
-from . import transcribe_jobs
 from .errors import LLMError
 from .importer import ImportBatchResult
 from .importer import import_sources as run_import
@@ -41,6 +41,8 @@ from .schemas import (
     GroundingClaim,
     GroundingInfo,
     ImportFailureSchema,
+    ImportJobStatusResponse,
+    ImportJobSubmitResponse,
     ImportRequest,
     ImportResponse,
     ImportSourceResultSchema,
@@ -444,24 +446,13 @@ def ingest(req: IngestRequest | None = None) -> IngestResponse:
     )
 
 
-@router.post("/import", response_model=ImportResponse)
-def import_raw(req: ImportRequest | None = None) -> ImportResponse:
-    """Convert raw sources to Markdown docs.
+def _to_import_response(batch: ImportBatchResult) -> ImportResponse:
+    """Map an ``ImportBatchResult`` onto the API-boundary ``ImportResponse``.
 
-    - No body (or body with ``source=null``): batch mode — globs
-      ``raw/**/*.{html,txt}`` recursively and writes each to ``docs/``.
-    - Body with ``source="<filename>"``: single-source mode — converts one
-      specified file.
-
-    Shallow wrapper around ``importer.import_sources(...)`` (CODING_STANDARD
-    §2.3 — all domain logic lives in ``importer.py``).
-
-    Always returns HTTP 200 with an ``ImportResponse``.  Per-source failures
-    are recorded in ``failed_sources`` without aborting the batch.
+    Shared by the synchronous ``POST /import`` and the async
+    ``GET /import/jobs/{job_id}`` (issue #497) so both surfaces return the
+    byte-identical shape for the same run.
     """
-    source_filter = req.source if req is not None else None
-    batch: ImportBatchResult = run_import(source_filter)
-
     return ImportResponse(
         imported_sources=[
             ImportSourceResultSchema(
@@ -491,6 +482,92 @@ def import_raw(req: ImportRequest | None = None) -> ImportResponse:
             )
             for f in batch.failed_sources
         ],
+    )
+
+
+@router.post("/import", response_model=ImportResponse)
+def import_raw(req: ImportRequest | None = None) -> ImportResponse:
+    """Convert raw sources to Markdown docs.
+
+    - No body (or body with ``source=null``): batch mode — globs
+      ``raw/**/*.{html,txt}`` recursively and writes each to ``docs/``.
+    - Body with ``source="<filename>"``: single-source mode — converts one
+      specified file.
+
+    Shallow wrapper around ``importer.import_sources(...)`` (CODING_STANDARD
+    §2.3 — all domain logic lives in ``importer.py``).
+
+    Always returns HTTP 200 with an ``ImportResponse``.  Per-source failures
+    are recorded in ``failed_sources`` without aborting the batch.
+    """
+    source_filter = req.source if req is not None else None
+    batch: ImportBatchResult = run_import(source_filter)
+
+    return _to_import_response(batch)
+
+
+# ---------------------------------------------------------------------------
+# /import/jobs — async submit/poll for a whole Import run (issue #497)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/import/jobs", response_model=ImportJobSubmitResponse)
+async def import_jobs_submit(req: ImportRequest | None = None) -> ImportJobSubmitResponse:
+    """Submit a background Import run (same request contract as ``POST /import``).
+
+    issue #497: the synchronous route auto-transcribes a text-less PDF
+    INSIDE the request (ADR-0032) — one vision call per page, minutes for a
+    real scan, long past the edge proxy's window; the proxy then 502s with
+    an empty body while the server keeps working. This returns a job id
+    IMMEDIATELY; the background task keeps running independent of the client
+    connection. Poll ``GET /import/jobs/{job_id}`` for progress
+    (files + transcribed pages) and, eventually, the same ``ImportResponse``
+    the synchronous route would have returned.
+
+    Shallow wrapper around ``import_jobs.submit`` (CODING_STANDARD §2.3 —
+    all domain logic lives in ``import_jobs.py`` / ``importer.py``).
+
+    Raises:
+        HTTP 503: the concurrent-job cap (``KB_IMPORT_MAX_CONCURRENT_JOBS``,
+            mirrors issue #474 sub-issue A) is already reached — a clear
+            rejection instead of a silently over-subscribed background queue.
+    """
+    try:
+        job = import_jobs.submit(req.source if req is not None else None)
+    except import_jobs.ImportJobCapacityExceeded as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return ImportJobSubmitResponse(job_id=job.job_id)
+
+
+@router.get("/import/jobs/{job_id}", response_model=ImportJobStatusResponse)
+async def get_import_job(job_id: str) -> ImportJobStatusResponse:
+    """Poll a background Import run's status, progress, and (once done) result.
+
+    ``pages_done`` / ``pages_total`` are the real, server-owned Transcribe
+    page counts (the Console progress bar's data source — §12.8 bans
+    client-guessed percentages, not real counts); ``files_done`` /
+    ``files_total`` track whole-run file progress.
+
+    Shallow wrapper around ``import_jobs.status`` (CODING_STANDARD §2.3).
+
+    Raises:
+        HTTP 404: no job with this id — never submitted, the process
+            restarted (the registry is in-memory only), or the job was
+            evicted after ``KB_IMPORT_JOB_TTL_SECONDS`` past completion.
+    """
+    job = import_jobs.status(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"import job not found: {job_id}")
+
+    return ImportJobStatusResponse(
+        job_id=job.job_id,
+        status=job.status,
+        files_done=job.files_done,
+        files_total=job.files_total,
+        pages_done=job.pages_done,
+        pages_total=job.pages_total,
+        result=_to_import_response(job.result) if job.result is not None else None,
+        error=job.error,
     )
 
 
