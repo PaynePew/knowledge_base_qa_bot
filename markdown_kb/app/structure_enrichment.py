@@ -8,7 +8,8 @@ assembled but BEFORE it is written to ``docs/`` (``importer._process_one_source`
 and ``transcriber._force_transcribe`` are the two call sites — see their
 module docstrings). Gated on the structural **longform predicate**
 (``is_longform``): a Source whose mechanical structure is degenerate — zero
-or one heading, a dominant preamble share, or any single Section over
+or one heading, headings too sparse for its size (issue #521), a dominant
+preamble share, or any single Section over
 ``KB_INGEST_MAX_SECTION_TOKENS`` — gets ONE LLM call that proposes chapter
 boundaries + titles, materialized as literal ATX headings directly into the
 body text (never as side metadata — see ADR-0033 § "Materializing into docs/
@@ -65,6 +66,15 @@ from .logger import log_event
 
 _KB_LONGFORM_MAX_HEADINGS_DEFAULT = 1  # zero or one heading => longform
 _KB_LONGFORM_PREAMBLE_SHARE_DEFAULT = 0.5  # preamble share strictly above this => longform
+
+# Heading-density leg (issue #521): ADR-0033 frames longform as structure
+# "degenerate RELATIVE TO ITS SIZE", and a couple of stray title headings that
+# survive transcription must not defeat the predicate — the real prod
+# transcript carried the SAME ``#`` title twice (25,439 chars / 2 headings =
+# 12,720 chars per heading), slipping past all three original legs while
+# still collapsing a 63-page book into two thin Sections. Well-headed
+# handbooks/FAQs run 600-2,000 chars per heading, safely below this default.
+_KB_LONGFORM_CHARS_PER_HEADING_DEFAULT = 8000
 
 # ADR-0033 frames longform as structure "degenerate RELATIVE TO ITS SIZE" — a
 # handful-of-characters Source with zero or one heading has nothing meaningful
@@ -129,6 +139,16 @@ def _preamble_share_threshold() -> float:
     Override: ``KB_LONGFORM_PREAMBLE_SHARE``.
     """
     return float(os.getenv("KB_LONGFORM_PREAMBLE_SHARE", str(_KB_LONGFORM_PREAMBLE_SHARE_DEFAULT)))
+
+
+def _chars_per_heading_threshold() -> int:
+    """Stripped-body chars-per-heading ratio strictly above which a Source is longform.
+
+    Override: ``KB_LONGFORM_CHARS_PER_HEADING``.
+    """
+    return int(
+        os.getenv("KB_LONGFORM_CHARS_PER_HEADING", str(_KB_LONGFORM_CHARS_PER_HEADING_DEFAULT))
+    )
 
 
 def _min_chars_threshold() -> int:
@@ -230,10 +250,17 @@ def is_longform(body: str, *, filename: str = "source") -> bool:
 
     1. Zero or one heading (heading count <= ``KB_LONGFORM_MAX_HEADINGS``,
        default 1).
-    2. Dominant preamble: the non-whitespace text before the first heading
+    2. Sparse headings for the body's size (issue #521): stripped characters
+       per heading strictly above ``KB_LONGFORM_CHARS_PER_HEADING`` (default
+       8000). ADR-0033's "degenerate relative to its size" framing applies
+       just as much when a couple of stray title headings survive
+       transcription — the real prod transcript carried the same ``#`` title
+       twice, defeating legs 1 and 3 while still collapsing a 63-page book
+       into two thin Sections.
+    3. Dominant preamble: the non-whitespace text before the first heading
        is more than ``KB_LONGFORM_PREAMBLE_SHARE`` (default 0.5) of the
        whole stripped body.
-    3. Any Section (per ``indexer.parse_markdown_body``'s real Section
+    4. Any Section (per ``indexer.parse_markdown_body``'s real Section
        boundaries — the body-bearing rule, not a naive heading split)
        estimates over ``KB_INGEST_MAX_SECTION_TOKENS``.
 
@@ -247,6 +274,12 @@ def is_longform(body: str, *, filename: str = "source") -> bool:
 
     headings = _heading_positions(body)
     if len(headings) <= _max_headings_threshold():
+        return True
+
+    # Heading-density leg (issue #521). ``headings`` is non-empty here — a
+    # zero-heading body already returned True above — so no division by zero;
+    # the KB_LONGFORM_MIN_CHARS floor above still shields tiny Sources.
+    if (len(total_stripped) / len(headings)) > _chars_per_heading_threshold():
         return True
 
     first_pos = headings[0][0]
