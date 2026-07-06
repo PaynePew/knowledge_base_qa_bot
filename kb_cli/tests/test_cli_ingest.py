@@ -200,6 +200,65 @@ def test_kb_ingest_batch_prints_progress_for_each_source(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Issue #511 (ADR-0033 observability decision, ADR-0017 CLI parity):
+# sections_count / uncarried_chars / enriched_chars surfaced on stdout
+# ---------------------------------------------------------------------------
+
+
+def test_kb_ingest_prints_sections_count(monkeypatch):
+    """The per-source progress line reports the Section count."""
+    from markdown_kb.app.ingest import IngestBatchResult
+    from markdown_kb.app.schemas import IngestSourceResult
+
+    from kb_cli.main import app
+
+    batch = IngestBatchResult()
+    batch.results.append(
+        IngestSourceResult(
+            source="refund_policy.md",
+            pages_written=["wiki/concepts/a.md", "wiki/concepts/b.md", "wiki/concepts/c.md"],
+            pages_created=["wiki/concepts/a.md", "wiki/concepts/b.md", "wiki/concepts/c.md"],
+            status="created",
+            sections_count=3,
+        )
+    )
+    _patch_ingest(monkeypatch, return_value=batch)
+
+    result = runner.invoke(app, ["ingest", "refund_policy.md"])
+
+    assert "3 section" in result.output, f"Expected Section count in output:\n{result.output}"
+
+
+def test_kb_ingest_reports_uncarried_and_enriched_chars(monkeypatch):
+    """A non-zero uncarried_chars / enriched_chars renders an extra note line."""
+    from markdown_kb.app.ingest import IngestBatchResult
+    from markdown_kb.app.schemas import IngestSourceResult
+
+    from kb_cli.main import app
+
+    batch = IngestBatchResult()
+    batch.results.append(
+        IngestSourceResult(
+            source="scanned_book.md",
+            pages_written=["wiki/concepts/a.md"],
+            pages_created=["wiki/concepts/a.md"],
+            status="created",
+            sections_count=1,
+            uncarried_chars=1200,
+            enriched_chars=340,
+        )
+    )
+    _patch_ingest(monkeypatch, return_value=batch)
+
+    result = runner.invoke(app, ["ingest", "scanned_book.md"])
+
+    assert "Warning" in result.output and "1200" in result.output, (
+        f"Expected an uncarried_chars warning in output:\n{result.output}"
+    )
+    assert "340" in result.output, f"Expected enriched_chars note in output:\n{result.output}"
+
+
+# ---------------------------------------------------------------------------
 # AC-3: grounding-failed / Cannot-Confirm surfaced, not silently skipped
 # ---------------------------------------------------------------------------
 

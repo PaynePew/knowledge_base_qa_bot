@@ -112,6 +112,9 @@ async def _run(job: Job, source: str) -> None:
             "grounding_failed_pages": batch.pages_with_failed_grounding,
             "failed": False,
             "status": src_result.status,
+            "sections_count": src_result.sections_count,
+            "uncarried_chars": src_result.uncarried_chars,
+            "enriched_chars": src_result.enriched_chars,
         }
     else:
         # Skipped (hash-match no-op)
@@ -123,6 +126,9 @@ async def _run(job: Job, source: str) -> None:
             "grounding_failed_pages": [],
             "failed": False,
             "status": skipped.status if skipped else "skipped",
+            "sections_count": skipped.sections_count if skipped else 0,
+            "uncarried_chars": skipped.uncarried_chars if skipped else 0,
+            "enriched_chars": skipped.enriched_chars if skipped else 0,
         }
 
     job.result = result
