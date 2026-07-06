@@ -5,8 +5,10 @@ Multi-Format Import coordinator — raw/ → docs/ format-conversion pipeline.
 Provides ``import_sources(source_filter)`` which converts raw ``.html``,
 ``.txt``, ``.md``, and ``.pdf`` files into normalized Markdown files in
 ``docs/`` with provenance frontmatter.  This is a mechanical conversion (no
-LLM calls, no OCR, no network) — the import path is completely disjoint from
-``/ingest``.
+OCR, no network) — the import path is completely disjoint from ``/ingest``.
+The lone exception is Structure Enrichment (step 5b below, ADR-0033 decision
+2, issue #512): a single, gated LLM call that only fires when a Source's
+mechanical structure is structurally degenerate (longform).
 
 Pipeline per source file:
     1. Resolve source path(s): batch = glob ``raw/**/*.{html,txt,md,pdf}``;
@@ -33,9 +35,18 @@ Pipeline per source file:
        paths are not normalized, since only PDF extraction manufactures
        these codepoints. Transcribe's output is Kangxi-normalized inside
        ``transcriber.py`` itself (defense in depth).
+    5b. Structure Enrichment (``structure_enrichment.enrich_structure``,
+       ADR-0033 decision 2, issue #512): gated on the longform predicate
+       (``is_longform`` — zero/one heading, dominant preamble, or an
+       oversized Section; never format/size/page-count); a well-headed
+       Source bypasses byte-identically, no LLM call. When gated in, one
+       LLM call proposes chapter headings, materialized into ``md_body``
+       directly (plus deterministic page-furniture stripping in the same
+       pass). Fails soft on any error — the un-enriched body is used.
     6. Render output: YAML frontmatter (imported_from, original_format,
        imported_at, content_sha256) + converted body. A Transcribe success
-       additionally carries ``origin: transcribed`` + ``transcribe_model``.
+       additionally carries ``origin: transcribed`` + ``transcribe_model``;
+       an enriched Source carries ``structure: enriched``.
     7. Atomic write: tempfile in same dir + ``os.replace`` + cleanup on
        exception (CODING_STANDARD §2.6).
     8. Emit Wiki Log events: ``import_batch_started``, ``import_source``
@@ -118,6 +129,7 @@ from ._paths import _REPO_ROOT, DOCS_DIR
 from .atomic import write_text_atomic
 from .kangxi_normalize import normalize_kangxi_radicals
 from .logger import log_event
+from .structure_enrichment import enrich_structure
 
 # ---------------------------------------------------------------------------
 # Paths and constants
@@ -924,6 +936,16 @@ def _process_one_source(
             _emit_import_error(failure)
             return
 
+    # Structure Enrichment (ADR-0033 decision 2, issue #512): runs on the
+    # assembled body BEFORE frontmatter is rendered, for every format —
+    # the longform predicate is structural, never keyed on format/size/page
+    # count, so a well-headed handbook bypasses byte-identically regardless
+    # of how it was converted. Fails soft: on any enrichment error md_body is
+    # returned unchanged and `structure_enriched` stays False.
+    enrichment = enrich_structure(md_body, filename=basename)
+    md_body = enrichment.body
+    structure_enriched = enrichment.enriched
+
     # Build full output with frontmatter (incl. content_sha256 — slice 7-3).
     # ADR-0032: a probe-routed Transcribe success carries origin/transcribe_model
     # provenance in addition to the standard envelope; every other format
@@ -935,6 +957,7 @@ def _process_one_source(
         content_sha256,
         origin="transcribed" if transcribe_model is not None else None,
         transcribe_model=transcribe_model,
+        structure_enriched=structure_enriched,
     )
 
     # Atomic write — IOError for os.replace failure
@@ -1134,6 +1157,7 @@ def _render_output(
     *,
     origin: str | None = None,
     transcribe_model: str | None = None,
+    structure_enriched: bool = False,
 ) -> str:
     """Build the full docs/*.md content: YAML frontmatter + converted body.
 
@@ -1144,6 +1168,12 @@ def _render_output(
     provenance fields appended after the standard envelope when a Transcribe
     conversion produced ``md_body`` — ``None`` (the default) emits neither
     line, so every existing Import caller's output is byte-identical.
+
+    ``structure_enriched`` (ADR-0033 decision 2, issue #512) writes
+    ``structure: enriched`` when ``structure_enrichment.enrich_structure``
+    materialized LLM-proposed chapter headings into ``md_body`` — the
+    default ``False`` emits nothing extra, so every non-longform Source's
+    output stays byte-identical to before this issue.
     """
     # Compute relative raw path for the frontmatter (relative to REPO_ROOT)
     try:
@@ -1165,6 +1195,8 @@ def _render_output(
         frontmatter += f"origin: {origin}\n"
     if transcribe_model is not None:
         frontmatter += f"transcribe_model: {transcribe_model}\n"
+    if structure_enriched:
+        frontmatter += "structure: enriched\n"
     frontmatter += "---\n"
     return frontmatter + "\n" + md_body + "\n"
 
@@ -1198,10 +1230,17 @@ def render_output(
     *,
     origin: str | None = None,
     transcribe_model: str | None = None,
+    structure_enriched: bool = False,
 ) -> str:
     """Public alias for ``_render_output`` — see that function for the frontmatter contract."""
     return _render_output(
-        md_body, raw_path, fmt, content_sha256, origin=origin, transcribe_model=transcribe_model
+        md_body,
+        raw_path,
+        fmt,
+        content_sha256,
+        origin=origin,
+        transcribe_model=transcribe_model,
+        structure_enriched=structure_enriched,
     )
 
 

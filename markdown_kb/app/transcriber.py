@@ -127,6 +127,7 @@ from ._paths import _REPO_ROOT, DOCS_DIR
 from .atomic import write_bytes_atomic, write_text_atomic
 from .kangxi_normalize import normalize_kangxi_radicals
 from .logger import log_event
+from .structure_enrichment import enrich_structure
 
 # ---------------------------------------------------------------------------
 # Paths and constants
@@ -152,6 +153,10 @@ visibly on the page.
 visual heading level on the page.
 - Preserve the original language exactly — do not translate.
 - Preserve tables as Markdown tables when a table is visible.
+- Omit repeated page furniture: running headers, running footers, and page \
+numbers that are layout residue, not document content (ADR-0032 amendment, \
+issue #512 — faithful to CONTENT, not to layout residue). Do NOT omit a \
+heading, title, or any other text that is part of the page's actual content.
 - If the page is blank or contains no legible text, respond with an empty \
 string.
 - Output ONLY the transcribed Markdown for this page — no preamble, no \
@@ -991,6 +996,12 @@ def _force_transcribe(
     except TranscribeError as exc:
         raise TranscribePathError(str(exc)[:200], error_type="TranscribeError") from exc
 
+    # Structure Enrichment (ADR-0033 decision 2, issue #512): same gated pass
+    # as importer.py's auto-route — see that module's docstring step 5b.
+    # Fails soft: on any enrichment error md_body is used unchanged.
+    enrichment = enrich_structure(md_body, filename=basename)
+    md_body = enrichment.body
+
     output = importer_module.render_output(
         md_body,
         raw_path,
@@ -998,6 +1009,7 @@ def _force_transcribe(
         content_sha256,
         origin="transcribed",
         transcribe_model=model_name,
+        structure_enriched=enrichment.enriched,
     )
 
     try:
