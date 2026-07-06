@@ -137,6 +137,17 @@ Auto-routed failures (a text-less PDF that fails `TranscribePageLimitExceeded` /
 
 ---
 
+## Structure Enrichment (ADR-0033 decision 2, issue #512)
+
+Authorized by GitHub issue #512 and [ADR-0033](adr/0033-longform-structure-enrichment-hub-page.md). Emitted from `markdown_kb/app/structure_enrichment.py::enrich_structure`, called from BOTH `importer._process_one_source` (the mechanical + auto-routed-Transcribe path) and `transcriber._force_transcribe` (the forced `/transcribe` entry) — same two kinds regardless of which caller reached it. Only fires when the longform predicate (`is_longform`) gates enrichment in; a well-headed Source bypasses byte-identically with no log entry at all.
+
+| Kind | When fired | Summary template |
+|---|---|---|
+| `structure_enrichment_applied` | Enrichment succeeded: page furniture stripped and LLM-proposed chapter headings materialized into the body; `docs/` frontmatter gains `structure: enriched` | `source=<basename> chapters=N furniture_lines_removed=M` |
+| `structure_enrichment_failed` | Enrichment was gated in (longform) but failed — LLM error, malformed proposal, or an unfindable boundary anchor; the caller falls back to the un-enriched body (`structure: enriched` is NOT written) | `source=<basename> reason=<truncated≤200 repr>` |
+
+---
+
 ## `/upload` route (Phase 15 Operator Console)
 
 Authorized by GitHub issue #168 (Phase 15 PRD) + [ADR-0011](adr/0011-upload-separate-from-import.md). Slice S1 (#169) introduces all five kinds below. Upload is a system boundary: it stages dropped browser bytes onto the server (`.html`/`.txt` → `raw/`, `.md` → `docs/`) and never converts (Import stays unchanged). `filename` and `reason` fields are rendered via `repr()` so embedded quotes/spaces stay unambiguous in the grep-able log line.
