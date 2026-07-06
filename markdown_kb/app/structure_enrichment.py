@@ -440,7 +440,10 @@ def enrich_structure(body: str, *, filename: str = "source") -> EnrichmentResult
         stripped, furniture_removed = _strip_page_furniture(body)
         chapters = _propose_chapters(stripped)
         enriched_body = _materialize_headings(stripped, chapters, filename=filename)
-    except Exception as exc:  # noqa: BLE001 — fail-soft boundary, any failure degrades gracefully
+    except Exception as exc:
+        # Fail-soft boundary (ADR-0033): any failure here — LLM error, malformed
+        # proposal, unfindable anchor — degrades to the un-enriched transcript
+        # rather than aborting the whole Import/Transcribe call.
         reason = str(exc)[:200]
         log_event(
             "structure_enrichment_failed",
