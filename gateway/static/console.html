@@ -5867,7 +5867,10 @@ function renderCurationQueue(rootEl, lintData) {
         /* slug */ slug,
         /* subtitle */ propSummary + " — " + hint,
         /* discardBtn? */ true,
-        /* onDiscard */ function(cardEl) { doDiscard(slug, cardEl); }
+        /* onDiscard — issue #505: thread the card's own status element
+           through so doDiscard renders the outcome ("Discarded." / the 409
+           live-page refusal / HTTP errors) instead of silently skipping it. */
+        function(cardEl, statusMsgEl) { doDiscard(slug, cardEl, statusMsgEl, null); }
       ));
     });
     queueEl.append(c10Section);
@@ -6362,7 +6365,10 @@ function buildFlagCard(icon, slug, subtitle, showDiscard, onDiscard) {
       dBtn.disabled = true;
       statusMsgEl.textContent = chrome.draftDiscarding;
       statusMsgEl.className = "card-status-msg";
-      if (onDiscard) onDiscard(cardEl);
+      /* issue #505: hand the card's own status element to the callback —
+         without it doDiscard silently skips every outcome message and the
+         row stays stuck on "Discarding…" forever. */
+      if (onDiscard) onDiscard(cardEl, statusMsgEl);
     });
   }
 

@@ -177,8 +177,9 @@ def test_curation_queue_actions_are_unchanged():
     assert "buildDraftCard(f)" in fn, "C8 draft cards must still render in the Curation Queue"
     assert "buildRefileFlagCard(" in fn, "C9 Re-file action must still live in the Curation Queue"
     assert "buildFlagCard(" in fn, "C10 flag cards must still render in the Curation Queue"
-    assert "doDiscard(slug, cardEl)" in fn, (
-        "C10 Discard action must still live in the Curation Queue"
+    assert "doDiscard(slug, cardEl, statusMsgEl, null)" in fn, (
+        "C10 Discard action must still live in the Curation Queue (threading the "
+        "card's statusMsgEl since issue #505 so the outcome message renders)"
     )
 
 

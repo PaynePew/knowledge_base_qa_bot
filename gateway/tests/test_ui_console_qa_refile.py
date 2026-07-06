@@ -199,3 +199,18 @@ def test_flag_status_row_css_spans_grid_and_hides_when_empty():
     assert ".flag-status-row .card-status-msg:empty { display: none; }" in text, (
         "an empty status message must not reserve visible space (issue #496)"
     )
+
+
+def test_c10_discard_threads_status_element_into_do_discard():
+    """issue #505: the C10 wiring must pass the flag card's own statusMsgEl
+    through to doDiscard — dropping it silently skips every outcome message
+    ("Discarded." / the 409 live-page refusal / HTTP errors) and the row
+    stays stuck on "Discarding…" forever."""
+    text = _console_text()
+    assert "doDiscard(slug, cardEl, statusMsgEl, null)" in text, (
+        "C10's onDiscard must thread statusMsgEl into doDiscard (issue #505)"
+    )
+    body = _build_flag_card_body()
+    assert "onDiscard(cardEl, statusMsgEl)" in body, (
+        "buildFlagCard must hand its status element to the onDiscard callback (issue #505)"
+    )
