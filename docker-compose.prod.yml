@@ -36,6 +36,16 @@ services:
       # the admin-semaphore (KB_MAX_ADMIN) concurrency gate.
       KB_TRANSCRIBE_ENABLED: "true"
       KB_TRANSCRIBE_MAX_PAGES: "80"
+      # issue #503: the process-wide page pool (issue #459) defaults to 16
+      # concurrent in-flight pages; each holds its own PdfDocument + rendered
+      # bitmap + PNG + base64 payload (~10-30 MB transient), and 16 of those
+      # OOM-killed this 512 MB container ~20s into the verified 63-page scan
+      # (8/63 pages done -> edge 502/503 -> restart -> in-memory job lost).
+      # 3 keeps the transient burst inside the bulkhead's headroom while the
+      # network-bound vision calls still overlap (~minutes for 63 pages, not
+      # the pre-#459 30+ min sequential run). Read at import time - a
+      # restart (deploy/reset) applies it.
+      KB_TRANSCRIBE_CONCURRENCY: "3"
     networks:
       - default
       - edge

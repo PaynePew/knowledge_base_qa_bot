@@ -124,9 +124,10 @@ def test_http_error_helper_handles_empty_bodies():
     text = _console_text()
     body = _function_body(text, "httpError")
     assert "bodyText.trim()" in body, "a non-empty body must still be shown"
-    assert "502" in body and "504" in body, (
-        "the gateway-timeout family must get an explanatory fallback, not a "
-        "bare 'HTTP 502:' (issue #497)"
+    assert "502" in body and "503" in body and "504" in body, (
+        "the gateway-timeout/restart family must get an explanatory fallback, "
+        "not a bare 'HTTP 502:'/'HTTP 503' (issue #497; 503 added by #503 — "
+        "the edge answers bare 503s while the container restarts)"
     )
 
 

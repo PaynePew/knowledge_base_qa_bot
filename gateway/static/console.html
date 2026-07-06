@@ -5216,7 +5216,10 @@ function renderCollisionDifferentiatePreview(modal, data, resultEl, closeModal, 
 function httpError(resp, bodyText) {
   var msg = "HTTP " + resp.status + (resp.statusText ? " " + resp.statusText : "");
   if (bodyText && bodyText.trim()) return new Error(msg + ": " + bodyText.trim());
-  if (resp.status === 502 || resp.status === 504) {
+  /* 503 joins the family (issue #503): while the container restarts, the
+     edge answers bare empty-body 503s — the operator saw a naked
+     "HTTP 503" during the import-crash window. */
+  if (resp.status === 502 || resp.status === 503 || resp.status === 504) {
     return new Error(msg + LINT_CHROME[consoleLang].httpTimeoutFallback);
   }
   return new Error(msg);
