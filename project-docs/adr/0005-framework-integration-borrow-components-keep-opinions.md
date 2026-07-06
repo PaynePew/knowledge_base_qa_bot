@@ -45,6 +45,7 @@ We chose partial borrowing because the project's value is in its *opinions* (the
 | `hybrid_kb/app/query.py` | `ChatOpenAI.invoke` (answer synthesis) | `hybrid_kb` `query()` (Hybrid Stack C; CLI `--stack hybrid`) | `hybrid_kb/tests/test_query_live.py` |
 | `gateway/app/query_rewriting.py` | `ChatOpenAI.with_structured_output` (Query Rewriting) | `POST /chat/stream` turn 2+ (gateway-level; both stacks) | `gateway/tests/test_query_rewriting.py::test_rewrite_query_live` |
 | `markdown_kb/app/transcriber.py` | `ChatOpenAI.invoke` (per-page vision transcription) | `markdown_kb` `POST /transcribe`, `kb transcribe`, and probe-routed auto-transcription inside `POST /import` / `kb import` (ADR-0032) | `markdown_kb/tests/test_transcribe_live.py` |
+| `markdown_kb/app/structure_enrichment.py` | `ChatOpenAI.with_structured_output` (chapter-outline proposal) | Structure Enrichment — gated on the longform predicate inside `markdown_kb` `POST /import` / `kb import` and `POST /transcribe` / `kb transcribe` (ADR-0033 decision 2, issue #512) | `markdown_kb/tests/test_structure_enrichment_live.py` |
 
 vector_rag's `/chat` + embeddings is the surface added by issue #103 (Phase 8 Slice 3). It adopts `markdown_kb`'s `grounding.py` unchanged through the `CitableContent` Protocol (ADR-0004 Q9) rather than owning a second verifier, so it adds no new structured-output call site. The single PRD-authorised `@pytest.mark.live` test for this surface lives in `vector_rag/tests/test_chat_live.py`.
 

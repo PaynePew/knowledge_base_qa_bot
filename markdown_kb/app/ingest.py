@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``ingest_sources``, ``aingest_sources``.
+"""Deep module per Ousterhout. Public surface: ``ingest_sources``, ``aingest_sources``, ``estimate_tokens``, ``max_section_tokens``.
 
 Ingest coordinator — Source → wiki synthesis page pipeline.
 
@@ -203,6 +203,27 @@ def _max_section_tokens() -> int:
             str(_KB_INGEST_MAX_SECTION_TOKENS_DEFAULT),
         )
     )
+
+
+# ---------------------------------------------------------------------------
+# Public wrappers shared with structure_enrichment.py (ADR-0033 decision 2)
+# ---------------------------------------------------------------------------
+# structure_enrichment.py reuses this module's token-estimate + per-section
+# cap so the longform "oversized section" predicate leg and the mechanical
+# re-split fallback agree with the SAME KB_INGEST_MAX_SECTION_TOKENS knob
+# /ingest itself enforces (CODING_STANDARD §2.4 — no reaching into another
+# module's private `_estimate_tokens` / `_max_section_tokens`; thin public
+# aliases instead, mirroring importer.py's aliases for transcriber.py).
+
+
+def estimate_tokens(content: str) -> int:
+    """Public alias for ``_estimate_tokens`` — see that function for the estimate."""
+    return _estimate_tokens(content)
+
+
+def max_section_tokens() -> int:
+    """Public alias for ``_max_section_tokens`` — see that function for the contract."""
+    return _max_section_tokens()
 
 
 def _max_concurrency() -> int:

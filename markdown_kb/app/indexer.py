@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``parse_markdown``, ``split_frontmatter``, ``count_uncarried_chars``, ``build_index``, ``load_index_json``, ``search``, ``slugify``, ``Section`` (dataclass), plus the module-level ``sections`` list (read by ``retrieval.py``).
+"""Deep module per Ousterhout. Public surface: ``parse_markdown``, ``parse_markdown_body``, ``split_frontmatter``, ``count_uncarried_chars``, ``build_index``, ``load_index_json``, ``search``, ``slugify``, ``Section`` (dataclass), plus the module-level ``sections`` list (read by ``retrieval.py``).
 
 Markdown Section Index builder.
 
@@ -470,6 +470,12 @@ def parse_markdown(path: Path, source_id: str | None = None) -> list[Section]:
         A whitespace-only preamble produces neither a Section nor a warning.
         A zero-heading Source (rule 7) is unaffected — there is no "first
         heading" to precede.
+
+    File-reading entry point: reads ``path``, strips frontmatter (rule 2),
+    then delegates the rest of the spec (rules 3-11) to ``parse_markdown_body``
+    — the pure-text core reused by ``structure_enrichment.py`` (ADR-0033
+    decision 2), which parses an in-memory derived Markdown body that has no
+    file on disk yet.
     """
     # Import here to avoid circular dependency at module level; logger imports
     # nothing from indexer.
@@ -512,6 +518,45 @@ def parse_markdown(path: Path, source_id: str | None = None) -> list[Section]:
                 f"frontmatter parse failed in {filename}: {type(exc).__name__}",
             )
             body = raw
+
+    return parse_markdown_body(
+        body,
+        source_prefix=source_prefix,
+        filename=filename,
+        stem=path.stem,
+        metadata=metadata,
+    )
+
+
+def parse_markdown_body(
+    body: str,
+    *,
+    source_prefix: str,
+    filename: str | None = None,
+    stem: str | None = None,
+    metadata: dict | None = None,
+) -> list[Section]:
+    """Parse an in-memory Markdown BODY (frontmatter already stripped) into Sections.
+
+    Pure-text core of ``parse_markdown``'s rules 3-11 (see that function's
+    docstring for the full 11-rule spec) — no file I/O. Extracted so a caller
+    holding a derived Markdown document that has no file on disk yet (e.g.
+    ``structure_enrichment.is_longform``, which inspects the assembled
+    Import/Transcribe body BEFORE it is written to ``docs/``) can reuse the
+    exact same Section-boundary logic instead of re-implementing it.
+
+    ``filename`` (used only in ``log_event`` messages) and ``stem`` (the
+    preamble Section's heading text, rule 11) both default to
+    ``source_prefix`` when omitted. ``metadata`` (the frontmatter dict
+    attached to every Section) defaults to ``{}``.
+    """
+    # Import here to avoid circular dependency at module level; logger imports
+    # nothing from indexer.
+    from .logger import log_event
+
+    filename = filename if filename is not None else source_prefix
+    stem = stem if stem is not None else source_prefix
+    metadata = metadata if metadata is not None else {}
 
     lines = body.splitlines(keepends=True)
 
@@ -561,7 +606,7 @@ def parse_markdown(path: Path, source_id: str | None = None) -> list[Section]:
         content = raw_preamble.strip()
         if not content:
             return
-        heading_text = path.stem
+        heading_text = stem
         sec_id = _make_id("intro")
         result.append(
             Section(
