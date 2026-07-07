@@ -47,10 +47,12 @@ class TestC3SecondaryRoutedRemediation:
         without modification."""
         assert remediation_for("C3").route is None
 
-    def test_only_c3_carries_a_secondary_route(self):
-        """No other wired check sets ``secondary_route`` yet."""
+    def test_only_c3_and_c5_carry_a_secondary_route(self):
+        """C5 gains the SAME field (issue #534, ADR-0036) — see
+        ``test_c5_routed_fix_source.py`` for C5's own dedicated coverage.
+        No other wired check sets ``secondary_route``."""
         all_codes = {"C1", "C2", "C3", "C4", "C5", "C6", "C8", "C9", "C10", "C11"}
-        for code in all_codes - {"C3"}:
+        for code in all_codes - {"C3", "C5"}:
             assert remediation_for(code).secondary_route is None, (
                 f"{code} unexpectedly carries a secondary_route"
             )

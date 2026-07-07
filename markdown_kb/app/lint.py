@@ -321,6 +321,22 @@ deploy flow is unaffected (both start ``None``, one construction either
 way) and steady-state (model unchanged) still makes zero extra client
 constructions.
 
+Slice scope (issue #534, ADR-0036 decisions 1-2 — C5 fix-source taxonomy)
+-----------------------------------------------------------------
+No new check, no change to ``_check_c5_page_pair``'s judgement. C5 becomes
+the SECOND check (after C3, issue #408/ADR-0029) to carry two remediation
+classes at once: its primary tier stays ``"authored"`` (Reconcile,
+unchanged), and it ALSO sets ``secondary_route="fix-source"`` for the
+**source-rooted** case — a contradiction whose root lives in the Sources
+disagreeing rather than in the wiki pages, which Reconcile structurally
+cannot fix (ADR-0036). Detection is deliberately lazy and human-judged: a
+C5 finding does not know at lint time whether it is source-rooted — only
+``reconcile.generate_reconcile``'s grounding re-check against the union of
+both pages' Sources can tell (a failure IS the signal, decision 2), so
+unlike C3 this taxonomy value carries no per-finding trigger here — see
+``reconcile.py``'s Source-comparison payload for where the human-facing
+signal actually surfaces.
+
 Read-only invariant
 -------------------
 ``run_lint()`` does NOT modify wiki page frontmatter.  It writes:
@@ -354,7 +370,7 @@ Check execution order (cheapest to most expensive)
 10. C10 qa-schema-validity (read qa frontmatter)
 11. C5 page-pair LLM (F1∪F3 filter + LLM) — most expensive last
 
-Authorised by PRD #65 (Phase 5), GitHub issue #66 (Slice 5-1), GitHub issue #67 (Slice 5-2), GitHub issue #68 (Slice 5-3), GitHub issue #69 (Slice 5-4), GitHub issue #70 (Slice 5-5), PRD #78 (Phase 6), GitHub issue #82 (Slice 6-5 Phase 5 amendment), ADR-0023 (Lint Remediation Direct vs Authored), PRD #359 (Lint Remediation tier-A), GitHub issue #361 (Slice S1 — Lint Axis taxonomy), GitHub issue #363 (Slice S3 — Console axis grouping + per-row Direct Remediation + auto-relint), GitHub issue #365 (Slice S5 — Console zh/en language toggle), GitHub issue #408 (C3 Routed fix-the-Source flow, ADR-0029), GitHub issue #446 (C5 content-hash verdict cache), GitHub issue #473 (C5 verdict cache generation salt), and GitHub issue #483 (lint LLM singleton rebuilds on model change).
+Authorised by PRD #65 (Phase 5), GitHub issue #66 (Slice 5-1), GitHub issue #67 (Slice 5-2), GitHub issue #68 (Slice 5-3), GitHub issue #69 (Slice 5-4), GitHub issue #70 (Slice 5-5), PRD #78 (Phase 6), GitHub issue #82 (Slice 6-5 Phase 5 amendment), ADR-0023 (Lint Remediation Direct vs Authored), PRD #359 (Lint Remediation tier-A), GitHub issue #361 (Slice S1 — Lint Axis taxonomy), GitHub issue #363 (Slice S3 — Console axis grouping + per-row Direct Remediation + auto-relint), GitHub issue #365 (Slice S5 — Console zh/en language toggle), GitHub issue #408 (C3 Routed fix-the-Source flow, ADR-0029), GitHub issue #446 (C5 content-hash verdict cache), GitHub issue #473 (C5 verdict cache generation salt), GitHub issue #483 (lint LLM singleton rebuilds on model change), and GitHub issue #534 (C5 fix-source taxonomy, ADR-0036).
 """
 
 from __future__ import annotations
@@ -3038,16 +3054,20 @@ class RemediationDescriptor(NamedTuple):
     affordance it drives is pure navigation, so a consumer never mistakes it
     for something it could batch or approve.
 
-    ``secondary_route`` (issue #408, ADR-0029) is the one field a check sets
-    when it belongs to TWO remediation classes at once instead of one —
-    today only C3: its primary tier stays ``"direct"`` (the executable
-    ``reingest_retry`` action is unaffected), but ``claim_unsupported``'s
-    real fix — amending what the Source says — is knowledge only the human
-    can supply, so C3 ALSO carries a Routed navigation alongside its Direct
-    action. Kept as a field distinct from ``route`` (rather than reusing it)
-    so ``route`` stays the unambiguous "this check's ONE tier IS Routed"
-    signal for every existing C1/C2-only consumer; ``None`` for every check
-    that is not C3.
+    ``secondary_route`` (issue #408, ADR-0029; issue #534, ADR-0036) is the
+    field a check sets when it belongs to TWO remediation classes at once
+    instead of one — C3 and C5: C3's primary tier stays ``"direct"`` (the
+    executable ``reingest_retry`` action is unaffected), but
+    ``claim_unsupported``'s real fix — amending what the Source says — is
+    knowledge only the human can supply, so C3 ALSO carries a Routed
+    navigation alongside its Direct action. C5's primary tier stays
+    ``"authored"`` (Reconcile, unaffected); its source-rooted case ALSO
+    carries the SAME ``"fix-source"`` navigation, for the same reason —
+    Reconcile cannot repair a contradiction whose root is the Sources
+    disagreeing (ADR-0036). Kept as a field distinct from ``route`` (rather
+    than reusing it) so ``route`` stays the unambiguous "this check's ONE
+    tier IS Routed" signal for every existing C1/C2-only consumer; ``None``
+    for every check that is neither C3 nor C5.
     """
 
     tier: str  # "direct" | "authored" | "confirmed" | "routed" | "deferred"
@@ -3103,6 +3123,18 @@ class RemediationDescriptor(NamedTuple):
 # ``kb_lint_v1`` all navigate to the SAME existing Upload -> Re-ingest ->
 # Lint machinery this taxonomy already names elsewhere, per finding — it
 # commits nothing itself (ADR-0029 Invariant).
+# C5 (issue #534, ADR-0036 decisions 1-2) is the SECOND entry carrying TWO
+# remediation classes, mirroring C3 exactly: it stays ``"authored"`` (the
+# Reconcile draft/approve loop below is unaffected — a wiki-rooted
+# contradiction still converges there) AND sets
+# ``secondary_route="fix-source"`` — a SOURCE-rooted contradiction (the two
+# pages are each faithfully grounded, but their own Sources disagree) is
+# structurally un-reconcilable at the wiki layer, exactly the Routed
+# definition. Unlike C3, no per-finding field here names WHICH C5 findings
+# are source-rooted — that signal only exists at
+# ``reconcile.generate_reconcile`` time (a grounding-union failure), so this
+# taxonomy value is a navigation-class declaration a client reads
+# independently of any single finding, same as C1/C2's static ``route``.
 _REMEDIATION_TAXONOMY: dict[str, RemediationDescriptor] = {
     "C6": RemediationDescriptor("direct", (RemediationAction("reingest", "source"),)),
     "C3": RemediationDescriptor(
@@ -3111,7 +3143,7 @@ _REMEDIATION_TAXONOMY: dict[str, RemediationDescriptor] = {
         secondary_route="fix-source",
     ),
     "C11": RemediationDescriptor("confirmed", (RemediationAction("delete", "page_slug"),)),
-    "C5": RemediationDescriptor("authored"),
+    "C5": RemediationDescriptor("authored", secondary_route="fix-source"),
     "C4": RemediationDescriptor("authored"),
     "C12": RemediationDescriptor("direct", (RemediationAction("remove_alias", "claimed_by"),)),
     "C1": RemediationDescriptor("routed", route="import"),

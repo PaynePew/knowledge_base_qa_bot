@@ -79,13 +79,14 @@ import datetime
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import yaml
 
 from ._paths import DOCS_DIR
 from .atomic import write_text_atomic
 from .grounding import GroundingOutcome, verify
-from .indexer import _index_lock, parse_markdown
+from .indexer import Section, _index_lock, parse_markdown
 from .lint import (
     DIFFERENTIATE_SENTINEL_TEMPLATE,
     find_inbound_references,
@@ -95,6 +96,7 @@ from .lint import (
 )
 from .logger import log_event
 from .schemas import (
+    CitedSourceSection,
     CollisionDifferentiateApplyRequest,
     CollisionDifferentiateGenerateResponse,
     CollisionMergeApplyRequest,
@@ -315,6 +317,119 @@ def _collect_union_sections(fm_a: dict, fm_b: dict, docs_dir: Path) -> list:
                 seen_ids.add(section.id)
                 sections.append(section)
     return sections
+
+
+# ---------------------------------------------------------------------------
+# Per-page cited Sections (C5 Source comparison payload — issue #534,
+# ADR-0036 decision 3). Deliberately SEPARATE from the union collected
+# above: the grounding union stays whole-file (decision 7, unchanged), while
+# this is presentation data for ONE page's OWN narrower citations.
+# ---------------------------------------------------------------------------
+
+
+def _resolve_cited_source_path(
+    source_ref: str, docs_dir: Path
+) -> tuple[Path | None, str | None, Literal["resolved", "missing", "ambiguous"]]:
+    """Resolve a bare Source citation to its actual on-disk Path, for the C5
+    Source comparison view's ``/read/file`` links (ADR-0036 decision 3).
+
+    Mirrors ``lint._resolve_c3_source_path``'s basename-glob-with-ambiguity
+    contract (issue #445) — kept as a small local duplicate rather than a
+    cross-module private import, the same precedent
+    ``ingest._resolve_single_source_pairs`` already set: strip any
+    ``#anchor``, take the basename, match it against every file under
+    ``docs_dir``. A basename matching 2+ files is never silently guessed.
+
+    Returns ``(None, None, "missing")`` when ``source_ref`` has no basename
+    or no file matches, ``(None, None, "ambiguous")`` when 2+ files match, or
+    ``(actual_path, "docs/<relative>", "resolved")`` on exactly one match —
+    the repo-relative label mirrors ``FailedGroundingFinding.source_path``'s
+    display convention.
+    """
+    file_part = source_ref.split("#")[0].strip()
+    filename = Path(file_part).name if file_part else ""
+    if not filename:
+        return None, None, "missing"
+
+    matches = sorted(docs_dir.glob(f"**/{filename}"))
+    if not matches:
+        return None, None, "missing"
+    if len(matches) > 1:
+        return None, None, "ambiguous"
+
+    path = matches[0]
+    label = f"docs/{path.relative_to(docs_dir).as_posix()}"
+    return path, label, "resolved"
+
+
+def _cited_sections_for_page(fm: dict, docs_dir: Path) -> list[CitedSourceSection]:
+    """Resolve one page's OWN cited Source sections (ADR-0036 decision 3).
+
+    A citation with no ``#anchor`` names a whole Source file rather than one
+    section, so every Section parsed from it is included. A citation that
+    cannot be resolved to content — an ambiguous/missing Source file, or a
+    stale anchor that no longer matches any parsed heading — still produces
+    an entry (``heading``/``content`` left ``None``) rather than being
+    silently dropped, so the curator sees which citation could not be shown.
+    """
+    out: list[CitedSourceSection] = []
+    seen_ids: set[str] = set()
+    parsed_cache: dict[Path, list[Section]] = {}
+
+    def _append_once(entry: CitedSourceSection) -> None:
+        if entry.id in seen_ids:
+            return
+        seen_ids.add(entry.id)
+        out.append(entry)
+
+    for raw_citation in fm.get("sources", []) or []:
+        citation = str(raw_citation)
+        file_part, sep, anchor = citation.partition("#")
+        filename = Path(file_part.strip()).name if file_part.strip() else ""
+        if not filename:
+            continue
+
+        path, source_path, resolution = _resolve_cited_source_path(citation, docs_dir)
+        target_id = f"{filename}#{anchor}" if sep else None
+        fallback_id = target_id or filename
+
+        if path is None:
+            _append_once(
+                CitedSourceSection(
+                    id=fallback_id, source_path=source_path, source_resolution=resolution
+                )
+            )
+            continue
+
+        if path not in parsed_cache:
+            try:
+                parsed_cache[path] = parse_markdown(path)
+            except Exception:  # noqa: BLE001 — a malformed Source degrades context, not a hard error
+                parsed_cache[path] = []
+        sections = parsed_cache[path]
+        matches = [s for s in sections if s.id == target_id] if target_id else sections
+
+        if not matches:
+            # A stale anchor (renamed heading) or an empty parsed file — the
+            # Source resolved, but this specific citation has no content.
+            _append_once(
+                CitedSourceSection(
+                    id=fallback_id, source_path=source_path, source_resolution=resolution
+                )
+            )
+            continue
+
+        for section in matches:
+            _append_once(
+                CitedSourceSection(
+                    id=section.id,
+                    heading=section.heading,
+                    content=section.content,
+                    source_path=source_path,
+                    source_resolution=resolution,
+                )
+            )
+    return out
 
 
 def _union_source_filenames_n(frontmatters: list[dict]) -> list[str]:
@@ -540,6 +655,13 @@ def generate_reconcile(
     outcome_b = verify(draft.content_b, union_sections)
     grounding = _combine_grounding(outcome_a, outcome_b)
 
+    # C5 Source-comparison payload (issue #534, ADR-0036 decision 3) — each
+    # page's OWN cited sections, narrower than (and independent of) the
+    # whole-file union above. Presentation data only: does not affect
+    # drafting or the grounding re-check.
+    cited_sections_a = _cited_sections_for_page(fm_a, resolved_docs)
+    cited_sections_b = _cited_sections_for_page(fm_b, resolved_docs)
+
     log_event(
         "reconcile_generate",
         f"page_a={page_a} page_b={page_b} passed={grounding.passed} reason={grounding.reason}",
@@ -555,6 +677,8 @@ def generate_reconcile(
         grounding=grounding,
         hash_a=hash_a,
         hash_b=hash_b,
+        cited_sections_a=cited_sections_a,
+        cited_sections_b=cited_sections_b,
     )
 
 

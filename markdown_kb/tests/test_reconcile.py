@@ -201,6 +201,33 @@ def test_generate_returns_draft_grounding_and_hashes(reconcile_client, reconcile
     assert data["hash_a"] != data["hash_b"]
 
 
+def test_generate_wiki_rooted_pair_carries_cited_sections_unchanged(
+    reconcile_client, reconcile_wiki_dir
+):
+    """issue #534 regression guard: a wiki-rooted pair's existing generate
+    behavior (asserted above) is unaffected — the new cited_sections_a/b
+    fields are a strict ADDITION, populated from the SAME shared citation
+    both fixture pages already carry."""
+    fake_grounding_llm = _make_fake_grounding_llm(_PASS_RESULT)
+    with patch("app.grounding.ChatOpenAI", return_value=fake_grounding_llm):
+        resp = reconcile_client.post(
+            "/pages/reconcile",
+            json={"page_a": "cancellation-window-a", "page_b": "cancellation-window-b"},
+        )
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert len(data["cited_sections_a"]) == 1
+    assert len(data["cited_sections_b"]) == 1
+    section_a = data["cited_sections_a"][0]
+    section_b = data["cited_sections_b"][0]
+    assert section_a["id"] == _SOURCE_CITATION
+    assert section_b["id"] == _SOURCE_CITATION
+    assert section_a["source_resolution"] == "resolved"
+    assert section_a["source_path"] == "docs/refund_policy.md"
+    assert section_a["content"]  # actual Section content, not just the id
+
+
 def test_generate_writes_nothing_to_disk(reconcile_client, reconcile_wiki_dir):
     """ADR-0028 Invariant: POST /pages/reconcile writes nothing to disk."""
     path_a = reconcile_wiki_dir / "concepts" / "cancellation-window-a.md"
@@ -252,6 +279,152 @@ def test_generate_400_when_pages_identical(reconcile_client):
         json={"page_a": "cancellation-window-a", "page_b": "cancellation-window-a"},
     )
     assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# C5 Source-comparison payload (issue #534, ADR-0036 decision 3)
+#
+# The fixture above gives both pages the SAME citation — sufficient to prove
+# the field exists (test_generate_wiki_rooted_pair_carries_cited_sections_unchanged
+# above), but not to prove cited_sections_a/b are each page's OWN citations
+# rather than a shared/union view. This fixture cites two DIFFERENT Source
+# files per page instead.
+# ---------------------------------------------------------------------------
+
+_PAGE_ALPHA_CITATION = "refund_policy.md#cancellation-window"
+_PAGE_BETA_CITATION = "shipping_faq.md#standard-shipping"
+
+
+@pytest.fixture()
+def two_source_wiki_dir(tmp_path: Path) -> Path:
+    """Two pages, each citing a DIFFERENT Source file."""
+    wiki_dir = tmp_path / "wiki"
+    (wiki_dir / "concepts").mkdir(parents=True)
+    (wiki_dir / "concepts" / "page-alpha.md").write_text(
+        _page_text(
+            "page-alpha",
+            "2026-01-01T00:00:00Z",
+            [_PAGE_ALPHA_CITATION],
+            "# Page Alpha\n\nOrders can be cancelled within 24 hours.\n\n"
+            f"[Source: {_PAGE_ALPHA_CITATION}]\n",
+        ),
+        encoding="utf-8",
+    )
+    (wiki_dir / "concepts" / "page-beta.md").write_text(
+        _page_text(
+            "page-beta",
+            "2026-01-01T00:00:00Z",
+            [_PAGE_BETA_CITATION],
+            "# Page Beta\n\nStandard shipping takes 3-5 business days.\n\n"
+            f"[Source: {_PAGE_BETA_CITATION}]\n",
+        ),
+        encoding="utf-8",
+    )
+    (wiki_dir / "concepts" / "page-gamma.md").write_text(
+        _page_text(
+            "page-gamma",
+            "2026-01-01T00:00:00Z",
+            ["no_such_source.md#some-anchor"],
+            "# Page Gamma\n\nCites a Source that does not exist under docs_dir.\n\n"
+            "[Source: no_such_source.md#some-anchor]\n",
+        ),
+        encoding="utf-8",
+    )
+    return wiki_dir
+
+
+@pytest.fixture()
+def two_source_client(two_source_wiki_dir, monkeypatch):
+    """Mirrors ``reconcile_client`` but redirected at ``two_source_wiki_dir``.
+
+    ``content_a``/``content_b`` are placeholder draft text — reused across
+    this fixture's three tests regardless of which two of the three fixture
+    pages a given test reconciles, since none of them assert on draft
+    content (only on cited_sections_a/b and grounding.passed)."""
+    fake_lint_llm = _make_fake_lint_llm(content_a="Draft A.", content_b="Draft B.")
+    monkeypatch.setattr(lint_module, "get_lint_llm", lambda: fake_lint_llm)
+    monkeypatch.setattr(indexer_module, "WIKI_DIR", two_source_wiki_dir)
+    monkeypatch.setattr(
+        indexer_module,
+        "SOURCE_DIRS",
+        [
+            two_source_wiki_dir / "entities",
+            two_source_wiki_dir / "concepts",
+            two_source_wiki_dir / "qa",
+        ],
+    )
+    monkeypatch.setattr(reconcile_module, "DOCS_DIR", _FIXTURE_DOCS_DIR)
+
+    from app.main import app
+
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def test_generate_cited_sections_are_per_page_not_union(two_source_client):
+    """cited_sections_a carries ONLY page-alpha's citation, cited_sections_b
+    ONLY page-beta's — proving this is per-page data, distinct from the
+    (unchanged, whole-file) grounding union both pages are checked against."""
+    fake_grounding_llm = _make_fake_grounding_llm(_FAIL_RESULT)
+    with patch("app.grounding.ChatOpenAI", return_value=fake_grounding_llm):
+        resp = two_source_client.post(
+            "/pages/reconcile", json={"page_a": "page-alpha", "page_b": "page-beta"}
+        )
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert [s["id"] for s in data["cited_sections_a"]] == [_PAGE_ALPHA_CITATION]
+    assert [s["id"] for s in data["cited_sections_b"]] == [_PAGE_BETA_CITATION]
+    assert data["cited_sections_a"][0]["source_path"] == "docs/refund_policy.md"
+    assert data["cited_sections_b"][0]["source_path"] == "docs/shipping_faq.md"
+    assert "24 hours" in data["cited_sections_a"][0]["content"]
+    assert "3-5 business days" in data["cited_sections_b"][0]["content"]
+
+
+def test_generate_cited_sections_degrade_honestly_on_missing_source(two_source_client):
+    """A citation naming a Source that does not exist under docs_dir still
+    produces an entry (never silently dropped) with heading/content left
+    unset and source_resolution="missing" — mirrors C3's honesty convention
+    for an unresolvable citation."""
+    fake_grounding_llm = _make_fake_grounding_llm(_FAIL_RESULT)
+    with patch("app.grounding.ChatOpenAI", return_value=fake_grounding_llm):
+        resp = two_source_client.post(
+            "/pages/reconcile", json={"page_a": "page-alpha", "page_b": "page-gamma"}
+        )
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    # page-alpha's own citation still resolves normally.
+    assert data["cited_sections_a"][0]["source_resolution"] == "resolved"
+    # page-gamma cites a Source with no matching file under docs_dir.
+    gamma_section = data["cited_sections_b"][0]
+    assert gamma_section["id"] == "no_such_source.md#some-anchor"
+    assert gamma_section["source_resolution"] == "missing"
+    assert gamma_section["source_path"] is None
+    assert gamma_section["heading"] is None
+    assert gamma_section["content"] is None
+
+
+def test_union_collector_still_combines_both_pages_sources_whole_file():
+    """ADR-0036 decision 7 (unaffected by issue #534): the grounding union
+    ``_collect_union_sections`` feeds to ``verify()`` stays WHOLE-FILE across
+    both pages' Sources — narrowing it to the new per-page
+    cited_sections_a/b payload would hide a sibling contradicting section,
+    exactly the regression ADR-0036 §7 rejects. A pure function-level check,
+    independent of the HTTP round trip above."""
+    fm_a = {"sources": [_PAGE_ALPHA_CITATION]}
+    fm_b = {"sources": [_PAGE_BETA_CITATION]}
+
+    sections = reconcile_module._collect_union_sections(fm_a, fm_b, _FIXTURE_DOCS_DIR)
+
+    files_covered = {s.file for s in sections}
+    assert {"refund_policy.md", "shipping_faq.md"} <= files_covered
+    # Whole-file: every Section from refund_policy.md is present, not just
+    # the one anchor page-alpha actually cites.
+    refund_headings = {s.heading for s in sections if s.file == "refund_policy.md"}
+    assert "Refund Timeline" in refund_headings, (
+        f"union must include sibling sections beyond the cited anchor (whole-file, "
+        f"ADR-0036 §7): got {refund_headings}"
+    )
 
 
 # ---------------------------------------------------------------------------
