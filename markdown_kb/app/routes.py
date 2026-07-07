@@ -1,7 +1,7 @@
 """Shallow module per Ousterhout. Public surface: ``router``.
 
-HTTP wiring for /health, /index, /chat, /qa/{slug}/promote,
-/qa/{slug}/demote, /qa/promote-batch, /qa/{slug} (DELETE, PUT), /qa/{slug}/refile, /ingest,
+HTTP wiring for /health, /index, /chat, /qa/{slug}/promote, /qa/{slug}/demote,
+/qa/promote-batch, /qa/{slug} (DELETE, PUT), /qa/{slug}/refile, /ingest,
 /lint, /import, /transcribe, /transcribe/batch, /transcribe/jobs/{job_id},
 /transcribe/page-count, /pages/reconcile, /pages/reconcile/apply, /pages/collision/merge,
 /pages/collision/merge/apply, /pages/collision/differentiate,
