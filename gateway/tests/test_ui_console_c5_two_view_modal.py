@@ -10,9 +10,11 @@ no browser, no OPENAI_API_KEY (§6.3 / §12.7).
 Covers:
 - The Reconcile modal header renders a real toggle between Wiki comparison
   (the pre-existing view) and Source comparison, and the default view is
-  chosen from THIS generate's ``data.grounding.passed`` (pass -> wiki,
-  fail -> source) — the system never auto-classifies which layer to fix,
-  it only picks which evidence to show first (ADR-0036 decision 2).
+  chosen from THIS generate's ``data.converged`` (source-rooted i.e. grounded-
+  but-not-converged -> source, else -> wiki; ADR-0038 supersedes ADR-0036
+  decision 2's ``grounding.passed`` routing), and Apply is gated on grounded
+  AND converged — the system never auto-classifies which layer to fix, it only
+  picks which evidence to show first and refuses to Apply a source-rooted pair.
 - The Source comparison view renders both pages' own ``cited_sections_a``/
   ``cited_sections_b`` (issue #534's payload), each with a read-only
   ``/read/file`` view control and an edit entry point that accumulates the
@@ -76,11 +78,29 @@ def test_view_toggle_chrome_defined_bilingually():
     assert "Source 比較" in text
 
 
-def test_default_view_is_chosen_by_grounding_passed():
-    """ADR-0036 decision 2: pass -> Wiki comparison, fail -> Source
-    comparison; the system never auto-classifies which layer to fix."""
+def test_default_view_is_chosen_by_convergence():
+    """ADR-0038 (supersedes ADR-0036 decision 2's grounding-based routing):
+    the default view follows CONVERGENCE, not grounding. A source-rooted pair
+    (grounded but not converged) defaults to Source comparison; everything else
+    defaults to Wiki. `data.converged` is read fail-safe (=== true)."""
     fn = _extract_function(_console_text(), "renderReconcilePreview")
-    assert 'var activeView = passed ? "wiki" : "source";' in fn
+    assert "var converged = data.converged === true;" in fn
+    assert 'var activeView = (passed && !converged) ? "source" : "wiki";' in fn
+
+
+def test_apply_is_gated_on_grounding_and_convergence():
+    """ADR-0038 Invariant: Apply is enabled iff grounded AND converged, so a
+    source-rooted pair can never be Applied into a fresh contradiction."""
+    fn = _extract_function(_console_text(), "renderReconcilePreview")
+    assert "var applyEnabled = passed && converged;" in fn
+    assert "applyBtn.disabled = !applyEnabled;" in fn
+
+
+def test_apply_handles_not_converged_422():
+    """ADR-0038: an apply-time convergence refusal (a hand-edit that still
+    contradicts) surfaces the source-rooted message, not a grounding one."""
+    fn = _extract_function(_console_text(), "renderReconcilePreview")
+    assert 'detail.reason === "not_converged"' in fn
 
 
 def test_both_toggle_buttons_always_rendered_and_wired():
@@ -111,11 +131,14 @@ def test_source_view_renders_both_pages_cited_sections():
     assert "renderC5SourceCard(data.page_b" in fn
 
 
-def test_source_view_shows_disagree_note_only_when_grounding_failed():
+def test_source_view_shows_disagree_note_only_when_not_converged():
+    """ADR-0038: the "Sources disagree" note keys on convergence, not grounding
+    (grounding cannot see cross-page disagreement)."""
     text = _console_text()
     fn = _extract_function(text, "renderC5SourceComparisonView")
     assert "sources-disagree-note" in fn
-    assert "if (!passed)" in fn
+    assert "var converged = data.converged === true;" in fn
+    assert "if (!converged)" in fn
     assert "c5SourcesDisagreeNote" in fn
 
 

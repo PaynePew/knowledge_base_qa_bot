@@ -861,7 +861,9 @@ def reconcile_apply(req: ReconcileApplyRequest) -> ReconcileApplyResponse:
         HTTP 409: either page's on-disk content changed since generate time.
         HTTP 422: the apply-time grounding re-check failed for either page's
             submitted content; ``detail.unsupported_claims`` lists the
-            offending claims.
+            offending claims. OR (ADR-0038) the convergence re-judge found the
+            drafts still contradict each other (source-rooted);
+            ``detail.reason == "not_converged"``.
         HTTP 500: either page exists but its frontmatter is corrupt.
     """
     try:
@@ -889,6 +891,19 @@ def reconcile_apply(req: ReconcileApplyRequest) -> ReconcileApplyResponse:
                 "message": "reconcile content failed grounding re-check",
                 "reason": exc.grounding.reason,
                 "unsupported_claims": exc.grounding.unsupported_claims or [],
+            },
+        ) from exc
+    except reconcile_module.ReconcileNotConverged as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": (
+                    "reconcile drafts still contradict each other — this is a "
+                    "source-rooted contradiction; fix a Source (not the wiki pages) "
+                    "so the Sources agree, then re-ingest"
+                ),
+                "reason": "not_converged",
+                "summary": exc.summary,
             },
         ) from exc
 

@@ -89,6 +89,7 @@ from .grounding import GroundingOutcome, verify
 from .indexer import Section, _index_lock, parse_markdown
 from .lint import (
     DIFFERENTIATE_SENTINEL_TEMPLATE,
+    _judge_page_pair,
     find_inbound_references,
     generate_collision_differentiate_draft,
     generate_collision_merge_draft,
@@ -142,6 +143,21 @@ class ReconcileGroundingFailed(Exception):
     def __init__(self, grounding: GroundingInfo) -> None:
         self.grounding = grounding
         super().__init__("reconcile content failed grounding re-check")
+
+
+class ReconcileNotConverged(Exception):
+    """Raised when the apply-time convergence re-judge finds the submitted
+    drafts still contradict each other (ADR-0038): both are grounded, yet
+    they give incompatible answers — a source-rooted contradiction the wiki
+    layer cannot fix. 422 — fix a Source, not the pages. Grounding cannot
+    signal this (it is an existence check against the self-contradicting
+    Source union); the C5 contradiction oracle re-run on the drafts can."""
+
+    def __init__(self, page_a: str, page_b: str, summary: str | None = None) -> None:
+        self.page_a = page_a
+        self.page_b = page_b
+        self.summary = summary
+        super().__init__(f"reconcile drafts still contradict: page_a={page_a} page_b={page_b}")
 
 
 class CollisionInvalidGroup(Exception):
@@ -623,6 +639,38 @@ def _write_differentiated_page(
 # ---------------------------------------------------------------------------
 
 
+def _rejudge_convergence(
+    page_a: str, content_a: str, page_b: str, content_b: str
+) -> tuple[bool, str | None]:
+    """Re-judge two reconcile drafts for cross-page CONVERGENCE (ADR-0038).
+
+    Grounding is an existence check against the whole-file Source union, so a
+    source-rooted pair (each draft faithful to its own Source, the Sources
+    themselves disagreeing) passes grounding while the drafts still contradict
+    — grounding cannot signal source-rooted. Re-run the C5 contradiction oracle
+    (``_judge_page_pair``) on the DRAFTS instead: ``severity == "none"`` means
+    the pages now agree (converged → wiki-rooted, Apply-able); any other verdict
+    means they still disagree (not converged → source-rooted). Returns
+    ``(converged, summary)`` where ``summary`` is the oracle's prose for the
+    Source-view note when not converged, else ``None``.
+
+    Fails safe to NOT converged on any judge error — Apply is never enabled
+    under uncertainty (cost asymmetry: a false source-rooted only makes the
+    curator toggle views; a false converged writes a fresh contradiction into
+    the corpus).
+    """
+    try:
+        finding = _judge_page_pair(page_a, content_a, page_b, content_b)
+    except Exception as exc:  # noqa: BLE001 — fail closed on any judge error
+        log_event(
+            "reconcile_rejudge_error",
+            f"page_a={page_a} page_b={page_b} err={type(exc).__name__}: {exc}",
+        )
+        return False, None
+    converged = finding.severity == "none"
+    return converged, (None if converged else finding.summary)
+
+
 def generate_reconcile(
     page_a: str,
     page_b: str,
@@ -655,6 +703,15 @@ def generate_reconcile(
     outcome_b = verify(draft.content_b, union_sections)
     grounding = _combine_grounding(outcome_a, outcome_b)
 
+    # Convergence re-judge (ADR-0038): grounding only proves each draft is
+    # faithful to the Sources, never that the two drafts AGREE — a source-rooted
+    # pair passes grounding while still contradicting. Re-run the C5 oracle on
+    # the drafts to get the real source-rooted signal. Drives the two-view
+    # modal's default view AND the Apply gate; grounding.passed no longer does.
+    converged, convergence_summary = _rejudge_convergence(
+        page_a, draft.content_a, page_b, draft.content_b
+    )
+
     # C5 Source-comparison payload (issue #534, ADR-0036 decision 3) — each
     # page's OWN cited sections, narrower than (and independent of) the
     # whole-file union above. Presentation data only: does not affect
@@ -664,7 +721,8 @@ def generate_reconcile(
 
     log_event(
         "reconcile_generate",
-        f"page_a={page_a} page_b={page_b} passed={grounding.passed} reason={grounding.reason}",
+        f"page_a={page_a} page_b={page_b} passed={grounding.passed} "
+        f"reason={grounding.reason} converged={converged}",
     )
 
     return ReconcileGenerateResponse(
@@ -675,6 +733,8 @@ def generate_reconcile(
         content_a=draft.content_a,
         content_b=draft.content_b,
         grounding=grounding,
+        converged=converged,
+        convergence_summary=convergence_summary,
         hash_a=hash_a,
         hash_b=hash_b,
         cited_sections_a=cited_sections_a,
@@ -738,6 +798,20 @@ def apply_reconcile(
             f"page_a={req.page_a} page_b={req.page_b} reason={grounding.reason}",
         )
         raise ReconcileGroundingFailed(grounding)
+
+    # Convergence gate (ADR-0038 Invariant): both drafts are grounded, but they
+    # may still contradict each other (source-rooted, or a human edit that left
+    # a conflict). Grounding cannot catch that; the C5 oracle re-run on the
+    # submitted content can. Refuse rather than write a fresh contradiction.
+    converged, convergence_summary = _rejudge_convergence(
+        req.page_a, req.content_a, req.page_b, req.content_b
+    )
+    if not converged:
+        log_event(
+            "reconcile_apply_refused",
+            f"page_a={req.page_a} page_b={req.page_b} reason=not_converged",
+        )
+        raise ReconcileNotConverged(req.page_a, req.page_b, convergence_summary)
 
     now_iso = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     # Both pages write under one lock acquisition (see module docstring —

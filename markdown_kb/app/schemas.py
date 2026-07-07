@@ -940,11 +940,21 @@ class ReconcileGenerateResponse(BaseModel):
 
     ``cited_sections_a`` / ``cited_sections_b`` (issue #534, ADR-0036
     decision 3) carry each page's OWN cited Source sections — the two-view
-    modal's Source comparison payload. Alongside ``grounding.passed``
-    (already returned, unaffected by this addition), the client picks the
-    default view: pass -> Wiki comparison, fail -> Source comparison. This
-    is presentation data only — the detection/grounding logic itself (the
-    union stays whole-file, decision 7) is unchanged.
+    modal's Source comparison payload. This is presentation data only — the
+    detection/grounding logic itself (the union stays whole-file, decision 7)
+    is unchanged.
+
+    ``converged`` (issue #545, ADR-0038) is the real source-rooted signal:
+    the C5 contradiction oracle re-run on the two DRAFTS returned ``none``
+    (the pages now agree). The client keys BOTH the default view and the Apply
+    gate on it — ``converged`` → Wiki comparison + Apply enabled; not
+    converged → Source comparison + Apply disabled (source-rooted: fix a
+    Source). This REPLACES the earlier ``grounding.passed``-based routing:
+    grounding is an existence check that a self-contradicting Source union
+    passes for each faithful draft, so it cannot signal source-rooted.
+    ``convergence_summary`` carries the oracle's prose (what still conflicts)
+    for the Source-view note when not converged. Defaults to ``False`` so a
+    response that omits it fails safe to Apply-disabled.
     """
 
     page_a: str
@@ -954,6 +964,8 @@ class ReconcileGenerateResponse(BaseModel):
     content_a: str
     content_b: str
     grounding: GroundingInfo
+    converged: bool = False
+    convergence_summary: str | None = None
     hash_a: str
     hash_b: str
     cited_sections_a: list[CitedSourceSection] = []
