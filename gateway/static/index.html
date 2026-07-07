@@ -512,33 +512,46 @@
   .cite-scrim { display: none; }
 
   /* ── Chat | source split (pin a cited source beside the chat) ─────────────
-     On wide screens a clicked citation pins to the RIGHT of the conversation
-     instead of interrupting the reading column: the chat re-centers in the
-     left area and the source takes a right rail. The rail is on-demand — zero
-     width until a source opens — so an idle chat stays centered as before.
-     Below 760px the source falls back to the bottom sheet (media block). */
+     A clicked citation opens the source in a right-hand drawer. The drawer is a
+     FIXED overlay (out of flow), NOT a flex sibling — so the chat column keeps
+     the exact width and centering it had when closed and never shifts sideways
+     when a source opens. On a wide screen the drawer settles into the
+     right-hand whitespace next to the centered chat (the "source beside chat"
+     view); on a laptop it slides over the right margin. The chat stays put
+     either way. Below 760px the source is a bottom sheet instead (media block). */
   .chat-shell { height: 100%; display: flex; }
   .chat-shell .page { flex: 1 1 auto; min-width: 0; }
-  /* The source pins to the RIGHT of the chat. Sizing note (verified in-browser):
-     this engine won't tween `width`/`flex-basis` to a clamp()/var() target on a
-     flex item — it drops the value — and a plain-px width snaps rather than
-     tweens here anyway. So the rail width is a plain px value per breakpoint
-     (correct + reliable, snaps open), and the smooth reveal comes from a
-     keyframe fade/slide on the content, which always runs (and is disabled by
-     the global reduced-motion rule). */
+  /* The drawer slides with a TRANSFORM transition, not a width tween: this
+     engine drops a width/flex-basis tween to a clamp()/var() target, but a
+     transform:translateX transition is reliable here (and is disabled by the
+     global reduced-motion rule, which then snaps it open instantly). Keeping the
+     drawer full-width and translating it off-screen when closed means the chat
+     layout never reflows — only the drawer moves. */
   .source-rail {
-    flex: 0 0 auto; width: 0; min-width: 0; overflow: hidden;
+    position: fixed; top: 0; right: 0; z-index: 30;
+    height: 100%; width: 560px; max-width: 92vw;
+    transform: translateX(100%);
+    transition: transform .34s cubic-bezier(.22, .61, .36, 1);
+    border-left: 1px solid var(--rule);
+    background: var(--bg);
+    pointer-events: none;
   }
-  .chat-shell.source-open .source-rail { width: 560px; border-left: 1px solid var(--rule); }
-  @media (max-width: 1180px) { .chat-shell.source-open .source-rail { width: 460px; } }
-  @media (max-width: 980px)  { .chat-shell.source-open .source-rail { width: 400px; } }
+  /* Shadow only in the open state — on a closed (off-screen) drawer its 44px
+     blur would bleed a faint sliver back onto the viewport's right edge. It
+     still slides in cleanly because transform moves the painted shadow too. */
+  .chat-shell.source-open .source-rail {
+    transform: translateX(0); pointer-events: auto;
+    box-shadow: -18px 0 44px -26px rgba(17, 17, 17, .3);
+  }
+  @media (max-width: 1180px) { .source-rail { width: 460px; } }
+  @media (max-width: 980px)  { .source-rail { width: 400px; } }
   .source-rail #cite-host { width: 100%; height: 100%; }
   .chat-shell.source-open .source-rail #cite-host {
-    animation: source-reveal .3s cubic-bezier(.4, 0, .2, 1);
+    animation: source-reveal .34s .06s cubic-bezier(.4, 0, .2, 1) both;
   }
   @keyframes source-reveal {
-    from { opacity: 0; transform: translateX(14px); }
-    to   { opacity: 1; transform: none; }
+    from { opacity: 0; }
+    to   { opacity: 1; }
   }
   .source-rail .cite-viewer {
     margin: 0; border: 0; border-radius: 0;
@@ -551,7 +564,7 @@
     /* Narrow screens: the source is a bottom sheet, not a side rail. The chat
        is a locked app-shell (body overflow:hidden), so an inline card would
        bury the answer; a sheet keeps the answer visible behind the scrim. */
-    .chat-shell.source-open .source-rail { width: 0; border-left: 0; }
+    .source-rail { display: none; }
     .cite-scrim {
       display: block; position: fixed; inset: 0; z-index: 40;
       background: rgba(17, 17, 17, .34);
@@ -560,12 +573,21 @@
     }
     .cite-viewer {
       position: fixed; z-index: 50; left: 0; right: 0; bottom: 0;
-      margin: 0; max-height: 88dvh;
+      /* FIXED height, not max-height: the source content loads async (loading… →
+         fetched body), and cite-slide's translateY(100%) is height-relative. A
+         content-driven height changes mid-slide, so the percentage translate is
+         recomputed against a growing box — the sheet stutters partway, pauses on
+         the fetch, then snaps to full. A fixed height means the whole sheet is
+         sized before it moves: one smooth slide, and the body just fills the
+         internal scroll area (.cite-content flex:1) when it arrives. 40dvh keeps
+         the sheet compact (a full 88dvh felt oversized for short sources); long
+         sources scroll inside. */
+      margin: 0; height: 40dvh;
       display: flex; flex-direction: column;
       border-radius: 14px 14px 0 0; border-bottom: 0;
       box-shadow: 0 -8px 28px rgba(17, 17, 17, .18);
       padding-bottom: env(safe-area-inset-bottom);   /* iOS home indicator */
-      animation: cite-slide .22s cubic-bezier(.22, .61, .36, 1) both;
+      animation: cite-slide .24s cubic-bezier(.22, .61, .36, 1) both;
     }
     .cite-viewer::before {              /* grab handle */
       content: ""; flex: none;
@@ -1098,7 +1120,14 @@ function openCitation(path, label, triggerEl) {
   );
   var host = el("div", { id: "cite-host" }, scrim, viewer);
   if (isNarrow) {
-    add(host);                    /* bottom sheet inside the stream (unchanged) */
+    /* Bottom sheet: mount on <body>, NOT into .stream via add(). add() runs a
+       320ms translateY entrance on the host, and a transformed ancestor makes
+       the sheet's position:fixed resolve against the host (partway down the
+       stream) instead of the viewport — so the sheet flashed mid-screen, then
+       snapped to the bottom when that transform cleared. On <body> there is no
+       transformed ancestor, so the sheet's own cite-slide keyframe carries it
+       straight up from the bottom edge. */
+    document.body.appendChild(host);
   } else {
     var rail = document.getElementById("source-rail");
     if (rail) rail.replaceChildren(host);   /* pin into the right rail */
@@ -1107,7 +1136,6 @@ function openCitation(path, label, triggerEl) {
   }
   document.addEventListener("keydown", citeOnKeydown);
   try { closeBtn.focus(); } catch (_) {}
-  if (isNarrow) scrollStreamToBottom();
 
   /* /read/file → JSON {relpath, content}. On error the viewer shows the message
      in place (it never silently closes). A stale fetch (viewer already replaced)
