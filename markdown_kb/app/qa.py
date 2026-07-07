@@ -1216,13 +1216,35 @@ class QaRefileRejected(Exception):
         super().__init__(f"qa refile failed to re-ground: reason={grounding.reason}")
 
 
-class RefiledAnswer:
-    """Result of a successful ``refile``.
+# Re-synthesis failure reasons that mean the KB ITSELF can no longer ground a
+# fresh answer to the question (a *content* failure), as opposed to a transient
+# verifier/index outage. On a LIVE page these trigger the fail-closed RETIRE
+# path (demote-to-draft) — ADR-0035 — because continuing to serve a stale answer
+# the KB can no longer back is worse, for a fail-closed KB, than returning
+# Cannot Confirm. ``verifier_unavailable`` / ``index_missing`` are operational/
+# transient and stay write-nothing (keep serving, retry later). An unrecognised
+# reason is treated as transient (not in this set) so a new failure mode never
+# silently retires a live answer.
+_RETIRE_REFILE_REASONS = frozenset({"retrieval_empty", "below_threshold", "claim_unsupported"})
 
-    ``filed`` is the standard ``FiledStatus`` (``status="draft"`` — the
-    demoted corpus state the curator now reviews via the existing Promote/
-    Edit/Discard loop), reusing the same shape ``promote``/``edit`` return.
-    ``grounding`` is the fresh, passing ``GroundingInfo`` for audit.
+
+class RefiledAnswer:
+    """Result of a ``refile`` that changed the page.
+
+    Two shapes, discriminated by ``retired``:
+
+    - ``retired == False`` (the happy path) — a fresh answer re-grounded and
+      overwrote the page. ``filed`` is ``status="draft"`` with the FRESH
+      content; ``grounding`` is the passing ``GroundingInfo``.
+    - ``retired == True`` (ADR-0035 fail-closed path) — the re-synthesis could
+      NOT be grounded (a content failure in ``_RETIRE_REFILE_REASONS``) and the
+      page was LIVE, so the stale answer was demoted to draft IN PLACE (old
+      content preserved) rather than left serving. ``filed`` is ``status="draft"``
+      with the OLD content; ``grounding`` is the FAILING ``GroundingInfo`` that
+      justified the retire. Either way the page leaves the live corpus and the
+      curator reviews it via the existing Promote/Edit/Discard Curation Queue
+      loop; a transient failure instead raises ``QaRefileRejected`` (nothing
+      written, keep serving).
 
     Not a Pydantic model: mirrors ``DeletedQaPage``'s route-internal-only
     convention — the route layer wraps this into its own response schema
@@ -1230,11 +1252,14 @@ class RefiledAnswer:
     same reindex-is-a-route-concern split ``promote``/``reconcile_apply``
     already use)."""
 
-    __slots__ = ("filed", "grounding")
+    __slots__ = ("filed", "grounding", "retired")
 
-    def __init__(self, filed: FiledStatus, grounding: GroundingInfo) -> None:
+    def __init__(
+        self, filed: FiledStatus, grounding: GroundingInfo, retired: bool = False
+    ) -> None:
         self.filed = filed
         self.grounding = grounding
+        self.retired = retired
 
 
 def _grounding_info_from_outcome(outcome: GroundingOutcome) -> GroundingInfo:
@@ -1278,9 +1303,15 @@ def refile(slug: str) -> RefiledAnswer:
        (``retrieval.query``) with ``wiki/qa/`` excluded from retrieval
        (ADR-0026 decision 1 step 1) — the fresh answer must re-derive from
        entities/concepts, never from the stale qa page being re-filed.
-    3. Grounding-check BEFORE any write: a failing outcome raises
-       ``QaRefileRejected`` and writes nothing.
-    4. Only on pass: re-acquire the lock and overwrite the SAME slug in
+    3. Grounding-check BEFORE any write. A failing outcome splits by reason
+       (ADR-0035): a CONTENT failure (``_RETIRE_REFILE_REASONS`` — the KB can
+       no longer ground a fresh answer) on a LIVE page RETIRES the stale
+       answer, demoting it to draft in place (old content preserved) so it
+       leaves the corpus and lands in the Curation Queue
+       (``RefiledAnswer.retired = True``); a TRANSIENT failure (verifier/index
+       unavailable), or a non-live page, raises ``QaRefileRejected`` and
+       writes nothing (keep serving, retry later).
+    4. Only on a passing re-ground: re-acquire the lock and overwrite the SAME slug in
        place with the fresh answer and its fresh cited Sections,
        ``status: draft``, bumped ``updated`` — preserving ``id``/
        ``created``/``count``/``open_questions``. The stale answer leaves the
@@ -1306,8 +1337,10 @@ def refile(slug: str) -> RefiledAnswer:
         QaPageCorrupt: existing frontmatter has invalid/unparseable
             ``status``, or no recorded ``question`` (orphan-visibility —
             surface broken state rather than guessing).
-        QaRefileRejected: the fresh re-synthesis failed the Grounding Check;
-            nothing is written.
+        QaRefileRejected: the re-synthesis failed for a TRANSIENT reason
+            (verifier/index unavailable), or on a non-live page; nothing is
+            written. A CONTENT failure on a LIVE page RETIRES instead (returns
+            ``RefiledAnswer.retired = True``, not raised — see step 3 / ADR-0035).
     """
     if not is_bare_slug(slug):
         raise QaPageNotFound(f"wiki/qa/{slug}.md not found")
@@ -1354,6 +1387,61 @@ def refile(slug: str) -> RefiledAnswer:
     grounding = _grounding_info_from_outcome(outcome)
 
     if not outcome.passed:
+        # ADR-0035 — split the failure by what it says about the KB, superseding
+        # ADR-0026's blanket "a failed re-ground writes nothing":
+        #   * CONTENT failure (_RETIRE_REFILE_REASONS) on a LIVE page → RETIRE:
+        #     the KB genuinely can no longer ground a fresh answer, so the stale
+        #     live answer is demoted to draft IN PLACE (old content preserved).
+        #     It leaves the corpus (/chat now fails closed with Cannot Confirm),
+        #     C9 stops firing (no longer live), and the draft lands in the
+        #     Curation Queue for the curator to salvage (edit) or discard. This
+        #     is the escape hatch for the otherwise-permanently-stuck state
+        #     (re-file fails, delete refuses a live page).
+        #   * TRANSIENT failure (verifier_unavailable / index_missing), or a page
+        #     that is not live → write nothing, keep serving, retry later (the
+        #     original ADR-0026 behavior — the failure is operational, not a
+        #     verdict on the KB's content).
+        if existing_status == "live" and outcome.reason in _RETIRE_REFILE_REASONS:
+            with _filing_lock:
+                if not path.exists():
+                    raise QaPageNotFound(f"wiki/qa/{slug}.md not found")
+                current = _read_existing_frontmatter(path)
+                if current is None:
+                    raise QaPageCorrupt(
+                        f"wiki/qa/{slug}.md exists but its frontmatter could not be parsed"
+                    )
+                if current.get("status") != "live":
+                    # A concurrent operation already moved it out of the live
+                    # corpus during the re-synthesis round-trip — nothing to
+                    # retire; report the re-ground failure as a transient one.
+                    log_event("qa_refile_rejected", f"slug={slug} reason={outcome.reason}")
+                    raise QaRefileRejected(grounding)
+                try:
+                    retired_count = int(current.get("count", 1))
+                except (TypeError, ValueError):
+                    retired_count = 1
+                fm = WikiPageFrontmatter(
+                    id=current.get("id", slug),
+                    type="qa",
+                    created=current.get("created", _utc_now_iso()),
+                    updated=_utc_now_iso(),
+                    sources=[str(s) for s in current.get("sources", [])],
+                    status="draft",
+                    open_questions=current.get("open_questions") or [],
+                    question=current.get("question") or question,
+                    count=retired_count,
+                )
+                body = _read_existing_body(path)
+                content = _render_qa_page(fm, body)
+                _atomic_write(path, content)
+                log_event("qa_reflect", f"slug={slug} op=retired reason={outcome.reason}")
+                return RefiledAnswer(
+                    filed=FiledStatus(
+                        slug=slug, status="draft", op="touched", count=retired_count
+                    ),
+                    grounding=grounding,
+                    retired=True,
+                )
         log_event("qa_refile_rejected", f"slug={slug} reason={outcome.reason}")
         raise QaRefileRejected(grounding)
 

@@ -1,12 +1,14 @@
 """Tests for tier-B S4 ``qa.refile`` / ``POST /qa/{slug}/refile`` (issue #380,
 ADR-0026 decision 1).
 
-Coverage mirrors the issue's acceptance criteria:
+Coverage mirrors the issue's acceptance criteria (updated for ADR-0035):
 
-- Failed re-ground writes nothing: no demote, no draft, no reindex; the old
-  live page stays byte-identical and the response is honest (422, no LLM
-  needed here — the pre-LLM below_threshold gate is cheaper and exercises
-  the same "nothing written" invariant).
+- Re-ground failure splits by reason. A CONTENT failure (retrieval_empty /
+  below_threshold / claim_unsupported — the KB can no longer ground the answer)
+  on a LIVE page RETIRES it: demoted to draft in place with its old content,
+  out of the corpus (200 retired:true), C9 stops firing. A TRANSIENT failure
+  (verifier_unavailable / index_missing), or a non-live page, writes nothing
+  (422) — the old live page stays byte-identical.
 - Successful refile: same slug, ``status: draft``, updated timestamp bumped,
   fresh cited Sources, one reindex (route-level), old answer out of the
   BM25 corpus.
@@ -163,6 +165,23 @@ def _stub_passing_llm(monkeypatch) -> FakeLLM:
     return fake_llm
 
 
+def _stub_verifier_unavailable(monkeypatch) -> FakeLLM:
+    """Retrieval passes and the LLM drafts an answer, but the grounding verifier
+    reports a TRANSIENT outage — the re-ground failure ADR-0035 keeps as
+    write-nothing (operational, not a verdict on the KB)."""
+    fake_llm = FakeLLM()
+    monkeypatch.setattr(retrieval_module, "_llm", fake_llm)
+    monkeypatch.setattr(retrieval_module, "get_llm", lambda: fake_llm)
+    monkeypatch.setattr(
+        retrieval_module.grounding_module,
+        "verify",
+        lambda draft, sections: GroundingOutcome(
+            passed=False, reason="verifier_unavailable", result=None
+        ),
+    )
+    return fake_llm
+
+
 # ---------------------------------------------------------------------------
 # Direct-module tests: qa.refile()
 # ---------------------------------------------------------------------------
@@ -258,34 +277,84 @@ def test_refile_missing_question_raises_corrupt(tmp_path, monkeypatch):
         refile("no-question")
 
 
-def test_refile_failed_reground_writes_nothing(tmp_path, monkeypatch):
-    """Invariant (ADR-0026 § Consequences): a failed re-ground writes nothing.
+def test_refile_content_failure_retires_live_page(tmp_path, monkeypatch):
+    """ADR-0035: a CONTENT re-ground failure (here below_threshold — the KB has
+    no strong match for the question) on a LIVE page RETIRES the stale answer —
+    demotes it to draft in place with its OLD content, so it leaves the corpus
+    (fail closed) and C9 stops firing. This is the escape hatch for the
+    otherwise-permanently-stuck state (re-file fails, delete refuses a live
+    page). The pre-LLM below_threshold gate needs no LLM client."""
+    from app.qa import refile
 
-    Forces the pre-LLM below_threshold gate (no LLM client ever constructed)
-    so the rejection path is exercised as cheaply and deterministically as
-    possible."""
+    wiki_dir = _build_corpus(tmp_path, monkeypatch)
+    slug = "cancel-order-abc123"
+
+    # Force below_threshold: no score can clear an effectively-infinite bar.
+    monkeypatch.setattr(retrieval_module, "_SCORE_THRESHOLD", 10_000.0)
+
+    result = refile(slug)
+
+    assert result.retired is True, "a content failure on a live page must retire, not raise"
+    assert result.filed.status == "draft"
+    assert result.filed.count == 4, "count preserved across the demote"
+    assert result.grounding.passed is False
+    assert result.grounding.reason == "below_threshold"
+
+    after = (wiki_dir / "qa" / f"{slug}.md").read_text(encoding="utf-8")
+    assert "status: draft" in after, "the live page must be demoted to draft"
+    assert STALE_QA_BODY in after, (
+        "retire preserves the OLD content verbatim — the curator salvages or discards it"
+    )
+    assert "2026-05-01T00:00:00Z" in after, "created preserved"
+
+    log = (wiki_dir / "log.md").read_text(encoding="utf-8")
+    assert any(
+        "qa_reflect" in ln and "op=retired" in ln and f"slug={slug}" in ln
+        for ln in log.splitlines()
+    ), "a retire must log qa_reflect op=retired"
+    assert "op=refiled" not in log, "a retire is not a fresh re-file"
+
+
+def test_refile_transient_failure_writes_nothing(tmp_path, monkeypatch):
+    """ADR-0035: a TRANSIENT re-ground failure (verifier_unavailable — an
+    operational blip, not a verdict on the KB) writes nothing even on a live
+    page: the old answer keeps serving and the curator can retry later."""
     from app.qa import QaRefileRejected, refile
 
     wiki_dir = _build_corpus(tmp_path, monkeypatch)
     slug = "cancel-order-abc123"
     before = (wiki_dir / "qa" / f"{slug}.md").read_text(encoding="utf-8")
-
-    # Force below_threshold: no score can clear an effectively-infinite bar.
-    monkeypatch.setattr(retrieval_module, "_SCORE_THRESHOLD", 10_000.0)
+    _stub_verifier_unavailable(monkeypatch)
 
     with pytest.raises(QaRefileRejected) as exc_info:
         refile(slug)
 
-    assert exc_info.value.grounding.passed is False
-    assert exc_info.value.grounding.reason == "below_threshold"
+    assert exc_info.value.grounding.reason == "verifier_unavailable"
 
     after = (wiki_dir / "qa" / f"{slug}.md").read_text(encoding="utf-8")
-    assert after == before, "a rejected refile must write nothing — old live page byte-identical"
+    assert after == before, "a transient failure must leave the live page byte-identical"
 
     log = (wiki_dir / "log.md").read_text(encoding="utf-8")
     assert "qa_refile_rejected" in log
-    assert f"slug={slug}" in log
-    assert "op=refiled" not in log, "no qa_reflect op=refiled entry on a rejected refile"
+    assert "op=retired" not in log, "a transient failure never retires"
+
+
+def test_refile_content_failure_on_draft_writes_nothing(tmp_path, monkeypatch):
+    """Retire fires only on a LIVE page (ADR-0035 Invariant). A content failure
+    on a page that is ALREADY a draft (not serving anything) writes nothing —
+    there is nothing to retire, and it stays a draft for the curator."""
+    from app.qa import QaRefileRejected, refile
+
+    wiki_dir = _build_corpus(tmp_path, monkeypatch, qa_status="draft")
+    slug = "cancel-order-abc123"
+    before = (wiki_dir / "qa" / f"{slug}.md").read_text(encoding="utf-8")
+    monkeypatch.setattr(retrieval_module, "_SCORE_THRESHOLD", 10_000.0)
+
+    with pytest.raises(QaRefileRejected):
+        refile(slug)
+
+    after = (wiki_dir / "qa" / f"{slug}.md").read_text(encoding="utf-8")
+    assert after == before, "a content failure on a draft page writes nothing"
 
 
 def test_refile_success_demotes_in_place_with_fresh_sources(tmp_path, monkeypatch):
@@ -370,19 +439,44 @@ def test_route_refile_pathlike_slug_returns_404(refile_client, tmp_path, monkeyp
     assert resp.status_code == 404, resp.text
 
 
-def test_route_refile_grounding_failure_returns_422_and_writes_nothing(
+def test_route_refile_content_failure_retires_returns_200_reindexes(
     refile_client, tmp_path, monkeypatch
 ):
+    """ADR-0035: a content re-ground failure on a live page returns 200 with
+    ``retired: true``, demotes the page, and the route's reindex removes it
+    from the live BM25 corpus (fail closed)."""
+    _build_corpus(tmp_path, monkeypatch)
+    slug = "cancel-order-abc123"
+    assert any(s.file == slug for s in indexer_module.sections), "live: in corpus before"
+    monkeypatch.setattr(retrieval_module, "_SCORE_THRESHOLD", 10_000.0)
+
+    resp = refile_client.post(f"/qa/{slug}/refile")
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["retired"] is True
+    assert data["filed"]["status"] == "draft"
+    assert data["grounding"]["passed"] is False
+    assert not any(s.file == slug for s in indexer_module.sections), (
+        "the retired (now-draft) page must leave the live BM25 corpus after reindex"
+    )
+
+
+def test_route_refile_transient_failure_returns_422_and_writes_nothing(
+    refile_client, tmp_path, monkeypatch
+):
+    """A TRANSIENT re-ground failure (verifier_unavailable) still returns 422
+    and writes nothing — the old live page keeps serving (ADR-0035)."""
     wiki_dir = _build_corpus(tmp_path, monkeypatch)
     slug = "cancel-order-abc123"
     before = (wiki_dir / "qa" / f"{slug}.md").read_text(encoding="utf-8")
-    monkeypatch.setattr(retrieval_module, "_SCORE_THRESHOLD", 10_000.0)
+    _stub_verifier_unavailable(monkeypatch)
 
     resp = refile_client.post(f"/qa/{slug}/refile")
 
     assert resp.status_code == 422
     detail = resp.json()["detail"]
-    assert detail["reason"] == "below_threshold"
+    assert detail["reason"] == "verifier_unavailable"
 
     after = (wiki_dir / "qa" / f"{slug}.md").read_text(encoding="utf-8")
     assert after == before

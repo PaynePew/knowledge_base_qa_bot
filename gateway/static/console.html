@@ -3107,6 +3107,7 @@ var LINT_CHROME = {
     refileCardLabel: "Re-file",
     refileCardRefiling: "Re-filing…",
     refileCardSuccess: "Re-filed as a draft — old answer left the corpus. Click Refresh to review it under Promotion Candidates (C8).",
+    refileCardRetired: "Couldn't re-ground — the knowledge base no longer supports this answer, so it was retired to a draft; the old answer left the corpus. Click Refresh to review or discard it under Promotion Candidates (C8).",
     refileCardFailurePrefix: "Cannot re-ground (reason: ",
     refileCardFailureSuffix: ") — nothing changed, this page keeps serving.",
 
@@ -3361,6 +3362,7 @@ var LINT_CHROME = {
     refileCardLabel: "重新歸檔",
     refileCardRefiling: "重新歸檔中…",
     refileCardSuccess: "已重新歸檔為草稿 — 舊回答已離開知識庫。請點擊重新整理,在待升級草稿（C8）下檢視。",
+    refileCardRetired: "無法重新推導 — 知識庫已無法背書此回答,已將它退役為草稿;舊回答已離開知識庫。請點擊重新整理,在待升級草稿（C8）下檢視或捨棄。",
     refileCardFailurePrefix: "無法通過引證檢核(原因:",
     refileCardFailureSuffix: ")— 未做任何變更,此頁面繼續服務中。",
 
@@ -6717,10 +6719,17 @@ function buildRefileFlagCard(slug, subtitle) {
              function's success branch) — the zh case uses its own full
              sentence from the dict instead of overwriting after the fact,
              since the pinned substrings only need to be PRESENT somewhere
-             in the source, which the English branch below still satisfies. */
-          statusMsgEl.textContent = consoleLang === "zh"
-            ? chrome.refileCardSuccess
-            : "Re-filed as a draft — old answer left the corpus. Click Refresh to review it under Promotion Candidates (C8).";
+             in the source, which the English branch below still satisfies.
+             ADR-0035: a content re-ground failure now returns 200 with
+             ``retired: true`` (the stale answer was demoted, not freshly
+             re-filed) — message it honestly rather than claiming a fresh draft. */
+          statusMsgEl.textContent = result.data.retired
+            ? (consoleLang === "zh"
+                ? chrome.refileCardRetired
+                : "Couldn't re-ground — the knowledge base no longer supports this answer, so it was retired to a draft; the old answer left the corpus. Click Refresh to review or discard it under Promotion Candidates (C8).")
+            : (consoleLang === "zh"
+                ? chrome.refileCardSuccess
+                : "Re-filed as a draft — old answer left the corpus. Click Refresh to review it under Promotion Candidates (C8).");
           statusMsgEl.className = "card-status-msg ok";
           cardEl.style.opacity = "0.6";
           var slugEl = cardEl.querySelector(".flag-slug");

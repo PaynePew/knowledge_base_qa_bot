@@ -157,22 +157,30 @@ class QaEditRequest(BaseModel):
 
 
 class QaRefileResponse(BaseModel):
-    """Response body for a successful ``POST /qa/{slug}/refile`` (tier-B S4,
-    issue #380, ADR-0026 decision 1).
+    """Response body for a ``POST /qa/{slug}/refile`` that changed the page
+    (tier-B S4, issue #380, ADR-0026 decision 1; ``retired`` added ADR-0035).
 
-    ``filed`` is the standard ``FiledStatus`` (``status="draft"`` — the
-    demoted corpus state; the curator reviews it via the existing Promote/
-    Edit/Discard Curation Queue loop). ``grounding`` is the fresh, passing
-    Grounding Check outcome for audit (always ``passed=True`` here — a
-    failing check returns HTTP 422 instead, see the route docstring).
-    ``sections_indexed`` is the count from the one BM25 reindex the route
-    triggers after the demote-then-overwrite write (mirrors
-    ``POST /qa/{slug}/promote``'s auto-reindex convention).
+    ``filed`` is a ``FiledStatus`` with ``status="draft"`` — the demoted corpus
+    state the curator reviews via the existing Promote/Edit/Discard Curation
+    Queue loop. ``sections_indexed`` is the count from the one BM25 reindex the
+    route triggers after the write (mirrors ``POST /qa/{slug}/promote``'s
+    auto-reindex convention).
+
+    ``retired`` discriminates the two 200 outcomes:
+    - ``retired == False`` — a fresh answer re-grounded and overwrote the page;
+      ``grounding.passed == True``.
+    - ``retired == True`` (ADR-0035) — the re-synthesis could not be grounded
+      (a content failure) and the LIVE page was demoted in place with its OLD
+      content, so it stops serving un-groundable content; ``grounding`` here is
+      the FAILING outcome that justified the retire (``passed == False``,
+      ``reason`` / ``unsupported_claims`` populated). A TRANSIENT re-ground
+      failure instead returns HTTP 422 (nothing written), see the route docstring.
     """
 
     filed: FiledStatus
     grounding: GroundingInfo
     sections_indexed: int
+    retired: bool = False
 
 
 class SkippedSlug(BaseModel):
