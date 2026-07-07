@@ -19,6 +19,9 @@ Phase 15 S1 (issue #169) — ``POST /upload`` (multipart) added; delegates to
 concern per ADR-0010 (gateway is the composition layer that owns the Console
 and all Console-adjacent system boundaries) and ADR-0011 (Upload only stages
 bytes; Import stays unchanged).
+Issue #533 (ADR-0036 §6) — ``POST /upload`` gains an optional
+``overwrite_relpath`` form field, forwarded verbatim to ``upload_files``;
+the destination-aware overwrite guard lives entirely in the deep module.
 
 All streaming complexity lives in the per-stack ``stream_query()`` functions and
 the shared ``markdown_kb.app.sse.events_for_result()`` serializer; this module is
@@ -51,7 +54,7 @@ import json
 import uuid
 from collections.abc import Callable, Iterator
 
-from fastapi import APIRouter, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 
 # Hybrid Retrieval (Stack C) — Phase 13 S4 (issue #314). Additive third stack;
@@ -379,7 +382,10 @@ def chat_stream(
 
 
 @router.post("/upload", response_model=UploadBatchResultSchema)
-async def upload(files: list[UploadFile]) -> UploadBatchResultSchema:
+async def upload(
+    files: list[UploadFile],
+    overwrite_relpath: str | None = Form(None),
+) -> UploadBatchResultSchema:
     """Stage a batch of uploaded files onto the server.
 
     Accepts multipart/form-data with one or more ``files`` fields.  Delegates
@@ -409,6 +415,12 @@ async def upload(files: list[UploadFile]) -> UploadBatchResultSchema:
 
     Args:
         files: One or more ``UploadFile`` items from the multipart body.
+        overwrite_relpath: Optional form field (issue #533, ADR-0036 §6). When
+            present, routes the (``.md``) upload to overwrite that resolved,
+            existing Source path under ``docs/`` in place instead of the
+            default root write — see ``markdown_kb.app.upload`` for the guard
+            (overwrite-only of an existing, uniquely-resolvable Source; never
+            falls back to a root write).
 
     Returns:
         ``UploadBatchResultSchema`` with one ``UploadFileResultSchema`` per
@@ -420,7 +432,7 @@ async def upload(files: list[UploadFile]) -> UploadBatchResultSchema:
         content = await uf.read()
         file_pairs.append((uf.filename or "", content))
 
-    batch = _upload_files(file_pairs)
+    batch = _upload_files(file_pairs, overwrite_relpath=overwrite_relpath)
 
     return UploadBatchResultSchema(
         results=[

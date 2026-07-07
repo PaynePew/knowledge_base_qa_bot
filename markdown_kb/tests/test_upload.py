@@ -9,6 +9,18 @@ AC coverage (issue #169 — Phase 15 S1; issue #417 — PDF added to the allow-l
   - Wiki Log events emitted: upload_batch_started, upload_file,
     upload_rejected, upload_error, upload_batch_completed
 
+AC coverage (issue #533 — destination-aware in-place Source overwrite,
+ADR-0036 §6):
+  - overwrite_relpath overwrites an existing subdirectory Source in place;
+    no second copy appears at docs/ root
+  - the overwritten Source resolves cleanly (not ambiguous_source) afterward
+  - ambiguous origin (basename in 2+ subdirs) is refused; nothing written
+  - missing origin is refused; nothing written
+  - traversal / absolute / outside-docs/ relpaths are rejected; nothing written
+  - a relpath naming a different basename than the upload is rejected
+  - omitting overwrite_relpath leaves the existing root-write behavior unchanged
+  - the overwrite is logged (op=overwrite on the upload_file event)
+
 No OPENAI_API_KEY required — the upload module is pure I/O, no LLM calls.
 Uses tmp_path + monkeypatch to redirect raw/ and docs/ (same pattern as
 test_import_html_happy_path.py / test_import_failure_modes.py).
@@ -382,6 +394,212 @@ def test_atomic_write_no_tmp_lingers(upload_env):
     docs_tmps = list(docs_dir.glob("*.tmp"))
     assert raw_tmps == [], f"Stale .tmp in raw/: {raw_tmps}"
     assert docs_tmps == [], f"Stale .tmp in docs/: {docs_tmps}"
+
+
+# ---------------------------------------------------------------------------
+# Destination-aware overwrite (issue #533, ADR-0036 §6)
+# ---------------------------------------------------------------------------
+
+
+def test_overwrite_relpath_writes_in_place(upload_env):
+    """overwrite_relpath overwrites an existing subdirectory Source in place.
+
+    No second copy appears at docs/ root (the C5/C3 fix-source loop-breaking
+    gap ADR-0036 §6 closes).
+    """
+    from app.upload import upload_files
+
+    docs_dir = upload_env["docs_dir"]
+    subdir = docs_dir / "planted-zh"
+    subdir.mkdir()
+    original = subdir / "退貨期限提醒.md"
+    original.write_text("# 退貨期限提醒\n\n30 天\n", encoding="utf-8")
+
+    corrected = "# 退貨期限提醒\n\n14 天\n".encode()
+    files = [("退貨期限提醒.md", corrected)]
+    batch = upload_files(files, overwrite_relpath="docs/planted-zh/退貨期限提醒.md")
+
+    result = batch.results[0]
+    assert result.status == "written"
+    assert original.read_bytes() == corrected
+    assert not (docs_dir / "退貨期限提醒.md").exists()
+
+
+def test_overwrite_relpath_resolves_cleanly_afterward(upload_env):
+    """After an overwrite, the Source resolves to exactly one match.
+
+    Reuses the same basename-glob rule C3's fix-source / re-ingest use
+    (mirrored locally in upload.py) to prove the write doesn't leave a state
+    that would raise ``ambiguous_source`` on the next re-ingest.
+    """
+    from app.upload import _resolve_overwrite_target, upload_files
+
+    docs_dir = upload_env["docs_dir"]
+    subdir = docs_dir / "demo-zh"
+    subdir.mkdir()
+    (subdir / "退款與退貨.md").write_text("# 退款與退貨\n\n14 天\n", encoding="utf-8")
+
+    files = [("退款與退貨.md", "# 退款與退貨\n\n14 天 non-perishable\n".encode())]
+    batch = upload_files(files, overwrite_relpath="docs/demo-zh/退款與退貨.md")
+    assert batch.results[0].status == "written"
+
+    matches = sorted(docs_dir.glob("**/退款與退貨.md"))
+    assert len(matches) == 1
+    # A second overwrite (the natural "fix again" case) still resolves
+    # cleanly — the guard's own resolver reports no ambiguity.
+    target_path, refusal = _resolve_overwrite_target(
+        "退款與退貨.md", ".md", docs_dir, "docs/demo-zh/退款與退貨.md"
+    )
+    assert refusal == ""
+    assert target_path == matches[0]
+
+
+def test_overwrite_relpath_missing_origin_refused(upload_env):
+    """A relpath naming a Source that doesn't exist anywhere is refused."""
+    from app.upload import upload_files
+
+    docs_dir = upload_env["docs_dir"]
+    files = [("nope.md", b"# Nope\n")]
+    batch = upload_files(files, overwrite_relpath="docs/nope.md")
+
+    result = batch.results[0]
+    assert result.status == "rejected"
+    assert result.reason
+    assert not (docs_dir / "nope.md").exists()
+
+
+def test_overwrite_relpath_ambiguous_origin_refused(upload_env):
+    """A basename matching 2+ existing files is refused; neither is touched."""
+    from app.upload import upload_files
+
+    docs_dir = upload_env["docs_dir"]
+    (docs_dir / "a").mkdir()
+    (docs_dir / "b").mkdir()
+    (docs_dir / "a" / "dup.md").write_text("# A\n", encoding="utf-8")
+    (docs_dir / "b" / "dup.md").write_text("# B\n", encoding="utf-8")
+
+    files = [("dup.md", b"# Corrected\n")]
+    batch = upload_files(files, overwrite_relpath="docs/a/dup.md")
+
+    result = batch.results[0]
+    assert result.status == "rejected"
+    assert result.reason
+    assert (docs_dir / "a" / "dup.md").read_text(encoding="utf-8") == "# A\n"
+    assert (docs_dir / "b" / "dup.md").read_text(encoding="utf-8") == "# B\n"
+
+
+def test_overwrite_relpath_traversal_rejected(upload_env):
+    """A relpath containing '..' is rejected; the existing file is untouched."""
+    from app.upload import upload_files
+
+    docs_dir = upload_env["docs_dir"]
+    subdir = docs_dir / "sub"
+    subdir.mkdir()
+    (subdir / "x.md").write_text("# X\n", encoding="utf-8")
+
+    files = [("x.md", b"# Y\n")]
+    batch = upload_files(files, overwrite_relpath="docs/sub/../../etc/x.md")
+
+    assert batch.results[0].status == "rejected"
+    assert (subdir / "x.md").read_text(encoding="utf-8") == "# X\n"
+
+
+def test_overwrite_relpath_absolute_rejected(upload_env):
+    """An absolute relpath is rejected; the existing file is untouched."""
+    from app.upload import upload_files
+
+    docs_dir = upload_env["docs_dir"]
+    subdir = docs_dir / "sub"
+    subdir.mkdir()
+    (subdir / "x.md").write_text("# X\n", encoding="utf-8")
+
+    files = [("x.md", b"# Y\n")]
+    batch = upload_files(files, overwrite_relpath="/docs/sub/x.md")
+
+    assert batch.results[0].status == "rejected"
+    assert (subdir / "x.md").read_text(encoding="utf-8") == "# X\n"
+
+
+def test_overwrite_relpath_outside_docs_rejected(upload_env):
+    """A relpath outside docs/ is rejected; nothing written."""
+    from app.upload import upload_files
+
+    docs_dir = upload_env["docs_dir"]
+    files = [("x.md", b"# Y\n")]
+    batch = upload_files(files, overwrite_relpath="raw/x.md")
+
+    result = batch.results[0]
+    assert result.status == "rejected"
+    assert not (docs_dir / "x.md").exists()
+
+
+def test_overwrite_relpath_filename_mismatch_refused(upload_env):
+    """A relpath naming a different basename than the uploaded file is refused."""
+    from app.upload import upload_files
+
+    docs_dir = upload_env["docs_dir"]
+    subdir = docs_dir / "demo-zh"
+    subdir.mkdir()
+    (subdir / "a.md").write_text("# A\n", encoding="utf-8")
+
+    files = [("a.md", b"# Corrected\n")]
+    batch = upload_files(files, overwrite_relpath="docs/demo-zh/b.md")
+
+    result = batch.results[0]
+    assert result.status == "rejected"
+    assert (subdir / "a.md").read_text(encoding="utf-8") == "# A\n"
+
+
+def test_overwrite_relpath_rejected_for_non_md(upload_env):
+    """overwrite_relpath only applies to .md Source uploads."""
+    from app.upload import upload_files
+
+    raw_dir = upload_env["raw_dir"]
+    files = [("note.txt", b"hello")]
+    batch = upload_files(files, overwrite_relpath="docs/note.txt")
+
+    assert batch.results[0].status == "rejected"
+    assert not (raw_dir / "note.txt").exists()
+
+
+def test_overwrite_relpath_logs_op_overwrite(upload_env):
+    """A successful overwrite tags the upload_file log line with op=overwrite."""
+    from app.upload import upload_files
+
+    docs_dir = upload_env["docs_dir"]
+    log_path = upload_env["log_path"]
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    subdir = docs_dir / "demo-zh"
+    subdir.mkdir()
+    (subdir / "note.md").write_text("# Note\n\nOld\n", encoding="utf-8")
+
+    files = [("note.md", b"# Note\n\nNew\n")]
+    upload_files(files, overwrite_relpath="docs/demo-zh/note.md")
+
+    log_text = log_path.read_text(encoding="utf-8")
+    assert "op=overwrite" in log_text
+
+
+def test_omitting_overwrite_relpath_keeps_root_write_unchanged(upload_env):
+    """Omitting overwrite_relpath still writes to docs/ root, even when a
+    same-named Source already exists in a subdirectory — the default
+    root-write path is byte-for-byte unchanged by this feature."""
+    from app.upload import upload_files
+
+    docs_dir = upload_env["docs_dir"]
+    subdir = docs_dir / "demo-zh"
+    subdir.mkdir()
+    original = subdir / "note.md"
+    original.write_text("# Note\n\nOriginal\n", encoding="utf-8")
+
+    files = [("note.md", b"# Note\n\nRoot copy\n")]
+    batch = upload_files(files)
+
+    result = batch.results[0]
+    assert result.status == "written"
+    assert (docs_dir / "note.md").read_bytes() == b"# Note\n\nRoot copy\n"
+    # The subdirectory Source is untouched by the unrelated root write.
+    assert original.read_text(encoding="utf-8") == "# Note\n\nOriginal\n"
 
 
 # ---------------------------------------------------------------------------

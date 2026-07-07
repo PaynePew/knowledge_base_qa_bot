@@ -150,13 +150,13 @@ Authorized by GitHub issue #512 and [ADR-0033](adr/0033-longform-structure-enric
 
 ## `/upload` route (Phase 15 Operator Console)
 
-Authorized by GitHub issue #168 (Phase 15 PRD) + [ADR-0011](adr/0011-upload-separate-from-import.md). Slice S1 (#169) introduces all five kinds below. Upload is a system boundary: it stages dropped browser bytes onto the server (`.html`/`.txt` → `raw/`, `.md` → `docs/`) and never converts (Import stays unchanged). `filename` and `reason` fields are rendered via `repr()` so embedded quotes/spaces stay unambiguous in the grep-able log line.
+Authorized by GitHub issue #168 (Phase 15 PRD) + [ADR-0011](adr/0011-upload-separate-from-import.md). Slice S1 (#169) introduces all five kinds below. Upload is a system boundary: it stages dropped browser bytes onto the server (`.html`/`.txt` → `raw/`, `.md` → `docs/`) and never converts (Import stays unchanged). `filename` and `reason` fields are rendered via `repr()` so embedded quotes/spaces stay unambiguous in the grep-able log line. Issue #533 ([ADR-0036](adr/0036-c5-source-rooted-contradiction-routed-fix-source.md) §6) adds the `op=overwrite` sub-tag to `upload_file` — see below.
 
 | Kind | When fired | Summary template |
 |---|---|---|
 | `upload_batch_started` | Start of an `upload_files()` call | `files=N` |
-| `upload_file` | One file staged successfully to `raw/` or `docs/` | `filename=<repr> target=<repr target dir>` |
-| `upload_rejected` | One file failed validation (type allow-list, size limit, traversal-safe filename) | `filename=<repr> reason=<repr>` |
+| `upload_file` | One file staged successfully to `raw/` or `docs/` | `filename=<repr> target=<repr target dir>` — carries a trailing `op=overwrite` when the write used the destination-aware overwrite (issue #533) instead of the default root write |
+| `upload_rejected` | One file failed validation (type allow-list, size limit, traversal-safe filename, or — issue #533 — an `overwrite_relpath` guard: malformed relpath, filename mismatch, ambiguous/missing origin) | `filename=<repr> reason=<repr>` |
 | `upload_error` | One file failed at the atomic-write stage (OS-level, e.g. disk full / permission) | `filename=<repr> reason=<repr ≤200>` |
 | `upload_batch_completed` | End of `upload_files()`; emitted even when some files were rejected / errored | `written=A rejected=B errors=C duration_ms=N` |
 
