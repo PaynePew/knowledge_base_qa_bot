@@ -581,17 +581,33 @@ class CoverageGapFinding(BaseModel):
 
 
 class PagePairFinding(BaseModel):
-    """C5 page-pair contradiction finding: two wiki pages that may contradict each other.
+    """C5 page-pair contradiction finding: two wiki pages that give a reader
+    incompatible answers to the SAME question.
 
-    The LLM emits a 4-value severity via ``with_structured_output``:
-    - ``direct``    — explicit factual disagreement (different numbers, different policies).
-                      Curator must fix.
-    - ``tension``   — same topic, scope/wording differences raising reader confusion.
-                      Curator reviews; may dismiss.
-    - ``duplicate`` — same concept covered in two pages without contradiction.
-                      Absorbs C4-b semantic-duplicate detection from Phase 3 Q5a.
-                      Curator considers merging.
-    - ``none``      — false positive surfaced by candidate filter; not a real overlap.
+    The LLM emits a 3-value severity via ``with_structured_output``. ADR-0034
+    narrowed C5 from a similarity check to contradiction-only and **retired the
+    former ``duplicate`` value**: consistent redundant coverage is not a
+    contradiction (if two pages ever state a fact *differently*, that is
+    ``direct``), and slug-collision duplicates are C4's job (Merge /
+    Differentiate). The candidate filter (F1 ∪ F3) is still similarity-based —
+    that is only a cheap cost gate; precision lives entirely in this judge,
+    whose default verdict is ``none``.
+
+    - ``direct``   — the two pages make incompatible factual claims about the
+                     same question (a different number / amount / date / fee /
+                     limit / deadline, or a policy that flips allowed↔not-allowed).
+                     A reader following one page would be wrong per the other.
+                     Reconcile converges it (fix → re-judge → ``none``).
+    - ``tension``  — same question, no different fact stated, but one page
+                     materially omits a condition/exception the other states, so
+                     reading only that page misleads about that same question
+                     (each cherry-picks part of one underlying rule). Used
+                     sparingly; Reconcile converges it too.
+    - ``none``     — NOT a finding. Adjacent-but-distinct topics that merely
+                     share vocabulary (e.g. cancel vs pause — different actions,
+                     both valid), broader-vs-specific pages that do not disagree,
+                     one page merely carrying more detail/scope, and consistent
+                     redundant coverage all resolve here.
 
     ``page_a`` and ``page_b`` are always in canonical sorted order (sorted slug names
     so that ``(A, B)`` and ``(B, A)`` produce identical findings — symmetric pair
@@ -601,10 +617,10 @@ class PagePairFinding(BaseModel):
     ``summary`` and ``suggested_action`` are LLM-generated prose.
 
     ``severity == "none"`` findings are filtered before returning from ``_check_c5_page_pair``
-    so only actionable findings appear in the report.
+    so only contradictions Reconcile can converge appear in the report (ADR-0034).
     """
 
-    severity: Literal["direct", "tension", "duplicate", "none"]
+    severity: Literal["direct", "tension", "none"]
     page_a: str  # slug (always sorted ≤ page_b)
     page_b: str  # slug (always sorted ≥ page_a)
     page_a_claim: str  # direct quote from page_a body

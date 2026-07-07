@@ -43,7 +43,7 @@ Three new read-only checks scan ``wiki/qa/*.md`` and one modifier excludes
 
 - **C5 modifier** — ``_candidate_pairs`` filters ``frontmatter.type == "qa"``
   BEFORE F1/F3 candidate computation, preserving C5 LLM call budget and
-  preventing trivially-true ``duplicate`` findings between qa pages and their
+  preventing trivially-true overlap findings between qa pages and their
   source entities (PRD #78 Q1 + Q6).
 - **C8 promotion candidates** — surfaces ``status: draft`` Filed Answers ranked
   by ``count`` desc / ``updated`` desc to ``lint-report.md`` §
@@ -1782,8 +1782,8 @@ def _candidate_pairs(
     generation BEFORE F1/F3 are computed. Filed Answers are structurally
     derivative of their source entity pages (they share the same
     ``frontmatter.sources``), so without this filter the C5 LLM would be called
-    on every (qa, entity-source) pair only to return ``severity=duplicate``,
-    flooding ``lint-report.md`` and burning LLM tokens. Filtering at the page
+    on every (qa, entity-source) pair only to return a trivially-true overlap
+    verdict, flooding ``lint-report.md`` and burning LLM tokens. Filtering at the page
     set level means the qa pages neither appear in F1 source-intersection nor
     as F3 BM25 queries, *and* the F3 BM25 hit-side filter rejects sections
     whose owner is a qa page — qa is fully invisible to C5 by construction.
@@ -1909,18 +1909,27 @@ def _rank_candidate_pairs(
 
 
 # Prompt for the C5 LLM call — instructs the model to compare two wiki page bodies
-_C5_SYSTEM_PROMPT = """You are a knowledge-base health auditor. Two wiki pages from the same knowledge base are shown below. Your task is to judge whether they contradict, overlap, or duplicate each other.
+_C5_SYSTEM_PROMPT = """You are a knowledge-base contradiction auditor. You are shown two wiki pages from the SAME knowledge base. Your ONLY job is to decide whether a reader who trusts this knowledge base would be given two INCOMPATIBLE answers to the SAME question.
+
+Default to "none". Two pages are NOT a finding merely because they share a topic, vocabulary, or subject area — most page pairs are "none". There is no safe automatic action for two pages that do not actually disagree, so a false contradiction only wastes a curator's time.
+
+Assign a severity:
+- "direct": the two pages make incompatible factual claims about the same question — a different number, amount, date, fee, limit, deadline, or a policy/eligibility that flips (allowed vs not allowed). A reader following one page would be wrong according to the other.
+- "tension": the two pages answer the same question and state no different fact, but one page materially omits a condition or exception the other states, so that reading only that page would mislead about that same question (each page cherry-picks part of one underlying rule). Use this sparingly, and only when the omission actually changes the answer.
+- "none": everything else. In particular, ALWAYS return "none" when:
+    * the pages are about DIFFERENT questions or actions that merely share wording — e.g. "how to cancel a subscription" vs "how to pause a subscription" are different actions; both are correct and both should exist. NOT a finding.
+    * one page is broader/more general and the other is more specific, and they do not disagree.
+    * one page simply carries more detail, extra scope, or additional items the other does not mention, without contradicting it.
+    * the two pages state the SAME fact consistently (redundant coverage). Consistent duplication is not a contradiction — do not flag it. (Only if they state the fact DIFFERENTLY is that "direct".)
 
 Output a structured finding with:
-- severity: one of "direct" (explicit factual conflict — different numbers, different policies), "tension" (same topic, scope or wording differences that could confuse readers), "duplicate" (same concept covered in two pages without contradiction), or "none" (no meaningful overlap or conflict found).
-- page_a_claim: a direct quote from Page A's body that is relevant to the comparison. Use the exact text.
-- page_b_claim: a direct quote from Page B's body that is relevant to the comparison. Use the exact text.
-- summary: a one-to-two sentence explanation of why you assigned this severity.
-- suggested_action: a concrete curator action (e.g. "Reconcile sources", "Merge pages", "Review and dismiss").
+- severity: "direct", "tension", or "none".
+- page_a_claim: the exact sentence from Page A's body most relevant to the comparison (verbatim quote). For "none", pick any representative sentence.
+- page_b_claim: the exact sentence from Page B's body (verbatim quote). For "none", pick any representative sentence.
+- summary: one or two sentences naming the single question at issue and why the two pages are (or are not) incompatible about it.
+- suggested_action: for a real finding, describe the reconcile — e.g. "Reconcile: align <the specific conflicting fact> so both pages agree." For "none": "No action — the pages do not conflict."
 
-If severity is "none", still provide page_a_claim and page_b_claim — pick any representative sentence from each page.
-
-Be conservative: only assign "direct" for clear factual disagreement (different numbers, dates, policy terms). Use "tension" for ambiguous cases."""
+Be conservative. When in doubt, return "none"."""
 
 
 def _judge_page_pair(
@@ -1929,7 +1938,7 @@ def _judge_page_pair(
     slug_b: str,
     body_b: str,
 ) -> PagePairFinding:
-    """Call the LLM to judge whether two wiki pages contradict, overlap, or duplicate.
+    """Call the LLM to judge whether two wiki pages contradict each other (same-question incompatibility).
 
     Uses ``get_lint_llm().with_structured_output(PagePairFinding)`` per ADR-0005.
     temperature=0 (set on the singleton in ``get_lint_llm()``).
@@ -2342,8 +2351,8 @@ def _check_c5_page_pair(
     ``_c5_capped_counter`` (candidates not judged because they fell below the
     cap), and ``_c5_cache_hit_counter`` (judged pairs reused from the cache).
 
-    Returns findings sorted by severity order (direct → tension → duplicate),
-    then alphabetically by page_a slug. The sort makes output order independent
+    Returns findings sorted by severity order (direct → tension), then
+    alphabetically by page_a slug. The sort makes output order independent
     of judge completion order, so concurrency does not affect the result.
     """
     max_pairs = int(os.getenv("KB_LINT_C5_MAX_PAIRS", str(_KB_LINT_C5_MAX_PAIRS_DEFAULT)))
@@ -2466,7 +2475,7 @@ def _check_c5_page_pair(
         )
 
     # Sort: severity order, then alphabetical by page_a
-    _SEVERITY_ORDER = {"direct": 0, "tension": 1, "duplicate": 2, "none": 3}
+    _SEVERITY_ORDER = {"direct": 0, "tension": 1, "none": 2}
     findings.sort(key=lambda f: (_SEVERITY_ORDER.get(f.severity, 99), f.page_a, f.page_b))
 
     return findings
@@ -3312,12 +3321,12 @@ def _render_c5_contradictions(findings: LintFindings, summary: LintSummary) -> l
         lines.append("_No page-pair contradictions found._")
         lines.append("")
     else:
-        # Sub-group by severity in fixed order: direct → tension → duplicate
+        # Sub-group by severity in fixed order: direct → tension
         by_sev: dict[str, list[PagePairFinding]] = defaultdict(list)
         for ppf in findings.page_pairs:
             by_sev[ppf.severity].append(ppf)
 
-        for sev in ("direct", "tension", "duplicate"):
+        for sev in ("direct", "tension"):
             group = by_sev.get(sev, [])
             if not group:
                 continue
