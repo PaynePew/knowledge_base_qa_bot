@@ -374,6 +374,7 @@ import yaml
 
 from ._paths import DOCS_DIR, WIKI_DIR
 from .atomic import write_text_atomic
+from .grounding import CONTENT_FAILURE_REASONS
 from .indexer import _index_lock
 from .logger import LOG_PATH, log_event
 from .schemas import (
@@ -1351,7 +1352,7 @@ _SUMMARY_QUERY_RE = re.compile(r'^"(?P<query>[^"]*)"')
 _C1_KINDS = frozenset({"chat_fallback", "chat_grounding_fallback"})
 
 # Reason values that C1 handles explicitly
-_C1_HANDLED_REASONS = frozenset({"retrieval_empty", "below_threshold", "claim_unsupported"})
+_C1_HANDLED_REASONS = CONTENT_FAILURE_REASONS
 
 # Success-signal kind for latest-outcome resolution (ADR-0027 decision 2,
 # tier-B S8, issue #384). Every completed chat writes exactly one of these

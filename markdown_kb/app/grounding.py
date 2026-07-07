@@ -117,6 +117,18 @@ class GroundingOutcome(BaseModel):
     retries_attempted: int = 0
 
 
+# Reasons where the KB itself could not ground an answer (a *content* failure),
+# as opposed to a transient/operational failure (``verifier_unavailable`` /
+# ``index_missing``). Single source of truth for the content-vs-transient split
+# of ``GroundingOutcome.reason``, co-located with the reason enum so the two
+# can never drift. Consumed by C1 coverage-gap aggregation (``lint``) and the
+# C9 re-file retire gate (``qa``, ADR-0035) — both act only on content failures.
+# Adding a new content-failure reason to the enum above must add it here too.
+CONTENT_FAILURE_REASONS = frozenset(
+    {"retrieval_empty", "below_threshold", "claim_unsupported"}
+)
+
+
 # ---------------------------------------------------------------------------
 # Verifier system prompt (AC #1)
 # ---------------------------------------------------------------------------

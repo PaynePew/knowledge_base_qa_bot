@@ -82,7 +82,7 @@ from typing import Any
 import yaml
 
 from .atomic import write_text_atomic
-from .grounding import CitableContent, GroundingOutcome
+from .grounding import CONTENT_FAILURE_REASONS, CitableContent, GroundingOutcome
 from .indexer import parse_markdown, slugify
 from .logger import log_event
 from .schemas import (
@@ -1216,16 +1216,18 @@ class QaRefileRejected(Exception):
         super().__init__(f"qa refile failed to re-ground: reason={grounding.reason}")
 
 
-# Re-synthesis failure reasons that mean the KB ITSELF can no longer ground a
-# fresh answer to the question (a *content* failure), as opposed to a transient
-# verifier/index outage. On a LIVE page these trigger the fail-closed RETIRE
-# path (demote-to-draft) — ADR-0035 — because continuing to serve a stale answer
-# the KB can no longer back is worse, for a fail-closed KB, than returning
-# Cannot Confirm. ``verifier_unavailable`` / ``index_missing`` are operational/
-# transient and stay write-nothing (keep serving, retry later). An unrecognised
-# reason is treated as transient (not in this set) so a new failure mode never
-# silently retires a live answer.
-_RETIRE_REFILE_REASONS = frozenset({"retrieval_empty", "below_threshold", "claim_unsupported"})
+# The re-synthesis failure reasons that trigger the fail-closed RETIRE path
+# (demote-to-draft) on a LIVE page — ADR-0035 — because continuing to serve a
+# stale answer the KB can no longer back is worse, for a fail-closed KB, than
+# returning Cannot Confirm. Aliased to the shared
+# ``grounding.CONTENT_FAILURE_REASONS`` (the single source of truth for the
+# content-vs-transient split) so a new content-failure reason added to the
+# reason enum can never be missed here — drift would silently reclassify an
+# un-groundable answer as transient and keep serving it forever, the exact bug
+# this gate exists to prevent. ``verifier_unavailable`` / ``index_missing`` are
+# operational/transient and stay write-nothing (keep serving, retry later); an
+# unrecognised reason is likewise treated as transient (not in the set).
+_RETIRE_REFILE_REASONS = CONTENT_FAILURE_REASONS
 
 
 class RefiledAnswer:
