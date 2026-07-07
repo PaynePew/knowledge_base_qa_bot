@@ -1092,13 +1092,38 @@ function closeCitation() {
   citeReturnFocus = null;
 }
 
+/* Issue #527: openCitation picks its mount (right drawer vs. bottom sheet) once,
+   from isNarrow at open time — so crossing the 760px breakpoint WHILE a source
+   is open (a desktop window resize, or a phone rotating portrait↔landscape) left
+   the source in the wrong mode and hidden. The host node (#cite-host = scrim +
+   viewer) is structurally identical in both modes; only its mount point and the
+   media-query CSS differ. So a breakpoint change just MOVES the existing node to
+   the correct parent (no refetch — the loaded body is preserved) and toggles
+   source-open. Re-inserting the node cleanly re-runs the slide/reveal animation.
+   matchMedia's change fires once per crossing, so no debounce is needed. */
+var citeBreakpoint = matchMedia("(max-width: 759px)");
+function reflowCitation() {
+  var host = document.getElementById("cite-host");
+  if (!host) return;                                  /* nothing open */
+  var shell = document.querySelector(".chat-shell");
+  if (citeBreakpoint.matches) {
+    document.body.appendChild(host);                  /* → bottom sheet */
+    if (shell) shell.classList.remove("source-open");
+  } else {
+    var rail = document.getElementById("source-rail");
+    if (rail) rail.replaceChildren(host);             /* → right drawer */
+    if (shell) shell.classList.add("source-open");
+  }
+}
+
 function openCitation(path, label, triggerEl) {
   closeCitation();  /* only one viewer at a time; reopening replaces it */
   citeReturnFocus = triggerEl || null;
 
   /* Narrow (<760px): bottom sheet (modal dialog). Wide: pinned side rail
-     (a non-modal region beside the chat). */
-  var isNarrow = matchMedia("(max-width: 759px)").matches;
+     (a non-modal region beside the chat). Shared matchMedia so a later
+     breakpoint cross reflows the same way (issue #527). */
+  var isNarrow = citeBreakpoint.matches;
   var scrim = el("div", { class: "cite-scrim", onclick: closeCitation });
   var closeBtn = el("button", {
     class: "cite-viewer-close", type: "button", text: "close", onclick: closeCitation,
@@ -1484,6 +1509,8 @@ function submit() {
 build();
 syncSeg();
 renderEmptyState();
+/* Keep an open source in the right mode when the viewport crosses 760px (#527). */
+citeBreakpoint.addEventListener("change", reflowCitation);
 </script>
 </body>
 </html>
