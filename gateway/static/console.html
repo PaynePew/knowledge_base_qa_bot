@@ -5626,6 +5626,20 @@ function renderReconcilePreview(modal, data, resultEl, closeModal, siblingButton
       .then(function(lintData) {
         remediationInFlight = false;
         closeModal();
+        // issue #546: the fast relint excludes C5, so renderLintCard re-injects
+        // the preserved lastDeepC5Pairs — which still holds the pair we just
+        // reconciled, leaving a resolved finding on screen until a manual deep
+        // re-audit. Drop it optimistically so the row clears now. No false
+        // clear: post-ADR-0038 apply returns 200 ONLY when the pair actually
+        // converged (a still-contradicting apply 422s and never reaches here).
+        if (Array.isArray(lastDeepC5Pairs)) {
+          lastDeepC5Pairs = lastDeepC5Pairs.filter(function(p) {
+            return !(
+              (p.page_a === data.page_a && p.page_b === data.page_b) ||
+              (p.page_a === data.page_b && p.page_b === data.page_a)
+            );
+          });
+        }
         lastLintData = lintData;
         if (resultEl) resultEl.replaceChildren(renderLintCard(lintData, resultEl));
         renderCurationQueue(document.getElementById("curation-queue-root"), lintData);

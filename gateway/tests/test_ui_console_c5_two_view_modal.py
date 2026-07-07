@@ -103,6 +103,18 @@ def test_apply_handles_not_converged_422():
     assert 'detail.reason === "not_converged"' in fn
 
 
+def test_apply_success_optimistically_clears_resolved_c5_pair():
+    """issue #546: the fast relint excludes C5, so renderLintCard re-injects the
+    preserved lastDeepC5Pairs. A successful reconcile apply must drop the
+    resolved pair from that preserved list so the finding clears WITHOUT a manual
+    deep re-audit — order-insensitive, and only on the 200 success path (a
+    still-contradicting apply 422s, so there is no false clear)."""
+    fn = _extract_function(_console_text(), "renderReconcilePreview")
+    assert "lastDeepC5Pairs = lastDeepC5Pairs.filter(" in fn
+    assert "p.page_a === data.page_a && p.page_b === data.page_b" in fn
+    assert "p.page_a === data.page_b && p.page_b === data.page_a" in fn
+
+
 def test_both_toggle_buttons_always_rendered_and_wired():
     fn = _extract_function(_console_text(), "renderReconcilePreview")
     assert 'class: "reconcile-view-toggle-btn"' in fn
