@@ -30,7 +30,7 @@ import app.indexer as indexer_module
 import app.lint as lint_module
 import app.reconcile as reconcile_module
 from app.grounding import GroundingClaim, GroundingResult
-from app.schemas import ReconcileDraft
+from app.schemas import PagePairFinding, ReconcileDraft
 
 _TESTS_DIR = Path(__file__).resolve().parent
 _FIXTURE_DOCS_DIR = _TESTS_DIR / "fixtures" / "docs"
@@ -98,13 +98,43 @@ def reconcile_wiki_dir(tmp_path: Path) -> Path:
 
 
 def _make_fake_lint_llm(
-    content_a: str = _DRAFT_CONTENT_A, content_b: str = _DRAFT_CONTENT_B
+    content_a: str = _DRAFT_CONTENT_A,
+    content_b: str = _DRAFT_CONTENT_B,
+    rejudge_severity: str = "none",
+    rejudge_summary: str = "The two drafts still give incompatible answers.",
+    rejudge_raises: bool = False,
 ) -> MagicMock:
-    """Schema-aware fake for ``get_lint_llm().with_structured_output(ReconcileDraft)``."""
-    fake_chain = MagicMock()
-    fake_chain.invoke.return_value = ReconcileDraft(content_a=content_a, content_b=content_b)
+    """Schema-aware fake for ``get_lint_llm().with_structured_output(...)``.
+
+    The lint singleton now backs TWO calls off ``generate_reconcile`` /
+    ``apply_reconcile`` (ADR-0038): the drafting call
+    (``with_structured_output(ReconcileDraft)``) and the convergence re-judge
+    (``_judge_page_pair`` → ``with_structured_output(PagePairFinding)``). Dispatch
+    on the requested schema so each gets the right shape. ``rejudge_severity``
+    drives convergence: ``"none"`` → converged, else source-rooted;
+    ``rejudge_raises`` makes the re-judge blow up (fail-safe path).
+    """
+    draft_chain = MagicMock()
+    draft_chain.invoke.return_value = ReconcileDraft(content_a=content_a, content_b=content_b)
+
+    rejudge_chain = MagicMock()
+    if rejudge_raises:
+        rejudge_chain.invoke.side_effect = RuntimeError("judge LLM unavailable")
+    else:
+        rejudge_chain.invoke.return_value = PagePairFinding(
+            severity=rejudge_severity,
+            page_a="a",  # overwritten by _judge_page_pair's canonical-order rebuild
+            page_b="b",
+            page_a_claim="claim a",
+            page_b_claim="claim b",
+            summary=rejudge_summary,
+            suggested_action="reconcile or fix a Source",
+        )
+
     fake_llm = MagicMock()
-    fake_llm.with_structured_output.return_value = fake_chain
+    fake_llm.with_structured_output.side_effect = lambda schema: (
+        rejudge_chain if schema is PagePairFinding else draft_chain
+    )
     return fake_llm
 
 
@@ -582,3 +612,131 @@ def test_apply_404_when_page_missing(reconcile_client):
             },
         )
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Convergence re-judge — the real source-rooted signal (issue #545, ADR-0038)
+# ---------------------------------------------------------------------------
+
+
+def test_rejudge_convergence_maps_severity_and_fails_safe(monkeypatch):
+    """Unit: ``none`` → converged (no summary); any other severity → not
+    converged (carries the oracle summary); a judge error fails safe to NOT
+    converged with no summary (ADR-0038 conservative fail-safe)."""
+
+    def _finding(severity: str, summary: str) -> PagePairFinding:
+        return PagePairFinding(
+            severity=severity,
+            page_a="a",
+            page_b="b",
+            page_a_claim="",
+            page_b_claim="",
+            summary=summary,
+            suggested_action="",
+        )
+
+    monkeypatch.setattr(reconcile_module, "_judge_page_pair", lambda *a: _finding("none", "agree"))
+    assert reconcile_module._rejudge_convergence("a", "ca", "b", "cb") == (True, None)
+
+    monkeypatch.setattr(
+        reconcile_module, "_judge_page_pair", lambda *a: _finding("direct", "14 vs 30")
+    )
+    assert reconcile_module._rejudge_convergence("a", "ca", "b", "cb") == (False, "14 vs 30")
+
+    monkeypatch.setattr(
+        reconcile_module, "_judge_page_pair", lambda *a: _finding("tension", "omits a condition")
+    )
+    assert reconcile_module._rejudge_convergence("a", "ca", "b", "cb") == (
+        False,
+        "omits a condition",
+    )
+
+    def _boom(*a):
+        raise RuntimeError("judge LLM down")
+
+    monkeypatch.setattr(reconcile_module, "_judge_page_pair", _boom)
+    assert reconcile_module._rejudge_convergence("a", "ca", "b", "cb") == (False, None)
+
+
+def test_generate_source_rooted_pair_not_converged_despite_grounding_pass(
+    reconcile_client, monkeypatch
+):
+    """#545 core: grounding PASSES (each draft faithful to its own Source) yet
+    the drafts still contradict — the convergence re-judge (severity=direct)
+    reports NOT converged (source-rooted). Grounding alone could never see this."""
+    monkeypatch.setattr(
+        lint_module, "get_lint_llm", lambda: _make_fake_lint_llm(rejudge_severity="direct")
+    )
+    fake_grounding_llm = _make_fake_grounding_llm(_PASS_RESULT)
+    with patch("app.grounding.ChatOpenAI", return_value=fake_grounding_llm):
+        resp = reconcile_client.post(
+            "/pages/reconcile",
+            json={"page_a": "cancellation-window-a", "page_b": "cancellation-window-b"},
+        )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["grounding"]["passed"] is True  # grounding still passes...
+    assert data["converged"] is False  # ...but the pair did NOT converge
+    assert data["convergence_summary"]  # oracle prose for the Source-view note
+
+
+def test_generate_wiki_rooted_pair_converges(reconcile_client):
+    """A wiki-rooted pair (re-judge severity=none, the fixture default) reports
+    converged=True with no convergence_summary — Apply-able."""
+    fake_grounding_llm = _make_fake_grounding_llm(_PASS_RESULT)
+    with patch("app.grounding.ChatOpenAI", return_value=fake_grounding_llm):
+        resp = reconcile_client.post(
+            "/pages/reconcile",
+            json={"page_a": "cancellation-window-a", "page_b": "cancellation-window-b"},
+        )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["converged"] is True
+    assert data["convergence_summary"] is None
+
+
+def test_apply_refuses_source_rooted_pair_422_not_converged(reconcile_client, monkeypatch):
+    """ADR-0038 Invariant: apply refuses (422, reason=not_converged) when the
+    submitted drafts still contradict, even though grounding passes — a
+    source-rooted pair can never be Applied into the corpus."""
+    monkeypatch.setattr(
+        lint_module, "get_lint_llm", lambda: _make_fake_lint_llm(rejudge_severity="direct")
+    )
+    fake_grounding_llm = _make_fake_grounding_llm(_PASS_RESULT)
+    with patch("app.grounding.ChatOpenAI", return_value=fake_grounding_llm):
+        gen = reconcile_client.post(
+            "/pages/reconcile",
+            json={"page_a": "cancellation-window-a", "page_b": "cancellation-window-b"},
+        ).json()
+        resp = reconcile_client.post(
+            "/pages/reconcile/apply",
+            json={
+                "page_a": "cancellation-window-a",
+                "page_b": "cancellation-window-b",
+                "content_a": gen["content_a"],
+                "content_b": gen["content_b"],
+                "hash_a": gen["hash_a"],
+                "hash_b": gen["hash_b"],
+            },
+        )
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["detail"]["reason"] == "not_converged"
+
+
+def test_generate_rejudge_error_fails_safe_to_not_converged(reconcile_client, monkeypatch):
+    """ADR-0038 fail-safe: if the convergence re-judge errors, the pair is
+    reported NOT converged (Apply stays disabled client-side) — never enable
+    Apply under uncertainty."""
+    monkeypatch.setattr(
+        lint_module, "get_lint_llm", lambda: _make_fake_lint_llm(rejudge_raises=True)
+    )
+    fake_grounding_llm = _make_fake_grounding_llm(_PASS_RESULT)
+    with patch("app.grounding.ChatOpenAI", return_value=fake_grounding_llm):
+        resp = reconcile_client.post(
+            "/pages/reconcile",
+            json={"page_a": "cancellation-window-a", "page_b": "cancellation-window-b"},
+        )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["converged"] is False
+    assert data["convergence_summary"] is None

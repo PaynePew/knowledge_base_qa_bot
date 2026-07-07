@@ -453,6 +453,13 @@ _c5_capped_counter: list[int] = [0]
 _c5_cache_hit_counter: list[int] = [0]
 _c5_pair_errors: list[str] = []
 
+# Fixed seed for the C5 judge and the reconcile convergence re-judge (ADR-0038).
+# An unseeded model flips its verdict run-to-run on identical inputs (issue #545,
+# reproduced: same page-body hashes, grounding.passed True then False). Seeding
+# cuts that flap. Best-effort only (OpenAI's seed is not a hard guarantee) — the
+# convergence re-judge, not determinism, is the load-bearing correctness fix.
+_C5_LLM_SEED = 7
+
 
 def _resolve_lint_model_name() -> str:
     """Resolve the C5 judge model name (three-layer fallback, mirroring OPENAI_INGEST_MODEL):
@@ -481,7 +488,8 @@ def get_lint_llm():
     resolution. Steady state (model unchanged) still returns the cached
     client with no extra construction.
 
-    temperature=0 for determinism (structured output, reproducible runs).
+    temperature=0 and a fixed ``seed`` (``_C5_LLM_SEED``, ADR-0038) for
+    determinism (structured output, reproducible runs, less verdict flap).
     """
     global _lint_llm, _lint_llm_model
     resolved_model = _resolve_lint_model_name()
@@ -491,6 +499,7 @@ def get_lint_llm():
         _lint_llm = ChatOpenAI(
             model=resolved_model,
             temperature=0,
+            seed=_C5_LLM_SEED,
             timeout=60,
             max_retries=1,
         )

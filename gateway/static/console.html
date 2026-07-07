@@ -5483,14 +5483,15 @@ function renderC5SourceCard(pageSlug, sections) {
 }
 
 /* Both pages' cards side by side, plus the "Sources disagree" note (ADR-0036
-   decision 2/3) when THIS generate's grounding failed — the note names the
-   source-rooted exit; it is omitted for a passing (wiki-rooted) generate so
-   toggling here out of curiosity never reads as alarming. */
+   decision 2/3) when THIS generate did NOT converge — i.e. the source-rooted
+   case (ADR-0038: decided by the convergence re-judge, NOT by grounding, which
+   cannot see cross-page disagreement). Omitted for a converged (wiki-rooted)
+   generate so toggling here out of curiosity never reads as alarming. */
 function renderC5SourceComparisonView(data) {
   var chrome = LINT_CHROME[consoleLang];
-  var passed = !!(data.grounding && data.grounding.passed);
+  var converged = data.converged === true;
   var container = el("div", {});
-  if (!passed) {
+  if (!converged) {
     container.append(el("div", { class: "sources-disagree-note", text: chrome.c5SourcesDisagreeNote }));
   }
   container.append(el("div", { class: "reconcile-source-columns" },
@@ -5504,7 +5505,8 @@ function renderC5SourceComparisonView(data) {
    between Wiki comparison (old-vs-editable columns, existing) and Source
    comparison (issue #538, ADR-0036 decisions 2-3 — the two pages' own
    cited Sources), then Apply/Cancel. The default view follows THIS
-   generate's grounding outcome (pass -> Wiki, fail -> Source); both
+   generate's CONVERGENCE outcome (ADR-0038: source-rooted -> Source, else
+   Wiki), and Apply is enabled only when grounded AND converged; both
    toggles stay present so the curator can look either way regardless.
    Apply sends the (possibly edited) textarea values back with the hash
    tokens captured verbatim from the generate response — never recomputed
@@ -5534,6 +5536,13 @@ function renderReconcilePreview(modal, data, resultEl, closeModal, siblingButton
   textareaB.value = data.content_b;
 
   var passed = !!(data.grounding && data.grounding.passed);
+  // ADR-0038: source-rootedness is decided by the convergence re-judge, not by
+  // grounding. Apply is enabled ONLY when the drafts are grounded AND converged
+  // (the two pages now agree); a source-rooted (not-converged) or ungrounded
+  // pair can never be Applied here. `data.converged` undefined fails safe to
+  // false (Apply disabled).
+  var converged = data.converged === true;
+  var applyEnabled = passed && converged;
   var groundingEl = el("div", { class: "reconcile-grounding" },
     el("span", { class: passed ? "badge badge-ok" : "badge badge-fail" },
       el("span", { class: "dot" }),
@@ -5552,6 +5561,14 @@ function renderReconcilePreview(modal, data, resultEl, closeModal, siblingButton
     text: LINT_CHROME[consoleLang].reconcileCancel, onclick: closeModal });
   var applyBtn = el("button", { class: "reconcile-apply-btn", type: "button",
     text: LINT_CHROME[consoleLang].reconcileApply });
+  // ADR-0038: gate Apply on convergence (+ grounding). A source-rooted pair
+  // must go out via fix-source, never Apply — this is what stopped the old
+  // hazard of Applying an A=14/B=30 draft into a fresh contradiction. The
+  // tooltip names why it is disabled.
+  applyBtn.disabled = !applyEnabled;
+  if (!applyEnabled) {
+    applyBtn.title = passed ? chrome.c5SourcesDisagreeNote : chrome.modalGroundingFailed;
+  }
 
   applyBtn.addEventListener("click", function() {
     if (applyBtn.disabled || remediationInFlight) return;
@@ -5585,6 +5602,13 @@ function renderReconcilePreview(modal, data, resultEl, closeModal, siblingButton
         if (resp.status === 422) {
           return resp.json().then(function(body) {
             var detail = body.detail || {};
+            // ADR-0038: apply-time convergence gate. A hand-edit that still
+            // leaves the two pages contradicting is source-rooted — fix a
+            // Source, not the pages.
+            if (detail.reason === "not_converged") {
+              throw new Error(detail.message ||
+                "The two pages still contradict each other — this is source-rooted; fix a Source, not the pages.");
+            }
             var claims = (detail.unsupported_claims || []).join("; ");
             throw new Error("Grounding check failed" + (claims ? ": " + claims : "") + ". Edit the draft and try again.");
           });
@@ -5616,11 +5640,14 @@ function renderReconcilePreview(modal, data, resultEl, closeModal, siblingButton
       });
   });
 
-  // issue #538 (ADR-0036 decision 2): the default view follows THIS
-  // generate's grounding outcome — pass -> Wiki, fail -> Source. Both
-  // toggle buttons stay present regardless; the system never auto-picks a
-  // remediation, it only picks which evidence to show first.
-  var activeView = passed ? "wiki" : "source";
+  // issue #538/#545 (ADR-0036 decision 2, ADR-0038): the default view follows
+  // CONVERGENCE, not grounding. A source-rooted pair (grounded but not
+  // converged) defaults to Source comparison so the curator sees the
+  // disagreeing Sources; everything else defaults to Wiki (a converged pair to
+  // edit/apply, or a grounding-failed draft to inspect its report). Both toggle
+  // buttons stay present regardless; the system never auto-picks a remediation,
+  // it only picks which evidence to show first.
+  var activeView = (passed && !converged) ? "source" : "wiki";
 
   var wikiViewEl = el("div", { class: "reconcile-columns" },
     el("div", { class: "reconcile-col" },
