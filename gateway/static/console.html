@@ -1162,6 +1162,28 @@
   .assign-alias-offer-btn:hover:not(:disabled) { opacity: .82; }
   .assign-alias-offer-btn:disabled { opacity: .45; cursor: not-allowed; }
 
+  /* ── C12 alias-collision Remove control (issue #491) — the mirror-image
+     of .assign-alias-btn (removeAliasAction is the mirror of
+     assignAliasRequest — see the JS comment above removeAliasFromClaimants-
+     Request). Same filled-accent "this executes" treatment as
+     .assign-alias-btn / .reconcile-btn / .collision-merge-btn (issue #536:
+     was previously unstyled, off-convention). */
+  .remove-alias-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--accent);
+    color: #fff;
+    border: 0;
+    padding: 4px 10px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .04em;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: opacity .15s ease;
+  }
+  .remove-alias-btn:hover:not(:disabled) { opacity: .82; }
+  .remove-alias-btn:disabled { opacity: .45; cursor: not-allowed; }
+
   /* ── C5 Reconcile (tier-B S1, issue #376, ADR-0028) ─────────────
      The one Authored-tier check with a real Gated affordance this slice —
      C4 keeps the disabled .tier-b-btn above until its own slice. */
