@@ -1106,13 +1106,23 @@ function reflowCitation() {
   var host = document.getElementById("cite-host");
   if (!host) return;                                  /* nothing open */
   var shell = document.querySelector(".chat-shell");
-  if (citeBreakpoint.matches) {
+  var viewer = host.querySelector(".cite-viewer");
+  var isNarrow = citeBreakpoint.matches;
+  if (isNarrow) {
     document.body.appendChild(host);                  /* → bottom sheet */
     if (shell) shell.classList.remove("source-open");
   } else {
     var rail = document.getElementById("source-rail");
     if (rail) rail.replaceChildren(host);             /* → right drawer */
     if (shell) shell.classList.add("source-open");
+  }
+  /* Reconcile ARIA modality with the new mount, matching openCitation's
+     open-time choice: a modal dialog as the bottom sheet, a non-modal region
+     as the side drawer. Otherwise a breakpoint cross leaves the role stale. */
+  if (viewer) {
+    viewer.setAttribute("role", isNarrow ? "dialog" : "region");
+    if (isNarrow) viewer.setAttribute("aria-modal", "true");
+    else viewer.removeAttribute("aria-modal");
   }
 }
 
