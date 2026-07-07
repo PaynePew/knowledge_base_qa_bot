@@ -1,4 +1,4 @@
-"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``CitationRef``, ``FiledStatus``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``, ``CoverageGapFinding``, ``PagePairFinding``, ``PromotionCandidateFinding``, ``QaStalenessFinding``, ``InvalidQaSchemaFinding``, ``AliasCollisionFinding``, ``AliasAssignRequest``, ``QaEditRequest``, ``QaRefileResponse``, ``SkippedSlug``, ``QaPromoteBatchRequest``, ``QaPromoteBatchResponse``, ``ImportRequest``, ``ImportSourceResultSchema``, ``ImportFailureSchema``, ``ImportResponse``, ``ReconcileDraft``, ``ReconcileGenerateRequest``, ``ReconcileGenerateResponse``, ``ReconcileApplyRequest``, ``ReconcileApplyResponse``, ``CollisionMergeDraft``, ``CollisionPageDraft``, ``CollisionDifferentiateDraft``, ``CollisionMergeGenerateRequest``, ``CollisionMergeGenerateResponse``, ``CollisionMergeApplyRequest``, ``InboundReference``, ``CollisionMergeApplyResponse``, ``CollisionDifferentiateGenerateRequest``, ``CollisionDifferentiateGenerateResponse``, ``CollisionDifferentiateApplyRequest``, ``CollisionDifferentiateApplyResponse``, ``TranscribeRequest``, ``TranscribeResponse``, ``TranscribeBatchRequest``, ``TranscribeBatchSubmitResponse``, ``TranscribeJobResultSchema``, ``TranscribeJobStatusResponse``).
+"""Shallow module per Ousterhout. Public surface: all Pydantic request/response models (``ChatRequest``, ``ChatResponse``, ``IndexResponse``, ``IngestRequest``, ``IngestResponse``, ``WikiPageDraft``, ``WikiPageFrontmatter``, ``GroundingFailure``, ``IngestSourceResult``, ``SourceType``, ``GroundingClaim``, ``GroundingInfo``, ``CitationRef``, ``FiledStatus``, ``LintResponse``, ``LintSummary``, ``LintFindings``, ``OrphanPageFinding``, ``FailedGroundingFinding``, ``SlugCollisionFinding``, ``StalePageFinding``, ``RedLinkFinding``, ``CoverageGapFinding``, ``PagePairFinding``, ``PromotionCandidateFinding``, ``QaStalenessFinding``, ``InvalidQaSchemaFinding``, ``AliasCollisionFinding``, ``AliasAssignRequest``, ``QaEditRequest``, ``QaRefileResponse``, ``SkippedSlug``, ``QaPromoteBatchRequest``, ``QaPromoteBatchResponse``, ``ImportRequest``, ``ImportSourceResultSchema``, ``ImportFailureSchema``, ``ImportResponse``, ``ReconcileDraft``, ``ReconcileGenerateRequest``, ``CitedSourceSection``, ``ReconcileGenerateResponse``, ``ReconcileApplyRequest``, ``ReconcileApplyResponse``, ``CollisionMergeDraft``, ``CollisionPageDraft``, ``CollisionDifferentiateDraft``, ``CollisionMergeGenerateRequest``, ``CollisionMergeGenerateResponse``, ``CollisionMergeApplyRequest``, ``InboundReference``, ``CollisionMergeApplyResponse``, ``CollisionDifferentiateGenerateRequest``, ``CollisionDifferentiateGenerateResponse``, ``CollisionDifferentiateApplyRequest``, ``CollisionDifferentiateApplyResponse``, ``TranscribeRequest``, ``TranscribeResponse``, ``TranscribeBatchRequest``, ``TranscribeBatchSubmitResponse``, ``TranscribeJobResultSchema``, ``TranscribeJobStatusResponse``).
 
 Pydantic request/response models for the FastAPI routes. No domain logic."""
 
@@ -891,6 +891,34 @@ class ReconcileGenerateRequest(BaseModel):
     page_b: str
 
 
+class CitedSourceSection(BaseModel):
+    """One Source Section a C5 Reconcile page cites, for the two-view
+    Reconcile modal's Source comparison (issue #534, ADR-0036 decision 3).
+
+    Narrower than the grounding union, which stays whole-file by design
+    (ADR-0036 decision 7, unaffected by this model) — this is presentation
+    data for ONE page's OWN citations, not the pair's combined grounding
+    context. ``id`` is the anchored citation exactly as ``Section.id``
+    produces it (e.g. ``"退款與退貨.md#退款申請窗口"``), so it round-trips
+    against the page's own ``frontmatter.sources`` entries.
+
+    ``heading``/``content`` are ``None`` when the citation could not be
+    resolved to actual Section content — a missing/ambiguous Source file, or
+    a stale anchor that no longer matches any parsed heading. The raw
+    citation is still surfaced (never silently dropped), matching C3's
+    ``source_resolution`` honesty convention. ``source_path`` mirrors
+    ``FailedGroundingFinding.source_path``'s ``"docs/<relative>"`` display
+    convention for a ``/read/file`` view link; ``None`` when
+    ``source_resolution`` is not ``"resolved"``.
+    """
+
+    id: str
+    heading: str | None = None
+    content: str | None = None
+    source_path: str | None = None
+    source_resolution: Literal["resolved", "missing", "ambiguous"] = "missing"
+
+
 class ReconcileGenerateResponse(BaseModel):
     """Response body for POST /pages/reconcile.
 
@@ -901,6 +929,14 @@ class ReconcileGenerateResponse(BaseModel):
     SHA-256 of each page's full on-disk file text at generate time — the
     client must return them unchanged to POST /pages/reconcile/apply so the
     server can detect whether either page changed underneath the preview.
+
+    ``cited_sections_a`` / ``cited_sections_b`` (issue #534, ADR-0036
+    decision 3) carry each page's OWN cited Source sections — the two-view
+    modal's Source comparison payload. Alongside ``grounding.passed``
+    (already returned, unaffected by this addition), the client picks the
+    default view: pass -> Wiki comparison, fail -> Source comparison. This
+    is presentation data only — the detection/grounding logic itself (the
+    union stays whole-file, decision 7) is unchanged.
     """
 
     page_a: str
@@ -912,6 +948,8 @@ class ReconcileGenerateResponse(BaseModel):
     grounding: GroundingInfo
     hash_a: str
     hash_b: str
+    cited_sections_a: list[CitedSourceSection] = []
+    cited_sections_b: list[CitedSourceSection] = []
 
 
 class ReconcileApplyRequest(BaseModel):
