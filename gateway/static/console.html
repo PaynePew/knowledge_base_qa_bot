@@ -92,8 +92,10 @@
   .console-main  { flex: 58 1 0; min-width: 0; padding-right: 34px; }
   .console-rail {
     flex: 42 1 0; min-width: 0;
-    position: sticky; top: 20px;
-    max-height: calc(100dvh - 40px);
+    /* Stick BELOW the now-pinned masthead (~61px tall) so its top content isn't
+       tucked behind the header when the page is scrolled. */
+    position: sticky; top: 72px;
+    max-height: calc(100dvh - 92px);
     overflow-y: auto; overscroll-behavior: contain;
     padding-left: 34px;
     border-left: 1px solid var(--rule);
@@ -121,11 +123,18 @@
   .mast-hamburger:hover { color: var(--ink); border-color: var(--ink-3); }
 
   /* ── Masthead (shared with reader, §12.1) ────────────────── */
+  /* Pinned to the top of the viewport: the console can scroll a long way, and on
+     mobile the Resource Browser opens from the masthead hamburger — pinning it
+     keeps "view the original file" one tap away without scrolling back up. Needs
+     an opaque background (content scrolls under it) and a z-index above the flow
+     but below the mobile rail drawer/scrim (z 1000/999). */
   .masthead {
     flex: none;
+    position: sticky; top: 0; z-index: 50;
     padding: 22px 0 16px;
     display: flex; align-items: center; gap: 16px;
     border-bottom: 1px solid var(--rule);
+    background: var(--bg);
   }
   .mast-logo {
     font-family: "IBM Plex Sans", sans-serif;
@@ -150,30 +159,32 @@
     text-transform: uppercase;
   }
 
-  /* zh/en Lint chrome toggle (issue #365) — sits flush right of the
-     breadcrumb, immediately left of the reader link (its margin-left:auto
-     absorbs the row's free space; .mast-reader's own auto margin is then a
-     no-op since no space remains, keeping both flush right together). */
+  /* zh/en Lint chrome toggle (issue #365) — grouped flush-right beside the
+     reader link. Only THIS element carries margin-left:auto: a single auto
+     absorbs all the row's free space, so the toggle + reader + hamburger sit
+     together on the right (two auto margins would SPLIT the space and strand the
+     toggle mid-row). Styled as a filled accent pill — the palette is monochrome,
+     so the system signals emphasis with a solid fill (cf. .reingest-btn / the
+     reader's own send button), making the language switch noticeable among the
+     outline-style masthead controls. */
   .mast-lang-toggle {
     margin-left: auto;
-    background: none;
+    background: var(--accent);
     font-family: "IBM Plex Mono", monospace;
     font-size: 11px;
     letter-spacing: .04em;
-    color: var(--ink-3);
-    border: 1px solid var(--rule);
+    color: var(--surface);
+    border: 1px solid var(--accent);
     border-radius: 4px;
     padding: 5px 10px;
-    transition: color .15s ease, border-color .15s ease;
+    transition: opacity .15s ease;
   }
-  .mast-lang-toggle:hover {
-    color: var(--ink);
-    border-color: var(--ink-3);
-  }
+  .mast-lang-toggle:hover { opacity: .82; }
 
-  /* Reader link — navigates back */
+  /* Reader link — navigates back. No margin-left:auto (the lang toggle's auto
+     already pushes this whole right-hand group over), so it sits flush beside
+     the toggle. */
   .mast-reader {
-    margin-left: auto;
     font-family: "IBM Plex Mono", monospace;
     font-size: 11px;
     letter-spacing: .04em;
@@ -814,7 +825,7 @@
      optional axis-level batch button (issue #364 — Freshness only) sits
      flush right of the label. */
   .lint-axis-head {
-    padding: 14px 16px 2px;
+    padding: 16px 16px 12px;
     font-family: "IBM Plex Mono", monospace;
     font-size: 12px;
     font-weight: 600;
@@ -833,7 +844,7 @@
      optional check-level batch button (issue #364 — C6 "Re-ingest all",
      C10 "Discard all") sits flush right of the label. */
   .lint-group-head {
-    padding: 8px 16px 4px;
+    padding: 12px 16px 7px;
     font-family: "IBM Plex Mono", monospace;
     font-size: 10px;
     letter-spacing: .08em;
@@ -855,15 +866,31 @@
      toggle/chevron/body chrome is reused for the Curation Queue header. */
   .lint-collapse-toggle {
     flex: 1 1 auto; min-width: 0;
-    display: inline-flex; align-items: center; gap: 8px;
+    display: inline-flex; align-items: center; gap: 9px;
     background: none; border: 0; padding: 0; margin: 0;
     font: inherit; color: inherit; letter-spacing: inherit;
     text-transform: inherit; text-align: left; cursor: pointer;
+    transition: color .15s ease;
   }
+  .lint-collapse-toggle:hover { color: var(--ink); }
+  .lint-collapse-toggle:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px;
+  }
+  /* The chevron is a real disclosure control, not decoration: give it a boxed
+     hit-target that reads as tappable, a strong-enough default colour to be
+     noticed (not the faint --ink-4 it was), and a filled hover state so it's
+     obvious the header row toggles the section. */
   .lint-chevron {
     flex: none;
-    font-size: 9px; line-height: 1; color: var(--ink-4);
-    transition: transform .2s ease;
+    width: 18px; height: 18px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 11px; line-height: 1; color: var(--ink-3);
+    border: 1px solid var(--rule); border-radius: 4px;
+    transition: transform .2s ease, color .15s ease,
+                background-color .15s ease, border-color .15s ease;
+  }
+  .lint-collapse-toggle:hover .lint-chevron {
+    color: var(--ink); background: var(--surface); border-color: var(--ink-3);
   }
   .lint-axis.collapsed .lint-chevron,
   .curation-collapse.collapsed .lint-chevron { transform: rotate(-90deg); }
@@ -879,8 +906,8 @@
      axis head is now nested (always a wrapper's first child). */
   .lint-axis { border-top: 2px solid var(--rule); }
   .lint-axis:first-child { border-top: none; }
-  .lint-axis > .lint-axis-head { border-top: none; padding-top: 14px; }
-  .lint-axis:first-child > .lint-axis-head { padding-top: 0; }
+  .lint-axis > .lint-axis-head { border-top: none; padding-top: 20px; }
+  .lint-axis:first-child > .lint-axis-head { padding-top: 6px; }
   .lint-collapse-inner > .lint-group-head:first-child { border-top: none; }
 
   /* Batch-remediation summary banner (issue #364) — a one-shot notice
