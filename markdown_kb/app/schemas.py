@@ -721,11 +721,19 @@ class InvalidQaSchemaFinding(BaseModel):
     ``offending_value``  — the value as found in the page (stringified), or a
                             short marker like ``"<missing>"`` when the field is
                             absent entirely.
+    ``status``           — the page's raw ``frontmatter.status`` value verbatim
+                            (``"<missing>"`` / ``"<unparseable>"`` when absent or
+                            the page could not be parsed at all). Added by
+                            ADR-0037 so a caller (the Console C10 card) can pick
+                            demote-to-draft for a ``status: live`` page vs. the
+                            existing one-click discard for everything else,
+                            without a second read of the page.
     """
 
     page_slug: str
     property_name: str
     offending_value: str
+    status: str
 
 
 class AliasCollisionFinding(BaseModel):

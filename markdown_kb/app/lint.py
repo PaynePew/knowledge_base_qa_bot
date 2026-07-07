@@ -2760,6 +2760,12 @@ def _check_c10_qa_schema_validity(
     produce a single finding flagging ``frontmatter`` as the broken property —
     the curator sees the page surfaces and can investigate manually.
 
+    Each finding also carries the page's raw ``status`` value verbatim
+    (ADR-0037) — even when the broken property is NOT ``status`` itself (e.g.
+    a ``count=0`` page that is otherwise ``status: live``) — so a caller can
+    tell a live schema-invalid page (demote-to-draft remediation) from
+    everything else (discard remediation) without a second read of the page.
+
     Returns findings sorted by ``page_slug``, then ``property_name``.
     """
     findings: list[InvalidQaSchemaFinding] = []
@@ -2772,9 +2778,13 @@ def _check_c10_qa_schema_validity(
                     page_slug=slug,
                     property_name="frontmatter",
                     offending_value="<unparseable>",
+                    status="<unparseable>",
                 )
             )
             continue
+
+        raw_status = fm.get("status", "<missing>")
+        page_status = raw_status if isinstance(raw_status, str) else str(raw_status)
 
         # status
         if "status" not in fm:
@@ -2783,6 +2793,7 @@ def _check_c10_qa_schema_validity(
                     page_slug=slug,
                     property_name="status",
                     offending_value="<missing>",
+                    status=page_status,
                 )
             )
         else:
@@ -2793,6 +2804,7 @@ def _check_c10_qa_schema_validity(
                         page_slug=slug,
                         property_name="status",
                         offending_value=str(status_val),
+                        status=page_status,
                     )
                 )
 
@@ -2803,6 +2815,7 @@ def _check_c10_qa_schema_validity(
                     page_slug=slug,
                     property_name="type",
                     offending_value="<missing>",
+                    status=page_status,
                 )
             )
         else:
@@ -2813,6 +2826,7 @@ def _check_c10_qa_schema_validity(
                         page_slug=slug,
                         property_name="type",
                         offending_value=str(type_val),
+                        status=page_status,
                     )
                 )
 
@@ -2824,6 +2838,7 @@ def _check_c10_qa_schema_validity(
                     page_slug=slug,
                     property_name="question",
                     offending_value="<missing>",
+                    status=page_status,
                 )
             )
         elif not isinstance(raw_question, str) or not raw_question.strip():
@@ -2832,6 +2847,7 @@ def _check_c10_qa_schema_validity(
                     page_slug=slug,
                     property_name="question",
                     offending_value=repr(raw_question),
+                    status=page_status,
                 )
             )
 
@@ -2842,6 +2858,7 @@ def _check_c10_qa_schema_validity(
                     page_slug=slug,
                     property_name="count",
                     offending_value="<missing>",
+                    status=page_status,
                 )
             )
         else:
@@ -2855,6 +2872,7 @@ def _check_c10_qa_schema_validity(
                         page_slug=slug,
                         property_name="count",
                         offending_value=repr(raw_count),
+                        status=page_status,
                     )
                 )
 
