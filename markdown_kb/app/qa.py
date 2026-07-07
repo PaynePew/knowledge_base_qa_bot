@@ -1256,9 +1256,7 @@ class RefiledAnswer:
 
     __slots__ = ("filed", "grounding", "retired")
 
-    def __init__(
-        self, filed: FiledStatus, grounding: GroundingInfo, retired: bool = False
-    ) -> None:
+    def __init__(self, filed: FiledStatus, grounding: GroundingInfo, retired: bool = False) -> None:
         self.filed = filed
         self.grounding = grounding
         self.retired = retired
@@ -1438,9 +1436,7 @@ def refile(slug: str) -> RefiledAnswer:
                 _atomic_write(path, content)
                 log_event("qa_reflect", f"slug={slug} op=retired reason={outcome.reason}")
                 return RefiledAnswer(
-                    filed=FiledStatus(
-                        slug=slug, status="draft", op="touched", count=retired_count
-                    ),
+                    filed=FiledStatus(slug=slug, status="draft", op="touched", count=retired_count),
                     grounding=grounding,
                     retired=True,
                 )
