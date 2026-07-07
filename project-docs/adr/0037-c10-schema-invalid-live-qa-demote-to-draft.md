@@ -1,0 +1,18 @@
+# A schema-invalid LIVE Filed Answer (C10) is resolved by demote-to-draft, generalising ADR-0035's demote into a first-class Lifecycle remediation
+
+C10 flags a `status: live` Filed Answer whose schema is invalid (e.g. `qa-count-zero-zh-006`: `count=0`). Its Direct remediation wired to `DELETE /qa/{slug}`, but `qa.delete` refuses any `status: live` page (ADR-0012 — "live is the precious corpus state, never one-click deletable"), so the Console's 拾棄 button dead-ends: *"無法拾棄:此頁面已生效(status=live)。請改用重新匯入以更新內容。"* Two things are wrong: (1) the page is stuck — a live-but-invalid Filed Answer can be neither discarded nor fixed; (2) the advice is false — **re-ingest never regenerates `wiki/qa/` pages** (ingest synthesises `docs/` → entities/concepts only; Filed Answers come from chat via promote), so it is a mechanical no-op, the same "keeps failing" dead-end ADR-0029 removed for C3.
+
+The premise of the live-delete refusal does not hold here: ADR-0012 protects **servable, precious corpus content**, but a schema-invalid Filed Answer is defective — it should never have been serving. [ADR-0035](0035-c9-refile-retires-ungroundable-live-answer-fail-closed.md) already introduced the right primitive for exactly this shape: **demote-to-draft** (a live page moved to `status: draft` in place, content preserved, leaving the retrieval corpus), built there for the C9 un-groundable-answer case and flagged in review as something that should become first-class.
+
+## Decision
+
+- **Generalise demote-to-draft into a standalone, first-class Lifecycle primitive** (`qa.demote`, `POST /qa/{slug}/demote`) rather than keeping it buried inside `refile`. It flips `status: live → draft` in place, preserving question / body / count / created, bumping `updated`, and emits a `qa_demoted` log event under `_filing_lock`.
+- **C10's remediation becomes demote-to-draft ("退回草稿"), not delete**, for a `status: live` schema-invalid page. Demote is the reversible inverse of promote (a lifecycle bit flip, no LLM, no synthesis), so it stays a **Direct Remediation** — one-click, review-free, like promote/discard. The demoted page lands in the Curation Queue, where the curator either **edits the schema and re-promotes** (edit is draft-only, ADR-0026) **or discards it** (draft delete is already allowed). Both of the operator's wants — fix *and* remove — are unlocked through one reversible step.
+- **Non-live schema-invalid pages keep the existing direct discard** — `draft`, unparseable frontmatter, or an out-of-range `status` value are already inert and deletable via `qa.delete` (unchanged); only the `status: live` case changes.
+- **The misleading re-ingest copy is removed** from the live-refusal path.
+
+## Consequences
+
+- This is the Filed-Answer instance of the same **content-lifecycle framework** adopted 2026-07-07 (KB-industry survey: *tombstone / soft-demote, not hard-delete of a live record*): the defective page is not destroyed, its removal is reversible and logged, and the curator retains the fix path. It composes with the deferred Source-lifecycle grill (which applies the same principle to `docs/` Sources), but ships independently here because the demote primitive already exists.
+- `DELETE /qa/{slug}` keeps its ADR-0012 live-refusal — demote does not widen it. The two are distinct: delete removes an inert page; demote moves a live-but-defective page back to the reviewable draft state.
+- **Invariants (tagged for the reviewer, per CODING_STANDARD §2.5).** **Invariant** — demote never destroys content: it only flips `live → draft` and preserves the body. **Invariant** — C10 offers no path that dead-ends a live schema-invalid page; demote-to-draft is always available. **Invariant** — `qa.delete`'s live refusal is unchanged.
