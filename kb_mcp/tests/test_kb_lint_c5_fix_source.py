@@ -114,15 +114,11 @@ def test_fix_via_hint_is_driven_by_the_shared_taxonomy():
 
 
 def test_no_page_pairs_yields_empty_list_no_error():
-    raw = asyncio.run(_run_lint_no_c5())
-    result = _parse_result(raw)
-    assert result["findings"]["page_pairs"] == []
-
-
-async def _run_lint_no_c5():
     from kb_mcp.server import mcp
 
-    return await mcp.call_tool("kb_lint_v1", {"include_c5": False})
+    raw = asyncio.run(mcp.call_tool("kb_lint_v1", {"include_c5": False}))
+    result = _parse_result(raw)
+    assert result["findings"]["page_pairs"] == []
 
 
 def test_axis_groups_check_shape_unaffected_by_fix_source_hint(monkeypatch):
