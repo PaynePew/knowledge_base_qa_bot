@@ -929,27 +929,48 @@ _INLINE_CITATION_RE = re.compile(r"\[Source:\s*([^\]]+?)\s*\]")
 
 
 def _check_edit_grounding(body: str, sources: list[str], wiki_dir: Path) -> list[str]:
-    """LLM-free grounding re-check for a draft edit (ADR-0026 decision 2).
+    """LLM-free grounding re-check for a draft edit (ADR-0026 decision 2,
+    relaxed 2026-07 — see ADR-0026 § Amendment).
 
     Deterministic and instant — no LLM call (the ADR's rejected-alternatives
     note: "The re-check is LLM-free and instant; there is no cost argument
     for skipping it"). The human curator is the semantic judge at this gate;
-    the server enforces that the edited text stays *structurally* grounded
-    in the page's recorded Sections:
+    the server enforces only that the edited text does not FABRICATE grounding:
 
-      1. the body carries at least one inline ``[Source: <id>]`` citation,
-      2. every cited id is among ``frontmatter.sources`` (an edit never
-         widens sources — Re-file is the path to fresh Sources), and
-      3. every cited id still resolves to a Section on disk.
+      1. every inline ``[Source: <id>]`` the body DOES carry is among
+         ``frontmatter.sources`` (an edit never widens sources — Re-file is
+         the path to fresh Sources), and
+      2. every such cited id still resolves to a Section on disk.
+
+    A body with NO inline citation is accepted as long as the page still has
+    a grounding record in ``frontmatter.sources``. That list — not the inline
+    ``[Source: ...]`` markers — IS the Filed Answer's citation record: filing
+    (``maybe_file_answer``) writes the raw LLM answer verbatim, and the model
+    frequently omits inline markers even though ``SYSTEM_PROMPT`` rule 2 asks
+    for them (grounding still passes via the claim-level verifier, which never
+    reads the body's markers). The old "body must carry ≥1 citation" rule
+    punished the curator for the model's omission and made every such draft
+    impossible to edit-then-approve — a body that was legal to *file* was
+    illegal to *edit* without changing a single claim. Deleting a marker is
+    therefore harmless: the grounding record in ``sources`` is preserved (an
+    edit never touches it), so the answer stays grounded; only fabricating a
+    citation to a Source the page does not cite is rejected (rule 1).
 
     Returns the failure list; empty means the edit passes.
     """
     cited = [c.strip() for c in _INLINE_CITATION_RE.findall(body)]
     if not cited:
-        return [
-            "edited body contains no [Source: ...] citation — "
-            "a Filed Answer must cite the Sections it derives from"
-        ]
+        # No inline citation: allowed as long as the page has a grounding
+        # record. A Filed Answer always does (filing sets sources from the
+        # grounded chat answer's cited_ids); this guard only bites the
+        # degenerate case of an edit to a page with no cited Sources at all.
+        if not sources:
+            return [
+                "this Filed Answer has no cited Sources (its frontmatter.sources "
+                "is empty) — add a [Source: ...] citation drawn from the page's "
+                "Sources so the answer stays grounded"
+            ]
+        return []
 
     failures: list[str] = []
     allowed = set(sources)
