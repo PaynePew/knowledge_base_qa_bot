@@ -125,7 +125,7 @@ def render_rerank_chart(output: Path = OUTPUT) -> Path:
         0.5,
         0.915,
         f"eval-only, default-off (ADR-0019) · Core macro {_CORE_MACRO[0]:.3f} → "
-        f"{_CORE_MACRO[1]:.3f} · +{_ADDED_LATENCY_MS/1000:.1f} s/query on the dev "
+        f"{_CORE_MACRO[1]:.3f} · +{_ADDED_LATENCY_MS / 1000:.1f} s/query on the dev "
         "box, never loaded on the VPS tenant",
         ha="center",
         fontsize=9.5,
