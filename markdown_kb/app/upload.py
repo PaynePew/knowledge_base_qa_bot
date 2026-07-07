@@ -17,6 +17,19 @@ here. ``/import`` is UNCHANGED — Upload only stages bytes; Import converts.
 
 Upload is completely disjoint from Import (no LLM calls, no format conversion).
 
+Destination-aware overwrite (issue #533, ADR-0036 §6): an optional
+``overwrite_relpath`` routes a ``.md`` upload to overwrite an EXISTING Source
+at that resolved ``docs/`` path in place, instead of the default root write.
+This closes the fix-source loop for a Source living in a subdirectory
+(``docs/demo-zh/…``, ``docs/planted-zh/…``) — re-uploading the corrected file
+no longer lands a second copy at ``docs/`` root that would make the next
+``/ingest`` raise ``ambiguous_source``. Guard: overwrite-only of an existing
+Source; the origin is independently re-resolved from the uploaded filename's
+basename (mirrors ``lint._resolve_c3_source_path``'s basename-glob rule) and
+must match the caller-supplied ``overwrite_relpath`` — an ambiguous/missing
+origin, or a malformed (traversal/absolute/outside-``docs/``) relpath, is
+refused with a clear reason and NOTHING is written; there is no root fallback.
+
 Public surface:
     ``upload_files(files)`` — accepts a list of ``(filename, content_bytes)`` pairs,
     returns ``UploadBatchResult`` with one ``UploadFileResult`` per input file.
@@ -38,7 +51,7 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Literal
 
 from ._paths import _REPO_ROOT, DOCS_DIR
@@ -181,6 +194,7 @@ def upload_files(
     *,
     raw_dir: Path | None = None,
     docs_dir: Path | None = None,
+    overwrite_relpath: str | None = None,
 ) -> UploadBatchResult:
     """Stage a batch of uploaded files onto the server.
 
@@ -194,6 +208,13 @@ def upload_files(
         raw_dir:  Override ``RAW_DIR`` (used by tests via monkeypatch; production
                   callers may omit).
         docs_dir: Override ``DOCS_DIR`` (same).
+        overwrite_relpath: When given (issue #533, ADR-0036 §6), route the
+                  ``.md`` upload to overwrite that resolved, existing Source
+                  path under ``docs/`` in place, instead of the default root
+                  write. Refused (nothing written) when the origin can't be
+                  uniquely resolved from the upload's own filename, or when
+                  ``overwrite_relpath`` doesn't match that resolution — see
+                  ``_resolve_overwrite_target``.
 
     Returns:
         ``UploadBatchResult`` with one ``UploadFileResult`` per input file.
@@ -212,7 +233,13 @@ def upload_files(
     )
 
     for filename, content in files:
-        file_result = _upload_one_file(filename, content, effective_raw_dir, effective_docs_dir)
+        file_result = _upload_one_file(
+            filename,
+            content,
+            effective_raw_dir,
+            effective_docs_dir,
+            overwrite_relpath=overwrite_relpath,
+        )
         result.results.append(file_result)
 
     duration_ms = int((time.monotonic() - batch_start) * 1000)
@@ -237,6 +264,8 @@ def _upload_one_file(
     content: bytes,
     raw_dir: Path,
     docs_dir: Path,
+    *,
+    overwrite_relpath: str | None = None,
 ) -> UploadFileResult:
     """Process one file: validate, route, write atomically.
 
@@ -267,11 +296,37 @@ def _upload_one_file(
         log_event("upload_rejected", f"filename={filename!r} reason={reason!r}")
         return UploadFileResult(filename=filename, status="rejected", reason=reason)
 
-    # 5. Route to target directory
+    # 5. Destination-aware overwrite (issue #533, ADR-0036 §6) — resolved and
+    # validated before any filesystem write; never falls back to a root write
+    # when the origin can't be uniquely determined.
+    if overwrite_relpath is not None:
+        target_path, refusal = _resolve_overwrite_target(filename, ext, docs_dir, overwrite_relpath)
+        if target_path is None:
+            log_event("upload_rejected", f"filename={filename!r} reason={refusal!r}")
+            return UploadFileResult(filename=filename, status="rejected", reason=refusal)
+
+        try:
+            _atomic_write_bytes(content, target_path)
+        except OSError as exc:
+            reason = str(exc)[:200]
+            log_event("upload_error", f"filename={filename!r} reason={reason!r}")
+            return UploadFileResult(filename=filename, status="error", reason=reason)
+
+        log_event(
+            "upload_file",
+            f"filename={filename!r} target={str(target_path.parent)!r} op=overwrite",
+        )
+        return UploadFileResult(
+            filename=filename,
+            status="written",
+            target_dir=str(target_path.parent),
+        )
+
+    # 6. Route to target directory (default root write, unchanged)
     target_subdir = _ALLOWED_EXTENSIONS[ext]
     target_dir = raw_dir if target_subdir == "raw" else docs_dir
 
-    # 6. Atomic write
+    # 7. Atomic write
     target_path = target_dir / filename
     try:
         _atomic_write_bytes(content, target_path)
@@ -286,3 +341,69 @@ def _upload_one_file(
         status="written",
         target_dir=str(target_dir),
     )
+
+
+def _resolve_overwrite_target(
+    filename: str,
+    ext: str,
+    docs_dir: Path,
+    overwrite_relpath: str,
+) -> tuple[Path | None, str]:
+    """Resolve and validate an ``overwrite_relpath`` request (issue #533).
+
+    Guard, per ADR-0036 §6: overwrite-only of an EXISTING Source under
+    ``docs_dir`` — never create new nesting, never traverse, never fall back
+    to a root write. The origin is resolved from the uploaded filename's own
+    basename via the same basename-glob rule C3's fix-source already uses
+    (mirrors ``lint._resolve_c3_source_path`` — module-private helpers stay
+    module-private per CODING_STANDARD §2.4, so the small resolution rule is
+    duplicated here rather than imported, matching the existing
+    ``ingest._resolve_single_source_pairs`` precedent). The caller-supplied
+    ``overwrite_relpath`` must name the SAME file as the upload (same
+    basename) and match that independently-resolved origin exactly — a
+    mismatch, an ambiguous/missing origin, or a malformed relpath (empty,
+    backslashes, absolute, ``..``, outside ``docs/``) is refused.
+
+    Returns ``(target_path, "")`` on success, or ``(None, reason)`` when the
+    request must be refused with a clear, non-empty ``reason``.
+    """
+    if ext != ".md":
+        return None, "overwrite_relpath is only supported for .md Source uploads."
+
+    stripped = overwrite_relpath.strip()
+    if not stripped:
+        return None, "overwrite_relpath must not be empty."
+    if "\\" in stripped:
+        return None, f"overwrite_relpath must use forward slashes: {stripped!r}"
+
+    relpath = PurePosixPath(stripped)
+    if relpath.is_absolute():
+        return None, f"overwrite_relpath must not be an absolute path: {stripped!r}"
+    if ".." in relpath.parts:
+        return None, f"overwrite_relpath must not contain '..': {stripped!r}"
+    if relpath.parts[:1] != ("docs",) or len(relpath.parts) < 2:
+        return None, f"overwrite_relpath must name an existing file under 'docs/': {stripped!r}"
+    if relpath.name != filename:
+        return None, (
+            f"overwrite_relpath basename {relpath.name!r} does not match the "
+            f"uploaded filename {filename!r}."
+        )
+
+    matches = sorted(docs_dir.glob(f"**/{filename}"))
+    if not matches:
+        return None, f"No existing Source named {filename!r} under docs/; refusing to write."
+    if len(matches) > 1:
+        return (
+            None,
+            f"{filename!r} matches multiple Sources under docs/; ambiguous overwrite target.",
+        )
+
+    resolved = matches[0]
+    resolved_label = f"docs/{resolved.relative_to(docs_dir).as_posix()}"
+    if resolved_label != stripped:
+        return None, (
+            f"overwrite_relpath {stripped!r} does not match the resolved origin "
+            f"{resolved_label!r}; refusing."
+        )
+
+    return resolved, ""
