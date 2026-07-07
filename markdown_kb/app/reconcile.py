@@ -376,22 +376,25 @@ def _cited_sections_for_page(fm: dict, docs_dir: Path) -> list[CitedSourceSectio
     seen_ids: set[str] = set()
     parsed_cache: dict[Path, list[Section]] = {}
 
+    def _append_once(entry: CitedSourceSection) -> None:
+        if entry.id in seen_ids:
+            return
+        seen_ids.add(entry.id)
+        out.append(entry)
+
     for raw_citation in fm.get("sources", []) or []:
         citation = str(raw_citation)
-        file_part, has_anchor, anchor = citation.partition("#")
+        file_part, sep, anchor = citation.partition("#")
         filename = Path(file_part.strip()).name if file_part.strip() else ""
         if not filename:
             continue
 
         path, source_path, resolution = _resolve_cited_source_path(citation, docs_dir)
-        target_id = f"{filename}#{anchor}" if has_anchor else None
+        target_id = f"{filename}#{anchor}" if sep else None
+        fallback_id = target_id or filename
 
         if path is None:
-            fallback_id = target_id or filename
-            if fallback_id in seen_ids:
-                continue
-            seen_ids.add(fallback_id)
-            out.append(
+            _append_once(
                 CitedSourceSection(
                     id=fallback_id, source_path=source_path, source_resolution=resolution
                 )
@@ -407,11 +410,9 @@ def _cited_sections_for_page(fm: dict, docs_dir: Path) -> list[CitedSourceSectio
         matches = [s for s in sections if s.id == target_id] if target_id else sections
 
         if not matches:
-            fallback_id = target_id or filename
-            if fallback_id in seen_ids:
-                continue
-            seen_ids.add(fallback_id)
-            out.append(
+            # A stale anchor (renamed heading) or an empty parsed file — the
+            # Source resolved, but this specific citation has no content.
+            _append_once(
                 CitedSourceSection(
                     id=fallback_id, source_path=source_path, source_resolution=resolution
                 )
@@ -419,10 +420,7 @@ def _cited_sections_for_page(fm: dict, docs_dir: Path) -> list[CitedSourceSectio
             continue
 
         for section in matches:
-            if section.id in seen_ids:
-                continue
-            seen_ids.add(section.id)
-            out.append(
+            _append_once(
                 CitedSourceSection(
                     id=section.id,
                     heading=section.heading,
