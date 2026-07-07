@@ -1107,6 +1107,62 @@
   }
   .fix-source-banner.visible { display: flex; }
 
+  /* ── C5 fix-source BATCH panel (issue #538, ADR-0036 decisions 3-5) ────
+     Generalises the single-pending-target banner pattern above
+     (.fix-source-banner / fixSourceAction, C3's ADR-0029 flow) into a
+     multi-item checklist: the Reconcile modal's Source comparison "Fix
+     this Source" entry points accumulate targets here instead of tracking
+     one pending slot. Column layout (not the single-line banner shape
+     above) since the list can grow past one row. Same info-banner palette
+     as .coverage-fill-banner / .fix-source-banner. */
+  .fix-source-batch-panel {
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 16px;
+    background: #f0f4ff;
+    border: 1px solid #93b3e6;
+    border-radius: 6px;
+    margin-bottom: 16px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .03em;
+    color: #2a4080;
+    line-height: 1.5;
+  }
+  .fix-source-batch-panel.visible { display: flex; }
+  .fix-source-batch-head { font-weight: 600; }
+  .fix-source-batch-list { display: flex; flex-direction: column; gap: 4px; }
+  .fix-source-batch-item { display: flex; align-items: center; gap: 8px; }
+  .fix-source-batch-item-path { flex: 1; word-break: break-word; }
+  .fix-source-batch-remove-btn {
+    background: none;
+    border: none;
+    color: var(--fail);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+    padding: 0;
+  }
+  .fix-source-batch-controls { display: flex; align-items: center; gap: 10px; }
+  .fix-source-batch-upload-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--accent);
+    color: #fff;
+    border: 0;
+    padding: 4px 10px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .04em;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: opacity .15s ease;
+  }
+  .fix-source-batch-upload-btn:hover:not(:disabled) { opacity: .82; }
+  .fix-source-batch-upload-btn:disabled { opacity: .45; cursor: not-allowed; }
+
   /* ── C2 Assign-Alias picker (issue #409, ADR-0030 decision 3) ──────────
      The red link's SECOND exit alongside .fill-import-btn (a picker +
      execute button, not just navigation — this one DOES fetch, so the
@@ -1312,6 +1368,68 @@
   }
   .reconcile-cancel-btn:hover:not(:disabled) { border-color: var(--ink-3); }
   .reconcile-error { color: var(--fail); }
+
+  /* ── C5 two-view Reconcile modal (issue #538, ADR-0036 decisions 2-3) ───
+     Header toggle between Wiki comparison (.reconcile-columns above — the
+     pre-existing view) and Source comparison (this section). Default view
+     is chosen by the generate response's grounding.passed; both toggle
+     buttons stay present regardless (renderReconcilePreview). */
+  .reconcile-view-toggle { display: flex; gap: 6px; margin-bottom: 12px; }
+  .reconcile-view-toggle-btn {
+    background: none;
+    color: var(--ink-2);
+    border: 1px solid var(--rule);
+    padding: 4px 10px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .04em;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .reconcile-view-toggle-btn.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+  .sources-disagree-note {
+    display: block;
+    margin-bottom: 12px;
+    padding: 8px 10px;
+    background: var(--bg);
+    border: 1px solid var(--fail);
+    border-radius: 4px;
+    color: var(--fail);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .reconcile-source-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .reconcile-source-card { display: flex; flex-direction: column; gap: 10px; }
+  .reconcile-source-section {
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 8px 10px;
+  }
+  .reconcile-source-section-head {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .03em;
+    color: var(--ink-3);
+    margin-bottom: 4px;
+  }
+  .reconcile-source-section-content {
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 12px;
+    color: var(--ink-2);
+    max-height: 140px;
+    overflow-y: auto;
+    margin: 0 0 8px;
+  }
+  .reconcile-source-section-actions { display: flex; gap: 8px; }
 
   /* ── C5 conflict panel (issue #443) — surfaces the LLM's own evidence
      (page_a_claim / page_b_claim / summary / suggested_action) wherever a
@@ -1864,6 +1982,16 @@
          (showFixSourceBanner); this element is a pure navigation aid — it
          never triggers a request itself (ADR-0029 Invariant). -->
     <div id="fix-source-banner" class="fix-source-banner" role="status" aria-live="polite"></div>
+
+    <!-- C5 fix-source BATCH panel (issue #538, ADR-0036 decisions 3-5):
+         accumulates Source targets from the Reconcile modal's Source
+         comparison "Fix this Source" entry points, across possibly several
+         C5 findings. Unlike the single-target banners above, this is a
+         multi-item checklist — the curator corrects every listed Source
+         locally, then uploads them together; that ONE batch Upload drives
+         ONE force re-ingest and ONE deep-audit (never a per-target stepper).
+         Populated by JS (renderC5FixSourcePanel). -->
+    <div id="c5-fix-source-panel" class="fix-source-batch-panel" role="status" aria-live="polite"></div>
 
     <!-- Two-column split (console flow | resource rail). The left column holds
          the whole operator flow; the right rail pins the Resource Browser so a
@@ -3209,6 +3337,21 @@ var LINT_CHROME = {
     modalGrounded:             "grounded",
     modalGroundingFailed:      "grounding failed",
     modalVariantsDeletedPrefix: "Variants deleted on apply (only if reference-free): ",
+
+    /* issue #538 (ADR-0036): C5 two-view Reconcile modal + fix-source batch
+       panel. reconcileView* are the header toggle's own labels; the rest is
+       the Source comparison view + the multi-target batch checklist. */
+    reconcileViewWiki:   "Wiki comparison",
+    reconcileViewSource: "Source comparison",
+    c5SourcesDisagreeNote: "The Sources disagree — this cannot be auto-reconciled at the wiki layer. Fix one Source to match the other, then upload it below.",
+    c5FixThisSource:        "Fix this Source",
+    c5SourceSectionMissing: "(citation could not be resolved to Section content)",
+    c5FixSourceBatchHeadPrefix: "Fix Source (batch): ",
+    c5FixSourceBatchHeadSuffix: " pending",
+    c5FixSourceBatchRemove:      "Remove",
+    c5FixSourceBatchChooseFiles: "Choose corrected file(s)…",
+    c5FixSourceBatchWorking:     "Uploading, re-ingesting, and re-auditing…",
+    c5FixSourceBatchMismatch:    "No pending fix-source target matches: ",
   },
   zh: {
     reingest:        "重新匯入",
@@ -3455,6 +3598,18 @@ var LINT_CHROME = {
     modalGrounded:             "已通過引證檢核",
     modalGroundingFailed:      "引證檢核失敗",
     modalVariantsDeletedPrefix: "套用後將刪除以下變體（僅在未被引用時）：",
+
+    reconcileViewWiki:   "Wiki 比較",
+    reconcileViewSource: "Source 比較",
+    c5SourcesDisagreeNote: "兩份 Source 彼此矛盾 — 無法在 wiki 層自動協調。請修正其中一份 Source 使其與另一份一致,再於下方上傳。",
+    c5FixThisSource:        "修正此 Source",
+    c5SourceSectionMissing: "(此引用無法解析為 Section 內容)",
+    c5FixSourceBatchHeadPrefix: "修正 Source(批次):",
+    c5FixSourceBatchHeadSuffix: " 筆待處理",
+    c5FixSourceBatchRemove:      "移除",
+    c5FixSourceBatchChooseFiles: "選擇已修正的檔案…",
+    c5FixSourceBatchWorking:     "正在上傳、重新合成並重新稽核…",
+    c5FixSourceBatchMismatch:    "沒有待處理目標符合檔名:",
   },
 };
 
@@ -3791,6 +3946,195 @@ function checkFixSourceOutcome(lintData) {
     pendingFixSource = null;
     hideFixSourceBanner();
   }
+}
+
+/* ============================================================
+   C5 fix-source BATCH panel (issue #538, ADR-0036 decisions 3-5)
+
+   Generalises the single-pending-target banner pattern above
+   (fixSourceAction / showFixSourceBanner, C3's ADR-0029 flow) into a
+   multi-item checklist: the Reconcile modal's Source comparison "Fix this
+   Source" entry points (renderC5SourceCard, further below) accumulate
+   targets here instead of tracking one pending slot — C5 is "two Sources
+   disagree," so a curator may need to correct Sources cited across several
+   findings before re-verifying (ADR-0036 decision 5: one batch Upload ->
+   one force re-ingest -> one deep-audit, never a per-target stepper).
+
+   INVARIANT (mirrors ADR-0029): accumulating a target (addC5FixSourceTarget)
+   never fetches anything — only the explicit batch-run below does. */
+
+/* {sourcePath, filename} entries pending correction, deduplicated by
+   sourcePath (the exact "docs/<relative>" shape CitedSourceSection already
+   carries — issue #534 — which is also the shape /upload's overwrite_relpath
+   requires, so no client-side path reconstruction, issue #445's lesson).
+   Cleared once a batch run completes: a still-failing pair simply reappears
+   on the next Lint/Deep-audit for the curator to re-target, mirroring
+   checkFixSourceOutcome's "the finding disappearing IS the story"
+   convention rather than a separate persistent failure state. */
+var pendingC5FixSourceTargets = [];
+
+function addC5FixSourceTarget(sourcePath) {
+  if (!sourcePath) return;
+  var already = pendingC5FixSourceTargets.some(function(t) { return t.sourcePath === sourcePath; });
+  if (!already) {
+    pendingC5FixSourceTargets.push({ sourcePath: sourcePath, filename: sourcePath.split("/").pop() });
+  }
+  renderC5FixSourcePanel();
+}
+
+function removeC5FixSourceTarget(sourcePath) {
+  pendingC5FixSourceTargets = pendingC5FixSourceTargets.filter(function(t) { return t.sourcePath !== sourcePath; });
+  renderC5FixSourcePanel();
+}
+
+/* Rebuilds the panel from pendingC5FixSourceTargets — hidden (and emptied)
+   once the list is empty, matching hideFixSourceBanner's convention. The
+   file input + its change handler are rebuilt each render (cheap — this
+   panel changes only on a handful of curator clicks per session) so a
+   stale closure can never reference a target list from before a Remove. */
+function renderC5FixSourcePanel() {
+  var panel = document.getElementById("c5-fix-source-panel");
+  if (!panel) return;
+  if (pendingC5FixSourceTargets.length === 0) {
+    panel.classList.remove("visible");
+    panel.replaceChildren();
+    return;
+  }
+  var chrome = LINT_CHROME[consoleLang];
+
+  var list = el("div", { class: "fix-source-batch-list" });
+  pendingC5FixSourceTargets.forEach(function(target) {
+    var viewBtn = el("button", { class: "view-source-btn", type: "button", text: chrome.viewSource });
+    viewBtn.addEventListener("click", function() { openFile(target.sourcePath, target.filename); });
+    var removeBtn = el("button", { class: "fix-source-batch-remove-btn", type: "button",
+      text: chrome.c5FixSourceBatchRemove });
+    removeBtn.addEventListener("click", function() { removeC5FixSourceTarget(target.sourcePath); });
+    list.append(el("div", { class: "fix-source-batch-item" },
+      el("span", { class: "fix-source-batch-item-path", text: target.sourcePath }),
+      viewBtn,
+      removeBtn
+    ));
+  });
+
+  var fileInput = el("input", { type: "file", multiple: "", accept: ".md", style: "display:none" });
+  var statusMsgEl = el("span", { class: "card-status-msg" });
+  var uploadBtn = el("button", { class: "fix-source-batch-upload-btn", type: "button",
+    text: chrome.c5FixSourceBatchChooseFiles });
+  uploadBtn.addEventListener("click", function() {
+    if (uploadBtn.disabled || remediationInFlight) return;
+    fileInput.click();
+  });
+  fileInput.addEventListener("change", function() {
+    if (fileInput.files && fileInput.files.length > 0) {
+      runC5FixSourceBatch(Array.from(fileInput.files), uploadBtn, statusMsgEl);
+    }
+    fileInput.value = "";
+  });
+
+  panel.replaceChildren(
+    el("div", { class: "fix-source-batch-head" },
+      el("span", { text: chrome.c5FixSourceBatchHeadPrefix + pendingC5FixSourceTargets.length + chrome.c5FixSourceBatchHeadSuffix })
+    ),
+    list,
+    el("div", { class: "fix-source-batch-controls" }, uploadBtn, fileInput, statusMsgEl)
+  );
+  panel.classList.add("visible");
+}
+
+/* Matches each selected file's basename against a pending target, uploads
+   every match with that target's own resolved overwrite_relpath (issue
+   #533, ADR-0036 §6 destination-aware overwrite — CitedSourceSection.
+   source_path is already the exact "docs/<relative>" shape
+   ``_resolve_overwrite_target`` requires, so this never guesses a path),
+   then drives exactly ONE force re-ingest over the matched filenames and
+   ONE deep-audit (POST /wiki/lint?include_c5=true) — ADR-0036 decision 5.
+   A file with no matching pending target is reported rather than silently
+   uploaded to docs/ root under a guessed name. Uploads run sequentially
+   (mirrors runIngestBatches's own sequencing rationale — predictable
+   server-side write order, one clear failure point) rather than
+   Promise.all's fire-and-forget parallelism. */
+function runC5FixSourceBatch(files, btn, statusMsgEl) {
+  if (remediationInFlight) return;
+  var chrome = LINT_CHROME[consoleLang];
+
+  var matched = [];
+  var unmatchedNames = [];
+  files.forEach(function(file) {
+    var target = pendingC5FixSourceTargets.filter(function(t) { return t.filename === file.name; })[0];
+    if (target) matched.push({ file: file, target: target });
+    else unmatchedNames.push(file.name);
+  });
+
+  if (matched.length === 0) {
+    statusMsgEl.textContent = chrome.c5FixSourceBatchMismatch + unmatchedNames.join(", ");
+    statusMsgEl.className = "card-status-msg err";
+    return;
+  }
+
+  remediationInFlight = true;
+  btn.disabled = true;
+  statusMsgEl.replaceChildren(el("span", { class: "spinner" }),
+    document.createTextNode(chrome.c5FixSourceBatchWorking));
+  statusMsgEl.className = "card-status-msg";
+
+  function uploadOne(entry) {
+    var formData = new FormData();
+    formData.append("files", entry.file, entry.file.name);
+    formData.append("overwrite_relpath", entry.target.sourcePath);
+    return fetch("/upload", { method: "POST", body: formData })
+      .then(function(resp) {
+        if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+        return resp.json();
+      });
+  }
+
+  matched.reduce(function(chain, entry) {
+    return chain.then(function() { return uploadOne(entry); });
+  }, Promise.resolve())
+    .then(function() {
+      // ONE force re-ingest over exactly the matched filenames (§12.8).
+      return fetch("/wiki/ingest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sources: matched.map(function(e) { return e.target.filename; }),
+          force: true,
+        }),
+      });
+    })
+    .then(function(resp) {
+      if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+      return resp.json();
+    })
+    .then(function() {
+      // ONE deep-audit re-judges every C5 pair, including the just-fixed one.
+      return fetch("/wiki/lint?include_c5=true", { method: "POST" });
+    })
+    .then(function(resp) {
+      if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+      return resp.json();
+    })
+    .then(function(lintData) {
+      remediationInFlight = false;
+      checkCoverageFillOutcome(lintData);
+      checkFixSourceOutcome(lintData);
+      // This is a genuine include_c5=true judgment too (mirrors the Deep
+      // audit control's own one-shot signal, issue #489) — the upcoming
+      // renderLintCard must treat its page_pairs as a fresh baseline, not
+      // fall back to a stale one.
+      pendingDeepC5Audit = true;
+      pendingC5FixSourceTargets = [];
+      renderC5FixSourcePanel();
+      lastLintData = lintData;
+      if (lintResultEl) lintResultEl.replaceChildren(renderLintCard(lintData, lintResultEl));
+      renderCurationQueue(document.getElementById("curation-queue-root"), lintData);
+    })
+    .catch(function(err) {
+      remediationInFlight = false;
+      btn.disabled = false;
+      statusMsgEl.textContent = "Error: " + (err.message || String(err));
+      statusMsgEl.className = "card-status-msg err";
+    });
 }
 
 /* issue #498: registry for BOOT-TIME static chrome — elements built once
@@ -4198,13 +4542,15 @@ var c5FindingByPair = {};
 var lastDeepC5Pairs = null;
 
 /* One-shot signal (mirrors lastBatchSummary/lastCoverageFillOutcome's
-   existing pattern) — set true by the Deep audit control right before it
-   calls renderLintCard, so that render (and only that render) knows its
-   response's page_pairs is a genuine fresh judgment rather than a fast
-   include_c5=false relint's untouched empty default. Not a renderLintCard
-   parameter: test_ui_console_lint_fast_default.py pins the literal 2-arg
-   ``renderLintCard(data, resultEl)`` call in both the Run and Deep audit
-   STEP_DEFS bodies. */
+   existing pattern) — set true right before a genuine include_c5=true
+   response's render, by either of the two call sites that request one (the
+   Deep audit control, and the C5 fix-source batch panel's
+   runC5FixSourceBatch — issue #538), so that render (and only that render)
+   knows its response's page_pairs is a genuine fresh judgment rather than a
+   fast include_c5=false relint's untouched empty default. Not a
+   renderLintCard parameter: test_ui_console_lint_fast_default.py pins the
+   literal 2-arg ``renderLintCard(data, resultEl)`` call in both the Run and
+   Deep audit STEP_DEFS bodies. */
 var pendingDeepC5Audit = false;
 
 // Long quotes/summaries collapse to a preview with an explicit toggle —
@@ -4268,9 +4614,10 @@ function renderLintCard(data, resultEl) {
      always carries page_pairs: [] — C5 is simply never judged on that path.
      Naively rendering it away made a previously-populated C5 Contradiction
      section vanish, reading as "contradictions resolved" when nothing was
-     re-judged. pendingDeepC5Audit (one-shot, set by the Deep audit control —
-     the one call site that requests include_c5=true — right before it calls
-     this function) tells THIS render whether its page_pairs is a genuine
+     re-judged. pendingDeepC5Audit (one-shot, set by whichever include_c5=true
+     call site ran — the Deep audit control, or the C5 fix-source batch
+     panel's runC5FixSourceBatch, issue #538 — right before it calls this
+     function) tells THIS render whether its page_pairs is a genuine
      fresh judgment; consumed immediately below so a later render is never
      fooled by a stale flag. When true, this render's page_pairs (possibly
      empty) becomes the new baseline. Otherwise, if this render's page_pairs
@@ -5093,17 +5440,84 @@ function openReconcileModal(pageA, pageB, resultEl, siblingButtons, finding) {
     });
 }
 
-/* Renders the generate-time draft: a grounding report, then old-vs-editable
-   columns per page, then Apply/Cancel. Apply sends the (possibly edited)
-   textarea values back with the hash tokens captured verbatim from the
-   generate response — never recomputed client-side (§12.5 no business
-   logic in the client). On success, closes the modal and re-runs the SAME
-   fast (include_c5=false) re-lint + re-render every other remediation uses,
-   so the fixed finding (and every other still-unjudged C5 finding) drops
-   out of the re-rendered Coherence section until the curator re-runs a
-   full Lint. ``siblingButtons`` (issue #364's shared in-flight-guard list)
-   is disabled for the duration of the apply request — same no-double-submit
-   guarantee every other remediation on the card already gets. */
+/* ── C5 Source comparison view (issue #538, ADR-0036 decisions 2-3) ────────
+   One page's OWN cited Source sections (ReconcileGenerateResponse.
+   cited_sections_a/b, issue #534) — the source-rooted exit's evidence.
+   Each section offers a read-only View (GET /read/file via openFile, same
+   convention as C3's view-source) and an edit entry point
+   (addC5FixSourceTarget) that accumulates the Source into the persistent
+   batch panel below — never fetching anything itself (same Routed
+   Invariant as fixSourceAction). A section whose citation could not be
+   resolved to content (missing/ambiguous Source, or a stale anchor —
+   source_resolution !== "resolved") disables both controls: there is no
+   real path to view or fix from here (§12.5, no false affordance). */
+function renderC5SourceCard(pageSlug, sections) {
+  var chrome = LINT_CHROME[consoleLang];
+  var card = el("div", { class: "reconcile-source-card" },
+    el("div", { class: "reconcile-col-head", text: pageSlug })
+  );
+  (sections || []).forEach(function(section) {
+    var resolved = section.source_resolution === "resolved" && !!section.source_path;
+    var viewBtn = el("button", { class: "view-source-btn", type: "button", text: chrome.viewSource });
+    var editBtn = el("button", { class: "fix-source-btn", type: "button", text: chrome.c5FixThisSource });
+    if (resolved) {
+      viewBtn.addEventListener("click", function() {
+        openFile(section.source_path, section.id.split("#")[0]);
+      });
+      editBtn.addEventListener("click", function() {
+        addC5FixSourceTarget(section.source_path);
+      });
+    } else {
+      viewBtn.disabled = true;
+      editBtn.disabled = true;
+    }
+    var headText = (section.heading || section.id) + (section.source_path ? " — " + section.source_path : "");
+    card.append(el("div", { class: "reconcile-source-section" },
+      el("div", { class: "reconcile-source-section-head", text: headText }),
+      el("pre", { class: "reconcile-source-section-content",
+        text: section.content || chrome.c5SourceSectionMissing }),
+      el("div", { class: "reconcile-source-section-actions" }, viewBtn, editBtn)
+    ));
+  });
+  return card;
+}
+
+/* Both pages' cards side by side, plus the "Sources disagree" note (ADR-0036
+   decision 2/3) when THIS generate's grounding failed — the note names the
+   source-rooted exit; it is omitted for a passing (wiki-rooted) generate so
+   toggling here out of curiosity never reads as alarming. */
+function renderC5SourceComparisonView(data) {
+  var chrome = LINT_CHROME[consoleLang];
+  var passed = !!(data.grounding && data.grounding.passed);
+  var container = el("div", {});
+  if (!passed) {
+    container.append(el("div", { class: "sources-disagree-note", text: chrome.c5SourcesDisagreeNote }));
+  }
+  container.append(el("div", { class: "reconcile-source-columns" },
+    renderC5SourceCard(data.page_a, data.cited_sections_a),
+    renderC5SourceCard(data.page_b, data.cited_sections_b)
+  ));
+  return container;
+}
+
+/* Renders the generate-time draft: a grounding report, a header toggle
+   between Wiki comparison (old-vs-editable columns, existing) and Source
+   comparison (issue #538, ADR-0036 decisions 2-3 — the two pages' own
+   cited Sources), then Apply/Cancel. The default view follows THIS
+   generate's grounding outcome (pass -> Wiki, fail -> Source); both
+   toggles stay present so the curator can look either way regardless.
+   Apply sends the (possibly edited) textarea values back with the hash
+   tokens captured verbatim from the generate response — never recomputed
+   client-side (§12.5 no business logic in the client), UNCHANGED by the
+   view toggle: a wiki-rooted Reconcile still edits -> applies exactly as
+   before, whichever view happens to be showing. On success, closes the
+   modal and re-runs the SAME fast (include_c5=false) re-lint + re-render
+   every other remediation uses, so the fixed finding (and every other
+   still-unjudged C5 finding) drops out of the re-rendered Coherence
+   section until the curator re-runs a full Lint. ``siblingButtons``
+   (issue #364's shared in-flight-guard list) is disabled for the duration
+   of the apply request — same no-double-submit guarantee every other
+   remediation on the card already gets. */
 function renderReconcilePreview(modal, data, resultEl, closeModal, siblingButtons, finding) {
   var chrome = LINT_CHROME[consoleLang];
   // issue #443: the conflict panel (both quoted claims, full summary,
@@ -5202,25 +5616,52 @@ function renderReconcilePreview(modal, data, resultEl, closeModal, siblingButton
       });
   });
 
+  // issue #538 (ADR-0036 decision 2): the default view follows THIS
+  // generate's grounding outcome — pass -> Wiki, fail -> Source. Both
+  // toggle buttons stay present regardless; the system never auto-picks a
+  // remediation, it only picks which evidence to show first.
+  var activeView = passed ? "wiki" : "source";
+
+  var wikiViewEl = el("div", { class: "reconcile-columns" },
+    el("div", { class: "reconcile-col" },
+      el("div", { class: "reconcile-col-head", text: data.page_a + chrome.modalCurrentSuffix }),
+      el("pre", { class: "reconcile-old", text: data.old_content_a }),
+      el("div", { class: "reconcile-col-head", text: data.page_a + chrome.modalDraftEditableSuffix }),
+      textareaA
+    ),
+    el("div", { class: "reconcile-col" },
+      el("div", { class: "reconcile-col-head", text: data.page_b + chrome.modalCurrentSuffix }),
+      el("pre", { class: "reconcile-old", text: data.old_content_b }),
+      el("div", { class: "reconcile-col-head", text: data.page_b + chrome.modalDraftEditableSuffix }),
+      textareaB
+    )
+  );
+  var sourceViewEl = renderC5SourceComparisonView(data);
+  var viewBodyEl = el("div");
+
+  var wikiToggleBtn = el("button", { class: "reconcile-view-toggle-btn", type: "button",
+    text: chrome.reconcileViewWiki });
+  var sourceToggleBtn = el("button", { class: "reconcile-view-toggle-btn", type: "button",
+    text: chrome.reconcileViewSource });
+
+  function renderActiveView() {
+    viewBodyEl.replaceChildren(activeView === "wiki" ? wikiViewEl : sourceViewEl);
+    wikiToggleBtn.classList.toggle("active", activeView === "wiki");
+    sourceToggleBtn.classList.toggle("active", activeView === "source");
+  }
+  wikiToggleBtn.addEventListener("click", function() { activeView = "wiki"; renderActiveView(); });
+  sourceToggleBtn.addEventListener("click", function() { activeView = "source"; renderActiveView(); });
+  renderActiveView();
+
+  var viewToggleEl = el("div", { class: "reconcile-view-toggle" }, wikiToggleBtn, sourceToggleBtn);
+
   modal.replaceChildren(
     el("div", { class: "reconcile-modal-head" }, el("span", { text: chrome.reconcileModalWord + ": " + data.page_a + " / " + data.page_b })),
     el("div", { class: "reconcile-modal-body" },
       conflictPanelEl,
+      viewToggleEl,
       groundingEl,
-      el("div", { class: "reconcile-columns" },
-        el("div", { class: "reconcile-col" },
-          el("div", { class: "reconcile-col-head", text: data.page_a + chrome.modalCurrentSuffix }),
-          el("pre", { class: "reconcile-old", text: data.old_content_a }),
-          el("div", { class: "reconcile-col-head", text: data.page_a + chrome.modalDraftEditableSuffix }),
-          textareaA
-        ),
-        el("div", { class: "reconcile-col" },
-          el("div", { class: "reconcile-col-head", text: data.page_b + chrome.modalCurrentSuffix }),
-          el("pre", { class: "reconcile-old", text: data.old_content_b }),
-          el("div", { class: "reconcile-col-head", text: data.page_b + chrome.modalDraftEditableSuffix }),
-          textareaB
-        )
-      )
+      viewBodyEl
     ),
     el("div", { class: "reconcile-actions" }, applyBtn, cancelBtn, statusMsgEl)
   );
@@ -5900,13 +6341,15 @@ var STEP_DEFS = [
         .then(function(data) {
           checkCoverageFillOutcome(data);
           checkFixSourceOutcome(data);
-          // issue #489: the ONLY call site that ever requests include_c5=true
-          // — a one-shot signal (mirrors lastBatchSummary/lastCoverageFillOutcome's
-          // pattern) telling the upcoming renderLintCard this response's
-          // page_pairs is a genuine fresh judgment, the baseline every later
-          // fast (include_c5=false) relint falls back to. Not passed as a 3rd
-          // renderLintCard argument: test_ui_console_lint_fast_default.py pins
-          // the literal 2-arg call in both run() and deepAudit() bodies.
+          // issue #489 (updated #538: the C5 fix-source batch panel's
+          // runC5FixSourceBatch is the second call site that requests
+          // include_c5=true) — a one-shot signal (mirrors
+          // lastBatchSummary/lastCoverageFillOutcome's pattern) telling the
+          // upcoming renderLintCard this response's page_pairs is a genuine
+          // fresh judgment, the baseline every later fast (include_c5=false)
+          // relint falls back to. Not passed as a 3rd renderLintCard
+          // argument: test_ui_console_lint_fast_default.py pins the literal
+          // 2-arg call in both run() and deepAudit() bodies.
           pendingDeepC5Audit = true;
           resultEl.replaceChildren(renderLintCard(data, resultEl));
           lastLintData = data;
