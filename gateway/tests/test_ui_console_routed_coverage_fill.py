@@ -108,6 +108,19 @@ def test_fill_via_import_action_sets_pending_state_and_shows_banner():
     assert "showCoverageFillBanner(" in body
 
 
+def test_fill_via_import_scrolls_the_hint_banner_not_pipeline_root():
+    """issue #537: showCoverageFillBanner must scroll the HINT BANNER into view
+    (it sits ABOVE the pipeline) — scrolling pipeline-root to the top pushed the
+    just-generated hint off the top edge so the operator never saw it. Reuses
+    scrollSoftIntoView, which honors prefers-reduced-motion (AC)."""
+    body = _function_body(_console_text(), "showCoverageFillBanner")
+    # scrolls to the banner (with a pipeline-root fallback if the banner is absent)
+    assert "var scrollTarget = banner || " in body
+    assert "scrollSoftIntoView(scrollTarget" in body
+    # regression: it must NOT scroll pipeline-root as the primary target
+    assert "scrollSoftIntoView(pipelineRoot" not in body
+
+
 # ---------------------------------------------------------------------------
 # Context banner: carries the finding's fields for both C1 and C2
 # ---------------------------------------------------------------------------

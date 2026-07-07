@@ -3690,8 +3690,12 @@ function showCoverageFillBanner(code, finding) {
     banner.textContent = coverageFillContextText(code, finding);
     banner.classList.add("visible");
   }
-  var pipelineRoot = document.getElementById("pipeline-root");
-  if (pipelineRoot) scrollSoftIntoView(pipelineRoot, "start");
+  // issue #537: scroll to the HINT BANNER (which sits ABOVE the pipeline), not
+  // to pipeline-root — scrolling pipeline-root to the top pushed the just-
+  // generated hint off the top edge, so the operator never saw the suggested
+  // import query. scrollSoftIntoView already honors prefers-reduced-motion.
+  var scrollTarget = banner || document.getElementById("pipeline-root");
+  if (scrollTarget) scrollSoftIntoView(scrollTarget, "start");
 }
 
 function hideCoverageFillBanner() {
