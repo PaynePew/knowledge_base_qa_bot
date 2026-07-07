@@ -69,7 +69,7 @@ def test_c9_taxonomy_mirror_is_authored():
 def test_curation_queue_c9_section_uses_refile_card():
     text = _console_text()
     c9_section = re.search(
-        r"/\* .. C9: Stale filed answers .*?\*/(.*?)queueEl\.append\(c9Section\);",
+        r"/\* .. C9: Stale filed answers .*?\*/(.*?)queueSections\.push\(c9Section\);",
         text,
         re.DOTALL,
     )
