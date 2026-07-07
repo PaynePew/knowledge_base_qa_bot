@@ -445,23 +445,25 @@ def _format_c11_orphans(findings: object, label: str) -> list[str]:
     return lines
 
 
-def _c3_fix_source_hint() -> str:
-    """Render C3's Routed fix-the-Source navigation hint as plain text
-    (issue #408, ADR-0029).
+def _fix_source_hint(code: str) -> str:
+    """Render a check's added Routed fix-the-Source navigation hint as plain
+    text (issue #408, ADR-0029 for C3; issue #534, ADR-0036 for C5).
 
-    C3 is the first check carrying two remediation classes at once: its
-    executable Direct "Re-ingest (retry)" action stays wired (unchanged since
-    issue #363), and ``remediation_for("C3").secondary_route`` names an
-    ADDITIONAL Routed navigation for its dominant failure mode
-    (``claim_unsupported``) — amending what the Source says is knowledge only
-    the human can supply, so there is nothing here to execute, only to
+    Generalised from the original C3-only ``_c3_fix_source_hint`` now that C5
+    gains the SAME ``secondary_route`` value (issue #534): C3 stays
+    Direct-tier with its executable Direct "Re-ingest (retry)" action wired
+    unchanged; C5 stays Authored-tier with its Reconcile draft/approve loop
+    unchanged. Both ALSO carry this ADDITIONAL Routed navigation for the case
+    their primary tier cannot fix — amending what a Source says is knowledge
+    only the human can supply, so there is nothing here to execute, only to
     describe. Mirrors ``_routed_fill_hint`` above (C1/C2), which reads the
-    PRIMARY ``route`` field instead — C3 stays Direct-tier, so its navigation
-    hint lives in ``secondary_route`` (see ``RemediationDescriptor``).
+    PRIMARY ``route`` field instead — C3/C5 stay Direct/Authored-tier, so
+    their navigation hint lives in ``secondary_route`` (see
+    ``RemediationDescriptor``).
     """
     from markdown_kb.app.lint import remediation_for
 
-    route = remediation_for("C3").secondary_route
+    route = remediation_for(code).secondary_route
     if route == "fix-source":
         return "  fix via: edit the Source under docs/, then: kb ingest <source> && kb lint"
     return f"  fix via: {route}"  # pragma: no cover — no other secondary route exists yet
@@ -482,7 +484,7 @@ def _format_c3_failed_grounding(findings: object, label: str) -> list[str]:
     lines = [
         f"C3 Failed grounding ({len(findings.failed_grounding)}) — {label}:"  # type: ignore[attr-defined]
     ]
-    lines.append(_c3_fix_source_hint())
+    lines.append(_fix_source_hint("C3"))
     for f in findings.failed_grounding:  # type: ignore[attr-defined]
         claims = (
             "; ".join(f.unsupported_claims) if f.unsupported_claims else "(claims not recorded)"
@@ -576,10 +578,18 @@ def _format_c1_coverage_gaps(findings: object, label: str) -> list[str]:
 
 
 def _format_c5_contradictions(findings: object, label: str) -> list[str]:
-    """C5 Contradictions lines, or ``[]`` when there are none."""
+    """C5 Contradictions lines, or ``[]`` when there are none.
+
+    The Routed fix-the-Source hint (issue #534, ADR-0036) follows the heading
+    line, mirroring C3/C1/C2's placement — C5 is the second check carrying
+    two remediation classes: Reconcile (Authored, unaffected) stays the exit
+    for a wiki-rooted contradiction; this hint names the exit for a
+    source-rooted one (the Sources themselves disagree).
+    """
     if not findings.page_pairs:  # type: ignore[attr-defined]
         return []
     lines = [f"C5 Contradictions ({len(findings.page_pairs)}) — {label}:"]  # type: ignore[attr-defined]
+    lines.append(_fix_source_hint("C5"))
     for f in findings.page_pairs:  # type: ignore[attr-defined]
         lines.append(f"  • {f.page_a} ↔ {f.page_b} [{f.severity}] — {f.summary}")
     lines.append("")

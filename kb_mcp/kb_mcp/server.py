@@ -399,15 +399,17 @@ def _routed_fill_hint(route: str | None) -> str:
     return f"route: {route}"  # pragma: no cover — no other route exists yet
 
 
-def _c3_fix_source_hint(secondary_route: str | None) -> str:
-    """Render C3's added Routed fix-the-Source navigation hint as plain text
-    (issue #408, ADR-0029).
+def _fix_source_hint(secondary_route: str | None) -> str:
+    """Render a check's added Routed fix-the-Source navigation hint as plain
+    text (issue #408, ADR-0029 for C3; issue #534, ADR-0036 for C5).
 
-    Mirrors ``kb_cli.main._c3_fix_source_hint`` (same shared taxonomy, same
-    text). C3 is the first check carrying two remediation classes at once —
-    its executable Direct Re-ingest retry is untouched by this; this reads
-    ``remediation_for("C3").secondary_route`` (never the primary ``route``
-    field, which stays ``None`` for C3 — see ``RemediationDescriptor``).
+    Mirrors ``kb_cli.main._fix_source_hint`` (same shared taxonomy, same
+    text; renamed there too, issue #534). C3 and C5 are the two checks
+    carrying two remediation classes at once — their respective executable
+    Direct Re-ingest retry / Authored Reconcile stay untouched by this; the
+    caller reads ``remediation_for(<code>).secondary_route`` (never the
+    primary ``route`` field, which stays ``None`` for both — see
+    ``RemediationDescriptor``).
     """
     if secondary_route == "fix-source":
         return "edit the Source under docs/, then: kb ingest <source> && kb lint"
@@ -465,6 +467,16 @@ def _c3_fix_source_hint(secondary_route: str | None) -> str:
         "and fails identically).  There is no tool call that edits a Source "
         "file; report the finding, its 'unsupported_claims', and the hint "
         "to your human.\n\n"
+        "  findings.page_pairs[] (C5) additionally carries a 'fix_via' text "
+        "hint (issue #534, ADR-0036) — C5 is the second check carrying TWO "
+        "remediation classes: Reconcile (its existing Authored draft/approve "
+        "loop, unaffected) fixes a wiki-rooted contradiction, but a "
+        "SOURCE-rooted one (both pages faithfully grounded, their own "
+        "Sources disagree) cannot be fixed there — only "
+        "POST /pages/reconcile's grounding outcome can tell which case a "
+        "given pair is, so this hint is not per-pair discriminating; report "
+        "the finding and the hint to your human, who judges which layer to "
+        "fix.\n\n"
         "Returns isError=true when the C5 LLM call fails catastrophically:\n"
         "  {code, message} where code is 'LLM_UNAVAILABLE' (retryable) or\n"
         "  'LLM_ERROR' (non-retryable, report message to user).\n"
@@ -582,9 +594,20 @@ def kb_lint_v1(
     # reads secondary_route, not the primary route field (which is None for
     # C3), since fixing what a claim_unsupported Source says is knowledge
     # only the human can supply.
-    fix_source_hint = _c3_fix_source_hint(remediation_for("C3").secondary_route)
+    fix_source_hint = _fix_source_hint(remediation_for("C3").secondary_route)
     for fg in payload["findings"]["failed_grounding"]:
         fg["fix_via"] = fix_source_hint
+
+    # C5's secondary Routed class (issue #534, ADR-0036): unlike C1/C2, C5
+    # stays Authored-tier (its Reconcile draft/approve loop is unaffected) —
+    # this reads the SAME secondary_route field C3 set first. No per-pair
+    # signal distinguishes a source-rooted C5 pair here (that only surfaces
+    # via POST /pages/reconcile's grounding outcome, ADR-0036 decision 2), so
+    # every page_pairs entry carries the same navigation hint, mirroring C1/
+    # C2's static per-finding fill_via.
+    c5_fix_source_hint = _fix_source_hint(remediation_for("C5").secondary_route)
+    for pair in payload["findings"]["page_pairs"]:
+        pair["fix_via"] = c5_fix_source_hint
 
     return payload
 
