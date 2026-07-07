@@ -335,8 +335,13 @@ def two_source_wiki_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture()
 def two_source_client(two_source_wiki_dir, monkeypatch):
-    """Mirrors ``reconcile_client`` but redirected at ``two_source_wiki_dir``."""
-    fake_lint_llm = _make_fake_lint_llm(content_a="Page Alpha draft.", content_b="Page Beta draft.")
+    """Mirrors ``reconcile_client`` but redirected at ``two_source_wiki_dir``.
+
+    ``content_a``/``content_b`` are placeholder draft text — reused across
+    this fixture's three tests regardless of which two of the three fixture
+    pages a given test reconciles, since none of them assert on draft
+    content (only on cited_sections_a/b and grounding.passed)."""
+    fake_lint_llm = _make_fake_lint_llm(content_a="Draft A.", content_b="Draft B.")
     monkeypatch.setattr(lint_module, "get_lint_llm", lambda: fake_lint_llm)
     monkeypatch.setattr(indexer_module, "WIKI_DIR", two_source_wiki_dir)
     monkeypatch.setattr(
