@@ -4,7 +4,7 @@ AC coverage (issue #70 — Unit tests cluster):
   - _candidate_pairs: F1 intersection logic (shared frontmatter.sources)
   - _candidate_pairs: F3 BM25 top-K filter behaviour
   - _candidate_pairs: symmetric short-circuit invariant (no (B,A) after (A,B))
-  - _judge_page_pair: mocked LLM emitting each of the 4 severities
+  - _judge_page_pair: mocked LLM emitting each of the 3 severities
   - _judge_page_pair: correct PagePairFinding shape per severity
   - _judge_page_pair: page_a/page_b always in sorted canonical order
 
@@ -245,9 +245,9 @@ class TestJudgePagePair:
         mock_chain.invoke.return_value = finding
         return mock_chain
 
-    @pytest.mark.parametrize("severity", ["direct", "tension", "duplicate", "none"])
-    def test_all_four_severities_produce_valid_finding(self, severity, monkeypatch):
-        """_judge_page_pair returns a PagePairFinding with the correct severity for all 4 values."""
+    @pytest.mark.parametrize("severity", ["direct", "tension", "none"])
+    def test_all_severities_produce_valid_finding(self, severity, monkeypatch):
+        """_judge_page_pair returns a PagePairFinding with the correct severity for all 3 values."""
         import app.lint as lint_module
         from app.schemas import PagePairFinding
 
@@ -319,7 +319,7 @@ class TestJudgePagePair:
         assert result.page_b_claim
         assert result.summary
         assert result.suggested_action
-        assert result.severity in ("direct", "tension", "duplicate", "none")
+        assert result.severity in ("direct", "tension", "none")
 
 
 # ---------------------------------------------------------------------------

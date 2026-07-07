@@ -15,7 +15,7 @@ AC coverage (issue #70 — End-to-end test cluster):
 
 The LLM is mocked to produce two PagePairFinding results:
   - ('refund-policy-a', 'refund-policy-b') → severity='direct'
-  - ('our-shipping', 'shipping') → severity='duplicate'  [canonical: our-shipping ≤ shipping]
+  - ('our-shipping', 'shipping') → severity='tension'  [canonical: our-shipping ≤ shipping]
 
 This mirrors the fixture design from PRD #65 §"Nine fixtures planted".
 """
@@ -111,7 +111,7 @@ def mock_c5_llm(monkeypatch):
     """Mock the C5 LLM to produce deterministic findings for the fixture pages.
 
     Returns:
-      - ('our-shipping', 'shipping') → severity='duplicate'
+      - ('our-shipping', 'shipping') → severity='tension'
       - ('refund-policy-a', 'refund-policy-b') → severity='direct'
       - All other pairs → severity='none'
     """
@@ -136,7 +136,7 @@ def mock_c5_llm(monkeypatch):
             return make_finding("refund-policy-a", "refund-policy-b", "direct")
         if "our-shipping" in content and "shipping" in content:
             # Also handles (shipping, our-shipping) since they're both present
-            return make_finding("our-shipping", "shipping", "duplicate")
+            return make_finding("our-shipping", "shipping", "tension")
         # All other pairs → none (false positive from candidate filter)
         # Extract slugs from "Page A (slug: `xxx`)" pattern
         import re
@@ -327,7 +327,7 @@ class TestLintE2EGolden:
         assert refund_gap.top_section == "refund-timeline"
 
     def test_c5_page_pair_findings_severity(self, e2e_env):
-        """C5: mocked LLM produces direct + duplicate findings; severity matches expected."""
+        """C5: mocked LLM produces direct + tension findings; severity matches expected."""
         from app.lint import run_lint
 
         result = run_lint(**e2e_env)
@@ -336,7 +336,7 @@ class TestLintE2EGolden:
         # None findings are filtered before the return; everything remaining must
         # be one of the three meaningful severities.
         for ppf in page_pairs:
-            assert ppf.severity in ("direct", "tension", "duplicate"), (
+            assert ppf.severity in ("direct", "tension"), (
                 f"severity must not be 'none' in returned findings; got {ppf.severity}"
             )
             # Canonical slug order

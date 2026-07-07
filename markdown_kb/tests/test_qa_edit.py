@@ -10,9 +10,12 @@ Coverage mirrors the issue's acceptance criteria:
   draft-only per ADR-0026.
 - Edit whose submitted body fails the re-check -> rejected
   (``QaEditRejected`` / HTTP 422 with the failure list), file unchanged.
-  Failure modes: no inline citation at all; a citation outside the page's
-  recorded sources (an edit never widens sources); a citation that no
-  longer resolves to a Section on disk.
+  Failure modes (ADR-0026 amendment 2026-07): a citation outside the page's
+  recorded sources (an edit never *fabricates* / widens sources); a citation
+  that no longer resolves to a Section on disk; a citation-less body on a page
+  whose ``frontmatter.sources`` is ALSO empty (no grounding record at all).
+  A citation-less body on a page WITH recorded sources now PASSES — that list,
+  not the inline marker, is the grounding record.
 - Missing slug -> ``QaPageNotFound`` / HTTP 404. Corrupt frontmatter ->
   ``QaPageCorrupt`` / HTTP 500 (orphan-visibility).
 
@@ -258,21 +261,48 @@ def test_edit_corrupt_frontmatter_raises_corrupt(tmp_path):
         edit(slug, "q", "b")
 
 
-def test_edit_body_without_citation_rejected_writes_nothing(tmp_path):
-    """ADR-0026: an uncited answer is ungrounded drift — rejected with the
-    failure naming the missing citation, and the file stays untouched."""
-    from app.qa import QaEditRejected, edit
+def test_edit_body_without_citation_accepted_when_sources_present(tmp_path):
+    """ADR-0026 amendment (2026-07): a body with NO inline ``[Source: ...]`` is
+    accepted as long as ``frontmatter.sources`` is non-empty — that list, not
+    the inline marker, is the Filed Answer's grounding record. Reproduces the
+    real-corpus bug (the 會員日 draft): a chat-filed answer whose model output
+    omitted the inline marker could be promoted or discarded but never
+    edited-then-approved, because the old gate demanded ≥1 inline citation that
+    filing never guaranteed."""
+    from app.qa import edit
 
-    _write_cited_entity_page(tmp_path)
     slug = "cancel-question-ab12cd"
     _write_raw_qa(tmp_path, slug, "draft", sources=[_CITED_SECTION_ID])
+
+    result = edit(slug, "edited question", "Orders can be cancelled within 24 hours of purchase.")
+
+    assert result.status == "draft"
+    assert result.op == "touched"
+    after = (tmp_path / "wiki" / "qa" / f"{slug}.md").read_text(encoding="utf-8")
+    assert "within 24 hours of purchase" in after
+    assert _CITED_SECTION_ID in after, (
+        "sources must be preserved even when the edited body carries no inline citation"
+    )
+
+
+def test_edit_body_without_citation_rejected_when_no_sources(tmp_path):
+    """The one remaining no-citation failure (ADR-0026 amendment): a page whose
+    ``frontmatter.sources`` is EMPTY has no grounding record at all, so a
+    citation-less edit is refused. A real Filed Answer never reaches this state
+    (filing always records the grounded answer's ``cited_ids``); the guard is a
+    defensive backstop for a degenerate/corrupt page."""
+    from app.qa import QaEditRejected, edit
+
+    slug = "cancel-question-ab12cd"
+    _write_raw_qa(tmp_path, slug, "draft", sources=[])
     before = (tmp_path / "wiki" / "qa" / f"{slug}.md").read_text(encoding="utf-8")
 
     with pytest.raises(QaEditRejected) as exc_info:
         edit(slug, "edited question", "Orders can be cancelled within 90 days.")
 
-    assert exc_info.value.failures
-    assert any("no [Source:" in f for f in exc_info.value.failures)
+    assert any(
+        "no cited Sources" in f or "frontmatter.sources" in f for f in exc_info.value.failures
+    )
 
     after = (tmp_path / "wiki" / "qa" / f"{slug}.md").read_text(encoding="utf-8")
     assert after == before, "a rejected edit must write nothing"
@@ -418,11 +448,14 @@ def test_route_edit_grounding_failure_returns_422_with_failures(edit_client, tmp
     slug = "cancel-question-ab12cd"
     _write_raw_qa(tmp_path, slug, "draft", sources=[_CITED_SECTION_ID])
 
+    # A fabricated citation (a Source the page does not record) still fails the
+    # relaxed re-check — an edit may drop the inline marker, but it may never
+    # claim grounding in a Source the page does not cite (ADR-0026 amendment).
     resp = edit_client.put(
         f"/qa/{slug}",
         json={
             "question": "q",
-            "body": "Orders can be cancelled within 90 days for a full refund.",
+            "body": "Orders can be cancelled within 90 days. [Source: some-other-page#refunds]",
         },
     )
 

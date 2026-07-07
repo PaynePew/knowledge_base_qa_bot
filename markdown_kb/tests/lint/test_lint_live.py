@@ -155,7 +155,7 @@ def test_run_lint_live_c5_against_real_openai(tmp_path, monkeypatch):
     # 7. If any C5 findings were returned, each must have a real severity
     #    (the orchestrator filters out severity='none' before returning).
     for ppf in result.findings.page_pairs:
-        assert ppf.severity in ("direct", "tension", "duplicate"), (
+        assert ppf.severity in ("direct", "tension"), (
             f"Live C5 returned a finding with severity={ppf.severity!r}; "
             f"the orchestrator should filter 'none' before returning."
         )

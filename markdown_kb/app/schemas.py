@@ -157,22 +157,30 @@ class QaEditRequest(BaseModel):
 
 
 class QaRefileResponse(BaseModel):
-    """Response body for a successful ``POST /qa/{slug}/refile`` (tier-B S4,
-    issue #380, ADR-0026 decision 1).
+    """Response body for a ``POST /qa/{slug}/refile`` that changed the page
+    (tier-B S4, issue #380, ADR-0026 decision 1; ``retired`` added ADR-0035).
 
-    ``filed`` is the standard ``FiledStatus`` (``status="draft"`` — the
-    demoted corpus state; the curator reviews it via the existing Promote/
-    Edit/Discard Curation Queue loop). ``grounding`` is the fresh, passing
-    Grounding Check outcome for audit (always ``passed=True`` here — a
-    failing check returns HTTP 422 instead, see the route docstring).
-    ``sections_indexed`` is the count from the one BM25 reindex the route
-    triggers after the demote-then-overwrite write (mirrors
-    ``POST /qa/{slug}/promote``'s auto-reindex convention).
+    ``filed`` is a ``FiledStatus`` with ``status="draft"`` — the demoted corpus
+    state the curator reviews via the existing Promote/Edit/Discard Curation
+    Queue loop. ``sections_indexed`` is the count from the one BM25 reindex the
+    route triggers after the write (mirrors ``POST /qa/{slug}/promote``'s
+    auto-reindex convention).
+
+    ``retired`` discriminates the two 200 outcomes:
+    - ``retired == False`` — a fresh answer re-grounded and overwrote the page;
+      ``grounding.passed == True``.
+    - ``retired == True`` (ADR-0035) — the re-synthesis could not be grounded
+      (a content failure) and the LIVE page was demoted in place with its OLD
+      content, so it stops serving un-groundable content; ``grounding`` here is
+      the FAILING outcome that justified the retire (``passed == False``,
+      ``reason`` / ``unsupported_claims`` populated). A TRANSIENT re-ground
+      failure instead returns HTTP 422 (nothing written), see the route docstring.
     """
 
     filed: FiledStatus
     grounding: GroundingInfo
     sections_indexed: int
+    retired: bool = False
 
 
 class SkippedSlug(BaseModel):
@@ -581,17 +589,33 @@ class CoverageGapFinding(BaseModel):
 
 
 class PagePairFinding(BaseModel):
-    """C5 page-pair contradiction finding: two wiki pages that may contradict each other.
+    """C5 page-pair contradiction finding: two wiki pages that give a reader
+    incompatible answers to the SAME question.
 
-    The LLM emits a 4-value severity via ``with_structured_output``:
-    - ``direct``    — explicit factual disagreement (different numbers, different policies).
-                      Curator must fix.
-    - ``tension``   — same topic, scope/wording differences raising reader confusion.
-                      Curator reviews; may dismiss.
-    - ``duplicate`` — same concept covered in two pages without contradiction.
-                      Absorbs C4-b semantic-duplicate detection from Phase 3 Q5a.
-                      Curator considers merging.
-    - ``none``      — false positive surfaced by candidate filter; not a real overlap.
+    The LLM emits a 3-value severity via ``with_structured_output``. ADR-0034
+    narrowed C5 from a similarity check to contradiction-only and **retired the
+    former ``duplicate`` value**: consistent redundant coverage is not a
+    contradiction (if two pages ever state a fact *differently*, that is
+    ``direct``), and slug-collision duplicates are C4's job (Merge /
+    Differentiate). The candidate filter (F1 ∪ F3) is still similarity-based —
+    that is only a cheap cost gate; precision lives entirely in this judge,
+    whose default verdict is ``none``.
+
+    - ``direct``   — the two pages make incompatible factual claims about the
+                     same question (a different number / amount / date / fee /
+                     limit / deadline, or a policy that flips allowed↔not-allowed).
+                     A reader following one page would be wrong per the other.
+                     Reconcile converges it (fix → re-judge → ``none``).
+    - ``tension``  — same question, no different fact stated, but one page
+                     materially omits a condition/exception the other states, so
+                     reading only that page misleads about that same question
+                     (each cherry-picks part of one underlying rule). Used
+                     sparingly; Reconcile converges it too.
+    - ``none``     — NOT a finding. Adjacent-but-distinct topics that merely
+                     share vocabulary (e.g. cancel vs pause — different actions,
+                     both valid), broader-vs-specific pages that do not disagree,
+                     one page merely carrying more detail/scope, and consistent
+                     redundant coverage all resolve here.
 
     ``page_a`` and ``page_b`` are always in canonical sorted order (sorted slug names
     so that ``(A, B)`` and ``(B, A)`` produce identical findings — symmetric pair
@@ -601,10 +625,10 @@ class PagePairFinding(BaseModel):
     ``summary`` and ``suggested_action`` are LLM-generated prose.
 
     ``severity == "none"`` findings are filtered before returning from ``_check_c5_page_pair``
-    so only actionable findings appear in the report.
+    so only contradictions Reconcile can converge appear in the report (ADR-0034).
     """
 
-    severity: Literal["direct", "tension", "duplicate", "none"]
+    severity: Literal["direct", "tension", "none"]
     page_a: str  # slug (always sorted ≤ page_b)
     page_b: str  # slug (always sorted ≥ page_a)
     page_a_claim: str  # direct quote from page_a body

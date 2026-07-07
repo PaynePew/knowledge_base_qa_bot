@@ -5,7 +5,7 @@ Phase 6 PRD #78 §"Phase 5 lint amendment" — C5 modifier.
 The modifier excludes ``frontmatter.type == "qa"`` pages from
 ``_candidate_pairs`` BEFORE F1/F3 candidate computation so:
   - The LLM call budget does not include qa pairs (cost gate).
-  - ``lint-report.md`` is not flooded with trivially-true ``duplicate`` findings
+  - ``lint-report.md`` is not flooded with trivially-true ``overlap`` findings
     pairing every promoted qa against its source entity.
 
 These tests verify:

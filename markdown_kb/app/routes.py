@@ -334,15 +334,19 @@ def refile_qa(slug: str) -> QaRefileResponse:
     tier-B S4 (issue #380) / ADR-0026 decision 1. Fixed internal order (see
     ``qa.refile`` docstring): re-synthesize the page's question via the chat
     pipeline with ``wiki/qa/`` excluded from retrieval, grounding-check the
-    fresh answer BEFORE any write, and only on pass overwrite the same slug
-    in place as ``status: draft``. A failed re-ground writes nothing — the
-    old live page keeps serving and the C9 finding stays (Invariant).
+    fresh answer BEFORE any write. On a passing re-ground it overwrites the
+    same slug in place as ``status: draft`` (fresh content). On a CONTENT
+    re-ground failure (the KB can no longer ground the answer) it RETIRES a
+    LIVE page — demotes it to draft in place with its OLD content
+    (``retired: true``, ADR-0035) — so a stale answer never keeps serving
+    un-groundable content. Only a TRANSIENT re-ground failure (verifier/index
+    unavailable), or a non-live page, writes nothing (422).
 
     Shallow wrapper around ``qa.refile`` (CODING_STANDARD §2.3 — all domain
-    logic lives in ``qa.py``). ``build_index()`` is called here, once, after
-    a successful refile — mirrors ``POST /qa/{slug}/promote``'s auto-reindex
-    convention (reindex is a route-layer concern, not a domain-layer one);
-    this is what actually removes the stale answer from the BM25 corpus.
+    logic lives in ``qa.py``). ``build_index()`` is called here, once, after a
+    refile OR a retire (both remove the answer from the live BM25 corpus) —
+    mirrors ``POST /qa/{slug}/promote``'s auto-reindex convention (reindex is a
+    route-layer concern, not a domain-layer one).
 
     Exception mapping (build_index is NOT called on any exception path):
 
@@ -350,9 +354,11 @@ def refile_qa(slug: str) -> QaRefileResponse:
       deleted by a concurrent operation during re-synthesis)
     - ``QaPageCorrupt``      → ``500`` (orphan-visibility — surface broken
       state rather than silently rewriting it)
-    - ``QaRefileRejected``   → ``422`` (the fresh re-synthesis failed the
-      Grounding Check; ``detail.reason`` / ``detail.unsupported_claims``
-      report why; nothing was written)
+    - ``QaRefileRejected``   → ``422`` (the re-synthesis failed for a TRANSIENT
+      reason — verifier/index unavailable — or on a non-live page;
+      ``detail.reason`` / ``detail.unsupported_claims`` report why; nothing was
+      written. A CONTENT failure on a live page RETIRES instead and returns
+      200 with ``retired: true``.)
     """
     try:
         result = qa_module.refile(slug)
@@ -376,12 +382,14 @@ def refile_qa(slug: str) -> QaRefileResponse:
             },
         ) from exc
 
-    # ADR-0026: auto-reindex so the stale live answer leaves the corpus immediately.
+    # ADR-0026/0035: auto-reindex so the answer (fresh-refiled OR retired) leaves
+    # the live corpus immediately.
     _files_indexed, sections_indexed = build_index()
     return QaRefileResponse(
         filed=result.filed,
         grounding=result.grounding,
         sections_indexed=sections_indexed,
+        retired=result.retired,
     )
 
 
