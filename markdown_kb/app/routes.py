@@ -1,6 +1,6 @@
 """Shallow module per Ousterhout. Public surface: ``router``.
 
-HTTP wiring for /health, /index, /chat, /qa/{slug}/promote,
+HTTP wiring for /health, /index, /chat, /qa/{slug}/promote, /qa/{slug}/demote,
 /qa/promote-batch, /qa/{slug} (DELETE, PUT), /qa/{slug}/refile, /ingest,
 /lint, /import, /transcribe, /transcribe/batch, /transcribe/jobs/{job_id},
 /transcribe/page-count, /pages/reconcile, /pages/reconcile/apply, /pages/collision/merge,
@@ -211,6 +211,51 @@ def promote_qa(slug: str) -> FiledStatus:
             detail=f"wiki/qa/{slug}.md has corrupt frontmatter: {exc}",
         ) from exc
     # ADR-0020: auto-reindex so the live page is retrievable immediately.
+    build_index()
+    return result
+
+
+@router.post("/qa/{slug}/demote", response_model=FiledStatus)
+def demote_qa(slug: str) -> FiledStatus:
+    """Curator endpoint: flip ``wiki/qa/<slug>.md`` ``status: live -> draft`` in place.
+
+    Issue #535 / ADR-0037 — the C10 remediation for a schema-invalid
+    ``status: live`` page: ``qa.delete`` refuses any live page (ADR-0012),
+    so a live-but-defective Filed Answer could previously neither be
+    discarded nor fixed. Demote is the reversible inverse of ``promote`` —
+    a lifecycle bit flip, no LLM, no synthesis — so the page leaves the BM25
+    corpus and re-enters the Promote/Edit/Discard Curation Queue loop, where
+    the curator either fixes the schema and re-promotes, or discards it
+    (draft delete is already allowed).
+
+    Shallow wrapper around ``qa.demote`` (CODING_STANDARD §2.3 — all domain
+    logic lives in ``qa.py``). ``build_index()`` is called here, once, after
+    a successful demote — mirrors ``POST /qa/{slug}/promote``'s auto-reindex
+    convention (reindex is a route-layer concern, not a domain-layer one).
+
+    Exception mapping (build_index is NOT called when demote itself raises):
+
+    - ``QaPageNotFound`` → ``404`` (slug has never been filed)
+    - ``QaPageCorrupt``  → ``500`` (orphan-visibility — surface broken state
+      rather than silently rewriting it)
+
+    Idempotent on already-draft pages: re-demote returns the existing
+    ``FiledStatus`` with ``200 OK`` (no second log entry, no file write);
+    build_index is still called so the corpus is guaranteed consistent.
+    """
+    try:
+        result = qa_module.demote(slug)
+    except qa_module.QaPageNotFound as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"wiki/qa/{slug}.md not found",
+        ) from exc
+    except qa_module.QaPageCorrupt as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"wiki/qa/{slug}.md has corrupt frontmatter: {exc}",
+        ) from exc
+    # ADR-0037: auto-reindex so the demoted page leaves the BM25 corpus immediately.
     build_index()
     return result
 

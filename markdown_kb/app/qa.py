@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``compute_slug``, ``normalize_question``, ``maybe_file_answer``, ``dispatch_filing``, ``promote``, ``promote_batch``, ``delete``, ``edit``, ``refile``, ``QaPageNotFound``, ``QaPageCorrupt``, ``QaPageLive``, ``QaEditRejected``, ``QaRefileRejected``, ``RefiledAnswer``.
+"""Deep module per Ousterhout. Public surface: ``compute_slug``, ``normalize_question``, ``maybe_file_answer``, ``dispatch_filing``, ``promote``, ``promote_batch``, ``delete``, ``edit``, ``refile``, ``demote``, ``QaPageNotFound``, ``QaPageCorrupt``, ``QaPageLive``, ``QaEditRejected``, ``QaRefileRejected``, ``RefiledAnswer``.
 
 Phase 6 Slice 6-2 — Answer Filing for ``POST /chat``.
 Phase 6 Slice 6-4 — curator-driven ``promote(slug)`` flips ``status: draft -> live``.
@@ -68,6 +68,17 @@ frontmatter, an invalid ``status``, or ``status == "live"`` are each skipped
 with a reason; only a ``status == "draft"`` slug is flipped to ``live``.
 Reindexing is the route layer's job, once, after the whole batch — mirrors
 ``promote``'s own route/domain split.
+
+issue #535 (ADR-0037) — ``demote(slug)`` is the C10 remediation for a
+schema-invalid ``status: live`` Filed Answer: ``qa.delete`` refuses any live
+page (ADR-0012), which previously dead-ended a live-but-defective page
+(neither fixable nor discardable). ``demote`` flips ``status: live -> draft``
+in place, preserving question/body/count/created, so the page leaves the
+BM25 corpus and re-enters the normal Promote/Edit/Discard Curation Queue
+loop. Generalises the demote-to-draft primitive ADR-0035 built inline inside
+``refile``'s retire step into a standalone, first-class Lifecycle action —
+a distinct primitive from that inline step, which keeps its own
+reason-parametrized ``qa_reflect op=retired`` logging for the C9 audit trail.
 """
 
 from __future__ import annotations
@@ -1197,6 +1208,107 @@ def delete(slug: str) -> DeletedQaPage:
 
 
 # ---------------------------------------------------------------------------
+# Demote (issue #535, ADR-0037)
+# ---------------------------------------------------------------------------
+
+
+def demote(slug: str) -> FiledStatus:
+    """Curator-driven demote: flip ``wiki/qa/<slug>.md`` ``status: live -> draft`` in place.
+
+    ADR-0037 — the C10 remediation for a schema-invalid ``status: live``
+    page: ``qa.delete`` refuses any live page (ADR-0012), so a live-but-
+    defective Filed Answer could previously neither be discarded nor fixed.
+    Demote is the reversible inverse of ``promote`` — a lifecycle bit flip,
+    no LLM, no synthesis — so the page leaves the BM25 corpus and re-enters
+    the Promote/Edit/Discard Curation Queue loop, where the curator either
+    fixes the schema and re-promotes, or discards it (draft delete is
+    already allowed). A standalone primitive, distinct from ``refile``'s own
+    inline retire step (ADR-0035), which stays parametrized by a specific
+    re-ground failure reason and keeps its own ``qa_reflect op=retired``
+    logging for the C9 audit trail.
+
+    - Acquires ``_filing_lock`` (same as every other qa mutator).
+    - Not found -> ``QaPageNotFound``, OR ``slug`` is not a bare filename
+      component (issue #397 — see ``promote``'s ``Raises`` entry for why;
+      ``slugs.is_bare_slug`` rejects it before any filesystem access).
+    - Corrupt/invalid-status frontmatter -> ``QaPageCorrupt`` (orphan-
+      visibility — surface broken state rather than silently rewriting it,
+      mirrors ``promote``).
+    - **Idempotent**: if ``status`` is already ``draft``, returns the
+      existing ``FiledStatus`` without rewriting the file or emitting a log
+      entry — mirrors ``promote``'s already-live idempotence.
+    - Otherwise rewrites the page atomically (tmp + ``os.replace``) with
+      ``status: "draft"``, preserving ``question``/body/``count``/
+      ``created``/``sources``/``open_questions`` verbatim. Refreshes
+      ``updated`` to "now".
+    - Emits ``qa_demoted slug=<slug> prev_status=live`` — a distinct log
+      kind from ``qa_reflect`` (this is a curator lifecycle action, not a
+      filing reflect entry).
+
+    Returns:
+        ``FiledStatus`` with ``status="draft"``, ``op="touched"`` (demote is
+        structurally a touch from the FiledStatus enum perspective, same
+        reuse ``promote``/``edit`` make of it), and the preserved ``count``.
+
+    Raises:
+        QaPageNotFound: no ``wiki/qa/<slug>.md`` on disk, OR ``slug`` is not
+            a bare filename component.
+        QaPageCorrupt: existing frontmatter has invalid/unparseable
+            ``status``. The page is left untouched so the curator can
+            inspect and repair.
+    """
+    if not is_bare_slug(slug):
+        raise QaPageNotFound(f"wiki/qa/{slug}.md not found")
+
+    qa_dir = _qa_dir()
+    path = qa_dir / f"{slug}.md"
+
+    with _filing_lock:
+        if not path.exists():
+            raise QaPageNotFound(f"wiki/qa/{slug}.md not found")
+
+        existing = _read_existing_frontmatter(path)
+        if existing is None:
+            raise QaPageCorrupt(f"wiki/qa/{slug}.md exists but its frontmatter could not be parsed")
+
+        existing_status = existing.get("status")
+        if existing_status not in {"draft", "live"}:
+            raise QaPageCorrupt(
+                f"wiki/qa/{slug}.md has invalid status={existing_status!r}; "
+                "expected 'draft' or 'live'. The page is left untouched so the "
+                "curator can inspect and repair."
+            )
+
+        try:
+            existing_count = int(existing.get("count", 1))
+        except (TypeError, ValueError):
+            existing_count = 1
+
+        # Idempotent: demoting an already-draft page is a no-op. No rewrite, no log.
+        if existing_status == "draft":
+            return FiledStatus(slug=slug, status="draft", op="touched", count=existing_count)
+
+        now = _utc_now_iso()
+        fm = WikiPageFrontmatter(
+            id=existing.get("id", slug),
+            type="qa",
+            created=existing.get("created", now),
+            updated=now,
+            sources=[str(s) for s in existing.get("sources", [])],
+            status="draft",
+            open_questions=existing.get("open_questions") or [],
+            question=existing.get("question"),
+            count=existing_count,
+        )
+        body = _read_existing_body(path)
+        content = _render_qa_page(fm, body)
+        _atomic_write(path, content)
+
+        log_event("qa_demoted", f"slug={slug} prev_status=live")
+        return FiledStatus(slug=slug, status="draft", op="touched", count=existing_count)
+
+
+# ---------------------------------------------------------------------------
 # Re-file (tier-B S4, issue #380, ADR-0026 decision 1)
 # ---------------------------------------------------------------------------
 
@@ -1256,9 +1368,7 @@ class RefiledAnswer:
 
     __slots__ = ("filed", "grounding", "retired")
 
-    def __init__(
-        self, filed: FiledStatus, grounding: GroundingInfo, retired: bool = False
-    ) -> None:
+    def __init__(self, filed: FiledStatus, grounding: GroundingInfo, retired: bool = False) -> None:
         self.filed = filed
         self.grounding = grounding
         self.retired = retired
@@ -1438,9 +1548,7 @@ def refile(slug: str) -> RefiledAnswer:
                 _atomic_write(path, content)
                 log_event("qa_reflect", f"slug={slug} op=retired reason={outcome.reason}")
                 return RefiledAnswer(
-                    filed=FiledStatus(
-                        slug=slug, status="draft", op="touched", count=retired_count
-                    ),
+                    filed=FiledStatus(slug=slug, status="draft", op="touched", count=retired_count),
                     grounding=grounding,
                     retired=True,
                 )

@@ -124,9 +124,7 @@ class GroundingOutcome(BaseModel):
 # can never drift. Consumed by C1 coverage-gap aggregation (``lint``) and the
 # C9 re-file retire gate (``qa``, ADR-0035) — both act only on content failures.
 # Adding a new content-failure reason to the enum above must add it here too.
-CONTENT_FAILURE_REASONS = frozenset(
-    {"retrieval_empty", "below_threshold", "claim_unsupported"}
-)
+CONTENT_FAILURE_REASONS = frozenset({"retrieval_empty", "below_threshold", "claim_unsupported"})
 
 
 # ---------------------------------------------------------------------------

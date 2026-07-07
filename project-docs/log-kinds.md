@@ -193,6 +193,12 @@ three kinds here; the emitters arrive across slices 6-1 / 6-2 / 6-3.
 |---|---|---|
 | `qa_deleted` | `DELETE /qa/{slug}` successfully removed an inert `wiki/qa/<slug>.md` page. Only fires when the delete succeeds — `QaPageLive` refusals and `QaPageNotFound` errors are surfaced via HTTP status and do not emit a log entry. Authorized by [ADR-0012](adr/0012-delete-inert-filed-answers-only.md) (Phase 15 Slice 6, issue #174). | `slug=<slug> prev_status=<draft\|<unparseable>\|<other-invalid-status>>` |
 
+### `qa_demoted` kind
+
+| Kind | When fired | Summary template |
+|---|---|---|
+| `qa_demoted` | `POST /qa/{slug}/demote` successfully flipped a `status: live` `wiki/qa/<slug>.md` page to `draft` in place (content preserved). A distinct kind from `qa_reflect` — this is a curator-invoked Lifecycle action, not a filing reflect entry. Only fires on an actual `live -> draft` write — the idempotent no-op path (already `draft`) and every refusal (`QaPageNotFound` 404, `QaPageCorrupt` 500) do not emit a log entry (mirrors `qa_deleted`'s "only fires on success" convention). Authorized by [ADR-0037](adr/0037-c10-schema-invalid-live-qa-demote-to-draft.md) (issue #535). | `slug=<slug> prev_status=live` |
+
 ### `qa_filing_error` `reason=` sub-tags
 
 | Sub-reason | When | Source |

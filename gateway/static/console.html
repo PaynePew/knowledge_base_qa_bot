@@ -3112,8 +3112,13 @@ var LINT_CHROME = {
     refileCardFailureSuffix: ") — nothing changed, this page keeps serving.",
 
     /* issue #498: shared discard helper (doDiscard) */
-    discardLiveRefused: "Cannot discard: page is live (status=live). Use re-ingest to refresh.",
+    discardLiveRefused: "Cannot discard: page is live (status=live).",
     discardSuccess:     "Discarded.",
+
+    /* issue #535 (ADR-0037): C10 Demote-to-draft flag card */
+    demoteCardLabel: "Demote to draft",
+    demoteCardDemoting: "Demoting…",
+    demoteCardSuccess: "Demoted to draft — the page left the corpus. Click Refresh to review it under Promotion Candidates (C8).",
 
     /* issue #498: RAG rebuild track */
     ragIndexHead:      "RAG Index",
@@ -3366,8 +3371,12 @@ var LINT_CHROME = {
     refileCardFailurePrefix: "無法通過引證檢核(原因:",
     refileCardFailureSuffix: ")— 未做任何變更,此頁面繼續服務中。",
 
-    discardLiveRefused: "無法捨棄:此頁面已生效(status=live)。請改用重新匯入以更新內容。",
+    discardLiveRefused: "無法捨棄:此頁面已生效(status=live)。",
     discardSuccess:     "已捨棄。",
+
+    demoteCardLabel: "退回草稿",
+    demoteCardDemoting: "退回草稿中…",
+    demoteCardSuccess: "已退回草稿 — 此頁面已離開知識庫。請點擊重新整理,在待升級草稿（C8）下檢視。",
 
     ragIndexHead:      "RAG 索引",
     ragRebuilt:        "已重建",
@@ -6135,6 +6144,20 @@ function renderCurationQueue(rootEl, lintData) {
       var propSummary = items.map(function(i) {
         return i.property_name + "=" + i.offending_value;
       }).join("; ");
+      /* issue #535 (ADR-0037): a status:live page can never be discarded
+         (ADR-0012 refuses it with 409, which used to dead-end the row) —
+         demote-to-draft is its remediation instead. Every finding for a
+         given slug carries the same page-level status, so items[0] is
+         representative. Everything else (draft, unparseable frontmatter,
+         an out-of-range status value) keeps the existing one-click discard. */
+      var isLive = items[0].status === "live";
+      if (isLive) {
+        var liveHint = consoleLang === "zh"
+          ? "此頁面已生效但格式錯誤 — 退回草稿以修正或捨棄。"
+          : "This page is live but schema-invalid — demote to draft to fix or discard it.";
+        c10Section.append(buildDemoteFlagCard(slug, propSummary + " — " + liveHint));
+        return;
+      }
       var hint = consoleLang === "zh"
         ? "請修正 frontmatter 屬性,或按捨棄以清除這筆無效項目。"
         : "Fix the frontmatter property or Discard to clear this invalid entry.";
@@ -6773,6 +6796,78 @@ function buildRefileFlagCard(slug, subtitle) {
     el("div", { class: "flag-actions" }, refileBtn),
     /* issue #496: the outcome message spans the whole card on its own grid
        row — inside .flag-actions its length collapsed the body column. */
+    el("div", { class: "flag-status-row" }, statusMsgEl)
+  );
+
+  return cardEl;
+}
+
+/* ── C10 Demote flag card (issue #535, ADR-0037) ──────────────────────
+   A status:live Filed Answer flagged schema-invalid by C10. Delete refuses
+   any live page (ADR-0012), so this replaces the old dead-end Discard
+   button for exactly this case: demote is the reversible inverse of
+   promote — a lifecycle bit flip, no LLM, no synthesis. Clicking 退回草稿
+   POSTs /wiki/qa/{slug}/demote: the server flips status: live -> draft in
+   place, preserving the body, so the page leaves the BM25 corpus and
+   re-enters the C8 Promote/Edit/Discard Curation Queue loop on the next
+   Refresh. Does not auto-refresh the queue — mirrors buildRefileFlagCard's
+   own "mark in place, leave Refresh to the curator" convention. */
+function buildDemoteFlagCard(slug, subtitle) {
+  var chrome = LINT_CHROME[consoleLang];
+  var actionBusy = false;
+  var statusMsgEl = el("span", { class: "card-status-msg" });
+  var demoteBtn = el("button", { class: "edit-btn", type: "button", text: chrome.demoteCardLabel });
+
+  demoteBtn.addEventListener("click", function() {
+    if (actionBusy) return;
+    actionBusy = true;
+    demoteBtn.disabled = true;
+    statusMsgEl.textContent = chrome.demoteCardDemoting;
+    statusMsgEl.className = "card-status-msg";
+
+    fetch("/wiki/qa/" + encodeURIComponent(slug) + "/demote", { method: "POST" })
+      .then(function(resp) {
+        /* Stale card (mirrors doDiscard/promoteBtn issue #442 self-heal):
+           the demo environment already wiped this page (periodic reset, or
+           acted on from another tab). */
+        if (resp.status === 404) { handleStaleDraftGone(cardEl, statusMsgEl); return null; }
+        return resp.text().then(function(t) { return { ok: resp.ok, status: resp.status, text: t }; });
+      })
+      .then(function(result) {
+        if (result === null) return; /* stale-card branch already handled above */
+        if (result.ok) {
+          statusMsgEl.textContent = chrome.demoteCardSuccess;
+          statusMsgEl.className = "card-status-msg ok";
+          cardEl.style.opacity = "0.6";
+          var slugEl = cardEl.querySelector(".flag-slug");
+          if (slugEl) slugEl.style.textDecoration = "line-through";
+          return; /* leave demoteBtn disabled — the finding is now stale */
+        }
+        statusMsgEl.textContent = "Error: HTTP " + result.status + " " + result.text;
+        statusMsgEl.className = "card-status-msg err";
+        actionBusy = false;
+        demoteBtn.disabled = false;
+      })
+      .catch(function(err) {
+        statusMsgEl.textContent = "Error: " + (err.message || String(err));
+        statusMsgEl.className = "card-status-msg err";
+        actionBusy = false;
+        demoteBtn.disabled = false;
+      });
+  });
+
+  var bodyEl = el("div", { class: "flag-body" },
+    el("div", { class: "flag-slug", text: slug }),
+    el("div", { class: "flag-hint", text: subtitle })
+  );
+
+  var cardEl = el("div", { class: "flag-card" },
+    el("div", { class: "flag-icon", text: "!" }),
+    bodyEl,
+    el("div", { class: "flag-actions" }, demoteBtn),
+    /* issue #496 convention: the outcome message spans the whole card on
+       its own grid row — inside .flag-actions its length collapses the
+       body column. */
     el("div", { class: "flag-status-row" }, statusMsgEl)
   );
 
