@@ -77,10 +77,48 @@
   }
 
   .page {
-    max-width: 680px;
+    max-width: 1240px;
     margin: 0 auto;
     padding: 0 32px 64px;
   }
+
+  /* ── Two-column console: flow (left) | resource rail (right) ─────────
+     The Resource Browser is pinned to the right as a persistent retrieval
+     rail (sticky, own scroll) so a file is always one glance away and never
+     covers the pipeline flow on the left. Below 900px this collapses to a
+     single column and the rail becomes a hamburger-triggered drawer. The
+     58/42 split keeps the pipeline cards near their original ~680px width. */
+  .console-split { display: flex; align-items: flex-start; }
+  .console-main  { flex: 58 1 0; min-width: 0; padding-right: 34px; }
+  .console-rail {
+    flex: 42 1 0; min-width: 0;
+    position: sticky; top: 20px;
+    max-height: calc(100dvh - 40px);
+    overflow-y: auto; overscroll-behavior: contain;
+    padding-left: 34px;
+    border-left: 1px solid var(--rule);
+    scrollbar-width: thin; scrollbar-color: var(--rule) transparent;
+  }
+  /* the rail owns its top spacing; drop the browser section-label's 40px lead */
+  .console-rail .section-label { margin-top: 4px; }
+  .console-rail::-webkit-scrollbar { width: 8px; }
+  .console-rail::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 4px; }
+  .rail-close { display: none; }   /* shown only inside the mobile drawer */
+  .rail-scrim { display: none; }   /* shown only behind the mobile drawer */
+
+  /* Masthead hamburger — opens the resource rail as a drawer on small
+     screens; hidden on desktop where the rail is always visible. */
+  .mast-hamburger {
+    display: none;
+    background: none;
+    font-size: 15px; line-height: 1;
+    color: var(--ink-3);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 5px 9px;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .mast-hamburger:hover { color: var(--ink); border-color: var(--ink-3); }
 
   /* ── Masthead (shared with reader, §12.1) ────────────────── */
   .masthead {
@@ -809,6 +847,41 @@
     gap: 12px;
   }
   .lint-axis-head + .lint-group-head { border-top: none; }
+
+  /* ── Collapsible lint axes + Curation Queue ─────────────────────────
+     A lint run can be long; letting the operator fold a processed (or not-
+     yet-relevant) section avoids scrolling past it every time. Default is
+     expanded — the chevron toggles a grid-rows height animation. The same
+     toggle/chevron/body chrome is reused for the Curation Queue header. */
+  .lint-collapse-toggle {
+    flex: 1 1 auto; min-width: 0;
+    display: inline-flex; align-items: center; gap: 8px;
+    background: none; border: 0; padding: 0; margin: 0;
+    font: inherit; color: inherit; letter-spacing: inherit;
+    text-transform: inherit; text-align: left; cursor: pointer;
+  }
+  .lint-chevron {
+    flex: none;
+    font-size: 9px; line-height: 1; color: var(--ink-4);
+    transition: transform .2s ease;
+  }
+  .lint-axis.collapsed .lint-chevron,
+  .curation-collapse.collapsed .lint-chevron { transform: rotate(-90deg); }
+  .lint-collapse-count { color: var(--ink-3); font-weight: 400; }
+  .lint-collapse-body {
+    display: grid; grid-template-rows: 1fr;
+    transition: grid-template-rows .26s ease;
+  }
+  .lint-axis.collapsed .lint-collapse-body,
+  .curation-collapse.collapsed .lint-collapse-body { grid-template-rows: 0fr; }
+  .lint-collapse-inner { overflow: hidden; min-height: 0; }
+  /* The 2px inter-axis divider moves from the head to the wrapper, since each
+     axis head is now nested (always a wrapper's first child). */
+  .lint-axis { border-top: 2px solid var(--rule); }
+  .lint-axis:first-child { border-top: none; }
+  .lint-axis > .lint-axis-head { border-top: none; padding-top: 14px; }
+  .lint-axis:first-child > .lint-axis-head { padding-top: 0; }
+  .lint-collapse-inner > .lint-group-head:first-child { border-top: none; }
 
   /* Batch-remediation summary banner (issue #364) — a one-shot notice
      ("re-ingested 5: 4 ok, 1 still failing") shown at the top of the
@@ -1599,8 +1672,57 @@
   }
   .flag-status-row .card-status-msg:empty { display: none; }
 
+  /* Collapse the two-column split below 900px: single column, and the
+     resource rail becomes an off-canvas drawer opened from the masthead
+     hamburger (grey scrim, ease-in-out slide, X / scrim / Esc to close). The
+     same #browser-section node serves both layouts — no JS re-render, so the
+     open folder / open file survive a resize across the breakpoint. */
+  @media (max-width: 899px) {
+    .page { max-width: 680px; }
+    .console-split { display: block; }
+    .console-main { padding-right: 0; }
+    .mast-hamburger { display: inline-flex; align-items: center; }
+
+    .console-rail {
+      position: fixed; top: 0; right: 0; bottom: 0;
+      width: min(88vw, 420px);
+      max-height: none;
+      padding: 52px 22px calc(24px + env(safe-area-inset-bottom));
+      background: var(--surface);
+      border-left: 1px solid var(--rule);
+      box-shadow: -10px 0 30px rgba(17, 17, 17, .12);
+      transform: translateX(100%);
+      transition: transform .28s cubic-bezier(.4, 0, .2, 1);
+      z-index: 1000;
+    }
+    body.rail-open .console-rail { transform: none; }
+    body.rail-open { overflow: hidden; }
+
+    .rail-close {
+      display: block;
+      position: absolute; top: 14px; right: 16px;
+      background: none; border: 1px solid var(--rule); border-radius: 4px;
+      color: var(--ink-3); font-size: 13px; line-height: 1;
+      padding: 6px 10px; min-height: 32px;
+      transition: color .15s ease, border-color .15s ease;
+    }
+    .rail-close:hover { color: var(--ink); border-color: var(--ink-3); }
+
+    .rail-scrim {
+      display: block; position: fixed; inset: 0; z-index: 999;
+      background: rgba(17, 17, 17, .34);
+      opacity: 0; pointer-events: none;
+      transition: opacity .28s ease;
+    }
+    body.rail-open .rail-scrim { opacity: 1; pointer-events: auto; }
+  }
+
   @media (max-width: 540px) {
     .page { padding: 0 20px 48px; }
+    .console-rail { width: min(92vw, 380px); }
+    /* the masthead gains the hamburger on small screens — tighten the gap so
+       logo + breadcrumb + lang toggle + reader + ☰ still fit a ~375px phone */
+    .masthead { gap: 8px; }
   }
 
   /* ── Demo environment reset banner (ADR-0021) ───────── */
@@ -1645,6 +1767,11 @@
            fallback (default language is English). -->
       <button id="lang-toggle" class="mast-lang-toggle" type="button" aria-label="Toggle console language">中文</button>
       <a class="mast-reader" href="/">reader</a>
+      <!-- Opens the Resource Browser as a drawer on small screens; hidden on
+           desktop where the browser is a permanent right-hand rail. -->
+      <button id="rail-toggle" class="mast-hamburger" type="button"
+              aria-label="Open resource browser" aria-expanded="false"
+              aria-controls="console-rail">&#9776;</button>
     </header>
 
     <!-- Demo environment reset banner (ADR-0021) — always visible, static HTML, no JS toggle.
@@ -1689,21 +1816,36 @@
          never triggers a request itself (ADR-0029 Invariant). -->
     <div id="fix-source-banner" class="fix-source-banner" role="status" aria-live="polite"></div>
 
-    <div id="pipeline-root"></div>
+    <!-- Two-column split (console flow | resource rail). The left column holds
+         the whole operator flow; the right rail pins the Resource Browser so a
+         file is always retrievable. Below 900px the rail collapses into the
+         hamburger drawer (#console-rail is reused as-is — see CSS). -->
+    <div class="console-split">
+      <div class="console-main">
+        <div id="pipeline-root"></div>
 
-    <!-- RAG rebuild track: parallel to Wiki chain (#173) -->
-    <div id="rag-track-root"></div>
+        <!-- RAG rebuild track: parallel to Wiki chain (#173) -->
+        <div id="rag-track-root"></div>
 
-    <!-- Hybrid dense rebuild track: operator-triggered full re-embed (ADR-0022, issue #348) -->
-    <div id="hybrid-track-root"></div>
+        <!-- Hybrid dense rebuild track: operator-triggered full re-embed (ADR-0022, issue #348) -->
+        <div id="hybrid-track-root"></div>
 
-    <!-- Curation Queue: built by JS after Lint runs (Phase 15 S6, issue #174) -->
-    <div id="curation-queue-root"></div>
+        <!-- Curation Queue: built by JS after Lint runs (Phase 15 S6, issue #174) -->
+        <div id="curation-queue-root"></div>
+      </div>
 
-    <div id="browser-section">
-      <!-- Resource browser built by JS below (Phase 15 S5, issue #171) -->
+      <aside class="console-rail" id="console-rail" aria-label="Resource browser">
+        <button type="button" class="rail-close" id="rail-close"
+                aria-label="Close resource browser">&#10005;</button>
+        <div id="browser-section">
+          <!-- Resource browser built by JS below (Phase 15 S5, issue #171) -->
+        </div>
+      </aside>
     </div>
   </div>
+
+  <!-- Grey scrim behind the resource-rail drawer (small screens only) -->
+  <div class="rail-scrim" id="rail-scrim"></div>
 
 <script>
 "use strict";
@@ -2558,6 +2700,38 @@ function renderIndexCard(data) {
    by the Curation Queue below (§12.5).
    ============================================================ */
 var LINT_AXIS_ORDER = ["Freshness", "Coherence", "Coverage", "Lifecycle"];
+
+/* Persisted collapse state for the lint axes + Curation Queue, keyed by a
+   stable id ("axis:Freshness", "queue"). Survives re-renders so a collapse the
+   operator just made isn't undone by the re-lint their own action triggers. */
+var lintCollapsed = {};
+var _collapseSeq = 0;
+
+/* Shared collapsible section: a header row whose chevron folds `bodyNodes`
+   with a grid-rows height animation. labelNodes render inside the toggle
+   button (the click target); asideEl (optional) sits flush right and does NOT
+   toggle — used for the axis/check batch buttons and the queue Refresh. */
+function makeCollapse(opts) {
+  var collapsed = !!lintCollapsed[opts.key];
+  var bodyId = "collapse-" + (++_collapseSeq);
+  var chevron = el("span", { class: "lint-chevron", text: "▾", "aria-hidden": "true" });
+  var toggleBtn = el("button", {
+    type: "button", class: "lint-collapse-toggle",
+    "aria-expanded": String(!collapsed), "aria-controls": bodyId,
+  }, chevron);
+  (opts.labelNodes || []).forEach(function(n) { if (n) toggleBtn.append(n); });
+  var head = el("div", { class: opts.headClass }, toggleBtn, opts.asideEl || null);
+  var inner = el("div", { class: "lint-collapse-inner" });
+  (opts.bodyNodes || []).forEach(function(n) { if (n) inner.append(n); });
+  var body = el("div", { class: "lint-collapse-body", id: bodyId }, inner);
+  var wrap = el("div", { class: opts.wrapClass + (collapsed ? " collapsed" : "") }, head, body);
+  toggleBtn.addEventListener("click", function() {
+    var nowCollapsed = wrap.classList.toggle("collapsed");
+    toggleBtn.setAttribute("aria-expanded", String(!nowCollapsed));
+    if (nowCollapsed) lintCollapsed[opts.key] = true; else delete lintCollapsed[opts.key];
+  });
+  return wrap;
+}
 
 /* axis -> ordered check codes, matching LINT_CHECK_TAXONOMY's per-axis order */
 var AXIS_CHECK_CODES = {
@@ -4113,18 +4287,9 @@ function renderLintCard(data, resultEl) {
     lastCoverageFillOutcome = null;
   }
 
-  /* Helper: emit an axis section heading. batchBtnEl (optional) renders an
-     axis-level batch action flush right (issue #364 — Freshness only).
-     Display text is bilingual (issue #365) — LINT_AXIS_LABEL_ZH mirrors
-     markdown_kb/app/lint.py's zh strings; the axis identifier itself
-     (``axis``) stays English, only its rendered label switches. */
-  function axisHead(axis, batchBtnEl) {
-    var label = consoleLang === "zh" ? LINT_AXIS_LABEL_ZH[axis] : axis;
-    return el("div", { class: "lint-axis-head" },
-      el("span", { text: label }),
-      batchBtnEl || null
-    );
-  }
+  /* The axis section heading is now emitted by makeCollapse (see the axis
+     render loop below): each axis is wrapped in a collapsible whose header
+     carries the (bilingual) label + finding count + optional batch button. */
 
   /* Helper: emit a check group heading, e.g. "C6 stale (2)". batchBtnEl
      (optional) renders a check-level batch action flush right (issue #364
@@ -4670,12 +4835,14 @@ function renderLintCard(data, resultEl) {
 
   LINT_AXIS_ORDER.forEach(function(axis) {
     var axisBody = [];
+    var axisFindingCount = 0; // total findings in this axis, shown in the collapsed header
     var freshnessSources = {}; // dedupe set for the Freshness axis-level batch
 
     AXIS_CHECK_CODES[axis].forEach(function(code) {
       var meta = LINT_CHECK_META[code];
       var items = findings[meta.findingsKey];
       if (!items || items.length === 0) return;
+      axisFindingCount += items.length;
 
       var checkBatchBtnEl = null;
       if (code === "C6") {
@@ -4717,8 +4884,17 @@ function renderLintCard(data, resultEl) {
       }
     }
     renderedAnyFindings = true;
-    bodyEl.append(axisHead(axis, axisBatchBtnEl));
-    axisBody.forEach(function(node) { bodyEl.append(node); });
+    var axisLabel = el("span", { class: "lint-axis-label",
+      text: consoleLang === "zh" ? LINT_AXIS_LABEL_ZH[axis] : axis });
+    var axisCount = el("span", { class: "lint-collapse-count", text: "(" + axisFindingCount + ")" });
+    bodyEl.append(makeCollapse({
+      key: "axis:" + axis,
+      wrapClass: "lint-axis",
+      headClass: "lint-axis-head",
+      labelNodes: [axisLabel, axisCount],
+      asideEl: axisBatchBtnEl,
+      bodyNodes: axisBody,
+    }));
   });
 
   /* Check errors — not axis-scoped, surfaced after the axis groups.
@@ -5845,15 +6021,9 @@ function renderCurationQueue(rootEl, lintData) {
     return;
   }
 
-  var queueEl = el("div", { class: "curation-queue" });
-
-  /* ── Header ─────────────────────────────────────────────── */
-  queueEl.append(
-    el("div", { class: "queue-header" },
-      el("span", { class: "queue-header-label", text: chrome.queueHeaderLabel }),
-      makeRefreshBtn()
-    )
-  );
+  /* Sections fold under the queue header (collapsible) so a processed queue can
+     be tucked away instead of forcing a long scroll past it. */
+  var queueSections = [];
 
   /* ── C8: Promotion candidates ───────────────────────────── */
   if (candidates.length > 0) {
@@ -5883,7 +6053,7 @@ function renderCurationQueue(rootEl, lintData) {
     candidates.forEach(function(f) {
       c8Section.append(buildDraftCard(f));
     });
-    queueEl.append(c8Section);
+    queueSections.push(c8Section);
   }
 
   /* ── C9: Stale filed answers ────────────────────────────── */
@@ -5912,7 +6082,7 @@ function renderCurationQueue(rootEl, lintData) {
         /* subtitle */ drift + (drift ? " — " : "") + hint
       ));
     });
-    queueEl.append(c9Section);
+    queueSections.push(c9Section);
   }
 
   /* ── C10: Invalid qa schema ─────────────────────────────── */
@@ -5950,10 +6120,21 @@ function renderCurationQueue(rootEl, lintData) {
         function(cardEl, statusMsgEl) { doDiscard(slug, cardEl, statusMsgEl, null); }
       ));
     });
-    queueEl.append(c10Section);
+    queueSections.push(c10Section);
   }
 
-  rootEl.replaceChildren(queueEl);
+  rootEl.replaceChildren(
+    el("div", { class: "curation-queue" },
+      makeCollapse({
+        key: "queue",
+        wrapClass: "curation-collapse",
+        headClass: "queue-header",
+        labelNodes: [el("span", { class: "queue-header-label", text: chrome.queueHeaderLabel })],
+        asideEl: makeRefreshBtn(),
+        bodyNodes: queueSections,
+      })
+    )
+  );
 }
 
 /* ── Shared fast-path queue refresh ───────────────────────────
@@ -6964,6 +7145,35 @@ browserSection.append(
   entriesEl,
   fileViewerEl
 );
+
+/* ── Resource-rail drawer (small screens) ─────────────────
+   The rail is a permanent right column on desktop; below 900px the CSS turns
+   it into an off-canvas drawer. This wires the masthead hamburger, the
+   drawer's X, the grey scrim, and Escape to the body.rail-open toggle. The
+   rail node itself is never moved or re-rendered, so the open folder / open
+   file survive both the open/close and a resize across the breakpoint. */
+(function initResourceRailDrawer() {
+  var toggle = document.getElementById("rail-toggle");
+  var closeBtn = document.getElementById("rail-close");
+  var scrim = document.getElementById("rail-scrim");
+  if (!toggle || !closeBtn || !scrim) return;
+  function onKey(e) { if (e.key === "Escape") closeRail(); }
+  function openRail() {
+    document.body.classList.add("rail-open");
+    toggle.setAttribute("aria-expanded", "true");
+    document.addEventListener("keydown", onKey);
+    try { closeBtn.focus(); } catch (_) {}
+  }
+  function closeRail() {
+    document.body.classList.remove("rail-open");
+    toggle.setAttribute("aria-expanded", "false");
+    document.removeEventListener("keydown", onKey);
+    try { toggle.focus(); } catch (_) {}
+  }
+  toggle.addEventListener("click", openRail);
+  closeBtn.addEventListener("click", closeRail);
+  scrim.addEventListener("click", closeRail);
+})();
 
 /* ── Breadcrumb builder ──────────────────────────────────── */
 function renderBreadcrumb(relpath) {

@@ -49,10 +49,14 @@ def test_lint_axis_order_matches_s1_taxonomy():
 
 
 def test_lint_card_groups_findings_under_axis_headers():
-    """renderLintCard renders one axis-head element per LINT_AXIS_ORDER entry."""
+    """renderLintCard renders one axis-head element per LINT_AXIS_ORDER entry.
+
+    axisHead() was folded into a collapsible: each axis is wrapped by
+    makeCollapse with the lint-axis-head chrome, so the per-axis head element
+    is still emitted once per LINT_AXIS_ORDER entry."""
     text = _console_text()
     assert "lint-axis-head" in text, "Lint card must render an axis-head element (issue #363)"
-    assert "axisHead(axis)" in text or "axisHead(" in text
+    assert 'headClass: "lint-axis-head"' in text and 'wrapClass: "lint-axis"' in text
 
 
 def test_every_wired_check_is_labelled_by_code():

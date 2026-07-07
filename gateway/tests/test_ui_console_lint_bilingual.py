@@ -129,9 +129,11 @@ def test_check_zh_labels_match_the_python_taxonomy():
 
 
 def test_axis_head_is_language_aware():
+    # axisHead() was folded into a per-axis collapsible (makeCollapse); the
+    # language-aware axis label now lives in the axis render loop, but the
+    # invariant is unchanged: the header label switches zh/en off consoleLang.
     text = _console_text()
-    fn = _extract_function(text, "axisHead")
-    assert 'consoleLang === "zh" ? LINT_AXIS_LABEL_ZH[axis] : axis' in fn
+    assert 'consoleLang === "zh" ? LINT_AXIS_LABEL_ZH[axis] : axis' in text
 
 
 def test_check_head_is_language_aware():

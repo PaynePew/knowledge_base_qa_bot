@@ -511,15 +511,47 @@
   }
   .cite-scrim { display: none; }
 
-  @media (max-width: 540px) {
-    .page { padding: 0 20px; }
-    .query { font-size: 17px; }
-    .answer .body { font-size: 15px; }
-    .empty-title { font-size: 26px; }
+  /* ── Chat | source split (pin a cited source beside the chat) ─────────────
+     On wide screens a clicked citation pins to the RIGHT of the conversation
+     instead of interrupting the reading column: the chat re-centers in the
+     left area and the source takes a right rail. The rail is on-demand — zero
+     width until a source opens — so an idle chat stays centered as before.
+     Below 760px the source falls back to the bottom sheet (media block). */
+  .chat-shell { height: 100%; display: flex; }
+  .chat-shell .page { flex: 1 1 auto; min-width: 0; }
+  /* The source pins to the RIGHT of the chat. Sizing note (verified in-browser):
+     this engine won't tween `width`/`flex-basis` to a clamp()/var() target on a
+     flex item — it drops the value — and a plain-px width snaps rather than
+     tweens here anyway. So the rail width is a plain px value per breakpoint
+     (correct + reliable, snaps open), and the smooth reveal comes from a
+     keyframe fade/slide on the content, which always runs (and is disabled by
+     the global reduced-motion rule). */
+  .source-rail {
+    flex: 0 0 auto; width: 0; min-width: 0; overflow: hidden;
+  }
+  .chat-shell.source-open .source-rail { width: 560px; border-left: 1px solid var(--rule); }
+  @media (max-width: 1180px) { .chat-shell.source-open .source-rail { width: 460px; } }
+  @media (max-width: 980px)  { .chat-shell.source-open .source-rail { width: 400px; } }
+  .source-rail #cite-host { width: 100%; height: 100%; }
+  .chat-shell.source-open .source-rail #cite-host {
+    animation: source-reveal .3s cubic-bezier(.4, 0, .2, 1);
+  }
+  @keyframes source-reveal {
+    from { opacity: 0; transform: translateX(14px); }
+    to   { opacity: 1; transform: none; }
+  }
+  .source-rail .cite-viewer {
+    margin: 0; border: 0; border-radius: 0;
+    height: 100%; display: flex; flex-direction: column;
+  }
+  .source-rail .cite-content { max-height: none; flex: 1; }
+  .source-rail .cite-scrim { display: none; }
 
-    /* Citation viewer → bottom sheet on small screens. The chat is a locked
-       app-shell (body overflow:hidden), so an inline card would bury the answer;
-       a sheet keeps the answer visible behind the scrim. */
+  @media (max-width: 759px) {
+    /* Narrow screens: the source is a bottom sheet, not a side rail. The chat
+       is a locked app-shell (body overflow:hidden), so an inline card would
+       bury the answer; a sheet keeps the answer visible behind the scrim. */
+    .chat-shell.source-open .source-rail { width: 0; border-left: 0; }
     .cite-scrim {
       display: block; position: fixed; inset: 0; z-index: 40;
       background: rgba(17, 17, 17, .34);
@@ -542,6 +574,13 @@
     }
     .cite-content { max-height: none; flex: 1; font-size: 12.5px; }
     .cite-viewer-close { min-height: 40px; padding: 6px 14px; }
+  }
+
+  @media (max-width: 540px) {
+    .page { padding: 0 20px; }
+    .query { font-size: 17px; }
+    .answer .body { font-size: 15px; }
+    .empty-title { font-size: 26px; }
   }
   @keyframes cite-slide { from { transform: translateY(100%); } to { transform: translateY(0); } }
   @keyframes cite-fade  { from { opacity: 0; } to { opacity: 1; } }
@@ -726,8 +765,14 @@ function build() {
     el("div", { class: "hint" }, "Press ", el("kbd", { text: "↵" }), " to submit"),
   );
 
+  /* On-demand right rail for a pinned citation source (desktop split); empty
+     and zero-width until openCitation mounts a viewer into it. */
+  var sourceRail = el("aside", { class: "source-rail", id: "source-rail", "aria-label": "Cited source" });
   document.getElementById("stage").replaceChildren(
-    el("div", { class: "page" }, masthead, stream, composer)
+    el("div", { class: "chat-shell" },
+      el("div", { class: "page" }, masthead, stream, composer),
+      sourceRail
+    )
   );
 }
 
@@ -1016,6 +1061,10 @@ function citeOnKeydown(e) { if (e.key === "Escape") closeCitation(); }
 function closeCitation() {
   var host = document.getElementById("cite-host");
   if (host) host.remove();
+  var rail = document.getElementById("source-rail");
+  if (rail) rail.replaceChildren();
+  var shell = document.querySelector(".chat-shell");
+  if (shell) shell.classList.remove("source-open");
   document.removeEventListener("keydown", citeOnKeydown);
   if (citeReturnFocus && citeReturnFocus.focus) { try { citeReturnFocus.focus(); } catch (_) {} }
   citeReturnFocus = null;
@@ -1025,7 +1074,9 @@ function openCitation(path, label, triggerEl) {
   closeCitation();  /* only one viewer at a time; reopening replaces it */
   citeReturnFocus = triggerEl || null;
 
-  var isMobile = matchMedia("(max-width: 540px)").matches;
+  /* Narrow (<760px): bottom sheet (modal dialog). Wide: pinned side rail
+     (a non-modal region beside the chat). */
+  var isNarrow = matchMedia("(max-width: 759px)").matches;
   var scrim = el("div", { class: "cite-scrim", onclick: closeCitation });
   var closeBtn = el("button", {
     class: "cite-viewer-close", type: "button", text: "close", onclick: closeCitation,
@@ -1033,8 +1084,8 @@ function openCitation(path, label, triggerEl) {
   var pre = el("pre", { class: "cite-content", text: "loading…" });
   var viewer = el("div", {
     class: "cite-viewer",
-    role: isMobile ? "dialog" : "region",
-    "aria-modal": isMobile ? "true" : null,
+    role: isNarrow ? "dialog" : "region",
+    "aria-modal": isNarrow ? "true" : null,
     "aria-label": "Cited source: " + (label || path),
   },
     el("div", { class: "cite-viewer-head" },
@@ -1046,10 +1097,17 @@ function openCitation(path, label, triggerEl) {
     pre,
   );
   var host = el("div", { id: "cite-host" }, scrim, viewer);
-  add(host);
+  if (isNarrow) {
+    add(host);                    /* bottom sheet inside the stream (unchanged) */
+  } else {
+    var rail = document.getElementById("source-rail");
+    if (rail) rail.replaceChildren(host);   /* pin into the right rail */
+    var shell = document.querySelector(".chat-shell");
+    if (shell) shell.classList.add("source-open");
+  }
   document.addEventListener("keydown", citeOnKeydown);
   try { closeBtn.focus(); } catch (_) {}
-  if (!isMobile) scrollStreamToBottom();
+  if (isNarrow) scrollStreamToBottom();
 
   /* /read/file → JSON {relpath, content}. On error the viewer shows the message
      in place (it never silently closes). A stale fetch (viewer already replaced)

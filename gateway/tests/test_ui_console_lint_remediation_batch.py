@@ -74,8 +74,9 @@ def _extract_function(text: str, name: str) -> str:
 def test_freshness_axis_gets_axis_level_batch_button():
     text = _console_text()
     assert "axis-batch-btn" in text
-    axis_head_fn = _extract_function(text, "axisHead")
-    assert "batchBtnEl" in axis_head_fn
+    # axisHead() was folded into the collapsible: the axis-level batch button is
+    # now passed to makeCollapse as the header's non-toggling aside element.
+    assert "asideEl: axisBatchBtnEl" in text
 
 
 def test_c6_check_group_gets_check_level_batch_button():
