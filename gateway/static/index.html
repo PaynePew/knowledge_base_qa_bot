@@ -6,6 +6,26 @@
 <title>ask.Wiki&amp;RAG — grounded Q&amp;A</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 
+<!-- Open Graph / social card: link-preview thumbnail for 104, LinkedIn, Slack, etc.
+     Scrapers read og:image (absolute URL, raster only — SVG is not rendered) to
+     draw the cover. og-cover.png is a 1200×630 PNG in gateway/static, served via
+     the /static mount. Keep the URL absolute so off-site scrapers resolve it. -->
+<meta name="description" content="Grounded Q&amp;A over a curated Markdown knowledge base, with every claim cited to its source.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="ask.Wiki&amp;RAG">
+<meta property="og:title" content="ask.Wiki&amp;RAG · grounded Q&amp;A">
+<meta property="og:description" content="Grounded Q&amp;A over a curated Markdown knowledge base. Every claim cites its source, or the bot says “Cannot Confirm.”">
+<meta property="og:url" content="https://ask-wiki-rag.paynepew.dev/">
+<meta property="og:image" content="https://ask-wiki-rag.paynepew.dev/static/og-cover.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="ask.Wiki&amp;RAG, grounded Q&amp;A over a curated knowledge base">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="ask.Wiki&amp;RAG · grounded Q&amp;A">
+<meta name="twitter:description" content="Grounded Q&amp;A over a curated Markdown knowledge base. Every claim cites its source, or it says “Cannot Confirm.”">
+<meta name="twitter:image" content="https://ask-wiki-rag.paynepew.dev/static/og-cover.png">
+
 <!--
   KB Gateway browser UI — Phase 9 Slice 6 (#122) + Phase 11 Slice 4 (#162).
   Single vanilla HTML/CSS/JS file. NO framework, NO build step (CODING_STANDARD §12.1).
