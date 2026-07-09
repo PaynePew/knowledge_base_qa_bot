@@ -2,7 +2,7 @@
 
 # Wiki Index
 
-> 174 Sources, 174 Sections indexed.
+> 174 Sources, 177 Sections indexed.
 
 ## account-deletion
 
@@ -140,6 +140,10 @@
 
 - [Hold Period](../docs/hold-period#hold-period) — `hold-period#hold-period`
 
+## how-do-i-reset-my-password-354473
+
+- [how-do-i-reset-my-password-354473](../docs/how-do-i-reset-my-password-354473) — `how-do-i-reset-my-password-354473`
+
 ## how-to-use
 
 - [How to Use](../docs/how-to-use#how-to-use) — `how-to-use#how-to-use`
@@ -234,14 +238,17 @@
 
 ## qa-count-zero-zh-006
 
+- [qa-count-zero-zh-006](../docs/qa-count-zero-zh-006#intro) — `qa-count-zero-zh-006#intro`
 - [退款要多久才會入帳？](../docs/qa-count-zero-zh-006#退款要多久才會入帳) — `qa-count-zero-zh-006#退款要多久才會入帳`
 
 ## qa-store-pickup-zh-003
 
+- [qa-store-pickup-zh-003](../docs/qa-store-pickup-zh-003#intro) — `qa-store-pickup-zh-003#intro`
 - [門市自取要帶什麼？](../docs/qa-store-pickup-zh-003#門市自取要帶什麼) — `qa-store-pickup-zh-003#門市自取要帶什麼`
 
 ## qa-store-services-en-004
 
+- [qa-store-services-en-004](../docs/qa-store-services-en-004#intro) — `qa-store-services-en-004#intro`
 - [Which stores offer in-store pickup?](../docs/qa-store-services-en-004#which-stores-offer-in-store-pickup) — `qa-store-services-en-004#which-stores-offer-in-store-pickup`
 
 ## reactivating
@@ -623,10 +630,6 @@
 ## 退款申請窗口
 
 - [退款申請窗口](../docs/退款申請窗口#退款申請窗口) — `退款申請窗口#退款申請窗口`
-
-## 退款與退貨
-
-- [退款與退貨](../docs/退款與退貨#退款與退貨) — `退款與退貨#退款與退貨`
 
 ## 退貨期限提醒
 
