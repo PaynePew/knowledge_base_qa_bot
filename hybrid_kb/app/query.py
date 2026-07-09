@@ -54,6 +54,7 @@ from markdown_kb.app.errors import LLMError
 from markdown_kb.app.grounding import GroundingOutcome
 from markdown_kb.app.indexer import Section
 from markdown_kb.app.prompt_builder import SYSTEM_PROMPT, build_prompt
+from markdown_kb.app.schemas import qa_schema_lint_code
 
 # CANNOT_CONFIRM_PHRASE is imported from the module that owns it (ADR-0001
 # contract) — never paraphrased (trap #2 / CODING_STANDARD §3.3 define-once).
@@ -181,6 +182,9 @@ def _build_sources(sections: list[Section]) -> list[dict]:
             "source": sec.id,
             "heading": " > ".join(sec.heading_path),
             "content": sec.content[:240],
+            # C10 coordinate (schema-invalid Filed Answer) for the reader teaching
+            # tag — parity with the Wiki stack's source dict (markdown_kb.retrieval).
+            "lint": qa_schema_lint_code(sec.metadata),
         }
         path = bm25_retrieval._wiki_page_path_for_section(sec)
         if path is not None:

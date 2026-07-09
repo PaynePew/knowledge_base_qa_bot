@@ -322,6 +322,99 @@
   }
   .filed b { color: var(--ink); font-weight: 500; }
 
+  /* Curator note — the guided-teaching annotation under the grounding footer.
+     Editorial marginalia in the human (sans) voice, led by the mono lint-code
+     coordinate that also appears in the console. Faint by default; never louder
+     than the answer above it. */
+  .cnote {
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    margin-top: 12px;
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 12.5px; line-height: 1.55;
+    color: var(--ink-3);
+  }
+  .cnote .ccode {
+    flex: none;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px; font-weight: 500; letter-spacing: .06em;
+    color: var(--ink-2);
+    border: 1px solid var(--rule); border-radius: 3px;
+    padding: 1px 5px; transform: translateY(-1px);
+  }
+  .cnote .ctext { flex: 1 1 240px; min-width: 0; }
+  .cnote .go {
+    flex: none; margin-left: auto;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px; color: var(--accent);
+    text-decoration: none; white-space: nowrap;
+  }
+  .cnote .go:hover, .cnote .go:focus-visible { text-decoration: underline; }
+
+  /* Follow-up chips — the "ask next" guidance under a completed answer, so a first
+     question opens onto a topic instead of a dead end. Quiet, inline, echoing the
+     empty-state starters but compact so they never rival the answer above them. */
+  .followups {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+    margin-top: 16px;
+  }
+  .followups .fu-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--ink-4); margin-right: 2px;
+  }
+  .fu-chip {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: transparent;
+    border: 1px solid var(--rule); border-radius: 999px;
+    padding: 5px 12px;
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 12.5px; color: var(--ink-2); cursor: pointer;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .fu-chip:hover, .fu-chip:focus-visible {
+    color: var(--ink); border-color: var(--ink-3); outline: none;
+  }
+  .fu-chip .fu-arrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px; color: var(--ink-4);
+    transition: transform .2s cubic-bezier(.22,.61,.36,1), color .15s ease;
+  }
+  .fu-chip:hover .fu-arrow { color: var(--ink-2); transform: translateX(2px); }
+
+  /* Empty-state curation-loop framing (the thesis binding reader + console). */
+  .loop-note {
+    margin-top: 30px; padding-top: 20px;
+    border-top: 1px solid var(--rule);
+    max-width: 54ch;
+  }
+  .loop-title {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--ink-4);
+    margin-bottom: 8px;
+  }
+  .loop-body {
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 12.5px; line-height: 1.55; color: var(--ink-3);
+    margin-bottom: 3px;
+  }
+  .loop-axes {
+    margin-top: 12px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px; letter-spacing: .04em; color: var(--ink-4);
+  }
+
+  /* Record-level lint coordinate (C10 …) on a flagged source; hover for the fix. */
+  .rec-lint {
+    display: inline-block; margin-top: 5px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 9.5px; font-weight: 500; letter-spacing: .06em;
+    color: var(--ink-3);
+    border: 1px solid var(--rule); border-radius: 3px;
+    padding: 0 4px;
+    cursor: help;
+  }
+
   /* ERROR */
   .err {
     padding: 16px 18px;
@@ -482,6 +575,21 @@
   .mast-console:hover {
     color: var(--ink);
     border-color: var(--ink-3);
+  }
+
+  /* zh/en chrome toggle — same pill as the console link; the label names the
+     language a click switches TO (matches the Console's mast-lang-toggle). */
+  .mast-lang {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px; letter-spacing: .04em;
+    color: var(--ink-3);
+    background: transparent;
+    border: 1px solid var(--rule); border-radius: 4px;
+    padding: 5px 10px; cursor: pointer;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .mast-lang:hover, .mast-lang:focus-visible {
+    color: var(--ink); border-color: var(--ink-3); outline: none;
   }
 
   /* ── Citation source viewer (issue #266) ─────────────────────────────────
@@ -694,12 +802,74 @@ function createSSEParser() {
 
 /* ── REASON MAP ──────────────────────────────────────────────────────────── */
 var REASON_TEXT = {
-  claim_supported: "Every claim is supported by the cited sources.",
-  claim_unsupported: "The draft made a claim the sources don't support — the answer was withheld.",
-  verifier_unavailable: "The grounding verifier was unavailable — the answer was withheld to stay safe.",
-  below_threshold: "No source cleared the relevance threshold.",
-  retrieval_empty: "No matching sources were found.",
-  index_missing: "The knowledge base index has not been built yet.",
+  claim_supported: {
+    en: "Every claim is supported by the cited sources.",
+    zh: "每一項說法都有引用來源支持。",
+  },
+  claim_unsupported: {
+    en: "The draft made a claim the sources don't support — the answer was withheld.",
+    zh: "草稿出現一句來源不支持的話——該答案已被撤回。",
+  },
+  verifier_unavailable: {
+    en: "The grounding verifier was unavailable — the answer was withheld to stay safe.",
+    zh: "接地驗證器暫時無法使用——為求穩妥,答案已被撤回。",
+  },
+  below_threshold: {
+    en: "No source cleared the relevance threshold.",
+    zh: "沒有來源達到相關性門檻。",
+  },
+  retrieval_empty: {
+    en: "No matching sources were found.",
+    zh: "找不到相符的來源。",
+  },
+  index_missing: {
+    en: "The knowledge base index has not been built yet.",
+    zh: "知識庫索引尚未建立。",
+  },
+};
+
+/* ── TEACHING MAP ──────────────────────────────────────────────────────────────
+   The guided-teaching layer (demo-scoped — ADR-0039): each answer outcome is
+   paired with what a curator would do next, so a weak answer reads as "here's how
+   we'd fix this" instead of a dead end. Keyed on the SAME server-provided
+   grounding.reason as REASON_TEXT (plus the `filed` flag) — static copy, no client
+   business logic (§12.4/§12.5). `code` is the console lint-check coordinate
+   (C1/C8/…) that appears identically in the Operator Console, drawing a line from a
+   reader symptom to its console remediation. `null` code = nothing to fix (the
+   grounding contract working as intended, not a defect). Bilingual: the note
+   follows the interaction language (CJK-detected in onDone), matching how retrieval
+   routes zh vs en. */
+var TEACHING = {
+  grounded_filed: {
+    code: "C8",
+    en: "Saved as a draft answer. A curator promotes it in the console to add it to what the bot can retrieve — the knowledge base compounds as it's used.",
+    zh: "已存為草稿答案。策展者在 console 將它提升為正式後即可被檢索——知識庫會隨使用而累積。",
+  },
+  below_threshold: {
+    code: "C1",
+    en: "Looks like a coverage gap. The console groups repeated misses like this and walks you through importing a source that covers it.",
+    zh: "看起來是知識缺口。console 會把這類一再問不到的問題聚合起來,並引導你匯入能回答它的來源。",
+  },
+  retrieval_empty: {
+    code: "C1",
+    en: "Nothing in the knowledge base matched. The console groups gaps like this and walks you through importing a source that covers it.",
+    zh: "知識庫裡沒有相符的內容。console 會把這類缺口聚合起來,引導你匯入能回答它的來源。",
+  },
+  claim_unsupported: {
+    code: null,
+    en: "A source was found, but the draft made a claim the sources don't back — so it was withheld rather than guessed. If you expected an answer here, that's a coverage gap you can fill in the console.",
+    zh: "有找到來源,但草稿出現一句來源不支持的話,所以整段撤回、而非硬猜。若你認為這題該答得出來,那是個可在 console 補上的知識缺口。",
+  },
+  verifier_unavailable: {
+    code: null,
+    en: "The grounding verifier was briefly unavailable, so the answer was withheld rather than released unchecked. Try again in a moment.",
+    zh: "接地驗證器暫時無法使用,系統選擇撤回、而非放行未經驗證的答案。請稍後再試。",
+  },
+  index_missing: {
+    code: "OPS",
+    en: "The knowledge base index isn't built yet. Build it once from the console and this question will work.",
+    zh: "知識庫索引尚未建立。在 console 建一次索引,這題就能運作。",
+  },
 };
 
 /* ── STACK METADATA ───────────────────────────────────────────────────────────
@@ -711,15 +881,24 @@ var REASON_TEXT = {
 var STACK_META = {
   wiki: {
     label: "Wiki",
-    sub: "Answers are synthesised from the curated wiki layer and checked against every cited record — if the sources don’t support a claim, the bot says so instead of guessing.",
+    sub: {
+      en: "Answers are synthesised from the curated wiki layer and checked against every cited record — if the sources don’t support a claim, the bot says so instead of guessing.",
+      zh: "答案由策展過的 wiki 層彙整而成,並逐一比對每筆引用來源——來源若不支持某項說法,機器人會直說,而不是硬猜。",
+    },
   },
   rag: {
     label: "RAG",
-    sub: "Answers are retrieved from the source corpus by semantic similarity and checked against every cited record — if the sources don’t support a claim, the bot says so instead of guessing.",
+    sub: {
+      en: "Answers are retrieved from the source corpus by semantic similarity and checked against every cited record — if the sources don’t support a claim, the bot says so instead of guessing.",
+      zh: "答案以語意相似度從原始語料檢索而得,並逐一比對每筆引用來源——來源若不支持某項說法,機器人會直說,而不是硬猜。",
+    },
   },
   hybrid: {
     label: "Hybrid",
-    sub: "Answers fuse keyword and semantic retrieval over the curated wiki layer and are checked against every cited record — if the sources don’t support a claim, the bot says so instead of guessing.",
+    sub: {
+      en: "Answers fuse keyword and semantic retrieval over the curated wiki layer and are checked against every cited record — if the sources don’t support a claim, the bot says so instead of guessing.",
+      zh: "答案融合關鍵字與語意檢索、涵蓋整個策展 wiki 層,並逐一比對每筆引用來源——來源若不支持某項說法,機器人會直說,而不是硬猜。",
+    },
   },
 };
 
@@ -727,9 +906,9 @@ var STACK_META = {
    Suggested first questions shown in the empty state, per language (#289, PRD
    #284). These are static UI copy (not server-derived), grounded in the bilingual
    sample FAQ corpus so a first click returns a real grounded answer in the
-   visitor's language rather than "Cannot confirm". The empty state shows BOTH
-   sets so a visitor in either language has a usable starter without any
-   client-side language detection (§12.5 — no client business logic).
+   visitor's language rather than "Cannot confirm". The empty state shows the set
+   for the ACTIVE chrome language (the masthead zh/en toggle, ADR-0039); both sets
+   stay defined and reachable via the toggle (§12.5 — no client business logic).
 
    Each question was validated OFFLINE against the baked BM25 index: its top hit
    clears the pre-LLM Cannot-Confirm gate (en KB_SCORE_THRESHOLD=0.5,
@@ -738,18 +917,95 @@ var STACK_META = {
    gateway/tests/test_ui_bilingual_starters.py for the probe that pins them. */
 var PRESET_QUESTIONS = {
   zh: [
-    "退款政策是什麼？",
+    "退款要幾天才會退到帳戶？",
     "你們接受哪些付款方式？",
-    "國際配送需要多久時間？",
     "紅利點數怎麼累積？",
+    "你們配送到哪些國家？",
   ],
   en: [
-    "What is your return policy?",
+    "How long do refunds take?",
     "What payment methods do you accept?",
-    "How long does standard shipping take?",
-    "How do I claim warranty?",
+    "How do I earn reward points?",
+    "Which countries do you ship to?",
   ],
 };
+
+/* ── FOLLOW-UP QUESTIONS ──────────────────────────────────────────────────────
+   After an answer, suggest what to ask next so a first question opens onto a
+   topic instead of a dead end (the reader is a guided demo — ADR-0039). Keyed by
+   a coarse topic match on the interaction (like the note's zh/en routing), each
+   set points at pages the KB actually covers so a follow-up click stays a
+   grounded win. Static UI copy, bilingual, chosen by the active ``uiLang``
+   (§12.5 — a lookup, no client business logic). Unmatched topics fall back to the
+   remaining presets, which the starter test pins as answerable. */
+var FOLLOWUPS = [
+  { match: /退款|退錢|refund/i, zh: ["哪些情況不能退款?", "退款需要符合什麼條件?"],
+    en: ["What can't be refunded?", "What are the conditions for a refund?"] },
+  { match: /付款|支付|信用卡|payment|\bpay\b/i, zh: ["有哪些不支援的付款方式?", "信用卡可以分期嗎?"],
+    en: ["Which payment methods aren't supported?", "Can I pay by credit-card instalments?"] },
+  { match: /點數|紅利|point|reward/i, zh: ["點數會過期嗎?", "點數可以怎麼折抵?"],
+    en: ["Do reward points expire?", "How can I redeem points?"] },
+  { match: /配送|運送|運費|國家|國際|ship|deliver|countr/i, zh: ["運費是怎麼計算的?", "超商取貨要多久?"],
+    en: ["How is the shipping fee calculated?", "How long does store pickup take?"] },
+];
+
+/* ── UI LANGUAGE + CHROME ──────────────────────────────────────────────────────
+   Reader chrome is bilingual with a header toggle (issue: reader lacked the zh/en
+   switch the Console has). The choice is persisted under the SAME localStorage key
+   the Console uses (``kb-console-lang``) so a switch on either surface carries to
+   the other. Answer BODY text stays in the corpus/question language (the LLM
+   answers in the asked language); the toggle governs chrome, notes, and follow-ups
+   only. All strings are static UI copy resolved via ``t()`` (§12.4/§12.5). */
+var LANG_STORAGE_KEY = "kb-console-lang";
+var uiLang = "en";
+try {
+  var _storedLang = localStorage.getItem(LANG_STORAGE_KEY);
+  if (_storedLang === "zh" || _storedLang === "en") uiLang = _storedLang;
+} catch (e) { /* localStorage unavailable (private mode) — default en */ }
+
+var CHROME = {
+  en: {
+    placeholder: "Ask the knowledge base…", ask: "Ask",
+    hintPre: "Press ", hintPost: " to submit",
+    consoleAria: "Open Operator Console",
+    queryLabel: "Query", recordsLabel: "Records", answerLabel: "Answer", errorLabel: "Error",
+    showRecords: "Show ", recordWord: "record", recordsWord: "records",
+    recsEmpty: "No record met the relevance threshold.",
+    understanding: "Understanding your question…",
+    checking: "Checking each claim against the cited record…",
+    rewritingLabel: "Rewriting", verifyingLabel: "Verification",
+    grounded: "Grounded", cannot: "Cannot confirm", filed: "Filed → ",
+    openConsole: "open console ↗", askNext: "Ask next",
+    emptyEyebrow: "Grounded Q&A · ", emptyTitle: "What would you like to know?",
+    presetLabel: "Try asking",
+    loopTitle: "The curation loop",
+    loopBody: "Grounded answers cite their sources. When one can't be — a gap, a contradiction, a stale page — the console catches it and walks you through the fix.",
+    loopAxes: "Coverage · Freshness · Coherence · Lifecycle",
+    errTitle: "Service interrupted", errDefault: "An unexpected error occurred.",
+    tryAgain: "Try again", langToggle: "中文", langToggleAria: "切換為中文",
+  },
+  zh: {
+    placeholder: "向知識庫提問…", ask: "提問",
+    hintPre: "按 ", hintPost: " 送出",
+    consoleAria: "開啟操作主控台",
+    queryLabel: "查詢", recordsLabel: "紀錄", answerLabel: "答案", errorLabel: "錯誤",
+    showRecords: "顯示 ", recordWord: "筆紀錄", recordsWord: "筆紀錄",
+    recsEmpty: "沒有紀錄達到相關性門檻。",
+    understanding: "正在理解你的問題…",
+    checking: "正在逐一比對每項說法與引用來源…",
+    rewritingLabel: "改寫", verifyingLabel: "驗證",
+    grounded: "有據", cannot: "無法確認", filed: "已歸檔 → ",
+    openConsole: "開啟 console ↗", askNext: "接著可以問",
+    emptyEyebrow: "有據問答 · ", emptyTitle: "想知道些什麼?",
+    presetLabel: "範例提問",
+    loopTitle: "策展迴圈",
+    loopBody: "答案都以引用來源為依據;答不出來時(缺口、矛盾、過期),console 會抓出來並帶你修復。",
+    loopAxes: "涵蓋度 · 新鮮度 · 一致性 · 生命週期",
+    errTitle: "服務中斷", errDefault: "發生未預期的錯誤。",
+    tryAgain: "再試一次", langToggle: "EN", langToggleAria: "Switch to English",
+  },
+};
+function t(key) { return (CHROME[uiLang] || CHROME.en)[key]; }
 
 /* ── STATE ───────────────────────────────────────────────────────────────── */
 var stack = "wiki";
@@ -771,22 +1027,36 @@ var stream, segWiki, segRag, segHybrid, input;
    "Grounded") when the stack was toggled mid-stream. */
 var reqSeq = 0;
 var currentController = null;
+/* Extra chrome refs + the last completed answer payload, so a language toggle can
+   relocalize the current view in place (masthead, composer, and the note +
+   follow-ups of the answer already on screen) without re-running the request. */
+var sendBtn, langBtn, hintEl;
+var lastDone = null;
+var lastQuery = "";
 
 /* ── LAYOUT ──────────────────────────────────────────────────────────────── */
 function build() {
   stream = el("div", { class: "stream" });
-  input = el("input", { type: "text", placeholder: "Ask the knowledge base…" });
+  input = el("input", { type: "text", placeholder: t("placeholder") });
   segWiki   = el("button", { type: "button", text: "Wiki",   onclick: function() { setStack("wiki"); } });
   segRag    = el("button", { type: "button", text: "RAG",    onclick: function() { setStack("rag"); } });
   segHybrid = el("button", { type: "button", text: "Hybrid", onclick: function() { setStack("hybrid"); } });
-  var send = el("button", { class: "send", type: "button", text: "Ask", onclick: submit });
+  sendBtn = el("button", { class: "send", type: "button", text: t("ask"), onclick: submit });
   input.addEventListener("keydown", function(e) { if (e.key === "Enter") submit(); });
+
+  /* zh/en chrome toggle — the label names the language a click switches TO. The
+     choice syncs with the Console via the shared kb-console-lang key. */
+  langBtn = el("button", {
+    id: "lang-toggle", class: "mast-lang", type: "button",
+    "aria-label": t("langToggleAria"), text: t("langToggle"),
+    onclick: toggleLang,
+  });
 
   /* Console link — navigates to GET /console (full page nav, not SPA) */
   var consoleBtn = el("a", {
     href: "/console",
     class: "mast-console",
-    "aria-label": "Open Operator Console",
+    "aria-label": t("consoleAria"),
     text: "console",
   });
 
@@ -799,12 +1069,14 @@ function build() {
       "RAG",
     ),
     el("div", { class: "mast-toggle", role: "tablist" }, segWiki, segRag, segHybrid),
+    langBtn,
     consoleBtn,
   );
 
+  hintEl = el("div", { class: "hint" }, el("span", { text: t("hintPre") }), el("kbd", { text: "↵" }), el("span", { text: t("hintPost") }));
   var composer = el("div", { class: "composer" },
-    el("div", { class: "box" }, input, send),
-    el("div", { class: "hint" }, "Press ", el("kbd", { text: "↵" }), " to submit"),
+    el("div", { class: "box" }, input, sendBtn),
+    hintEl,
   );
 
   /* On-demand right rail for a pinned citation source (desktop split); empty
@@ -822,6 +1094,34 @@ function syncSeg() {
   segWiki.setAttribute("aria-pressed", String(stack === "wiki"));
   segRag.setAttribute("aria-pressed", String(stack === "rag"));
   segHybrid.setAttribute("aria-pressed", String(stack === "hybrid"));
+}
+
+/* Flip the chrome language, persist it (shared with the Console), and relocalize
+   in place. No re-fetch: the answer body is already in the asked language; only
+   chrome, the verdict foot, the curator note, and follow-ups switch. */
+function toggleLang() {
+  uiLang = (uiLang === "zh") ? "en" : "zh";
+  try { localStorage.setItem(LANG_STORAGE_KEY, uiLang); } catch (e) { /* private mode */ }
+  applyReaderLang();
+}
+
+function applyReaderLang() {
+  document.documentElement.setAttribute("lang", uiLang);
+  if (langBtn) { langBtn.textContent = t("langToggle"); langBtn.setAttribute("aria-label", t("langToggleAria")); }
+  if (sendBtn) sendBtn.textContent = t("ask");
+  if (input) input.setAttribute("placeholder", t("placeholder"));
+  if (hintEl) hintEl.replaceChildren(el("span", { text: t("hintPre") }), el("kbd", { text: "↵" }), el("span", { text: t("hintPost") }));
+  var consoleBtn = document.querySelector(".mast-console");
+  if (consoleBtn) consoleBtn.setAttribute("aria-label", t("consoleAria"));
+  /* Content chrome: the empty state, or the current answer's verdict + note +
+     follow-ups (the transcript's past turns keep the language they were asked in). */
+  if (stream && stream.querySelector(".empty")) {
+    renderEmptyState();
+  } else if (lastDone && answerEl && answerEl.querySelector(".foot")) {
+    /* Only a COMPLETED answer (one that already has a verdict foot) is relocalized;
+       an answer still streaming gets the new language when its onDone fires. */
+    renderAnswerFoot(lastDone);
+  }
 }
 
 /* ── HELPERS ─────────────────────────────────────────────────────────────── */
@@ -936,9 +1236,9 @@ function renderEmptyState() {
   var meta = STACK_META[stack] || STACK_META.wiki;
 
   var eyebrow = el("div", { class: "empty-eyebrow",
-    text: "Grounded Q&A · " + meta.label });
-  var title = el("h1", { class: "empty-title", text: "What would you like to know?" });
-  var sub = el("p", { class: "empty-sub", text: meta.sub });
+    text: t("emptyEyebrow") + meta.label });
+  var title = el("h1", { class: "empty-title", text: t("emptyTitle") });
+  var sub = el("p", { class: "empty-sub", text: meta.sub[uiLang] || meta.sub.en });
 
   /* Render a per-language preset group: a small label + its clickable questions.
      Each click routes through the existing ask() helper (fill composer + submit)
@@ -958,16 +1258,26 @@ function renderEmptyState() {
     return group;
   }
 
-  var promptsZh = renderPresetGroup("中文範例提問", PRESET_QUESTIONS.zh);
-  var promptsEn = renderPresetGroup("Try asking", PRESET_QUESTIONS.en);
+  /* One group in the active chrome language (the header toggle governs it) — a
+     visitor asks in their language and the starter matches without a second set. */
+  var prompts = renderPresetGroup(t("presetLabel"), PRESET_QUESTIONS[uiLang] || PRESET_QUESTIONS.en);
+
+  /* Curation-loop framing (ADR-0039): the thesis that binds reader + console —
+     grounded answers, honest gaps, and a fix path. Quiet, placed below the
+     starters so it frames the demo without competing with them; follows uiLang. */
+  var loopNote = el("div", { class: "loop-note" },
+    el("div", { class: "loop-title", text: t("loopTitle") }),
+    el("div", { class: "loop-body", text: t("loopBody") }),
+    el("div", { class: "loop-axes", text: t("loopAxes") }),
+  );
 
   var wrap = el("div", { class: "empty" },
-    el("div", { class: "empty-inner" }, eyebrow, title, sub, promptsZh, promptsEn));
+    el("div", { class: "empty-inner" }, eyebrow, title, sub, prompts, loopNote));
   stream.replaceChildren(wrap);
 
   /* Staggered reveal on load (skipped under reduced-motion). */
   if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    [eyebrow, title, sub, promptsZh, promptsEn].forEach(function(node, i) {
+    [eyebrow, title, sub, prompts, loopNote].forEach(function(node, i) {
       node.animate(
         [{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }],
         { duration: 460, delay: 80 + i * 90, easing: "cubic-bezier(.22,.61,.36,1)", fill: "backwards" }
@@ -1006,7 +1316,7 @@ function onQuery(text) {
   clearIndicator();
   removeCursors();
   var entry = el("div", { class: "entry" },
-    makeLabel("Query", { tag: stack }),
+    makeLabel(t("queryLabel"), { tag: stack }),
     el("div", { class: "query", text: text }),
   );
   add(entry);
@@ -1217,10 +1527,10 @@ function onSources(sources) {
      §12.9: clear the turn-2+ "rewriting" indicator now that sources have arrived. */
   clearIndicator();
   var entry = el("div", { class: "entry" });
-  entry.append(makeLabel("Records", { count: sources.length }));
+  entry.append(makeLabel(t("recordsLabel"), { count: sources.length }));
 
   if (!sources.length) {
-    entry.append(el("div", { class: "recs-empty", text: "No record met the relevance threshold." }));
+    entry.append(el("div", { class: "recs-empty", text: t("recsEmpty") }));
     add(entry);
     scrollStreamToBottom();
     return;
@@ -1228,7 +1538,7 @@ function onSources(sources) {
 
   var det = el("details", { class: "records", open: "" });
   var toggle = el("summary", { class: "recs-toggle" },
-    el("span", { text: "Show " + sources.length + " " + (sources.length === 1 ? "record" : "records") }),
+    el("span", { text: t("showRecords") + sources.length + " " + (sources.length === 1 ? t("recordWord") : t("recordsWord")) }),
     el("span", { class: "chev", text: "▾" }),
   );
   det.append(toggle);
@@ -1242,20 +1552,53 @@ function onSources(sources) {
        — so the same text is never shown twice (before the answer AND on click).
        §12.4: every server-derived string via textContent. */
     var num = el("span", { class: "num", text: String(i + 1).padStart(2, "0") });
-    var idNode = el("span", { class: "id", text: s.source });
+    /* Collapse a self-referential citation id: a concept Wiki Page is 1:1 with one
+       Section, so its id reads {slug}#{heading} where the heading-slug repeats the
+       slug (e.g. "信用卡#信用卡"). Show the slug once. Presentation-only — same
+       category as padStart/toFixed, no server semantics (§12.4/§12.5). */
+    var displayId = s.source;
+    var hashAt = displayId.lastIndexOf("#");
+    if (hashAt > 0) {
+      var slugPart = displayId.slice(0, hashAt);
+      var headPart = displayId.slice(hashAt + 1);
+      if (headPart === slugPart || headPart === slugPart.replace(/\.md$/, "")) {
+        displayId = slugPart;
+      }
+    }
+    var idNode = el("span", { class: "id", text: displayId });
 
     var meta = el("span", { class: "meta" });
-    if (s.heading) meta.append(document.createTextNode(s.heading));
+    /* Drop the heading crumb when it merely repeats the (collapsed) id — the same
+       1:1 concept-page redundancy surfacing on the meta line. */
+    var headingShown = false;
+    if (s.heading && s.heading !== displayId && s.heading !== displayId.replace(/\.md$/, "")) {
+      meta.append(document.createTextNode(s.heading));
+      headingShown = true;
+    }
     if (s.derived_from && s.derived_from.length) {
       /* derived_from is an array of {source, heading} objects — join source ids */
       var fromText = s.derived_from.map(function(x) { return x.source; }).join(", ");
-      meta.append(el("span", { class: "from", text: (s.heading ? "  ·  " : "") + "from " + fromText }));
+      meta.append(el("span", { class: "from", text: (headingShown ? "  ·  " : "") + "from " + fromText }));
     }
     /* §12.3: BM25 score hidden by default (dev-only) and Wiki-only; RAG: never. */
     if (DEV && stack === "wiki" && typeof s.score === "number") {
-      meta.append(el("span", { class: "score-inline", text: "  ·  " + s.score.toFixed(2) }));
+      meta.append(el("span", { class: "score-inline", text: (meta.childNodes.length ? "  ·  " : "") + s.score.toFixed(2) }));
     }
     var body = el("span", { class: "body" }, idNode, meta);
+
+    /* C10 teaching tag: a schema-invalid Filed Answer (e.g. a deliberately planted
+       count:0 fixture) surfacing as a source — the same coordinate the console lint
+       uses. Lives INSIDE the body column so it never disturbs the 3-column .rec grid;
+       the explanation is a hover title so the row stays compact. */
+    if (s.lint) {
+      body.append(el("span", {
+        class: "rec-lint",
+        text: s.lint,
+        title: uiLang === "zh"
+          ? "刻意植入的 schema 違規紀錄(" + s.lint + ")。console 的 lint 會抓到它,一鍵 demote 即可移出語料。"
+          : "A planted, schema-invalid record (" + s.lint + "). The console's lint catches it and a one-click demote removes it from the corpus.",
+      }));
+    }
 
     /* Issue #266 + this follow-up: when the server supplies a resolvable path the
        WHOLE ROW is the click target (a native <button> for focus + Enter/Space)
@@ -1334,10 +1677,8 @@ function onStatus(d) {
      phase="verifying"  → "Checking each claim against the cited record…" (post-sources)
      Unknown phases → use "verifying" text as a safe fallback. */
   var isRewriting = d && d.phase === "rewriting";
-  var labelText = isRewriting ? "Rewriting" : "Verification";
-  var statusText = isRewriting
-    ? "Understanding your question…"
-    : "Checking each claim against the cited record…";
+  var labelText = isRewriting ? t("rewritingLabel") : t("verifyingLabel");
+  var statusText = isRewriting ? t("understanding") : t("checking");
 
   /* Supersede any prior indicator so two never stack (e.g. rewriting → verifying). */
   clearIndicator();
@@ -1354,13 +1695,13 @@ function onStatus(d) {
   scrollStreamToBottom();
 }
 
-function onToken(t) {
+function onToken(tok) {
   /* §12.3: answer area only created after sources have arrived (onSources runs
      first in the SSE event order; answerEl is null until this first onToken). */
   if (!answerEl) {
     clearIndicator();
     var entry = el("div", { class: "entry" });
-    entry.append(makeLabel("Answer"));
+    entry.append(makeLabel(t("answerLabel")));
     answerBody = el("div", { class: "body" });
     answerEl = el("div", { class: "answer" }, answerBody, el("span", { class: "cursor" }));
     entry.append(answerEl);
@@ -1376,8 +1717,8 @@ function onToken(t) {
      answerRawText accumulates the plain text so onDone can linkify the
      complete answer in one pass (issue #410) — a [[wikilink]] can split
      across token boundaries, so linkify never runs mid-stream. */
-  answerBody.append(document.createTextNode(t.text));
-  answerRawText += t.text;
+  answerBody.append(document.createTextNode(tok.text));
+  answerRawText += tok.text;
 }
 
 /* Re-renders one completed answer's full text as linkified nodes (issue #410).
@@ -1394,6 +1735,82 @@ function linkifyAnswerBody(targetBody, rawText) {
   });
 }
 
+/* One-shot fade-in used by the note + follow-ups (skipped under reduced-motion). */
+function reveal(node, delay) {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  node.animate(
+    [{ opacity: 0, transform: "translateY(4px)" }, { opacity: 1, transform: "none" }],
+    { duration: 420, delay: delay || 0, easing: "cubic-bezier(.22,.61,.36,1)", fill: "backwards" }
+  );
+}
+
+/* Choose the follow-up set for a query: the first topic whose pattern matches,
+   else the remaining presets (the starter test pins those as answerable, so a
+   fallback click is still a grounded win). Topic match is language-agnostic; the
+   returned questions are in the active chrome language. */
+function followupsFor(query) {
+  for (var i = 0; i < FOLLOWUPS.length; i++) {
+    if (FOLLOWUPS[i].match.test(query || "")) return FOLLOWUPS[i][uiLang] || FOLLOWUPS[i].en;
+  }
+  var presets = PRESET_QUESTIONS[uiLang] || PRESET_QUESTIONS.en;
+  return presets.filter(function(q) { return q !== query; }).slice(0, 3);
+}
+
+/* Render (or re-render) the verdict foot + curator note + follow-ups for the
+   current answer. Idempotent: drops any prior copies first, so a language toggle
+   can rebuild them in the new language without re-running the request. All copy
+   follows uiLang; the answer BODY (streamed) stays in the asked language. */
+function renderAnswerFoot(d) {
+  if (!answerEl) return;
+  var old = answerEl.querySelectorAll(".foot, .cnote, .followups");
+  for (var i = 0; i < old.length; i++) old[i].remove();
+
+  var pass = d.grounding.passed;
+  answerEl.classList.toggle("cannot", !pass);
+
+  var foot = el("div", { class: "foot" });
+  foot.append(el("span", { class: "chip " + (pass ? "pass" : "fail") },
+    el("span", { class: "dot" }),
+    el("span", { class: "label-txt", text: pass ? t("grounded") : t("cannot") }),
+  ));
+  /* §12.4: reason text via textContent */
+  var reason = REASON_TEXT[d.grounding.reason];
+  foot.append(el("span", { class: "reason", text: reason ? (reason[uiLang] || reason.en) : d.grounding.reason }));
+  /* filed is Wiki-only (done.filed=null for RAG and CC paths) — §12.5 */
+  if (d.filed) {
+    foot.append(el("span", { class: "filed" }, t("filed"), el("b", { text: d.filed.slug })));
+  }
+  answerEl.append(foot);
+
+  /* Guided-teaching curator note (demo-scoped, ADR-0039): pair the outcome with
+     the next curatorial step, keyed on the same grounding.reason as the chip. A
+     clean grounded answer with nothing to fix gets no note — don't nag the good
+     path. Follows uiLang now that the reader carries its own zh/en toggle. */
+  var noteKey = pass ? (d.filed ? "grounded_filed" : null) : d.grounding.reason;
+  var note = noteKey ? TEACHING[noteKey] : null;
+  if (note) {
+    var cnote = el("div", { class: "cnote" });
+    if (note.code) cnote.append(el("span", { class: "ccode", text: note.code }));
+    cnote.append(el("span", { class: "ctext", text: note[uiLang] }));
+    cnote.append(el("a", { class: "go", href: "/console", text: t("openConsole") }));
+    answerEl.append(cnote);
+    reveal(cnote, 200);
+  }
+
+  /* Follow-up chips: after any answer, offer the next question so the reader is a
+     guided tour, not a dead end (the user's "no follow-up guidance" gap). */
+  var chips = followupsFor(lastQuery);
+  if (chips.length) {
+    var fu = el("div", { class: "followups" }, el("span", { class: "fu-label", text: t("askNext") }));
+    chips.forEach(function(q) {
+      fu.append(el("button", { class: "fu-chip", type: "button", onclick: function() { ask(q); } },
+        el("span", { text: q }), el("span", { class: "fu-arrow", text: "→" })));
+    });
+    answerEl.append(fu);
+    reveal(fu, 280);
+  }
+}
+
 function onDone(d) {
   /* d shape (PRD #116 + Phase 11): { grounding: { passed, reason }, filed, stack, session } */
   /* Phase 11 Slice 4: capture session id for subsequent requests (§12.5 — no client logic).
@@ -1404,25 +1821,12 @@ function onDone(d) {
   if (cur) cur.remove();
   if (!answerEl) return;
 
-  var pass = d.grounding.passed;
-  if (!pass) answerEl.classList.add("cannot");
+  /* Stash the payload + its query so a later language toggle can relocalize this
+     answer's verdict/note/follow-ups in place. */
+  lastDone = d;
+  lastQuery = currentQuery;
+  renderAnswerFoot(d);
 
-  var foot = el("div", { class: "foot" });
-  foot.append(el("span", { class: "chip " + (pass ? "pass" : "fail") },
-    el("span", { class: "dot" }),
-    el("span", { class: "label-txt", text: pass ? "Grounded" : "Cannot confirm" }),
-  ));
-  /* §12.4: reason text via textContent */
-  var reasonStr = REASON_TEXT[d.grounding.reason] || d.grounding.reason;
-  foot.append(el("span", { class: "reason", text: reasonStr }));
-  /* filed is Wiki-only (done.filed=null for RAG and CC paths) — §12.5 */
-  if (d.filed) {
-    foot.append(el("span", { class: "filed" },
-      "Filed → ",
-      el("b", { text: d.filed.slug }),
-    ));
-  }
-  answerEl.append(foot);
   linkifyAnswerBody(answerBody, answerRawText);
   /* Beat 2: the answer is complete — glide to the bottom so its end and the
      grounding verdict (Grounded / Cannot confirm) are fully in view. */
@@ -1433,15 +1837,15 @@ function onError(e) {
   clearIndicator();
   removeCursors();
   var entry = el("div", { class: "entry" });
-  entry.append(makeLabel("Error"));
+  entry.append(makeLabel(t("errorLabel")));
   /* §12.4: error detail via textContent */
-  var msg = e.detail || e.message || "An unexpected error occurred.";
+  var msg = e.detail || e.message || t("errDefault");
   entry.append(el("div", { class: "err" },
-    el("div", { class: "h", text: "Service interrupted" }),
+    el("div", { class: "h", text: t("errTitle") }),
     el("div", { class: "m", text: msg }),
     /* Retry the same turn: drop this error block, keep the Query above it, and
        re-run the request (sources/answer append where the error was). */
-    el("button", { type: "button", text: "Try again", onclick: function() {
+    el("button", { type: "button", text: t("tryAgain"), onclick: function() {
       entry.remove();
       resetStreamState();
       startRequest(currentQuery);
@@ -1536,6 +1940,7 @@ function submit() {
 }
 
 /* ── INIT ────────────────────────────────────────────────────────────────── */
+document.documentElement.setAttribute("lang", uiLang);
 build();
 syncSeg();
 renderEmptyState();

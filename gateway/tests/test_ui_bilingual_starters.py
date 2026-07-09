@@ -47,16 +47,16 @@ _COMMITTED_INDEX = Path(__file__).resolve().parents[2] / ".kb" / "index.json"
 # single-intent, well-covered topic page — so a first click returns a grounded
 # answer in the visitor's language.
 EXPECTED_ZH_PRESETS = [
-    "退款政策是什麼？",
+    "退款要幾天才會退到帳戶？",
     "你們接受哪些付款方式？",
-    "國際配送需要多久時間？",
     "紅利點數怎麼累積？",
+    "你們配送到哪些國家？",
 ]
 EXPECTED_EN_PRESETS = [
-    "What is your return policy?",
+    "How long do refunds take?",
     "What payment methods do you accept?",
-    "How long does standard shipping take?",
-    "How do I claim warranty?",
+    "How do I earn reward points?",
+    "Which countries do you ship to?",
 ]
 
 
@@ -88,13 +88,18 @@ def test_ui_file_has_distinct_per_language_preset_sets():
 
     The single ``PRESET_QUESTIONS`` array from before #289 carried only English
     copy and was shown identically on both languages. After #289 the UI must
-    select presets by language, so a per-language structure must exist.
+    select presets by language, so a per-language structure must exist. The reader
+    now carries its own zh/en chrome toggle, so the empty state selects the set for
+    the ACTIVE language (``PRESET_QUESTIONS[uiLang]``) rather than rendering both at
+    once; both sets are still defined and reachable via the toggle.
     """
     text = _ui_text()
-    # The empty state must read a per-language preset set keyed by language, so it
-    # can offer the right questions for each language.
-    assert "PRESET_QUESTIONS.zh" in text, "UI must read a zh preset set (PRESET_QUESTIONS.zh)"
-    assert "PRESET_QUESTIONS.en" in text, "UI must read an en preset set (PRESET_QUESTIONS.en)"
+    # A per-language map must exist and be selected by the active language.
+    assert "PRESET_QUESTIONS = {" in text, "UI must define a PRESET_QUESTIONS map"
+    assert "PRESET_QUESTIONS[uiLang]" in text, (
+        "empty state must select presets by the active language (PRESET_QUESTIONS[uiLang])"
+    )
+    assert "PRESET_QUESTIONS.en" in text, "UI must retain an en preset set (fallback)"
 
 
 # ---------------------------------------------------------------------------

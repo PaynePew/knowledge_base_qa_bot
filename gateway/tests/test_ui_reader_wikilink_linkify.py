@@ -103,7 +103,9 @@ def test_reader_surface_never_uses_the_red_link_class():
 
 def test_on_token_accumulates_raw_text_without_linkifying():
     text = _ui_text()
-    fn_src = text.split("function onToken(t)")[1].split("\nfunction ")[0]
+    # The token param is ``tok`` (not ``t``) so it never shadows the ``t()``
+    # chrome-lookup helper the reader now uses inside the same function.
+    fn_src = text.split("function onToken(tok)")[1].split("\nfunction ")[0]
     assert "answerRawText +=" in fn_src
     assert "parseWikilinks" not in fn_src, "linkify must not run per-token (mid-stream)"
 

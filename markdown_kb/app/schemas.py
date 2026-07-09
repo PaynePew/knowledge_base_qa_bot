@@ -736,6 +736,34 @@ class InvalidQaSchemaFinding(BaseModel):
     status: str
 
 
+def qa_schema_lint_code(frontmatter: dict) -> str | None:
+    """Return ``"C10"`` if ``frontmatter`` is a schema-invalid Filed Answer, else ``None``.
+
+    A pure, I/O-free mirror of the C10 rule that :class:`InvalidQaSchemaFinding`
+    documents and ``lint._check_c10_qa_schema_validity`` enforces on disk (``status``
+    in ``{live, draft, stale, superseded}``, ``type == "qa"``, non-empty
+    ``question``, positive-int ``count``). It exists so the chat source-builders can
+    tag a schema-invalid Filed Answer with the SAME ``"C10"`` coordinate the Operator
+    Console surfaces — WITHOUT importing ``lint`` (whose C5 path would pull the LLM
+    client into the hot retrieval path). Non-qa frontmatter returns ``None``. lint
+    keeps its file-oriented detector; a later pass may delegate it here to de-dup.
+    """
+    if frontmatter.get("type") != "qa":
+        return None
+    status = frontmatter.get("status")
+    question = frontmatter.get("question")
+    count = frontmatter.get("count")
+    valid = (
+        status in {"live", "draft", "stale", "superseded"}
+        and isinstance(question, str)
+        and question.strip() != ""
+        and isinstance(count, int)
+        and not isinstance(count, bool)
+        and count > 0
+    )
+    return None if valid else "C10"
+
+
 class AliasCollisionFinding(BaseModel):
     """C12 alias-collision finding (issue #406, ADR-0030, Coherence axis).
 
