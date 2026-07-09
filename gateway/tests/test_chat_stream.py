@@ -218,6 +218,44 @@ def test_chat_stream_sources_event_non_empty(gateway_client):
     )
 
 
+def test_chat_stream_wiki_forwards_c10_lint(gateway_client, monkeypatch):
+    """A schema-invalid Filed Answer (lint ``C10``) surfacing as a source has its
+    coordinate forwarded on the SSE ``sources`` event; a valid record carries no
+    ``lint`` key. Pins the gateway wire-forwarding the reader's C10 tag depends on
+    (slice E: retrieval attaches ``lint`` per source, the gateway must pass the
+    truthy value through — mirroring ``derived_from``/``path``)."""
+    import gateway.app.routes as _routes
+
+    flagged = {"source": "qa-count-zero-zh-006#q", "heading": "q",
+               "content": "…", "lint": "C10"}
+    clean = {"source": "refund_policy.md#timeline", "heading": "timeline",
+             "content": "…", "lint": None}
+
+    def _fake_wiki_stream(query):
+        # stream_fn contract: (1) sources_ready partial, then (2) full result.
+        yield {"sources": [flagged, clean], "early_exit": False}
+        yield {
+            "answer": "Refunds take 5-7 business days.",
+            "sources": [flagged, clean],
+            "grounding_outcome": _approved_outcome(),
+            "filed": None,
+        }
+
+    monkeypatch.setitem(_routes._STACK_STREAM_FN, "wiki", _fake_wiki_stream)
+
+    resp = gateway_client.post("/chat/stream?stack=wiki", json={"query": "refund?"})
+    assert resp.status_code == 200
+    events = _parse_sse_response(resp.text)
+    sources = next(e["data"]["sources"] for e in events if e["type"] == "sources")
+    by_id = {s["source"]: s for s in sources}
+    assert by_id["qa-count-zero-zh-006#q"].get("lint") == "C10", (
+        "the C10 coordinate must reach the client so the reader can tag the record"
+    )
+    assert "lint" not in by_id["refund_policy.md#timeline"], (
+        "a valid record (lint None) must not carry a lint key on the wire"
+    )
+
+
 def test_chat_stream_sources_emitted_before_answer_tokens(gateway_client):
     """sources event index < first token event index (sources-first invariant)."""
     resp = gateway_client.post(

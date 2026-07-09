@@ -298,6 +298,12 @@ def chat_stream(
             # when the source is resolvable, so this single check serves both.
             if "path" in s:
                 entry["path"] = s["path"]
+            # Forward the C10 curation coordinate (slice E) only when the source
+            # is a schema-invalid Filed Answer — a truthy string. Valid records
+            # carry ``lint: None`` and the RAG stack has no lint key, so both stay
+            # off the wire, preserving the minimal per-stack source contract.
+            if s.get("lint"):
+                entry["lint"] = s["lint"]
             source_list.append(entry)
         yield encode_event("sources", {"sources": source_list})
 

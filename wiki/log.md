@@ -686,3 +686,157 @@
 ## [2026-07-05T11:24:26.213789Z] qa_invalid_status | file=qa-typo-status-en-005.md status='Live'
 ## [2026-07-05T11:24:27.651938Z] lint_started | 
 ## [2026-07-05T11:24:29.569672Z] lint_completed | findings=42 by_check=c11:2,c3:2,c4a:2,c12:2,c6:2,c2:2,c1:2,c5:22,c8:2,c9:2,c10:2 llm_calls=0 cost_usd=0.000000 c5_cache_hits=30 errors=0
+## [2026-07-09T09:45:35.160196Z] ingest_batch_started | sources=1
+## [2026-07-09T09:45:35.160196Z] parse_warning | non-leaf heading with no body in 退款與退貨.md: '退款與退貨'
+## [2026-07-09T09:45:48.682862Z] grounding_verify | reason=claim_supported retries=0 latency=2.062s
+## [2026-07-09T09:45:50.900669Z] grounding_verify | reason=claim_supported retries=0 latency=2.219s
+## [2026-07-09T09:45:53.748035Z] grounding_verify | reason=claim_supported retries=0 latency=2.844s
+## [2026-07-09T09:45:57.148502Z] grounding_verify | reason=claim_supported retries=0 latency=3.39s
+## [2026-07-09T09:45:59.074383Z] grounding_verify | reason=claim_supported retries=0 latency=1.922s
+## [2026-07-09T09:45:59.270990Z] ingest_source | source=退款與退貨.md type=concept pages_created=0 pages_updated=5 pages_deleted=1 sections_count=5 uncarried_chars=0 enriched_chars=0
+## [2026-07-09T09:45:59.273320Z] ingest_batch_completed | sources=1 total_pages=5 llm_calls=6 cost_usd=0.00 failed_grounding=0
+## [2026-07-09T09:45:59.617533Z] parse_warning | preamble captured as Section in qa-count-zero-zh-006.md: 'qa-count-zero-zh-006#intro'
+## [2026-07-09T09:45:59.640516Z] parse_warning | preamble captured as Section in qa-flash-sale-en-002.md: 'qa-flash-sale-en-002#intro'
+## [2026-07-09T09:45:59.663559Z] parse_warning | preamble captured as Section in qa-member-day-zh-001.md: 'qa-member-day-zh-001#intro'
+## [2026-07-09T09:45:59.680283Z] parse_warning | preamble captured as Section in qa-store-pickup-zh-003.md: 'qa-store-pickup-zh-003#intro'
+## [2026-07-09T09:45:59.703819Z] parse_warning | preamble captured as Section in qa-store-services-en-004.md: 'qa-store-services-en-004#intro'
+## [2026-07-09T09:45:59.722855Z] parse_warning | preamble captured as Section in qa-typo-status-en-005.md: 'qa-typo-status-en-005#intro'
+## [2026-07-09T09:45:59.722855Z] qa_invalid_status | file=qa-typo-status-en-005.md status='Live'
+## [2026-07-09T09:45:59.875315Z] index_built | files=174 sections=177
+## [2026-07-09T09:46:00.175027Z] parse_warning | preamble captured as Section in qa-count-zero-zh-006.md: 'qa-count-zero-zh-006#intro'
+## [2026-07-09T09:46:00.175027Z] parse_warning | preamble captured as Section in qa-flash-sale-en-002.md: 'qa-flash-sale-en-002#intro'
+## [2026-07-09T09:46:00.175027Z] parse_warning | preamble captured as Section in qa-member-day-zh-001.md: 'qa-member-day-zh-001#intro'
+## [2026-07-09T09:46:00.185143Z] parse_warning | preamble captured as Section in qa-store-pickup-zh-003.md: 'qa-store-pickup-zh-003#intro'
+## [2026-07-09T09:46:00.185143Z] parse_warning | preamble captured as Section in qa-store-services-en-004.md: 'qa-store-services-en-004#intro'
+## [2026-07-09T09:46:00.185143Z] parse_warning | preamble captured as Section in qa-typo-status-en-005.md: 'qa-typo-status-en-005#intro'
+## [2026-07-09T09:46:00.185143Z] qa_invalid_status | file=qa-typo-status-en-005.md status='Live'
+## [2026-07-09T09:46:05.215165Z] parse_warning | non-leaf heading with no body in account_help.md: 'Account Help'
+## [2026-07-09T09:46:05.232580Z] parse_warning | non-leaf heading with no body in 退款與退貨.md: '退款與退貨'
+## [2026-07-09T09:46:05.248290Z] parse_warning | non-leaf heading with no body in member_day.md: 'Member Day'
+## [2026-07-09T09:46:05.248290Z] parse_warning | non-leaf heading with no body in pickup_options.md: 'Pickup Options'
+## [2026-07-09T09:46:05.248290Z] parse_warning | non-leaf heading with no body in returns_reminder.md: 'Returns Reminder'
+## [2026-07-09T09:46:05.248290Z] parse_warning | non-leaf heading with no body in store_services_guide.md: 'Store Services Guide'
+## [2026-07-09T09:46:05.248290Z] parse_warning | non-leaf heading with no body in 取貨方式比較.md: '取貨方式比較'
+## [2026-07-09T09:46:05.248290Z] parse_warning | non-leaf heading with no body in 會員日活動.md: '會員日活動'
+## [2026-07-09T09:46:05.254886Z] parse_warning | non-leaf heading with no body in 退貨期限提醒.md: '退貨期限提醒'
+## [2026-07-09T09:46:05.254886Z] parse_warning | non-leaf heading with no body in 門市服務指南.md: '門市服務指南'
+## [2026-07-09T09:46:05.260550Z] parse_warning | non-leaf heading with no body in refund_policy.md: 'Refund Policy'
+## [2026-07-09T09:46:05.261941Z] parse_warning | non-leaf heading with no body in shipping_faq.md: 'Shipping FAQ'
+## [2026-07-09T09:50:47.486569Z] ingest_batch_started | sources=1
+## [2026-07-09T09:50:47.487564Z] parse_warning | non-leaf heading with no body in 退款與退貨.md: '退款與退貨'
+## [2026-07-09T09:53:07.375606Z] grounding_verify | reason=claim_supported retries=0 latency=4.938s
+## [2026-07-09T09:53:10.291773Z] grounding_verify | reason=claim_supported retries=0 latency=2.922s
+## [2026-07-09T09:53:13.323465Z] grounding_verify | reason=claim_supported retries=0 latency=3.031s
+## [2026-07-09T09:53:17.043145Z] grounding_verify | reason=claim_supported retries=0 latency=3.719s
+## [2026-07-09T09:53:22.090780Z] grounding_verify | reason=claim_supported retries=0 latency=5.047s
+## [2026-07-09T09:53:22.293164Z] ingest_source | source=退款與退貨.md type=concept pages_created=0 pages_updated=5 pages_deleted=0 sections_count=5 uncarried_chars=0 enriched_chars=0
+## [2026-07-09T09:53:22.293164Z] ingest_batch_completed | sources=1 total_pages=5 llm_calls=6 cost_usd=0.00 failed_grounding=0
+## [2026-07-09T09:53:22.611627Z] parse_warning | preamble captured as Section in qa-count-zero-zh-006.md: 'qa-count-zero-zh-006#intro'
+## [2026-07-09T09:53:22.613130Z] parse_warning | preamble captured as Section in qa-flash-sale-en-002.md: 'qa-flash-sale-en-002#intro'
+## [2026-07-09T09:53:22.613130Z] parse_warning | preamble captured as Section in qa-member-day-zh-001.md: 'qa-member-day-zh-001#intro'
+## [2026-07-09T09:53:22.613130Z] parse_warning | preamble captured as Section in qa-store-pickup-zh-003.md: 'qa-store-pickup-zh-003#intro'
+## [2026-07-09T09:53:22.613130Z] parse_warning | preamble captured as Section in qa-store-services-en-004.md: 'qa-store-services-en-004#intro'
+## [2026-07-09T09:53:22.613130Z] parse_warning | preamble captured as Section in qa-typo-status-en-005.md: 'qa-typo-status-en-005#intro'
+## [2026-07-09T09:53:22.613130Z] qa_invalid_status | file=qa-typo-status-en-005.md status='Live'
+## [2026-07-09T09:53:22.703029Z] index_built | files=174 sections=177
+## [2026-07-09T09:53:23.017486Z] parse_warning | preamble captured as Section in qa-count-zero-zh-006.md: 'qa-count-zero-zh-006#intro'
+## [2026-07-09T09:53:23.017486Z] parse_warning | preamble captured as Section in qa-flash-sale-en-002.md: 'qa-flash-sale-en-002#intro'
+## [2026-07-09T09:53:23.017486Z] parse_warning | preamble captured as Section in qa-member-day-zh-001.md: 'qa-member-day-zh-001#intro'
+## [2026-07-09T09:53:23.017486Z] parse_warning | preamble captured as Section in qa-store-pickup-zh-003.md: 'qa-store-pickup-zh-003#intro'
+## [2026-07-09T09:53:23.024428Z] parse_warning | preamble captured as Section in qa-store-services-en-004.md: 'qa-store-services-en-004#intro'
+## [2026-07-09T09:53:23.025194Z] parse_warning | preamble captured as Section in qa-typo-status-en-005.md: 'qa-typo-status-en-005#intro'
+## [2026-07-09T09:53:23.025194Z] qa_invalid_status | file=qa-typo-status-en-005.md status='Live'
+## [2026-07-09T09:53:25.986511Z] parse_warning | non-leaf heading with no body in account_help.md: 'Account Help'
+## [2026-07-09T09:53:25.996240Z] parse_warning | non-leaf heading with no body in 退款與退貨.md: '退款與退貨'
+## [2026-07-09T09:53:26.013010Z] parse_warning | non-leaf heading with no body in member_day.md: 'Member Day'
+## [2026-07-09T09:53:26.013010Z] parse_warning | non-leaf heading with no body in pickup_options.md: 'Pickup Options'
+## [2026-07-09T09:53:26.013010Z] parse_warning | non-leaf heading with no body in returns_reminder.md: 'Returns Reminder'
+## [2026-07-09T09:53:26.013010Z] parse_warning | non-leaf heading with no body in store_services_guide.md: 'Store Services Guide'
+## [2026-07-09T09:53:26.013010Z] parse_warning | non-leaf heading with no body in 取貨方式比較.md: '取貨方式比較'
+## [2026-07-09T09:53:26.013010Z] parse_warning | non-leaf heading with no body in 會員日活動.md: '會員日活動'
+## [2026-07-09T09:53:26.013010Z] parse_warning | non-leaf heading with no body in 退貨期限提醒.md: '退貨期限提醒'
+## [2026-07-09T09:53:26.013010Z] parse_warning | non-leaf heading with no body in 門市服務指南.md: '門市服務指南'
+## [2026-07-09T09:53:26.013010Z] parse_warning | non-leaf heading with no body in refund_policy.md: 'Refund Policy'
+## [2026-07-09T09:53:26.013010Z] parse_warning | non-leaf heading with no body in shipping_faq.md: 'Shipping FAQ'
+## [2026-07-09T09:55:06.879088Z] index_loaded | files=174 sections=177
+## [2026-07-09T10:06:32.772185Z] index_loaded | files=174 sections=177
+## [2026-07-09T10:22:58.664754Z] index_loaded | files=174 sections=177
+## [2026-07-09T10:23:35.783111Z] grounding_verify | reason=claim_supported retries=0 latency=2.5s
+## [2026-07-09T10:23:35.783111Z] chat | "退款要幾天才會退到帳戶?" top=qa-count-zero-zh-006#退款要多久才會入帳:15.206
+## [2026-07-09T10:23:35.787133Z] qa_reflect | slug=退款要幾天才會退到帳戶-d343c3 op=created question="退款要幾天才會退到帳戶?" cited=qa-count-zero-zh-006#退款要多久才會入帳,使用限制#使用限制,退款申請窗口#退款申請窗口 count=1
+## [2026-07-09T10:24:02.931023Z] grounding_verify | reason=claim_supported retries=0 latency=2.672s
+## [2026-07-09T10:24:33.656763Z] grounding_verify | reason=claim_supported retries=0 latency=3.406s
+## [2026-07-09T10:24:33.658201Z] chat | "退款要幾天才會退到帳戶？" top=qa-count-zero-zh-006#退款要多久才會入帳:15.206
+## [2026-07-09T10:24:33.673341Z] qa_reflect | slug=退款要幾天才會退到帳戶-d343c3 op=touched cited_delta=none count=2
+## [2026-07-09T10:24:47.683142Z] grounding_verify | reason=claim_supported retries=0 latency=3.547s
+## [2026-07-09T10:24:47.684656Z] chat | "退款政策是甚麼?" top=取件流程與期限#取件流程與期限:8.923
+## [2026-07-09T10:24:47.689101Z] qa_reflect | slug=退款政策是甚麼-6bc931 op=created question="退款政策是甚麼?" cited=取件流程與期限#取件流程與期限,不適用退款的情況#不適用退款的情況,退款申請窗口#退款申請窗口 count=1
+## [2026-07-09T10:25:12.009694Z] grounding_verify | reason=claim_supported retries=0 latency=4.75s
+## [2026-07-09T10:25:55.391810Z] grounding_verify | reason=claim_supported retries=0 latency=2.625s
+## [2026-07-09T10:25:55.391810Z] chat | "你們接受哪些付款方式?" top=不支援的付款方式#不支援的付款方式:17.591
+## [2026-07-09T10:25:55.408036Z] qa_reflect | slug=你們接受哪些付款方式-fb0f2e op=touched cited_delta=added:不支援的付款方式#不支援的付款方式,信用卡#信用卡,dropped:支援的付款方式#支援的付款方式,發票與付款安全#發票與付款安全 count=4
+## [2026-07-09T10:26:07.870530Z] chat_grounding_fallback | "Which countries do you ship to?" reason=claim_unsupported cited=fee#fee,duties-taxes#duties-taxes,cancelling#cancelling
+## [2026-07-09T10:26:07.870530Z] chat | "Which countries do you ship to?" top=fee#fee:4.702
+## [2026-07-09T10:26:29.471611Z] lint_started | 
+## [2026-07-09T10:26:30.630509Z] lint_completed | findings=37 by_check=c11:2,c3:2,c4a:2,c12:2,c6:2,c2:10,c1:3,c5:0,c8:10,c9:2,c10:2 llm_calls=0 cost_usd=0.000000 c5_cache_hits=0 errors=0
+## [2026-07-09T10:26:39.694370Z] chat_grounding_fallback | "Which countries do you ship to?" reason=claim_unsupported cited=fee#fee,duties-taxes#duties-taxes,cancelling#cancelling
+## [2026-07-09T10:26:39.696657Z] chat | "Which countries do you ship to?" top=fee#fee:4.702
+## [2026-07-09T10:26:46.380560Z] lint_started | 
+## [2026-07-09T10:26:47.142485Z] lint_completed | findings=37 by_check=c11:2,c3:2,c4a:2,c12:2,c6:2,c2:10,c1:3,c5:0,c8:10,c9:2,c10:2 llm_calls=0 cost_usd=0.000000 c5_cache_hits=0 errors=0
+## [2026-07-09T10:27:12.671428Z] chat_grounding_fallback | "退款/入帳查詢" reason=claim_unsupported cited=退款申請窗口#退款申請窗口,qa-count-zero-zh-006#intro,qa-count-zero-zh-006#退款要多久才會入帳,退款流程#退款流程
+## [2026-07-09T10:27:12.671851Z] chat | "退款/入帳查詢" top=退款申請窗口#退款申請窗口:8.52
+## [2026-07-09T10:29:49.894926Z] lint_started | 
+## [2026-07-09T10:29:51.066168Z] lint_completed | findings=38 by_check=c11:2,c3:2,c4a:2,c12:2,c6:2,c2:10,c1:4,c5:0,c8:10,c9:2,c10:2 llm_calls=0 cost_usd=0.000000 c5_cache_hits=0 errors=0
+## [2026-07-09T10:35:39.892590Z] grounding_verify | reason=claim_supported retries=0 latency=2.765s
+## [2026-07-09T10:35:39.892590Z] chat | "退款要幾天才會退到帳戶?" top=qa-count-zero-zh-006#退款要多久才會入帳:15.206
+## [2026-07-09T10:35:39.904734Z] qa_reflect | slug=退款要幾天才會退到帳戶-d343c3 op=touched cited_delta=none count=3
+## [2026-07-09T10:51:59.575626Z] grounding_verify | reason=claim_supported retries=0 latency=2.938s
+## [2026-07-09T10:51:59.575626Z] chat | "退款要幾天才會退到帳戶?" top=qa-count-zero-zh-006#退款要多久才會入帳:15.206
+## [2026-07-09T10:51:59.591400Z] qa_reflect | slug=退款要幾天才會退到帳戶-d343c3 op=touched cited_delta=none count=4
+## [2026-07-09T10:52:17.760588Z] index_loaded | files=174 sections=177
+## [2026-07-09T10:58:00.583870Z] index_loaded | files=174 sections=177
+## [2026-07-09T10:59:12.596729Z] grounding_verify | reason=claim_supported retries=0 latency=3.235s
+## [2026-07-09T10:59:12.596729Z] chat | "退款要幾天才會退到帳戶?" top=qa-count-zero-zh-006#退款要多久才會入帳:15.206
+## [2026-07-09T10:59:12.601873Z] qa_reflect | slug=退款要幾天才會退到帳戶-d343c3 op=touched cited_delta=none count=5
+## [2026-07-09T11:17:14.126354Z] index_loaded | files=174 sections=177
+## [2026-07-09T11:17:37.125351Z] grounding_verify | reason=claim_supported retries=0 latency=2.625s
+## [2026-07-09T11:17:37.125351Z] chat | "退款要幾天才會退到帳戶?" top=qa-count-zero-zh-006#退款要多久才會入帳:15.206
+## [2026-07-09T11:17:37.141443Z] qa_reflect | slug=退款要幾天才會退到帳戶-d343c3 op=touched cited_delta=none count=6
+## [2026-07-09T11:17:56.575662Z] grounding_verify | reason=claim_supported retries=0 latency=3.25s
+## [2026-07-09T11:18:45.881259Z] grounding_verify | reason=claim_supported retries=0 latency=3.297s
+## [2026-07-09T11:18:45.881259Z] chat | "退款要幾天才會退到帳戶？" top=qa-count-zero-zh-006#退款要多久才會入帳:15.206
+## [2026-07-09T11:18:45.900924Z] qa_reflect | slug=退款要幾天才會退到帳戶-d343c3 op=touched cited_delta=none count=7
+## [2026-07-09T11:19:44.280074Z] grounding_verify | reason=claim_supported retries=0 latency=3.312s
+## [2026-07-09T11:19:44.280074Z] chat | "哪些情況不能退款？" top=不適用退款的情況#不適用退款的情況:9.623
+## [2026-07-09T11:19:44.290160Z] qa_reflect | slug=哪些情況不能退款-c25a66 op=created question="哪些情況不能退款？" cited=不適用退款的情況#不適用退款的情況,商品保固#商品保固,付款方式#付款方式 count=1
+## [2026-07-09T11:20:13.553981Z] grounding_verify | reason=claim_supported retries=0 latency=3.391s
+## [2026-07-09T11:20:13.553981Z] chat | "退款需要符合什麼條件才能進行？" top=退款條件#退款條件:16.949
+## [2026-07-09T11:20:13.565082Z] qa_reflect | slug=退款需要符合什麼條件才能進行-1c9657 op=created question="退款需要符合什麼條件才能進行？" cited=退款條件#退款條件,qa-count-zero-zh-006#退款要多久才會入帳,qa-store-pickup-zh-003#門市自取要帶什麼 count=1
+## [2026-07-09T11:20:31.791372Z] lint_started | 
+## [2026-07-09T11:20:32.938638Z] lint_completed | findings=38 by_check=c11:2,c3:2,c4a:2,c12:2,c6:2,c2:10,c1:4,c5:0,c8:10,c9:2,c10:2 llm_calls=0 cost_usd=0.000000 c5_cache_hits=0 errors=0
+## [2026-07-09T11:20:49.342278Z] qa_demoted | slug=qa-count-zero-zh-006 prev_status=live
+## [2026-07-09T11:20:49.568112Z] parse_warning | preamble captured as Section in qa-count-zero-zh-006.md: 'qa-count-zero-zh-006#intro'
+## [2026-07-09T11:20:49.570118Z] parse_warning | preamble captured as Section in qa-flash-sale-en-002.md: 'qa-flash-sale-en-002#intro'
+## [2026-07-09T11:20:49.570118Z] parse_warning | preamble captured as Section in qa-member-day-zh-001.md: 'qa-member-day-zh-001#intro'
+## [2026-07-09T11:20:49.570118Z] parse_warning | preamble captured as Section in qa-store-pickup-zh-003.md: 'qa-store-pickup-zh-003#intro'
+## [2026-07-09T11:20:49.570118Z] parse_warning | preamble captured as Section in qa-store-services-en-004.md: 'qa-store-services-en-004#intro'
+## [2026-07-09T11:20:49.570118Z] parse_warning | preamble captured as Section in qa-typo-status-en-005.md: 'qa-typo-status-en-005#intro'
+## [2026-07-09T11:20:49.570118Z] qa_invalid_status | file=qa-typo-status-en-005.md status='Live'
+## [2026-07-09T11:20:49.614027Z] index_built | files=173 sections=175
+## [2026-07-09T11:20:54.849395Z] qa_deleted | slug=qa-typo-status-en-005 prev_status=Live
+## [2026-07-09T11:21:05.544680Z] grounding_verify | reason=claim_supported retries=0 latency=2.219s
+## [2026-07-09T11:21:05.544680Z] chat | "門市自取要帶什麼？" top=門市自取#門市自取:16.198
+## [2026-07-09T11:21:05.544680Z] qa_reflect | slug=qa-store-pickup-zh-003 op=refiled count=4
+## [2026-07-09T11:21:05.733604Z] parse_warning | preamble captured as Section in qa-count-zero-zh-006.md: 'qa-count-zero-zh-006#intro'
+## [2026-07-09T11:21:05.733604Z] parse_warning | preamble captured as Section in qa-flash-sale-en-002.md: 'qa-flash-sale-en-002#intro'
+## [2026-07-09T11:21:05.739323Z] parse_warning | preamble captured as Section in qa-member-day-zh-001.md: 'qa-member-day-zh-001#intro'
+## [2026-07-09T11:21:05.765067Z] parse_warning | preamble captured as Section in qa-store-services-en-004.md: 'qa-store-services-en-004#intro'
+## [2026-07-09T11:21:05.796518Z] index_built | files=172 sections=173
+## [2026-07-09T11:34:58.827629Z] parse_warning | preamble captured as Section in qa-count-zero-zh-006.md: 'qa-count-zero-zh-006#intro'
+## [2026-07-09T11:34:58.827629Z] parse_warning | preamble captured as Section in qa-flash-sale-en-002.md: 'qa-flash-sale-en-002#intro'
+## [2026-07-09T11:34:58.827629Z] parse_warning | preamble captured as Section in qa-member-day-zh-001.md: 'qa-member-day-zh-001#intro'
+## [2026-07-09T11:34:58.843661Z] parse_warning | preamble captured as Section in qa-store-pickup-zh-003.md: 'qa-store-pickup-zh-003#intro'
+## [2026-07-09T11:34:58.859572Z] parse_warning | preamble captured as Section in qa-store-services-en-004.md: 'qa-store-services-en-004#intro'
+## [2026-07-09T11:34:58.859572Z] parse_warning | preamble captured as Section in qa-typo-status-en-005.md: 'qa-typo-status-en-005#intro'
+## [2026-07-09T11:34:58.859572Z] qa_invalid_status | file=qa-typo-status-en-005.md status='Live'
+## [2026-07-09T11:34:58.907347Z] index_built | files=174 sections=177

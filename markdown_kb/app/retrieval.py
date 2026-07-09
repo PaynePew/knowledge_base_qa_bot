@@ -40,6 +40,7 @@ from .errors import LLMError
 from .grounding import GroundingOutcome
 from .logger import log_event
 from .prompt_builder import SYSTEM_PROMPT, build_prompt
+from .schemas import qa_schema_lint_code
 
 # Score threshold below which retrieval is treated as "no match" and the bot
 # returns Cannot Confirm.
@@ -334,6 +335,10 @@ def _retrieve_and_gate(question: str, exclude_qa: bool = False) -> dict:
             "content": sec.content[:240],
             "derived_from": _derived_from_for_section(sec),
             "path": _wiki_page_path_for_section(sec),
+            # C10 coordinate for the reader's teaching tag: a schema-invalid Filed
+            # Answer surfacing as a source (e.g. a planted count:0 fixture). Pure —
+            # from the Section's own frontmatter; None for valid or non-qa Sections.
+            "lint": qa_schema_lint_code(sec.metadata),
         }
         for sec, score in ranked
     ]
