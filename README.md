@@ -90,6 +90,52 @@ are built from that corpus. This is the write side of the Operator Console.
   concurrency caps protect the box. The retrieval indexes ship committed, so a
   fresh clone answers on the first run.
 
+## Agentic workflow orchestrator
+
+The product above is also **built by agents** — feature work runs through a
+version-controlled orchestrator
+([`project-docs/agents/orchestrator.js`](project-docs/agents/orchestrator.js))
+that drives GitHub issues to merged PRs in four phases:
+
+![Agentic workflow orchestrator: a deterministic four-phase pipeline that delegates autonomy to role agents and gates merging behind independent verification](project-docs/architecture/orchestrator.png)
+
+The design follows the workflow/agent distinction from Anthropic's
+[Building Effective Agents](https://www.anthropic.com/engineering/building-effective-agents):
+the **outer layer is a deterministic workflow** — plain JavaScript control flow
+that fans out one pipeline per issue, applies the severity gate, and reports —
+so a run is inspectable, resumable (completed agent calls replay from cache),
+and cheap to re-run. **Autonomy is delegated only inside the nodes**: each role
+agent works to a version-controlled prompt contract in
+[`project-docs/agents/`](project-docs/agents/).
+
+- **Separation of duties, enforced by the platform.** The builder never
+  certifies its own work: an adversarial verifier (read-only; every blocker
+  needs evidence, and only `critical`/`high` findings block) gates each branch,
+  and after the PR opens an **independent Verdict agent** re-verifies the
+  pushed SHA and posts the `verify/verdict` commit status it just formed
+  itself — the poster is the verifier, so it is never self-approval. Branch
+  protection (CI on Windows + Ubuntu, plus that status) is the hard gate no
+  agent can bypass.
+- **An autonomy ladder, not a switch.** Rung 0 stops at verified local
+  branches; the default rung opens PRs and posts the verdict but leaves the
+  merge button to a human; Rung 3 (opt-in per run) arms `gh pr merge --auto`,
+  and GitHub itself merges only when every required check is green. Trust is
+  widened one rung at a time, and any incident demotes a rung.
+- **Model tiering per role.** Mechanical steps (plan, open-PR) run on a small
+  model, implementation on a mid-tier one, and both verification passes on the
+  strongest — reasoning is spent where being wrong is expensive.
+- **Guardrails as part of the prompt contract.** Every file-touching agent
+  carries hard anti-pollution rules (never initialise another tracker, never
+  touch other slices' work or repo config, never merge) — each rule traceable
+  to a real incident — and every build runs in an isolated git worktree.
+
+The manual one-role-at-a-time version of the same loop, its hand-off contract,
+and its stop conditions are documented in
+[`project-docs/orchestration-plan.md`](project-docs/orchestration-plan.md).
+
+> Diagram source:
+> [`orchestrator.mmd`](project-docs/architecture/orchestrator.mmd).
+
 ## Tech stack
 
 Every choice below earns its place; the note next to it says why it won over the
@@ -457,6 +503,45 @@ Console 的寫入側。
   (GHCR → SSH → `/healthz` smoke)。`/healthz/shed` 探針會在負載過高時於邊緣端
   卸載 reader 流量;每日 USD 預算閘門與讀/管理並發上限保護機器。檢索索引隨 repo
   提交,所以剛 clone 下來第一次就能問答。
+
+## Agentic workflow orchestrator(代理式工作流編排)
+
+上面這個產品,本身也是**由 agent 蓋出來的** —— 功能開發都走一個進版控的
+orchestrator([`project-docs/agents/orchestrator.js`](project-docs/agents/orchestrator.js)),
+把 GitHub issue 一路推進到 merged PR,共四個階段:
+
+![代理式工作流編排:外層是確定性的四階段管線,自主性只下放到節點內的角色 agent,merge 被獨立驗證鎖住](project-docs/architecture/orchestrator.png)
+
+設計沿用 Anthropic
+[Building Effective Agents](https://www.anthropic.com/engineering/building-effective-agents)
+的 workflow / agent 區分:**外層是確定性 workflow** —— 純 JavaScript 控制流,
+負責替每個 issue 展開一條管線、套用嚴重度閘門、回報結果 —— 所以每次執行都
+可檢視、可續跑(已完成的 agent 呼叫從快取重放)、重跑也便宜。**自主性只下放到
+節點內**:每個角色 agent 都對著一份進版控的 prompt 契約工作
+([`project-docs/agents/`](project-docs/agents/))。
+
+- **職責分離,由平台強制。** builder 永遠不為自己的成果背書:先有一個對抗式
+  verifier(唯讀;每個 blocker 都要附證據,只有 `critical`/`high` 擋路)把關
+  分支;PR 開出後,再由**獨立的 Verdict agent** 對已推送的 SHA 複驗,把「它自己
+  剛作出的」判定貼成 `verify/verdict` commit status —— 貼的人就是驗的人,永遠
+  不構成 self-approval。branch protection(Windows + Ubuntu 雙平台 CI,加上這個
+  status)是任何 agent 都繞不過的硬閘門。
+- **自主性是一把梯子,不是開關。** Rung 0 停在驗證過的本地分支;預設檔位開 PR、
+  貼 verdict,但 merge 鈕留給人;Rung 3(逐次 opt-in)預先武裝
+  `gh pr merge --auto`,required checks 全綠時由 GitHub 自己合併。信任一次放寬
+  一階,出事就降一階。
+- **依角色分派模型等級。** 機械步驟(plan、開 PR)用小模型,實作用中階,兩道
+  驗證都用最強的 —— 推理花在「錯了最貴」的地方。
+- **護欄寫進 prompt 契約。** 每個會動檔案的 agent 都帶著硬性反污染規則(絕不
+  初始化別的 tracker、絕不動別片 slice 的成果或 repo 設定、絕不自己 merge)
+  —— 每一條都能追溯到一次真實事故 —— 且每次 build 都在隔離的 git worktree
+  裡進行。
+
+同一個迴圈的手動版(一次跑一個角色)、hand-off 契約與停止條件,寫在
+[`project-docs/orchestration-plan.md`](project-docs/orchestration-plan.md)。
+
+> 圖檔旁邊就是可編輯的 Mermaid 原始碼:
+> [`orchestrator.mmd`](project-docs/architecture/orchestrator.mmd)。
 
 ## 技術選型
 
