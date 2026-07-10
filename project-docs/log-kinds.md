@@ -333,12 +333,22 @@ by `gateway/app/middleware.py::ProdMiddleware` when a heavy request is rejected
 by one of the three demo guards (daily USD budget, concurrency cap, provider
 quota), so the `gateway/log.md` carries an operator-facing audit of every shed.
 
+The `feedback` kind is gateway-specific, authorized by GitHub issue #558
+(Reader Feedback). Emitted by `gateway/app/routes.py::submit_feedback` on
+every accepted `POST /feedback` — never on a 422 (Pydantic boundary
+rejection) or a 503 (`FeedbackStoreFull`), mirroring the "only fires on
+success" convention several `markdown_kb` kinds already use (e.g.
+`qa_deleted`, `orphan_page_deleted`). Query text and comment body are
+deliberately NOT logged (§5.3 bounded summaries — the full record already
+lives in `.kb/feedback.jsonl`, itself gitignored/ephemeral).
+
 | Kind | When fired | Summary template |
 |---|---|---|
 | `chat_rewrite` | Turn 2+ query rewriting succeeded inside `_sse_generator`; emitted right after `rewrite_query()` returns | `session=<uuid> raw="<60-char-bounded raw follow-up>" rewritten="<60-char-bounded self-contained query>"` |
 | `budget_block` | A heavy request is rejected because the UTC-day cost estimate has reached `KB_DAILY_USD_CAP` | `path=<mounted-path> cap=<usd>` |
 | `overload_shed` | A heavy request is rejected because its semaphore (read or admin) is fully held | `path=<mounted-path> kind=<read\|admin>` |
 | `provider_quota_503` | A non-streaming heavy request raised an OpenAI `insufficient_quota` / 429, mapped to a friendly 503 | `path=<mounted-path> exc=<ExceptionClassName>` |
+| `feedback` | `POST /feedback` accepted a valid Reader Feedback record | `answer_id=<uuid> reaction=<up\|down> stack=<wiki\|rag\|hybrid> grounding=<reason> has_comment=<bool>` |
 
 `raw` and `rewritten` are truncated to 60 chars and have inner `"` replaced
 with `'` (per CODING_STANDARD §5.3 bounded-summary idiom).

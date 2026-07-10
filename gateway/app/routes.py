@@ -53,6 +53,7 @@ import datetime
 import json
 import uuid
 from collections.abc import Callable, Iterator
+from typing import Literal
 
 from fastapi import APIRouter, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
@@ -75,10 +76,11 @@ from markdown_kb.app.retrieval import stream_query as _wiki_stream_query
 from markdown_kb.app.schemas import ChatRequest
 from markdown_kb.app.sse import encode_event, events_for_result
 from markdown_kb.app.upload import upload_files as _upload_files
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from vector_rag.app.retrieval import stream_query as _rag_stream_query
 
 from . import conversation_store as _conv_store_module
+from . import feedback as _feedback_module
 from .logger import log_event as _gateway_log_event
 from .query_rewriting import rewrite_query
 
@@ -589,3 +591,114 @@ def read_file_endpoint(
         ) from exc
 
     return FileContentSchema(relpath=path, content=content)
+
+
+# ---------------------------------------------------------------------------
+# POST /feedback, GET /feedback — Reader Feedback (issue #558)
+# Public surface (neither READ_PATHS nor ADMIN_PATHS — see middleware.py):
+# opinion data ABOUT the corpus, never part of it (CONTEXT.md "Reader
+# Feedback"). All conditional logic (fold, size cap) lives in the deep
+# gateway.app.feedback module; this route only validates the request shape
+# and maps FeedbackStoreFull to its documented 503.
+# ---------------------------------------------------------------------------
+
+
+class FeedbackRequestSchema(BaseModel):
+    """Request body for ``POST /feedback`` — a self-contained opinion record.
+
+    The client back-fills every field itself (raw query, stack, session id,
+    citations, grounding reason, answer preview) so the ``/chat/stream`` SSE
+    contract stays untouched (CONTEXT.md "Reader Feedback").
+    """
+
+    answer_id: str
+    reaction: Literal["up", "down"]
+    comment: str | None = Field(default=None, max_length=_feedback_module.MAX_COMMENT_CHARS)
+    query: str
+    answer_preview: str = Field(max_length=300)
+    stack: str
+    session_id: str
+    citations: list[str] = Field(default_factory=list)
+    grounding: str
+    lang: Literal["zh", "en"]
+
+
+class FeedbackWriteResponseSchema(BaseModel):
+    """Response body for ``POST /feedback``."""
+
+    id: str
+
+
+class FeedbackRecordSchema(BaseModel):
+    """One folded Reader Feedback record, as returned by ``GET /feedback``."""
+
+    id: str
+    ts: str
+    v: int
+    answer_id: str
+    reaction: str
+    comment: str | None = None
+    query: str
+    answer_preview: str
+    stack: str
+    session_id: str
+    citations: list[str]
+    grounding: str
+    lang: str
+
+
+class FeedbackCountsSchema(BaseModel):
+    """Reaction counts for ``GET /feedback`` (issue #558)."""
+
+    up: int
+    down: int
+    total_raw: int
+
+
+class FeedbackListResponseSchema(BaseModel):
+    """Response body for ``GET /feedback`` — the server-side folded view."""
+
+    records: list[FeedbackRecordSchema]
+    counts: FeedbackCountsSchema
+
+
+@router.post("/feedback", response_model=FeedbackWriteResponseSchema)
+def submit_feedback(req: FeedbackRequestSchema) -> FeedbackWriteResponseSchema:
+    """Append one Reader Feedback record.
+
+    Validation (Pydantic, at the boundary — CODING_STANDARD §4.4): a
+    ``comment`` over ``MAX_COMMENT_CHARS`` or an unrecognised ``reaction``
+    value is HTTP 422 before this handler runs.
+
+    Returns:
+        ``FeedbackWriteResponseSchema`` with the server-minted record id.
+
+    Raises:
+        HTTP 503: the store is already at or beyond
+            ``gateway.app.feedback.MAX_STORE_BYTES`` (exact detail shape per
+            the issue: ``{"detail": "feedback store full"}``).
+    """
+    try:
+        stored = _feedback_module.append_feedback(req.model_dump())
+    except _feedback_module.FeedbackStoreFull as exc:
+        raise HTTPException(status_code=503, detail="feedback store full") from exc
+
+    _gateway_log_event(
+        "feedback",
+        f"answer_id={stored['answer_id']} reaction={stored['reaction']} "
+        f"stack={stored['stack']} grounding={stored['grounding']} "
+        f"has_comment={bool(stored.get('comment'))}",
+    )
+    return FeedbackWriteResponseSchema(id=stored["id"])
+
+
+@router.get("/feedback", response_model=FeedbackListResponseSchema)
+def read_feedback() -> FeedbackListResponseSchema:
+    """Return the server-side folded Reader Feedback view.
+
+    Folded by ``answer_id`` (last write wins) — see
+    ``gateway.app.feedback.list_feedback`` for the fold + counts contract.
+    Deliberately server-side (interface parity: a future CLI/MCP reader must
+    not re-implement the fold).
+    """
+    return FeedbackListResponseSchema(**_feedback_module.list_feedback())

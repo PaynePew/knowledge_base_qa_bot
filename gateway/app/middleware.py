@@ -151,6 +151,12 @@ ADMIN_PATHS: frozenset[str] = frozenset(
     }
 )
 
+# POST /feedback and GET /feedback (issue #558) are deliberately absent from
+# BOTH sets above: the ADMIN_PATHS precedent keys on *live-corpus* mutation,
+# and Reader Feedback is opinion data ABOUT the corpus that never enters it
+# (CONTEXT.md "Reader Feedback") — so it stays a public, ungated surface with
+# its own payload/store-size caps (gateway/app/feedback.py) instead.
+
 
 def _read_int(name: str, default: int) -> int:
     """Read a positive int env var at construction time, falling back safely."""
