@@ -163,6 +163,17 @@ def test_render_feedback_row_uses_textcontent_only_and_all_columns():
         assert field in fn
 
 
+def test_render_feedback_row_truncates_query_but_not_comment():
+    """AC: 'query (truncated), comment (full text, wrapped)' — only the
+    query column is capped."""
+    text = _console_text()
+    fn = _extract_function(text, "renderFeedbackRow")
+    assert "truncateFeedbackQuery(rec.query)" in fn
+    assert "rec.comment || chrome.feedbackNoComment" in fn, (
+        "the comment cell must render the FULL rec.comment text, never truncated"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Language toggle re-renders from cached data, no re-fetch
 # ---------------------------------------------------------------------------

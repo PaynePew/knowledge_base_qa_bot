@@ -1650,6 +1650,16 @@
   .feedback-table .feedback-comment {
     white-space: pre-wrap; word-break: break-word;
   }
+  .feedback-table .chip {
+    display: inline-flex; align-items: center;
+    background: var(--rule-2);
+    border-radius: 999px;
+    padding: 2px 9px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    color: var(--ink-2);
+    white-space: nowrap;
+  }
 
   /* Draft card: bordered, full-width, body preview */
   .draft-card {
@@ -7840,13 +7850,23 @@ function renderFeedbackStats(counts) {
   );
 }
 
+/* AC: "query (truncated), comment (full text, wrapped)" — only the query
+   column is capped; the comment column deliberately shows the full text
+   (wrapped via .feedback-comment CSS, no truncation). */
+var FEEDBACK_QUERY_TRUNCATE_CHARS = 80;
+
+function truncateFeedbackQuery(q) {
+  if (!q || q.length <= FEEDBACK_QUERY_TRUNCATE_CHARS) return q || "";
+  return q.slice(0, FEEDBACK_QUERY_TRUNCATE_CHARS) + "…";
+}
+
 function renderFeedbackRow(rec) {
   var chrome = LINT_CHROME[consoleLang];
   var icon = rec.reaction === "up" ? "👍" : "👎";
   return el("tr", {},
     el("td", { class: "feedback-time", text: rec.ts || "" }),
     el("td", { class: "feedback-reaction", text: icon }),
-    el("td", { class: "feedback-query", text: rec.query || "" }),
+    el("td", { class: "feedback-query", text: truncateFeedbackQuery(rec.query), title: rec.query || "" }),
     el("td", { class: "feedback-comment", text: rec.comment || chrome.feedbackNoComment }),
     el("td", {}, el("span", { class: "chip" }, el("span", { text: rec.stack || "" }))),
     el("td", {}, el("span", { class: "chip" }, el("span", { text: rec.grounding || "" })))
