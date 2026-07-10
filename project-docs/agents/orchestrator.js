@@ -35,7 +35,7 @@ const CONFIG = {
   branchPrefix: 'slice/',   // repo 慣例 slice/<N>-<desc>；orchestrator 自動產 slice/<N>，desc 可在 slices[].branch 指定
   baseBranch  : 'main',
   adversarial : true,       // 對抗驗證開（只擋 critical/high）
-  openPRs     : true,       // Rung 1 預設（development-workflow.md auto-merge ladder）：過閘門即由 merge agent 開 PR，body 帶 Closes #N + verify 報告；人類仍負責按 merge。任何 agent 造成的 revert → 降回 Rung 0：傳 openPRs:false（只備妥分支）
+  openPRs     : true,       // Rung 2 預設（development-workflow.md auto-merge ladder；與 meta.description、結尾 note 一致）：過閘門即由 merge agent 開 PR，body 帶 Closes #N + verify 報告；人類仍負責按 merge。任何 agent 造成的 revert → 降回 Rung 0：傳 openPRs:false（只備妥分支）
   autoMerge   : false,      // Rung 3（opt-in，只在人類明確授權的 run 傳 true）：開 PR + 貼 verify/verdict status 後排 gh pr merge --auto --merge，required checks（CI 雙平台 + verify/verdict）全綠時由 GitHub 自動合併。前提照 ladder：verifier≠builder（本 workflow 天生滿足）、低風險 slice、絕不繞過任何 check。任何 agent 造成的 revert → 降回 Rung 1
   slices      : null,       // 明確切片清單 [{id,title,branch?}]；給了就用它當來源，完全不碰任何 tracker
   only        : null,       // 只做這些 id（gh 來源時當過濾；配 skipPlan 時當明確來源）
