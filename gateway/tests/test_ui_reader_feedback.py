@@ -123,7 +123,7 @@ def test_render_feedback_widget_reads_answer_id_from_stashed_context():
 def test_feedback_widget_appended_after_followups_in_render_answer_foot():
     text = _ui_text()
     fn = _extract_function(text, "renderAnswerFoot")
-    followups_idx = fn.index('answerEl.append(fu)')
+    followups_idx = fn.index("answerEl.append(fu)")
     feedback_idx = fn.index("renderFeedbackWidget(d)", fn.index("function renderAnswerFoot"))
     assert feedback_idx > followups_idx, (
         "the feedback widget must be appended AFTER the follow-up chips (AC: "

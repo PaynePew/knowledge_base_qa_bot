@@ -893,14 +893,16 @@
     color: var(--ink); background: var(--surface); border-color: var(--ink-3);
   }
   .lint-axis.collapsed .lint-chevron,
-  .curation-collapse.collapsed .lint-chevron { transform: rotate(-90deg); }
+  .curation-collapse.collapsed .lint-chevron,
+  .feedback-collapse.collapsed .lint-chevron { transform: rotate(-90deg); }
   .lint-collapse-count { color: var(--ink-3); font-weight: 400; }
   .lint-collapse-body {
     display: grid; grid-template-rows: 1fr;
     transition: grid-template-rows .26s ease;
   }
   .lint-axis.collapsed .lint-collapse-body,
-  .curation-collapse.collapsed .lint-collapse-body { grid-template-rows: 0fr; }
+  .curation-collapse.collapsed .lint-collapse-body,
+  .feedback-collapse.collapsed .lint-collapse-body { grid-template-rows: 0fr; }
   .lint-collapse-inner { overflow: hidden; min-height: 0; }
   /* The 2px inter-axis divider moves from the head to the wrapper, since each
      axis head is now nested (always a wrapper's first child). */
@@ -1601,6 +1603,54 @@
     line-height: 1.6;
   }
 
+  /* ── Reader Feedback panel (issue #558) ─────────────────── */
+  .feedback-stats {
+    display: flex; flex-wrap: wrap; gap: 18px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .feedback-stat {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px; color: var(--ink-3);
+  }
+  .feedback-stat b { color: var(--ink); font-weight: 500; }
+  .feedback-empty {
+    padding: 14px 16px;
+    font-size: 13px;
+    color: var(--ink-3);
+    font-style: italic;
+  }
+  .feedback-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+  }
+  .feedback-table th {
+    text-align: left;
+    padding: 8px 12px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--ink-3);
+    border-bottom: 1px solid var(--rule);
+    white-space: nowrap;
+  }
+  .feedback-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--rule-2);
+    vertical-align: top;
+    color: var(--ink-2);
+  }
+  .feedback-table .feedback-time {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px; color: var(--ink-3);
+    white-space: nowrap;
+  }
+  .feedback-table .feedback-reaction { text-align: center; }
+  .feedback-table .feedback-query { color: var(--ink); }
+  .feedback-table .feedback-comment {
+    white-space: pre-wrap; word-break: break-word;
+  }
+
   /* Draft card: bordered, full-width, body preview */
   .draft-card {
     border: 1px solid var(--rule);
@@ -2009,6 +2059,11 @@
 
         <!-- Curation Queue: built by JS after Lint runs (Phase 15 S6, issue #174) -->
         <div id="curation-queue-root"></div>
+
+        <!-- Reader Feedback panel (issue #558): a monitoring surface, not a
+             lifecycle action — sits at the END of the flow, outside the
+             pipeline's action-arrow track. One-shot fetch on button click. -->
+        <div id="feedback-panel-root"></div>
       </div>
 
       <aside class="console-rail" id="console-rail" aria-label="Resource browser">
@@ -3317,6 +3372,26 @@ var LINT_CHROME = {
     budgetUsageError:   "Budget usage unavailable",
     budgetUsageText:    "Today's usage: {spent} / {cap} (remaining {remaining})",
 
+    /* issue #558: Reader Feedback panel — a monitoring surface at the end of
+       the flow, populated by a one-shot GET /feedback fetch on button click
+       (no polling — console idiom). */
+    feedbackPanelTitle:  "Reader Feedback",
+    feedbackPanelDesc:   "One-click 👍/👎 and optional comments readers leave on answer cards.",
+    feedbackLoadBtn:     "Load feedback",
+    feedbackLoading:     "Loading feedback…",
+    feedbackError:       "Could not load feedback",
+    feedbackEmpty:       "No feedback yet — 👍/👎 from reader answer cards will show up here.",
+    feedbackUpLabel:     "👍 Up",
+    feedbackDownLabel:   "👎 Down",
+    feedbackTotalLabel:  "Total submissions",
+    feedbackColTime:      "Time",
+    feedbackColReaction:  "Reaction",
+    feedbackColQuery:     "Query",
+    feedbackColComment:   "Comment",
+    feedbackColStack:     "Stack",
+    feedbackColGrounding: "Grounding",
+    feedbackNoComment:   "—",
+
     /* issue #498: honest-miss offer template (checkCoverageFillOutcome /
        coverageFillOutcomeBanner) — {newPages}/{target} are replaced, never
        re-derived (§12.5). */
@@ -3581,6 +3656,23 @@ var LINT_CHROME = {
     budgetUsageLoading: "正在載入預算資訊…",
     budgetUsageError:   "無法取得預算使用量",
     budgetUsageText:    "今日已使用:{spent} / {cap}(剩餘 {remaining})",
+
+    feedbackPanelTitle:  "讀者回饋",
+    feedbackPanelDesc:   "讀者在答案卡上留下的一鍵 👍/👎 與選填留言。",
+    feedbackLoadBtn:     "載入回饋",
+    feedbackLoading:     "載入回饋中…",
+    feedbackError:       "無法載入回饋",
+    feedbackEmpty:       "尚無回饋 — Reader 答案卡上的 👍/👎 會出現在這裡",
+    feedbackUpLabel:     "👍 讚",
+    feedbackDownLabel:   "👎 倒讚",
+    feedbackTotalLabel:  "總提交數",
+    feedbackColTime:      "時間",
+    feedbackColReaction:  "反應",
+    feedbackColQuery:     "查詢",
+    feedbackColComment:   "留言",
+    feedbackColStack:     "檢索堆疊",
+    feedbackColGrounding: "接地判定",
+    feedbackNoComment:   "—",
 
     coverageFillOutcomeText: "透過匯入補齊:已匯入並合成 — 新增頁面:{newPages} — 但 [[{target}]] 仍未解析。",
     coverageFillOfferBtn: "將 [[{target}]] 指派為 {page} 的別名？",
@@ -4177,6 +4269,13 @@ function applyConsoleLang() {
      I18N_BOUND, since its text is templated with server-derived numbers, not
      static chrome. */
   renderBudgetUsage(lastBudgetSnapshot);
+  /* issue #558: re-render the Reader Feedback result in the new language too,
+     from the already-fetched lastFeedbackData — no re-fetch needed. A no-op
+     before the operator's first "Load feedback" click (lastFeedbackData is
+     still null). */
+  if (lastFeedbackData !== null && feedbackResultEl) {
+    feedbackResultEl.replaceChildren(renderFeedbackResult(lastFeedbackData));
+  }
 }
 
 /* ── In-flight guard + durability notice (issue #364) ──────────────
@@ -7717,6 +7816,107 @@ function buildHybridTrack(rootEl) {
 }
 
 buildHybridTrack(document.getElementById("hybrid-track-root"));
+
+/* ============================================================
+   Reader Feedback panel (issue #558)
+   GET /feedback — a MONITORING surface, not a lifecycle action: it sits at
+   the end of the flow, outside the pipeline's action-arrow track (Reader
+   Feedback is opinion data ABOUT the corpus, never part of it — CONTEXT.md
+   "Reader Feedback"). One-shot fetch on button click (console idiom, no
+   polling, unlike the boot-time GET /healthz/budget probe above).
+   ============================================================ */
+
+/* Latest GET /feedback payload, re-rendered on a language toggle without a
+   re-fetch (mirrors lastBudgetSnapshot / lastLintData). null = never loaded. */
+var lastFeedbackData = null;
+var feedbackResultEl = null;
+
+function renderFeedbackStats(counts) {
+  var chrome = LINT_CHROME[consoleLang];
+  return el("div", { class: "feedback-stats" },
+    el("span", { class: "feedback-stat" }, el("b", { text: String(counts.up) }), el("span", { text: " " + chrome.feedbackUpLabel })),
+    el("span", { class: "feedback-stat" }, el("b", { text: String(counts.down) }), el("span", { text: " " + chrome.feedbackDownLabel })),
+    el("span", { class: "feedback-stat" }, el("b", { text: String(counts.total_raw) }), el("span", { text: " " + chrome.feedbackTotalLabel }))
+  );
+}
+
+function renderFeedbackRow(rec) {
+  var chrome = LINT_CHROME[consoleLang];
+  var icon = rec.reaction === "up" ? "👍" : "👎";
+  return el("tr", {},
+    el("td", { class: "feedback-time", text: rec.ts || "" }),
+    el("td", { class: "feedback-reaction", text: icon }),
+    el("td", { class: "feedback-query", text: rec.query || "" }),
+    el("td", { class: "feedback-comment", text: rec.comment || chrome.feedbackNoComment }),
+    el("td", {}, el("span", { class: "chip" }, el("span", { text: rec.stack || "" }))),
+    el("td", {}, el("span", { class: "chip" }, el("span", { text: rec.grounding || "" })))
+  );
+}
+
+/* data: {records, counts} from GET /feedback, or null before the first load. */
+function renderFeedbackResult(data) {
+  var chrome = LINT_CHROME[consoleLang];
+  if (!data || !data.records || data.records.length === 0) {
+    return el("div", { class: "feedback-empty", text: chrome.feedbackEmpty });
+  }
+  var headerRow = el("tr", {},
+    el("th", { text: chrome.feedbackColTime }),
+    el("th", { text: chrome.feedbackColReaction }),
+    el("th", { text: chrome.feedbackColQuery }),
+    el("th", { text: chrome.feedbackColComment }),
+    el("th", { text: chrome.feedbackColStack }),
+    el("th", { text: chrome.feedbackColGrounding })
+  );
+  var tbody = el.apply(null, ["tbody", {}].concat(data.records.map(renderFeedbackRow)));
+  var table = el("table", { class: "feedback-table" }, el("thead", {}, headerRow), tbody);
+  return el("div", {}, renderFeedbackStats(data.counts), table);
+}
+
+function buildFeedbackPanel(rootEl) {
+  if (!rootEl) return;
+  feedbackResultEl = el("div", { class: "feedback-result" });
+
+  var loadBtn = bindText(el("button", { class: "run-btn", type: "button" }), "feedbackLoadBtn");
+  loadBtn.addEventListener("click", function() {
+    var chrome = LINT_CHROME[consoleLang];
+    loadBtn.disabled = true;
+    feedbackResultEl.replaceChildren(makeBusyCard(chrome.feedbackLoading));
+
+    fetch("/feedback")
+      .then(function(resp) {
+        if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+        return resp.json();
+      })
+      .then(function(data) {
+        lastFeedbackData = data;
+        feedbackResultEl.replaceChildren(renderFeedbackResult(data));
+      })
+      .catch(function(err) {
+        feedbackResultEl.replaceChildren(renderErrorCard(LINT_CHROME[consoleLang].feedbackError, err.message || String(err)));
+      })
+      .finally(function() { loadBtn.disabled = false; });
+  });
+
+  var panel = el("div", { class: "step-panel" },
+    el("div", { class: "step-panel-head" },
+      bindText(el("span", { class: "step-panel-desc" }), "feedbackPanelDesc"),
+      loadBtn
+    ),
+    feedbackResultEl
+  );
+
+  rootEl.append(
+    makeCollapse({
+      key: "feedback-panel",
+      wrapClass: "feedback-collapse",
+      headClass: "queue-header",
+      labelNodes: [bindText(el("span", { class: "queue-header-label" }), "feedbackPanelTitle")],
+      bodyNodes: [panel],
+    })
+  );
+}
+
+buildFeedbackPanel(document.getElementById("feedback-panel-root"));
 
 /* ══════════════════════════════════════════════════════════
    Resource Browser (Phase 15 S5, issue #171)
