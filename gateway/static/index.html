@@ -2112,21 +2112,24 @@ function startRequest(query) {
          dedicated banner. Any other non-ok status (including other 503s, e.g.
          load-shed) or a body that fails to parse falls through unchanged to
          the generic error path. */
+      var genericHttpError = function() {
+        onError({ detail: "HTTP " + resp.status + ": " + resp.statusText });
+      };
       if (resp.status === 503) {
         resp.json().then(function(body) {
           if (mySeq !== reqSeq) return;
           if (body && body.detail === "daily demo budget reached") {
             onBudgetExhausted();
           } else {
-            onError({ detail: "HTTP " + resp.status + ": " + resp.statusText });
+            genericHttpError();
           }
         }).catch(function() {
           if (mySeq !== reqSeq) return;
-          onError({ detail: "HTTP " + resp.status + ": " + resp.statusText });
+          genericHttpError();
         });
         return;
       }
-      onError({ detail: "HTTP " + resp.status + ": " + resp.statusText });
+      genericHttpError();
       return;
     }
 

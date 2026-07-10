@@ -86,17 +86,22 @@ _GENERIC_HTTP_ERROR = 'onError({ detail: "HTTP " + resp.status + ": " + resp.sta
 
 
 def test_non_budget_503_and_non_503_non_ok_keep_generic_error_path_unchanged():
-    """Three call sites for the unchanged generic error string must survive:
-    (1) a 503 whose body detail isn't the exact budget contract (e.g. the
-    load-shed 503 {"detail": "server busy, please retry"}), (2) a 503 whose
-    body fails to parse, and (3) any non-503 non-ok status (e.g. 400 unknown
-    stack). All three are regressions of the pre-existing generic path."""
+    """The unchanged generic error string is defined once (genericHttpError)
+    and called from three sites: (1) a 503 whose body detail isn't the exact
+    budget contract (e.g. the load-shed 503 {"detail": "server busy, please
+    retry"}), (2) a 503 whose body fails to parse, and (3) any non-503
+    non-ok status (e.g. 400 unknown stack). All three are regressions of the
+    pre-existing generic path."""
     text = _ui_text()
     fn = _extract_function(text, "startRequest")
-    assert fn.count(_GENERIC_HTTP_ERROR) == 3, (
-        "expected exactly 3 call sites for the unchanged generic HTTP-error "
-        "string (non-budget 503 detail, 503 body-parse failure, non-503 "
-        f"non-ok) — found {fn.count(_GENERIC_HTTP_ERROR)}"
+    assert fn.count(_GENERIC_HTTP_ERROR) == 1, (
+        "expected the generic HTTP-error string defined exactly once "
+        f"(genericHttpError) — found {fn.count(_GENERIC_HTTP_ERROR)}"
+    )
+    assert fn.count("genericHttpError()") == 3, (
+        "expected exactly 3 call sites for genericHttpError() (non-budget "
+        "503 detail, 503 body-parse failure, non-503 non-ok) — found "
+        f"{fn.count('genericHttpError()')}"
     )
 
 
@@ -110,7 +115,7 @@ def test_json_parse_failure_on_503_has_catch_falling_back_to_generic_error():
     fn = _extract_function(text, "startRequest")
     branch_503 = fn[fn.index("resp.status === 503") :]
     catch_block = branch_503[branch_503.index(".catch(function() {") :]
-    assert _GENERIC_HTTP_ERROR in catch_block[:300]
+    assert "genericHttpError();" in catch_block[:300]
 
 
 # ---------------------------------------------------------------------------
