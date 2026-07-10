@@ -495,6 +495,22 @@
   }
   .err button:hover { background: #000; }
 
+  /* NOTICE — informational, non-error banner (issue #560: daily demo budget
+     reached is an expected, recurring state on a public demo box, not a
+     failure — deliberately NOT the red .err treatment, and no retry button
+     since retrying just re-hits the same wall until the daily reset). */
+  .notice {
+    padding: 16px 18px;
+    border: 1px solid var(--rule);
+    background: var(--surface);
+    border-radius: 4px;
+  }
+  .notice .m {
+    font-size: 14.5px;
+    color: var(--ink-2);
+    line-height: 1.5;
+  }
+
   /* COMPOSER */
   .composer {
     flex: none;
@@ -1031,6 +1047,8 @@ var CHROME = {
     loopAxes: "Coverage · Freshness · Coherence · Lifecycle",
     errTitle: "Service interrupted", errDefault: "An unexpected error occurred.",
     tryAgain: "Try again", langToggle: "中文", langToggleAria: "切換為中文",
+    noticeLabel: "Notice",
+    budgetBody: "Daily demo budget reached — it resets every day, please come back tomorrow.",
     feedbackPrompt: "Was this helpful?", feedbackUpAria: "Mark as helpful", feedbackDownAria: "Mark as not helpful",
     feedbackCommentPlaceholder: "Add an optional comment…", feedbackSend: "Send",
     feedbackSaving: "Saving…", feedbackSaved: "Thanks for the feedback", feedbackFailed: "Couldn't save — try again",
@@ -1054,6 +1072,8 @@ var CHROME = {
     loopAxes: "涵蓋度 · 新鮮度 · 一致性 · 生命週期",
     errTitle: "服務中斷", errDefault: "發生未預期的錯誤。",
     tryAgain: "再試一次", langToggle: "EN", langToggleAria: "Switch to English",
+    noticeLabel: "提示",
+    budgetBody: "今日示範額度已滿,每日重置 — 歡迎明天再來試。",
     feedbackPrompt: "這個答案有幫助嗎?", feedbackUpAria: "標記為有幫助", feedbackDownAria: "標記為沒有幫助",
     feedbackCommentPlaceholder: "加一句選填留言…", feedbackSend: "送出",
     feedbackSaving: "儲存中…", feedbackSaved: "感謝你的回饋", feedbackFailed: "無法儲存,請再試一次",
@@ -2032,6 +2052,23 @@ function onError(e) {
   scrollStreamToBottom();
 }
 
+/* issue #560: the daily demo budget gate (503 {detail:"daily demo budget
+   reached"}) is an expected, recurring state on a public demo box — not a
+   crash. Rendered as an informational .notice (not the red .err box) with
+   no "Try again" button, since retrying just re-hits the same wall until
+   the daily reset. */
+function onBudgetExhausted() {
+  clearIndicator();
+  removeCursors();
+  var entry = el("div", { class: "entry" });
+  entry.append(makeLabel(t("noticeLabel")));
+  entry.append(el("div", { class: "notice" },
+    el("div", { class: "m", text: t("budgetBody") }),
+  ));
+  add(entry);
+  scrollStreamToBottom();
+}
+
 /* ── DISPATCH ────────────────────────────────────────────────────────────── */
 function dispatch(ev, data) {
   /* §12.2: unknown event types are ignored (forward-compat) */
@@ -2069,8 +2106,30 @@ function startRequest(query) {
   }).then(function(resp) {
     if (mySeq !== reqSeq) return;   /* superseded before headers arrived */
     if (!resp.ok) {
-      /* Pre-stream HTTP error (e.g. 400 unknown stack) — cannot arrive as SSE */
-      onError({ detail: "HTTP " + resp.status + ": " + resp.statusText });
+      /* Pre-stream HTTP error (e.g. 400 unknown stack) — cannot arrive as SSE.
+         issue #560: the daily demo budget gate answers a 503 with an exact
+         {"detail": "daily demo budget reached"} body — read it and render the
+         dedicated banner. Any other non-ok status (including other 503s, e.g.
+         load-shed) or a body that fails to parse falls through unchanged to
+         the generic error path. */
+      var genericHttpError = function() {
+        onError({ detail: "HTTP " + resp.status + ": " + resp.statusText });
+      };
+      if (resp.status === 503) {
+        resp.json().then(function(body) {
+          if (mySeq !== reqSeq) return;
+          if (body && body.detail === "daily demo budget reached") {
+            onBudgetExhausted();
+          } else {
+            genericHttpError();
+          }
+        }).catch(function() {
+          if (mySeq !== reqSeq) return;
+          genericHttpError();
+        });
+        return;
+      }
+      genericHttpError();
       return;
     }
 
