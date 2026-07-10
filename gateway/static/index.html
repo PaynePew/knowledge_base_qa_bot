@@ -381,6 +381,54 @@
   }
   .fu-chip:hover .fu-arrow { color: var(--ink-2); transform: translateX(2px); }
 
+  /* Reader Feedback — muted one-click reaction row at the very end of the
+     answer foot (issue #558). Quiet by design: a monitoring surface for the
+     Console, never louder than the grounding verdict above it. */
+  .feedback {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+    margin-top: 16px;
+  }
+  .feedback-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--ink-4); margin-right: 2px;
+  }
+  .feedback-thumb {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 30px; height: 30px;
+    background: transparent;
+    border: 1px solid var(--rule); border-radius: 999px;
+    font-size: 14px; line-height: 1; cursor: pointer;
+    opacity: .55;
+    transition: opacity .15s ease, border-color .15s ease, background .15s ease;
+  }
+  .feedback-thumb:hover, .feedback-thumb:focus-visible { opacity: .85; outline: none; border-color: var(--ink-3); }
+  .feedback-thumb.active { opacity: 1; background: var(--rule-2); border-color: var(--ink-3); }
+  .feedback-status {
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 12px; color: var(--ink-4);
+  }
+  .feedback-comment-row {
+    display: flex; align-items: center; gap: 8px;
+    flex: 1 1 220px; min-width: 180px;
+  }
+  .feedback-comment-row.hidden { display: none; }
+  .feedback-comment-input {
+    flex: 1 1 auto; min-width: 0;
+    background: var(--surface);
+    border: 1px solid var(--rule); border-radius: 999px;
+    padding: 5px 12px;
+    font-family: "IBM Plex Sans", sans-serif; font-size: 12.5px; color: var(--ink);
+  }
+  .feedback-send {
+    flex: none;
+    background: transparent; border: 1px solid var(--rule); border-radius: 999px;
+    padding: 5px 12px; font-family: "IBM Plex Mono", monospace; font-size: 11px;
+    color: var(--ink-2); cursor: pointer;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .feedback-send:hover, .feedback-send:focus-visible { color: var(--ink); border-color: var(--ink-3); outline: none; }
+
   /* Empty-state curation-loop framing (the thesis binding reader + console). */
   .loop-note {
     margin-top: 30px; padding-top: 20px;
@@ -983,6 +1031,9 @@ var CHROME = {
     loopAxes: "Coverage · Freshness · Coherence · Lifecycle",
     errTitle: "Service interrupted", errDefault: "An unexpected error occurred.",
     tryAgain: "Try again", langToggle: "中文", langToggleAria: "切換為中文",
+    feedbackPrompt: "Was this helpful?", feedbackUpAria: "Mark as helpful", feedbackDownAria: "Mark as not helpful",
+    feedbackCommentPlaceholder: "Add an optional comment…", feedbackSend: "Send",
+    feedbackSaving: "Saving…", feedbackSaved: "Thanks for the feedback", feedbackFailed: "Couldn't save — try again",
   },
   zh: {
     placeholder: "向知識庫提問…", ask: "提問",
@@ -1003,6 +1054,9 @@ var CHROME = {
     loopAxes: "涵蓋度 · 新鮮度 · 一致性 · 生命週期",
     errTitle: "服務中斷", errDefault: "發生未預期的錯誤。",
     tryAgain: "再試一次", langToggle: "EN", langToggleAria: "Switch to English",
+    feedbackPrompt: "這個答案有幫助嗎?", feedbackUpAria: "標記為有幫助", feedbackDownAria: "標記為沒有幫助",
+    feedbackCommentPlaceholder: "加一句選填留言…", feedbackSend: "送出",
+    feedbackSaving: "儲存中…", feedbackSaved: "感謝你的回饋", feedbackFailed: "無法儲存,請再試一次",
   },
 };
 function t(key) { return (CHROME[uiLang] || CHROME.en)[key]; }
@@ -1014,6 +1068,12 @@ var answerEl = null, answerBody = null, verifyEl = null;
    can linkify the complete text in one pass (issue #410 — a [[wikilink]] can
    split across token boundaries). Reset at the start of each new answer. */
 var answerRawText = "";
+/* Citation ids of the current turn's sources (issue #558 — Reader Feedback's
+   `citations` field). Sources arrive before the client-minted `answer_id`
+   exists (onSources runs before onDone), so this is captured here and
+   snapshotted onto the answer card's feedbackCtx at onDone time — the same
+   "capture at CALLER time" idiom linkifyAnswerBody uses for answerRawText. */
+var currentSources = [];
 var currentQuery = "";
 /* Phase 11 Slice 4: session id captured from done.session; echoed on next request.
    Never cleared — stack toggle preserves history across Wiki↔RAG switches. */
@@ -1525,6 +1585,11 @@ function onSources(sources) {
   /* §12.3 sources-first: this function is called before any answer area is
      created. The answer entry is only created in onToken, which runs after.
      §12.9: clear the turn-2+ "rewriting" indicator now that sources have arrived. */
+  /* issue #558: capture citation ids for this turn's Reader Feedback record
+     BEFORE the empty-sources early return below, so a Cannot Confirm answer
+     (0 sources) still gets a (empty) citations snapshot rather than a stale
+     one from the previous turn. */
+  currentSources = (sources || []).map(function(s) { return s.source; });
   clearIndicator();
   var entry = el("div", { class: "entry" });
   entry.append(makeLabel(t("recordsLabel"), { count: sources.length }));
@@ -1756,13 +1821,109 @@ function followupsFor(query) {
   return presets.filter(function(q) { return q !== query; }).slice(0, 3);
 }
 
+/* ── READER FEEDBACK (issue #558) ─────────────────────────────────────────────
+   Muted 👍/👎 row at the END of renderAnswerFoot, after the follow-up chips.
+   One click POSTs immediately (a reaction-only record) and highlights the
+   clicked thumb; only THEN does an optional single-line comment input + send
+   button appear. Sending a comment appends a NEW record carrying the SAME
+   answer_id (the server's read-time fold-by-answer_id supersedes it —
+   CONTEXT.md "Reader Feedback"). Switching thumbs at any time posts another
+   record — there is deliberately no locked/submitted state machine. Present
+   on every done answer (including Cannot Confirm — a down there is itself a
+   signal); onError never calls renderAnswerFoot, so it is naturally absent
+   from an error card. §12.4: textContent only. §12.5: no grounding/citation
+   logic here — this just reports the reader's own opinion back to the server. */
+function mintAnswerId() {
+  if (window.crypto && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  /* Defensive fallback for a browser without crypto.randomUUID — the id is
+     never validated for RFC-4122 shape server-side, only used as a fold key. */
+  return "id-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
+}
+
+function postFeedback(payload) {
+  return fetch("/feedback", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+/* Builds the widget for the CURRENT answer card. Reads answerEl.feedbackCtx
+   (stashed once at onDone — see onDone below) rather than the live
+   currentSources/currentQuery/answerRawText globals, so a later re-render
+   (language toggle) always submits against the SAME answer_id even if a
+   newer turn has since changed those globals. Re-render (e.g. a language
+   toggle) rebuilds this widget from scratch — any in-progress reaction
+   highlight or drafted-but-unsent comment resets; switching a thumb again
+   simply posts another record (no correctness impact, read-time fold
+   supersedes either way). */
+function renderFeedbackWidget(d) {
+  var ctx = answerEl.feedbackCtx;
+  if (!ctx) return null;
+  var chrome = CHROME[uiLang] || CHROME.en;
+  var reacted = null;
+
+  var upBtn = el("button", { class: "feedback-thumb", type: "button", "aria-label": chrome.feedbackUpAria, text: "👍" });
+  var downBtn = el("button", { class: "feedback-thumb", type: "button", "aria-label": chrome.feedbackDownAria, text: "👎" });
+  var statusEl = el("span", { class: "feedback-status" });
+  var commentInput = el("input", { type: "text", class: "feedback-comment-input", maxlength: "500", placeholder: chrome.feedbackCommentPlaceholder });
+  var sendBtn = el("button", { class: "feedback-send", type: "button", text: chrome.feedbackSend });
+  var commentRow = el("div", { class: "feedback-comment-row hidden" }, commentInput, sendBtn);
+
+  function submitRecord(extra) {
+    var chromeNow = CHROME[uiLang] || CHROME.en;
+    statusEl.textContent = chromeNow.feedbackSaving;
+    var payload = {
+      answer_id: ctx.answerId,
+      reaction: reacted,
+      query: ctx.query,
+      answer_preview: ctx.answerPreview,
+      stack: d.stack,
+      session_id: d.session || sessionId,
+      citations: ctx.citations,
+      grounding: d.grounding.reason,
+      lang: uiLang,
+    };
+    if (extra) { for (var k in extra) payload[k] = extra[k]; }
+    return postFeedback(payload).then(function(resp) {
+      statusEl.textContent = resp.ok ? chromeNow.feedbackSaved : chromeNow.feedbackFailed;
+      return resp;
+    }).catch(function() {
+      statusEl.textContent = chromeNow.feedbackFailed;
+    });
+  }
+
+  function reactTo(reaction) {
+    reacted = reaction;
+    upBtn.classList.toggle("active", reaction === "up");
+    downBtn.classList.toggle("active", reaction === "down");
+    commentRow.classList.remove("hidden");
+    submitRecord();
+  }
+
+  upBtn.addEventListener("click", function() { reactTo("up"); });
+  downBtn.addEventListener("click", function() { reactTo("down"); });
+  sendBtn.addEventListener("click", function() {
+    var comment = commentInput.value.trim();
+    if (!reacted || !comment) return;
+    submitRecord({ comment: comment }).then(function(resp) {
+      if (resp && resp.ok) commentInput.value = "";
+    });
+  });
+
+  return el("div", { class: "feedback" },
+    el("span", { class: "feedback-label", text: chrome.feedbackPrompt }),
+    upBtn, downBtn, statusEl, commentRow
+  );
+}
+
 /* Render (or re-render) the verdict foot + curator note + follow-ups for the
    current answer. Idempotent: drops any prior copies first, so a language toggle
    can rebuild them in the new language without re-running the request. All copy
    follows uiLang; the answer BODY (streamed) stays in the asked language. */
 function renderAnswerFoot(d) {
   if (!answerEl) return;
-  var old = answerEl.querySelectorAll(".foot, .cnote, .followups");
+  var old = answerEl.querySelectorAll(".foot, .cnote, .followups, .feedback");
   for (var i = 0; i < old.length; i++) old[i].remove();
 
   var pass = d.grounding.passed;
@@ -1809,6 +1970,10 @@ function renderAnswerFoot(d) {
     answerEl.append(fu);
     reveal(fu, 280);
   }
+
+  /* Reader Feedback (issue #558): muted 👍/👎 + optional comment, always LAST. */
+  var feedback = renderFeedbackWidget(d);
+  if (feedback) answerEl.append(feedback);
 }
 
 function onDone(d) {
@@ -1825,6 +1990,18 @@ function onDone(d) {
      answer's verdict/note/follow-ups in place. */
   lastDone = d;
   lastQuery = currentQuery;
+  /* issue #558: mint the client-side answer_id + snapshot the Reader Feedback
+     context ONCE per answer card, captured on the DOM node (not a module
+     var) so a later language-toggle re-render (renderAnswerFoot re-run)
+     reuses the SAME answer_id instead of minting a new one — minting a new
+     id each render would break the server's fold-by-answer_id contract for
+     a reader who reacts, then toggles language, then comments. */
+  answerEl.feedbackCtx = {
+    answerId: mintAnswerId(),
+    query: currentQuery,
+    answerPreview: answerRawText.slice(0, 300),
+    citations: currentSources.slice(),
+  };
   renderAnswerFoot(d);
 
   linkifyAnswerBody(answerBody, answerRawText);
