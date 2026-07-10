@@ -53,7 +53,7 @@ import datetime
 import json
 import uuid
 from collections.abc import Callable, Iterator
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
@@ -603,6 +603,27 @@ def read_file_endpoint(
 # ---------------------------------------------------------------------------
 
 
+# Bounds for every client-supplied field on POST /feedback (issue #558
+# hardening — adversarial-verifier finding). ``/feedback`` is public and
+# unauthenticated, so every field the client controls needs a hard cap.
+# Without one: (a) a single request can grow ``feedback.jsonl`` far past
+# ``MAX_STORE_BYTES`` in one write, since ``feedback.append_feedback``
+# checks the store size BEFORE the append and only guards against the store
+# already being full, never against one oversized record; (b) an embedded
+# newline in a field later interpolated into the ``feedback`` log summary
+# (see ``_sanitize_for_log`` near ``submit_feedback`` below) could forge a
+# fake ``## [...] <kind> | ...`` operator-audit line (CWE-117).
+# ``reaction`` and ``lang`` are already bounded via ``Literal`` — an enum is
+# a stricter guarantee than any max_length.
+_ANSWER_ID_MAX = 64
+_SESSION_ID_MAX = 64
+_GROUNDING_MAX = 64
+_STACK_MAX = 32
+_QUERY_MAX = 2000
+_CITATIONS_MAX_ITEMS = 20
+_CITATION_MAX = 200
+
+
 class FeedbackRequestSchema(BaseModel):
     """Request body for ``POST /feedback`` — a self-contained opinion record.
 
@@ -611,15 +632,17 @@ class FeedbackRequestSchema(BaseModel):
     contract stays untouched (CONTEXT.md "Reader Feedback").
     """
 
-    answer_id: str
+    answer_id: str = Field(max_length=_ANSWER_ID_MAX)
     reaction: Literal["up", "down"]
     comment: str | None = Field(default=None, max_length=_feedback_module.MAX_COMMENT_CHARS)
-    query: str
+    query: str = Field(max_length=_QUERY_MAX)
     answer_preview: str = Field(max_length=300)
-    stack: str
-    session_id: str
-    citations: list[str] = Field(default_factory=list)
-    grounding: str
+    stack: str = Field(max_length=_STACK_MAX)
+    session_id: str = Field(max_length=_SESSION_ID_MAX)
+    citations: list[Annotated[str, Field(max_length=_CITATION_MAX)]] = Field(
+        default_factory=list, max_length=_CITATIONS_MAX_ITEMS
+    )
+    grounding: str = Field(max_length=_GROUNDING_MAX)
     lang: Literal["zh", "en"]
 
 
@@ -662,6 +685,20 @@ class FeedbackListResponseSchema(BaseModel):
     counts: FeedbackCountsSchema
 
 
+def _sanitize_for_log(value: str, limit: int = 60) -> str:
+    """Bound + strip CR/LF before a client-supplied field enters a log line.
+
+    Extends the ``chat_rewrite`` idiom above (§5.3: truncate to 60 chars,
+    normalise double quotes to single) with CR/LF stripping, which that
+    idiom lacks — a raw newline in a client-controlled field would otherwise
+    let it forge a fake ``## [...] <kind> | ...`` log line (CWE-117). Used
+    for every client-controlled field interpolated into the ``feedback`` log
+    summary below (``answer_id``, ``stack``, ``grounding``); ``reaction`` is
+    a Pydantic ``Literal`` and therefore never attacker-controlled text.
+    """
+    return value[:limit].replace("\r", "").replace("\n", "").replace(chr(34), chr(39))
+
+
 @router.post("/feedback", response_model=FeedbackWriteResponseSchema)
 def submit_feedback(req: FeedbackRequestSchema) -> FeedbackWriteResponseSchema:
     """Append one Reader Feedback record.
@@ -685,8 +722,10 @@ def submit_feedback(req: FeedbackRequestSchema) -> FeedbackWriteResponseSchema:
 
     _gateway_log_event(
         "feedback",
-        f"answer_id={stored['answer_id']} reaction={stored['reaction']} "
-        f"stack={stored['stack']} grounding={stored['grounding']} "
+        f"answer_id={_sanitize_for_log(stored['answer_id'])} "
+        f"reaction={stored['reaction']} "
+        f"stack={_sanitize_for_log(stored['stack'])} "
+        f"grounding={_sanitize_for_log(stored['grounding'])} "
         f"has_comment={bool(stored.get('comment'))}",
     )
     return FeedbackWriteResponseSchema(id=stored["id"])

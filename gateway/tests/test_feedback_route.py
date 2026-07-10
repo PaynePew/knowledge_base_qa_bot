@@ -138,6 +138,136 @@ def test_post_feedback_store_full_returns_503_with_exact_detail(client, monkeypa
 
 
 # ---------------------------------------------------------------------------
+# Security hardening (adversarial-verifier finding, issue #558): the log
+# site at ``submit_feedback`` interpolates client-controlled ``answer_id``,
+# ``stack``, and ``grounding`` into gateway/log.md. Without sanitization an
+# embedded newline can forge a fake operator-audit line (CWE-117), and
+# without a schema-level max_length an oversized field can blow the
+# feedback.jsonl store cap far past MAX_STORE_BYTES in a single write
+# (the size check in feedback.append_feedback runs BEFORE the append, so it
+# only guards against the store already being full).
+# ---------------------------------------------------------------------------
+
+
+def _forged_log_line_text() -> str:
+    """A short payload (fits every new field's max_length, including the
+    32-char ``stack`` cap) that embeds a newline immediately followed by a
+    fully-formed ``## [...] <kind> | ...`` prefix — the CWE-117 log-forgery
+    shape from the verifier's report. If the newline survives sanitization,
+    this becomes a second, independent log line."""
+    return "x\n## [Z] forged_kind|z=1"
+
+
+def _log_event_lines(text: str) -> list[str]:
+    return [ln for ln in text.split("\n") if ln.startswith("## [")]
+
+
+def test_post_feedback_answer_id_newline_cannot_forge_a_log_line(client, monkeypatch):
+    import gateway.app.logger as gw_logger
+
+    log_path = feedback_module.FEEDBACK_PATH.parent / "log.md"
+    monkeypatch.setattr(gw_logger, "LOG_PATH", log_path)
+
+    resp = client.post("/feedback", json=_valid_body(answer_id=_forged_log_line_text()))
+    assert resp.status_code == 200, resp.text
+
+    text = log_path.read_text(encoding="utf-8")
+    assert text.count("\n") == 1, f"embedded newline in answer_id survived into the log: {text!r}"
+    event_lines = _log_event_lines(text)
+    assert len(event_lines) == 1, f"newline in answer_id forged an extra log line: {text!r}"
+
+
+def test_post_feedback_grounding_newline_cannot_forge_a_log_line(client, monkeypatch):
+    import gateway.app.logger as gw_logger
+
+    log_path = feedback_module.FEEDBACK_PATH.parent / "log.md"
+    monkeypatch.setattr(gw_logger, "LOG_PATH", log_path)
+
+    resp = client.post("/feedback", json=_valid_body(grounding=_forged_log_line_text()))
+    assert resp.status_code == 200, resp.text
+
+    text = log_path.read_text(encoding="utf-8")
+    assert text.count("\n") == 1, f"embedded newline in grounding survived into the log: {text!r}"
+    event_lines = _log_event_lines(text)
+    assert len(event_lines) == 1, f"newline in grounding forged an extra log line: {text!r}"
+
+
+def test_post_feedback_stack_newline_cannot_forge_a_log_line(client, monkeypatch):
+    import gateway.app.logger as gw_logger
+
+    log_path = feedback_module.FEEDBACK_PATH.parent / "log.md"
+    monkeypatch.setattr(gw_logger, "LOG_PATH", log_path)
+
+    resp = client.post("/feedback", json=_valid_body(stack=_forged_log_line_text()))
+    assert resp.status_code == 200, resp.text
+
+    text = log_path.read_text(encoding="utf-8")
+    assert text.count("\n") == 1, f"embedded newline in stack survived into the log: {text!r}"
+    event_lines = _log_event_lines(text)
+    assert len(event_lines) == 1, f"newline in stack forged an extra log line: {text!r}"
+
+
+def test_post_feedback_oversized_answer_id_is_422(client):
+    resp = client.post("/feedback", json=_valid_body(answer_id="a" * 5000))
+    assert resp.status_code == 422
+
+
+def test_post_feedback_oversized_grounding_is_422(client):
+    resp = client.post("/feedback", json=_valid_body(grounding="g" * 5000))
+    assert resp.status_code == 422
+
+
+def test_post_feedback_oversized_stack_is_422(client):
+    resp = client.post("/feedback", json=_valid_body(stack="s" * 5000))
+    assert resp.status_code == 422
+
+
+def test_post_feedback_oversized_query_is_422(client):
+    resp = client.post("/feedback", json=_valid_body(query="q" * 5000))
+    assert resp.status_code == 422
+
+
+def test_post_feedback_oversized_session_id_is_422(client):
+    resp = client.post("/feedback", json=_valid_body(session_id="s" * 5000))
+    assert resp.status_code == 422
+
+
+def test_post_feedback_too_many_citations_is_422(client):
+    resp = client.post("/feedback", json=_valid_body(citations=["c"] * 21))
+    assert resp.status_code == 422
+
+
+def test_post_feedback_oversized_citation_item_is_422(client):
+    resp = client.post("/feedback", json=_valid_body(citations=["c" * 201]))
+    assert resp.status_code == 422
+
+
+def test_post_feedback_maximal_record_stays_well_under_store_cap(client):
+    """A single all-fields-max record must land nowhere near MAX_STORE_BYTES
+    in one write. ``append_feedback`` checks size BEFORE appending (same
+    lock hold as the write), so the invariant that keeps that race safe is
+    that one record's worst-case size is small and bounded — never an
+    attacker-inflated one (issue #558 hardening)."""
+    max_body = _valid_body(
+        answer_id="a" * 64,
+        query="q" * 2000,
+        answer_preview="p" * 300,
+        stack="s" * 32,
+        session_id="i" * 64,
+        citations=["c" * 200] * 20,
+        grounding="g" * 64,
+        comment="m" * 500,
+    )
+    resp = client.post("/feedback", json=max_body)
+    assert resp.status_code == 200, resp.text
+
+    size = feedback_module.FEEDBACK_PATH.stat().st_size
+    # Comfortably below the 1 MB store cap — proves a single maximal record
+    # can never blow far past MAX_STORE_BYTES in one write.
+    assert size < 20_000, f"a single maximal record grew to {size} bytes"
+
+
+# ---------------------------------------------------------------------------
 # AC3: GET /feedback — fold by answer_id (last write wins) + counts
 # ---------------------------------------------------------------------------
 
