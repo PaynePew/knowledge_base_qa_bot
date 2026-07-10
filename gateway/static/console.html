@@ -7564,6 +7564,16 @@ function doDiscard(slug, cardEl, statusMsgEl, setActionBusy) {
    re-fetching. */
 var lastBudgetSnapshot = null;
 
+/* issue #558: declared here (BEFORE buildPipeline / initConsoleLangToggle
+   below) rather than beside buildFeedbackPanel further down the file — same
+   reasoning as lastBudgetSnapshot above: initConsoleLangToggle's boot-time
+   applyConsoleLang() call reads these, so they must already be `null` (not
+   the pre-assignment `undefined` a `var` further down the file would still
+   be at that point) by the time that IIFE runs. See applyConsoleLang() for
+   the read side. */
+var lastFeedbackData = null;
+var feedbackResultEl = null;
+
 function renderBudgetUsage(snapshot) {
   var textEl = document.getElementById("budget-usage-text");
   if (!textEl) return;
@@ -7834,12 +7844,9 @@ buildHybridTrack(document.getElementById("hybrid-track-root"));
    Feedback is opinion data ABOUT the corpus, never part of it — CONTEXT.md
    "Reader Feedback"). One-shot fetch on button click (console idiom, no
    polling, unlike the boot-time GET /healthz/budget probe above).
+   lastFeedbackData / feedbackResultEl are declared earlier in this file,
+   beside lastBudgetSnapshot — see the comment there for why.
    ============================================================ */
-
-/* Latest GET /feedback payload, re-rendered on a language toggle without a
-   re-fetch (mirrors lastBudgetSnapshot / lastLintData). null = never loaded. */
-var lastFeedbackData = null;
-var feedbackResultEl = null;
 
 function renderFeedbackStats(counts) {
   var chrome = LINT_CHROME[consoleLang];
