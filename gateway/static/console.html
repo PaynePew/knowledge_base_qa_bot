@@ -4156,17 +4156,34 @@ function renderC5FixSourcePanel() {
    uploaded to docs/ root under a guessed name. Uploads run sequentially
    (mirrors runIngestBatches's own sequencing rationale — predictable
    server-side write order, one clear failure point) rather than
-   Promise.all's fire-and-forget parallelism. */
+   Promise.all's fire-and-forget parallelism.
+
+   issue #544: two pending targets can share a basename when they live in
+   different docs/ subdirs (e.g. docs/demo-zh/foo.md vs
+   docs/planted-zh/foo.md). claimedSourcePaths tracks which target each
+   already-matched file in THIS batch claimed (keyed by the target's own
+   sourcePath — unique per addC5FixSourceTarget's dedupe key) and the
+   filter excludes an already-claimed target, so a second same-named file
+   resolves to the OTHER pending target instead of silently rebinding onto
+   the first one's overwrite_relpath. A same-named file with no remaining
+   unclaimed target still falls through to unmatchedNames, same as before. */
 function runC5FixSourceBatch(files, btn, statusMsgEl) {
   if (remediationInFlight) return;
   var chrome = LINT_CHROME[consoleLang];
 
   var matched = [];
   var unmatchedNames = [];
+  var claimedSourcePaths = {};
   files.forEach(function(file) {
-    var target = pendingC5FixSourceTargets.filter(function(t) { return t.filename === file.name; })[0];
-    if (target) matched.push({ file: file, target: target });
-    else unmatchedNames.push(file.name);
+    var target = pendingC5FixSourceTargets.filter(function(t) {
+      return t.filename === file.name && !claimedSourcePaths[t.sourcePath];
+    })[0];
+    if (target) {
+      claimedSourcePaths[target.sourcePath] = true;
+      matched.push({ file: file, target: target });
+    } else {
+      unmatchedNames.push(file.name);
+    }
   });
 
   if (matched.length === 0) {
