@@ -1921,20 +1921,29 @@ function renderFeedbackWidget(d) {
     submitRecord();
   }
 
+  var root = el("div", { class: "feedback" },
+    el("span", { class: "feedback-label", text: chrome.feedbackPrompt }),
+    upBtn, downBtn, statusEl, commentRow
+  );
+
   upBtn.addEventListener("click", function() { reactTo("up"); });
   downBtn.addEventListener("click", function() { reactTo("down"); });
   sendBtn.addEventListener("click", function() {
     var comment = commentInput.value.trim();
     if (!reacted || !comment) return;
     submitRecord({ comment: comment }).then(function(resp) {
-      if (resp && resp.ok) commentInput.value = "";
+      /* A sent comment is a decisive "I'm done" signal: collapse the whole
+         interactive widget (thumbs + comment row) to a single confirmation.
+         Reaction-only stays interactive so an optional comment can still
+         follow. On failure, leave the widget so the user can retry. */
+      if (resp && resp.ok) {
+        var chromeNow = CHROME[uiLang] || CHROME.en;
+        root.replaceChildren(el("span", { class: "feedback-done", text: chromeNow.feedbackSaved + " ✓" }));
+      }
     });
   });
 
-  return el("div", { class: "feedback" },
-    el("span", { class: "feedback-label", text: chrome.feedbackPrompt }),
-    upBtn, downBtn, statusEl, commentRow
-  );
+  return root;
 }
 
 /* Render (or re-render) the verdict foot + curator note + follow-ups for the
