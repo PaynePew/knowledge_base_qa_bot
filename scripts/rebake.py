@@ -57,7 +57,9 @@ def main() -> int:
     # 1. Re-ingest changed Sources -> regenerate wiki pages + delete orphans (LLM).
     from markdown_kb.app.ingest import ingest_sources
 
-    print(f"[1/4] ingest {CHANGED_SOURCES} from {DOCS_SUBDIR.name}/ (force) …", flush=True)
+    print(
+        f"[1/4] ingest {CHANGED_SOURCES} from {DOCS_SUBDIR.name}/ (force) …", flush=True
+    )
     ingest_sources(CHANGED_SOURCES, docs_dir=DOCS_SUBDIR, force=True)
 
     # 2. BM25 -> .kb/index.json (reads wiki/, no OpenAI key).
@@ -81,7 +83,10 @@ def main() -> int:
     rfiles, chunks = rag_build()
     print(f"      RAG: {rfiles} files, {chunks} chunks", flush=True)
 
-    print("\nRe-bake complete. Commit the regenerated seed (it is gitignored):", flush=True)
+    print(
+        "\nRe-bake complete. Commit the regenerated seed (it is gitignored):",
+        flush=True,
+    )
     print("    git add -f .kb wiki", flush=True)
     return 0
 
