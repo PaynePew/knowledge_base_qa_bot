@@ -215,15 +215,20 @@ def test_aingest_respects_semaphore(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Test 4: aingest_sources runs sections concurrently (wall-clock check)
+# Test 4: aingest_sources runs sections concurrently (rendezvous check)
 # ---------------------------------------------------------------------------
 
 
 def test_aingest_runs_sections_concurrently(tmp_path, monkeypatch):
-    """8 sections with concurrency 8 complete well under 8*50ms serial time.
+    """At least two generate_page calls overlap in flight (#568).
 
-    Fake generate_page sleeps 50ms per call; with concurrency 8 the wall-clock
-    should be < 8*50ms = 400ms (use 350ms as a generous bound to avoid flake).
+    Deterministic rendezvous instead of a wall-clock bound: each fake call
+    increments an in-flight counter, then holds its slot until a second call
+    is in flight (bounded wait). With real fan-out the peer arrives while the
+    first call is still holding, the event fires, and every call proceeds
+    immediately — machine load only delays the rendezvous, never breaks it.
+    A serial implementation can never have two calls in flight, so the first
+    call times out alone and the peak assertion fails.
     """
     docs_dir = tmp_path / "docs"
     docs_dir.mkdir()
@@ -237,24 +242,39 @@ def test_aingest_runs_sections_concurrently(tmp_path, monkeypatch):
 
     original_generate_page = ingest_module.generate_page
 
-    def _slow_generate_page(section, source_type, **kwargs):
-        time.sleep(0.05)  # 50ms per call
-        return original_generate_page(section, source_type, **kwargs)
+    counter_lock = threading.Lock()
+    in_flight = [0]
+    peak_in_flight = [0]
+    overlap = threading.Event()  # set the moment 2 calls are in flight together
+    gave_up = threading.Event()  # first timeout short-circuits later waits
+
+    def _rendezvous_generate_page(section, source_type, **kwargs):
+        with counter_lock:
+            in_flight[0] += 1
+            if in_flight[0] > peak_in_flight[0]:
+                peak_in_flight[0] = in_flight[0]
+            if in_flight[0] >= 2:
+                overlap.set()
+        try:
+            if not gave_up.is_set() and not overlap.wait(timeout=10):
+                gave_up.set()
+            return original_generate_page(section, source_type, **kwargs)
+        finally:
+            with counter_lock:
+                in_flight[0] -= 1
 
     fake_llm = _make_schema_aware_fake_llm(classifier_type="concept")
     monkeypatch.setattr(templates_module, "get_ingest_llm", lambda: fake_llm)
-    monkeypatch.setattr(ingest_module, "generate_page", _slow_generate_page)
+    monkeypatch.setattr(ingest_module, "generate_page", _rendezvous_generate_page)
 
-    start = time.monotonic()
     asyncio.run(
         ingest_module.aingest_sources(["concurrent.md"], docs_dir=docs_dir, wiki_dir=wiki_dir)
     )
-    elapsed = time.monotonic() - start
 
-    # Serial would be 8*0.05 = 0.4s; concurrent should be well under 350ms
-    assert elapsed < 0.35, (
-        f"Expected concurrent wall-clock < 0.35s (8 sections at 50ms each with "
-        f"concurrency=8), got {elapsed:.3f}s — parallel fan-out may be missing"
+    assert peak_in_flight[0] >= 2, (
+        f"Expected >= 2 generate_page calls in flight simultaneously "
+        f"(KB_INGEST_CONCURRENCY=8), got peak={peak_in_flight[0]} — "
+        "parallel fan-out may be missing"
     )
 
 
