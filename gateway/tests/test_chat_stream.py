@@ -226,10 +226,13 @@ def test_chat_stream_wiki_forwards_c10_lint(gateway_client, monkeypatch):
     truthy value through — mirroring ``derived_from``/``path``)."""
     import gateway.app.routes as _routes
 
-    flagged = {"source": "qa-count-zero-zh-006#q", "heading": "q",
-               "content": "…", "lint": "C10"}
-    clean = {"source": "refund_policy.md#timeline", "heading": "timeline",
-             "content": "…", "lint": None}
+    flagged = {"source": "qa-count-zero-zh-006#q", "heading": "q", "content": "…", "lint": "C10"}
+    clean = {
+        "source": "refund_policy.md#timeline",
+        "heading": "timeline",
+        "content": "…",
+        "lint": None,
+    }
 
     def _fake_wiki_stream(query):
         # stream_fn contract: (1) sources_ready partial, then (2) full result.

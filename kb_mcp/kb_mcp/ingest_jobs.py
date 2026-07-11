@@ -103,6 +103,9 @@ async def _run(job: Job, source: str) -> None:
         reason = batch.failed_reasons.get(source)
         if reason:
             result["reason"] = reason
+        error_type = batch.failed_error_types.get(source)
+        if error_type:
+            result["error_type"] = error_type
     elif batch.results:
         src_result = batch.results[0]
         result = {

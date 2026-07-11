@@ -47,6 +47,7 @@ from .schemas import (
     ImportResponse,
     ImportSourceResultSchema,
     IndexResponse,
+    IngestFailureSchema,
     IngestRequest,
     IngestResponse,
     LintResponse,
@@ -479,7 +480,8 @@ def ingest(req: IngestRequest | None = None) -> IngestResponse:
     (CODING_STANDARD §2.3).
 
     Returns 200 with the IngestResponse in all cases, including when a Source
-    is not found (reflected in ``failed_sources``).
+    is not found (reflected in ``failed_sources``, with the reason in
+    ``failed_source_details`` — issue #507).
     """
     force = req.force if req is not None else False
     if req is not None and req.sources:
@@ -494,6 +496,14 @@ def ingest(req: IngestRequest | None = None) -> IngestResponse:
     return IngestResponse(
         results=batch.results,
         failed_sources=batch.failed_sources,
+        failed_source_details=[
+            IngestFailureSchema(
+                source=name,
+                error_type=batch.failed_error_types.get(name, "IngestError"),
+                error_message=batch.failed_reasons.get(name, "Source could not be processed."),
+            )
+            for name in batch.failed_sources
+        ],
         pages_with_failed_grounding=batch.pages_with_failed_grounding,
         skipped_sources=batch.skipped_sources,
     )

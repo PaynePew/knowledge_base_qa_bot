@@ -759,11 +759,15 @@ async def kb_ingest_v1(
             "failed": True,
             "status": "failed",
         }
-        # Surface a per-source failure reason when the deep module recorded one
-        # (e.g. the size guard) so the host sees *why*, not just failed=True.
+        # Surface a per-source failure reason + error_type when the deep
+        # module recorded them (issue #507 — every ingest_error branch now
+        # records both) so the host sees *why*, not just failed=True.
         reason = batch.failed_reasons.get(source)
         if reason:
             result_payload["reason"] = reason
+        error_type = batch.failed_error_types.get(source)
+        if error_type:
+            result_payload["error_type"] = error_type
     elif batch.results:
         src_result = batch.results[0]
         result_payload = {

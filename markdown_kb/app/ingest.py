@@ -125,6 +125,13 @@ class IngestBatchResult:
     `results` lists one IngestSourceResult per successfully-processed Source.
     `failed_sources` lists bare filenames that failed (Source not found, parse
     error, LLM call failure, or write failure).
+    `failed_reasons` maps a failed source's bare filename to a human-readable
+    explanation, and `failed_error_types` maps it to a short machine-readable
+    category (e.g. ``"SectionTooLarge"``, ``"SourceNotFound"``) — both are
+    populated for EVERY `failed_sources` entry (issue #507; previously only
+    the section_too_large branch populated `failed_reasons`, so every other
+    failure surfaced with no reason at the API/console/CLI/MCP boundary).
+    Use `_record_failure` to populate all three fields together.
     `pages_with_failed_grounding` lists page ids (slugs) that were written but
     failed the grounding check (status=failed_grounding).  Added in Slice #4.
     `skipped_sources` lists IngestSourceResult entries for hash-match no-ops
@@ -135,9 +142,30 @@ class IngestBatchResult:
     results: list[IngestSourceResult] = field(default_factory=list)
     failed_sources: list[str] = field(default_factory=list)
     failed_reasons: dict[str, str] = field(default_factory=dict)
+    failed_error_types: dict[str, str] = field(default_factory=dict)
     pages_with_failed_grounding: list[str] = field(default_factory=list)
     skipped_sources: list[IngestSourceResult] = field(default_factory=list)
     _llm_call_count: int = 0
+
+
+def _record_failure(
+    batch: IngestBatchResult,
+    source_name: str,
+    *,
+    error_type: str,
+    error_message: str,
+) -> None:
+    """Record one Source-level ingest failure across all three parallel fields.
+
+    Centralises what used to be a bare `batch.failed_sources.append(...)` at
+    every `ingest_error` branch (issue #507) so `failed_reasons` /
+    `failed_error_types` are never silently left unset for a given source —
+    the API/console/CLI/MCP surfaces all key off these dicts to render *why*
+    a source failed, not just *that* it failed.
+    """
+    batch.failed_sources.append(source_name)
+    batch.failed_reasons[source_name] = error_message
+    batch.failed_error_types[source_name] = error_type
 
 
 # ---------------------------------------------------------------------------
@@ -729,7 +757,15 @@ def ingest_sources(
     for ambiguous_name in ambiguous_sources:
         # 2+ Sources share this basename — never silently guess (issue #445).
         log_event("ingest_error", f"source={ambiguous_name} error=ambiguous_source")
-        batch.failed_sources.append(ambiguous_name)
+        _record_failure(
+            batch,
+            ambiguous_name,
+            error_type="AmbiguousSource",
+            error_message=(
+                f"Multiple Sources share the filename {ambiguous_name!r}; "
+                "use a path that disambiguates them."
+            )[:200],
+        )
     # Slug collision tracking: single global set so cross-type collisions
     # (e.g. entity "foo" + concept "foo") are also detected.  The second
     # source to claim a slug — regardless of type — receives the -2 suffix.
@@ -751,7 +787,12 @@ def ingest_sources(
                 "ingest_error",
                 f"source={source_name} error=source_not_found",
             )
-            batch.failed_sources.append(source_name)
+            _record_failure(
+                batch,
+                source_name,
+                error_type="SourceNotFound",
+                error_message=f"Source not found under docs/: {source_name}"[:200],
+            )
             continue
 
         try:
@@ -761,7 +802,12 @@ def ingest_sources(
                 "ingest_error",
                 f"source={source_name} error={type(exc).__name__}:parse_error",
             )
-            batch.failed_sources.append(source_name)
+            _record_failure(
+                batch,
+                source_name,
+                error_type="ParseError",
+                error_message=f"{type(exc).__name__}: {str(exc)[:200]}",
+            )
             continue
 
         if not sections:
@@ -769,7 +815,12 @@ def ingest_sources(
                 "ingest_error",
                 f"source={source_name} error=no_sections",
             )
-            batch.failed_sources.append(source_name)
+            _record_failure(
+                batch,
+                source_name,
+                error_type="EmptySource",
+                error_message="Parse produced zero Sections; there is no content to ingest.",
+            )
             continue
 
         # Issue #511 (ADR-0033 observability decision): compute the structure
@@ -797,12 +848,16 @@ def ingest_sources(
                 "ingest_error",
                 f"source={source_name} error=section_too_large heading={oversized_section[:60]!r}",
             )
-            batch.failed_sources.append(source_name)
-            batch.failed_reasons[source_name] = (
-                f"Source too large to ingest: section {oversized_section!r} "
-                f"exceeds the {section_cap}-token per-section limit "
-                f"(KB_INGEST_MAX_SECTION_TOKENS). Split the Source into smaller "
-                f"files or shorten the oversized section."
+            _record_failure(
+                batch,
+                source_name,
+                error_type="SectionTooLarge",
+                error_message=(
+                    f"Source too large to ingest: section {oversized_section!r} "
+                    f"exceeds the {section_cap}-token per-section limit "
+                    f"(KB_INGEST_MAX_SECTION_TOKENS). Split the Source into smaller "
+                    f"files or shorten the oversized section."
+                )[:200],
             )
             continue
 
@@ -879,7 +934,12 @@ def ingest_sources(
                 "ingest_error",
                 f"source={source_name} error={type(exc).__name__}:classify_failed",
             )
-            batch.failed_sources.append(source_name)
+            _record_failure(
+                batch,
+                source_name,
+                error_type="ClassifyError",
+                error_message=f"{type(exc).__name__}: {str(exc)[:200]}",
+            )
             continue
 
         # Step 5: generate draft(s)
@@ -943,7 +1003,12 @@ def ingest_sources(
                 "ingest_error",
                 f"source={source_name} error={type(exc).__name__}:generate_failed",
             )
-            batch.failed_sources.append(source_name)
+            _record_failure(
+                batch,
+                source_name,
+                error_type="GenerateError",
+                error_message=f"{type(exc).__name__}: {str(exc)[:200]}",
+            )
             continue
 
         # Steps 6-11: finalise drafts (timestamp preservation, source_hashes,
@@ -977,7 +1042,12 @@ def ingest_sources(
                 "ingest_error",
                 f"source={source_name} error=write_error:{slug} detail={err_msg}",
             )
-            batch.failed_sources.append(source_name)
+            _record_failure(
+                batch,
+                source_name,
+                error_type="WriteError",
+                error_message=f"{slug}: {err_msg}"[:200],
+            )
             continue
 
         # --- ingest_source (only on success) ---
@@ -1085,7 +1155,15 @@ async def aingest_sources(
     for ambiguous_name in ambiguous_sources:
         # 2+ Sources share this basename — never silently guess (issue #445).
         log_event("ingest_error", f"source={ambiguous_name} error=ambiguous_source")
-        batch.failed_sources.append(ambiguous_name)
+        _record_failure(
+            batch,
+            ambiguous_name,
+            error_type="AmbiguousSource",
+            error_message=(
+                f"Multiple Sources share the filename {ambiguous_name!r}; "
+                "use a path that disambiguates them."
+            )[:200],
+        )
     used_slugs: set[str] = set()
 
     log_event(
@@ -1101,7 +1179,12 @@ async def aingest_sources(
         # duplicated. Edit one guard → edit BOTH (or extract a shared helper — follow-up).
         if not source_path.exists():
             log_event("ingest_error", f"source={source_name} error=source_not_found")
-            batch.failed_sources.append(source_name)
+            _record_failure(
+                batch,
+                source_name,
+                error_type="SourceNotFound",
+                error_message=f"Source not found under docs/: {source_name}"[:200],
+            )
             continue
 
         try:
@@ -1111,12 +1194,22 @@ async def aingest_sources(
                 "ingest_error",
                 f"source={source_name} error={type(exc).__name__}:parse_error",
             )
-            batch.failed_sources.append(source_name)
+            _record_failure(
+                batch,
+                source_name,
+                error_type="ParseError",
+                error_message=f"{type(exc).__name__}: {str(exc)[:200]}",
+            )
             continue
 
         if not sections:
             log_event("ingest_error", f"source={source_name} error=no_sections")
-            batch.failed_sources.append(source_name)
+            _record_failure(
+                batch,
+                source_name,
+                error_type="EmptySource",
+                error_message="Parse produced zero Sections; there is no content to ingest.",
+            )
             continue
 
         # Issue #511: same up-front computation as the sync path (kept in
@@ -1135,12 +1228,16 @@ async def aingest_sources(
                 "ingest_error",
                 f"source={source_name} error=section_too_large heading={oversized_section[:60]!r}",
             )
-            batch.failed_sources.append(source_name)
-            batch.failed_reasons[source_name] = (
-                f"Source too large to ingest: section {oversized_section!r} "
-                f"exceeds the {section_cap}-token per-section limit "
-                f"(KB_INGEST_MAX_SECTION_TOKENS). Split the Source into smaller "
-                f"files or shorten the oversized section."
+            _record_failure(
+                batch,
+                source_name,
+                error_type="SectionTooLarge",
+                error_message=(
+                    f"Source too large to ingest: section {oversized_section!r} "
+                    f"exceeds the {section_cap}-token per-section limit "
+                    f"(KB_INGEST_MAX_SECTION_TOKENS). Split the Source into smaller "
+                    f"files or shorten the oversized section."
+                )[:200],
             )
             continue
 
@@ -1189,7 +1286,12 @@ async def aingest_sources(
                 "ingest_error",
                 f"source={source_name} error={type(exc).__name__}:classify_failed",
             )
-            batch.failed_sources.append(source_name)
+            _record_failure(
+                batch,
+                source_name,
+                error_type="ClassifyError",
+                error_message=f"{type(exc).__name__}: {str(exc)[:200]}",
+            )
             continue
 
         # Step 5: generate draft(s)
@@ -1267,7 +1369,12 @@ async def aingest_sources(
                 "ingest_error",
                 f"source={source_name} error={type(exc).__name__}:generate_failed",
             )
-            batch.failed_sources.append(source_name)
+            _record_failure(
+                batch,
+                source_name,
+                error_type="GenerateError",
+                error_message=f"{type(exc).__name__}: {str(exc)[:200]}",
+            )
             continue
 
         # Steps 6-11: finalise (timestamp preservation, source_hashes, grounding,
@@ -1295,7 +1402,12 @@ async def aingest_sources(
                 "ingest_error",
                 f"source={source_name} error={type(exc).__name__}:finalise_failed",
             )
-            batch.failed_sources.append(source_name)
+            _record_failure(
+                batch,
+                source_name,
+                error_type="FinaliseError",
+                error_message=f"{type(exc).__name__}: {str(exc)[:200]}",
+            )
             continue
 
         for slug_str, reason_str, claims_lst in grounding_log_entries:
@@ -1311,7 +1423,12 @@ async def aingest_sources(
                 "ingest_error",
                 f"source={source_name} error=write_error:{err_slug} detail={err_msg}",
             )
-            batch.failed_sources.append(source_name)
+            _record_failure(
+                batch,
+                source_name,
+                error_type="WriteError",
+                error_message=f"{err_slug}: {err_msg}"[:200],
+            )
             continue
 
         log_event(

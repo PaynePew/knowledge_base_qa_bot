@@ -392,12 +392,32 @@ class IngestRequest(BaseModel):
     force: bool = False
 
 
+class IngestFailureSchema(BaseModel):
+    """Per-source failure detail for the API response (issue #507).
+
+    Mirrors ``ImportFailureSchema`` / ``TranscribeJobResultSchema``'s
+    ``error_type`` + ``error_message`` shape. ``source`` is the bare filename
+    (same string that also appears in ``IngestResponse.failed_sources``).
+    ``error_type`` is a short machine-readable category (e.g.
+    ``"SectionTooLarge"``, ``"SourceNotFound"``); ``error_message`` is a
+    human-readable explanation, truncated to 200 characters, no stack trace.
+    """
+
+    source: str
+    error_type: str
+    error_message: str
+
+
 class IngestResponse(BaseModel):
     """Response body for POST /ingest.
 
     `results` lists one IngestSourceResult per successfully processed Source.
     `failed_sources` lists bare filenames that could not be processed (Source
     not found, parse error, etc.).
+    `failed_source_details` lists one `IngestFailureSchema` per
+    `failed_sources` entry, in the same order, carrying WHY each source
+    failed (issue #507) — additive alongside `failed_sources` so existing
+    consumers that treat `failed_sources` as bare filenames are unaffected.
     `pages_with_failed_grounding` lists page ids (slugs) of pages that were
     written but failed the grounding check (status=failed_grounding).  Added
     in Slice #4 — empty on all prior slices.
@@ -407,6 +427,7 @@ class IngestResponse(BaseModel):
 
     results: list[IngestSourceResult]
     failed_sources: list[str]
+    failed_source_details: list[IngestFailureSchema] = []
     pages_with_failed_grounding: list[str] = []
     skipped_sources: list[IngestSourceResult] = []
 
