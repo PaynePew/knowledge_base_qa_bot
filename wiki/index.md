@@ -2,7 +2,7 @@
 
 # Wiki Index
 
-> 174 Sources, 177 Sections indexed.
+> 178 Sources, 181 Sections indexed.
 
 ## account-deletion
 
@@ -140,9 +140,9 @@
 
 - [Hold Period](../docs/hold-period#hold-period) — `hold-period#hold-period`
 
-## how-do-i-reset-my-password-354473
+## how-long-do-refunds-take-for-a-request-t-6d6071
 
-- [how-do-i-reset-my-password-354473](../docs/how-do-i-reset-my-password-354473) — `how-do-i-reset-my-password-354473`
+- [how-long-do-refunds-take-for-a-request-t-6d6071](../docs/how-long-do-refunds-take-for-a-request-t-6d6071) — `how-long-do-refunds-take-for-a-request-t-6d6071`
 
 ## how-to-use
 
@@ -359,9 +359,17 @@
 
 - [Warranty Periods](../docs/warranty-periods#warranty-periods) — `warranty-periods#warranty-periods`
 
+## what-payment-methods-are-accepted-for-pa-fdc2ef
+
+- [what-payment-methods-are-accepted-for-pa-fdc2ef](../docs/what-payment-methods-are-accepted-for-pa-fdc2ef) — `what-payment-methods-are-accepted-for-pa-fdc2ef`
+
 ## what-to-bring
 
 - [What to Bring](../docs/what-to-bring#what-to-bring) — `what-to-bring#what-to-bring`
+
+## which-countries-does-acme-shop-ship-to-f70fda
+
+- [which-countries-does-acme-shop-ship-to-f70fda](../docs/which-countries-does-acme-shop-ship-to-f70fda) — `which-countries-does-acme-shop-ship-to-f70fda`
 
 ## 不保固範圍
 
@@ -382,6 +390,10 @@
 ## 付款方式
 
 - [付款方式](../docs/付款方式#付款方式) — `付款方式#付款方式`
+
+## 你們接受哪些付款方式-fb0f2e
+
+- [你們接受哪些付款方式-fb0f2e](../docs/你們接受哪些付款方式-fb0f2e) — `你們接受哪些付款方式-fb0f2e`
 
 ## 使用效期
 
@@ -630,6 +642,10 @@
 ## 退款申請窗口
 
 - [退款申請窗口](../docs/退款申請窗口#退款申請窗口) — `退款申請窗口#退款申請窗口`
+
+## 退款要幾天才會退到帳戶-d343c3
+
+- [退款要幾天才會退到帳戶-d343c3](../docs/退款要幾天才會退到帳戶-d343c3) — `退款要幾天才會退到帳戶-d343c3`
 
 ## 退貨期限提醒
 
