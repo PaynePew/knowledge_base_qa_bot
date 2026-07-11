@@ -211,3 +211,15 @@ def test_comment_input_has_500_char_maxlength_matching_server_cap():
     text = _ui_text()
     fn = _extract_function(text, "renderFeedbackWidget")
     assert 'maxlength: "500"' in fn
+
+
+def test_sent_comment_collapses_widget_to_confirmation():
+    """#564 item 1: a successful comment send replaces the whole interactive
+    widget (thumbs + comment row) with a single decisive confirmation — the
+    input/button must not linger. Reaction-only stays interactive (the collapse
+    lives only in the send handler, gated on resp.ok)."""
+    text = _ui_text()
+    fn = _extract_function(text, "renderFeedbackWidget")
+    assert "root.replaceChildren(" in fn
+    assert "feedback-done" in fn
+    assert "feedbackSaved" in fn

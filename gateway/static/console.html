@@ -3393,7 +3393,6 @@ var LINT_CHROME = {
     feedbackEmpty:       "No feedback yet — 👍/👎 from reader answer cards will show up here.",
     feedbackUpLabel:     "👍 Up",
     feedbackDownLabel:   "👎 Down",
-    feedbackTotalLabel:  "Total submissions",
     feedbackColTime:      "Time",
     feedbackColReaction:  "Reaction",
     feedbackColQuery:     "Query",
@@ -3675,7 +3674,6 @@ var LINT_CHROME = {
     feedbackEmpty:       "尚無回饋 — Reader 答案卡上的 👍/👎 會出現在這裡",
     feedbackUpLabel:     "👍 讚",
     feedbackDownLabel:   "👎 倒讚",
-    feedbackTotalLabel:  "總提交數",
     feedbackColTime:      "時間",
     feedbackColReaction:  "反應",
     feedbackColQuery:     "查詢",
@@ -7848,12 +7846,15 @@ buildHybridTrack(document.getElementById("hybrid-track-root"));
    beside lastBudgetSnapshot — see the comment there for why.
    ============================================================ */
 
+/* Only the folded up/down counts are shown — they already equal the visible
+   row count. total_raw (raw JSONL line count) stays in the API response for
+   debugging but is deliberately NOT rendered: it counts a reaction-then-comment
+   on one answer as 2 submissions, which reads as inflated on the panel. */
 function renderFeedbackStats(counts) {
   var chrome = LINT_CHROME[consoleLang];
   return el("div", { class: "feedback-stats" },
     el("span", { class: "feedback-stat" }, el("b", { text: String(counts.up) }), el("span", { text: " " + chrome.feedbackUpLabel })),
-    el("span", { class: "feedback-stat" }, el("b", { text: String(counts.down) }), el("span", { text: " " + chrome.feedbackDownLabel })),
-    el("span", { class: "feedback-stat" }, el("b", { text: String(counts.total_raw) }), el("span", { text: " " + chrome.feedbackTotalLabel }))
+    el("span", { class: "feedback-stat" }, el("b", { text: String(counts.down) }), el("span", { text: " " + chrome.feedbackDownLabel }))
   );
 }
 
@@ -7867,11 +7868,19 @@ function truncateFeedbackQuery(q) {
   return q.slice(0, FEEDBACK_QUERY_TRUNCATE_CHARS) + "…";
 }
 
+/* Feedback timestamps are stored ISO-8601 UTC; render in the operator's local
+   timezone, human-readable. Unparseable value falls back to the raw string. */
+function formatFeedbackTime(ts) {
+  if (!ts) return "";
+  var d = new Date(ts);
+  return isNaN(d.getTime()) ? ts : d.toLocaleString();
+}
+
 function renderFeedbackRow(rec) {
   var chrome = LINT_CHROME[consoleLang];
   var icon = rec.reaction === "up" ? "👍" : "👎";
   return el("tr", {},
-    el("td", { class: "feedback-time", text: rec.ts || "" }),
+    el("td", { class: "feedback-time", text: formatFeedbackTime(rec.ts) }),
     el("td", { class: "feedback-reaction", text: icon }),
     el("td", { class: "feedback-query", text: truncateFeedbackQuery(rec.query), title: rec.query || "" }),
     el("td", { class: "feedback-comment", text: rec.comment || chrome.feedbackNoComment }),
