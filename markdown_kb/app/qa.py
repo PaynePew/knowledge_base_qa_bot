@@ -650,7 +650,7 @@ def dispatch_filing(query: str, result: dict) -> FiledStatus | None:
         )
         return None
 
-    cited_refs = [_SectionRef(id=s["source"]) for s in result["sources"]]
+    cited_refs = [_SectionRef(id=s["source"]) for s in sources]
     return maybe_file_answer(query, result["answer"], cited_refs)
 
 
