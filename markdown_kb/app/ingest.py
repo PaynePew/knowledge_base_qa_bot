@@ -857,7 +857,7 @@ def ingest_sources(
                     f"exceeds the {section_cap}-token per-section limit "
                     f"(KB_INGEST_MAX_SECTION_TOKENS). Split the Source into smaller "
                     f"files or shorten the oversized section."
-                ),
+                )[:200],
             )
             continue
 
@@ -1237,7 +1237,7 @@ async def aingest_sources(
                     f"exceeds the {section_cap}-token per-section limit "
                     f"(KB_INGEST_MAX_SECTION_TOKENS). Split the Source into smaller "
                     f"files or shorten the oversized section."
-                ),
+                )[:200],
             )
             continue
 
