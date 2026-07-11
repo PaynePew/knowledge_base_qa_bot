@@ -2029,7 +2029,8 @@ def _judge_page_pair(
 # Reconcile drafting (tier-B S1 — issue #376, ADR-0028)
 # ---------------------------------------------------------------------------
 
-_RECONCILE_SYSTEM_PROMPT = """\
+_RECONCILE_SYSTEM_PROMPT = (
+    """\
 You are a knowledge-base curator. Two wiki pages currently disagree about a \
 fact (a Coherence contradiction). You are given both pages' current content \
 and the union of the Source excerpts they cite. Rewrite BOTH pages so they \
@@ -2049,6 +2050,9 @@ picking a side arbitrarily.
 Return content_a (the full revised content for Page A, structurally \
 identical in shape to the original) and content_b (same for Page B).
 """
+    + "\n\n"
+    + UNTRUSTED_GUARD
+)
 
 
 def _build_reconcile_user_message(
@@ -2060,13 +2064,15 @@ def _build_reconcile_user_message(
 ) -> str:
     """Format the two pages' current content plus the union Sources for the drafting call."""
     parts = [
-        f"**Page A** (slug: `{page_a}`):\n\n{content_a}",
-        f"**Page B** (slug: `{page_b}`):\n\n{content_b}",
+        f"**Page A** (slug: `{page_a}`):\n\n{wrap_untrusted(content_a)}",
+        f"**Page B** (slug: `{page_b}`):\n\n{wrap_untrusted(content_b)}",
     ]
     source_parts = []
     for section in union_sections:
         heading = " > ".join(section.heading_path)
-        source_parts.append(f"[Source: {section.id}]\nHeading: {heading}\n{section.content}")
+        source_parts.append(
+            f"[Source: {section.id}]\nHeading: {heading}\n{wrap_untrusted(section.content)}"
+        )
     sources_text = "\n\n".join(source_parts) if source_parts else "(no Source excerpts available)"
     parts.append(f"**Cited Source excerpts (union of both pages' Sources):**\n\n{sources_text}")
     return "\n\n---\n\n".join(parts)
@@ -2112,7 +2118,8 @@ def generate_reconcile_draft(
 # Collision drafting (tier-B S2 — issue #378, ADR-0028)
 # ---------------------------------------------------------------------------
 
-_COLLISION_MERGE_SYSTEM_PROMPT = """\
+_COLLISION_MERGE_SYSTEM_PROMPT = (
+    """\
 You are a knowledge-base curator. Several wiki pages were auto-suffixed \
 because they cover the same concept (a Coherence slug collision). You are \
 given the current content of every page in the group and the union of the \
@@ -2132,6 +2139,9 @@ concatenate the pages.
 Return content_base: the full merged content for the base page, structurally \
 identical in shape to the original base page.
 """
+    + "\n\n"
+    + UNTRUSTED_GUARD
+)
 
 
 def _build_collision_merge_user_message(
@@ -2142,13 +2152,15 @@ def _build_collision_merge_user_message(
 ) -> str:
     """Format the base page + every variant's current content plus the union
     Sources for the merge drafting call."""
-    parts = [f"**Base page** (slug: `{base_slug}`):\n\n{base_content}"]
+    parts = [f"**Base page** (slug: `{base_slug}`):\n\n{wrap_untrusted(base_content)}"]
     for variant_slug, variant_content in variant_contents.items():
-        parts.append(f"**Variant** (slug: `{variant_slug}`):\n\n{variant_content}")
+        parts.append(f"**Variant** (slug: `{variant_slug}`):\n\n{wrap_untrusted(variant_content)}")
     source_parts = []
     for section in union_sections:
         heading = " > ".join(section.heading_path)
-        source_parts.append(f"[Source: {section.id}]\nHeading: {heading}\n{section.content}")
+        source_parts.append(
+            f"[Source: {section.id}]\nHeading: {heading}\n{wrap_untrusted(section.content)}"
+        )
     sources_text = "\n\n".join(source_parts) if source_parts else "(no Source excerpts available)"
     parts.append(
         f"**Cited Source excerpts (union of every group member's Sources):**\n\n{sources_text}"
@@ -2189,7 +2201,8 @@ def generate_collision_merge_draft(
     return draft
 
 
-_COLLISION_DIFFERENTIATE_SYSTEM_PROMPT = """\
+_COLLISION_DIFFERENTIATE_SYSTEM_PROMPT = (
+    """\
 You are a knowledge-base curator. Several wiki pages were auto-suffixed \
 because they cover the same concept (a Coherence slug collision). You are \
 given the current content of every page in the group and the union of the \
@@ -2208,6 +2221,9 @@ own page with distinct, non-duplicated content.
 Return pages: one entry per input slug, each with its full revised content, \
 structurally identical in shape to the original.
 """
+    + "\n\n"
+    + UNTRUSTED_GUARD
+)
 
 
 def _build_collision_differentiate_user_message(
@@ -2216,11 +2232,16 @@ def _build_collision_differentiate_user_message(
 ) -> str:
     """Format every group member's current content plus the union Sources
     for the differentiate drafting call."""
-    parts = [f"**Page** (slug: `{slug}`):\n\n{content}" for slug, content in contents.items()]
+    parts = [
+        f"**Page** (slug: `{slug}`):\n\n{wrap_untrusted(content)}"
+        for slug, content in contents.items()
+    ]
     source_parts = []
     for section in union_sections:
         heading = " > ".join(section.heading_path)
-        source_parts.append(f"[Source: {section.id}]\nHeading: {heading}\n{section.content}")
+        source_parts.append(
+            f"[Source: {section.id}]\nHeading: {heading}\n{wrap_untrusted(section.content)}"
+        )
     sources_text = "\n\n".join(source_parts) if source_parts else "(no Source excerpts available)"
     parts.append(
         f"**Cited Source excerpts (union of every group member's Sources):**\n\n{sources_text}"

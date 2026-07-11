@@ -53,6 +53,8 @@ from langchain_openai import ChatOpenAI
 from markdown_kb.app import grounding as grounding_module
 from markdown_kb.app.errors import LLMError
 from markdown_kb.app.grounding import GroundingOutcome
+from markdown_kb.app.prompt_builder import QUERY_STEERING_GUARD
+from markdown_kb.app.prompt_safety import UNTRUSTED_GUARD, wrap_untrusted
 
 from . import indexer
 from .indexer import Chunk
@@ -81,7 +83,8 @@ _CITATION_PATH_ROOTS = ("docs/", "raw/", "wiki/")
 # ---------------------------------------------------------------------------
 # System prompt — Stack B's own literal of the ADR-0001 strict-grounded contract
 # ---------------------------------------------------------------------------
-SYSTEM_PROMPT = """You are a strict knowledge-base assistant. Follow these rules exactly:
+SYSTEM_PROMPT = (
+    """You are a strict knowledge-base assistant. Follow these rules exactly:
 
 1. Answer ONLY using the information in the CONTEXT section below. Do not use outside world knowledge, training data, or inference beyond what is written.
 2. Every factual claim in your answer MUST cite at least one source using the exact format: [Source: filename#heading]. Use the Citation ids as they appear in the CONTEXT headers.
@@ -90,6 +93,11 @@ SYSTEM_PROMPT = """You are a strict knowledge-base assistant. Follow these rules
 5. Never guess, never infer beyond the text, never complete gaps with general knowledge. "I cannot confirm from the knowledge base." is a good, expected answer — not a failure.
 6. Answer in the same language as the QUESTION. Exception: if the CONTEXT does not contain enough information, always reply with the exact English phrase "I cannot confirm from the knowledge base." regardless of the question's language.
 """
+    + "\n\n"
+    + UNTRUSTED_GUARD
+    + "\n\n"
+    + QUERY_STEERING_GUARD
+)
 
 # ---------------------------------------------------------------------------
 # LLM singleton (lazy — CODING_STANDARD §2.7 / §10 lazy-singleton)
@@ -160,12 +168,21 @@ def build_prompt(question: str, chunks: list[Chunk]) -> str:
 
     Scores are NOT included (PROMPT.md Q3: prevents the model reasoning
     "low score → guess").
+
+    Chunk content is untrusted corpus text (a Chunk can carry an embedded
+    instruction) and is fenced with ``wrap_untrusted`` (ADR-0040 / issue #584)
+    so the guard clause in ``SYSTEM_PROMPT`` governs it, mirroring
+    markdown_kb's own ``prompt_builder.build_prompt``. The question is
+    deliberately left un-fenced — see ``QUERY_STEERING_GUARD``'s docstring
+    (``markdown_kb.app.prompt_builder``) for why. The ``[Source: ...]`` /
+    ``Heading:`` labels and the ``CONTEXT:`` / ``QUESTION:`` markers stay
+    OUTSIDE the fence (trusted prompt structure, not untrusted content).
     """
     parts: list[str] = ["CONTEXT:\n"]
 
     for chunk in chunks:
         breadcrumb = " > ".join(chunk.heading_path)
-        block = f"[Source: {chunk.source}]\nHeading: {breadcrumb}\n{chunk.content}\n"
+        block = f"[Source: {chunk.source}]\nHeading: {breadcrumb}\n{wrap_untrusted(chunk.content)}\n"
         parts.append(block)
 
     parts.append(f"\nQUESTION:\n{question}")
