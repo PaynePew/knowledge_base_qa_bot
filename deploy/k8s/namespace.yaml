@@ -1,0 +1,7 @@
+# One namespace per tenant, mirroring the compose project name (`name:
+# ask-wiki-rag` in docker-compose.prod.yml) that keeps this tenant from being
+# merged into another on the shared VPS.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ask-wiki-rag
