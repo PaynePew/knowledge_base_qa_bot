@@ -1,13 +1,13 @@
-%%{init: {"theme":"base","themeVariables":{"fontfamily":"Segoe UI, Helvetica, Arial","fontSize":"15px"}}}%%
-flowchart LR
-    classDef agent fill:#ece4f7,stroke:#6a3fb0,stroke-width:1.4px,color:#211043;
-    classDef det fill:#eceff1,stroke:#5f7d8c,stroke-width:1.2px,color:#1c2a33;
-    classDef gate fill:#fff3c9,stroke:#c4941a,stroke-width:1.6px,color:#3a2c05;
-    classDef human fill:#fbe4d4,stroke:#cf6a2c,stroke-width:1.6px,color:#46260f;
-    classDef github fill:#d7e6f5,stroke:#2f6fb0,stroke-width:1.4px,color:#0f2a44;
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Segoe UI, Helvetica, Arial","fontSize":"17px"},"flowchart":{"nodeSpacing":45,"rankSpacing":55,"padding":10}}}%%
+flowchart TB
+    classDef agent fill:#ece4f7,stroke:#6a3fb0,stroke-width:1.6px,color:#211043;
+    classDef det fill:#eceff1,stroke:#5f7d8c,stroke-width:1.4px,color:#1c2a33;
+    classDef gate fill:#fff3c9,stroke:#c4941a,stroke-width:1.8px,color:#3a2c05;
+    classDef human fill:#fbe4d4,stroke:#cf6a2c,stroke-width:1.8px,color:#46260f;
+    classDef github fill:#d7e6f5,stroke:#2f6fb0,stroke-width:1.6px,color:#0f2a44;
 
     subgraph P1 ["① Plan — issue source"]
-        direction TB
+        direction LR
         ARGS["explicit slices / ids via args<br/>(zero tracker calls)"]:::det
         PA(["Plan agent · haiku<br/>gh issue list<br/>label: ready-for-agent"]):::agent
         TODO["work list<br/>id · branch slice/&lt;N&gt;"]:::det
@@ -16,13 +16,13 @@ flowchart LR
     end
 
     subgraph P2 ["② Build — one pipeline per issue, in parallel"]
-        direction TB
+        direction LR
         BA(["Build agent · sonnet<br/>isolated git worktree, branch off main<br/>implement.md (TDD) → review.md self-trim"]):::agent
         VA(["Adversarial verifier · opus<br/>read-only diff review vs CODING_STANDARD + ADRs<br/>every blocker needs evidence + severity"]):::agent
         BA --> VA
     end
 
-    GATE{"deterministic gate<br/>any critical / high<br/>blocker?"}:::gate
+    GATE{"deterministic gate<br/>any critical / high blocker?"}:::gate
     BLOCKED["reported as blocked<br/>branch kept for a human"]:::det
     R0["Rung 0 — openPRs:false<br/>verified branches handed to<br/>the top-level session / human"]:::human
 
@@ -34,14 +34,14 @@ flowchart LR
         VD(["Verdict agent · opus<br/>re-verifies the pushed SHA on origin<br/>posts its own verify/verdict commit status"]):::agent
     end
 
-    BP["branch protection<br/>required checks:<br/>CI (Windows + Ubuntu)<br/>∧ verify/verdict"]:::github
-    HM["Rung 2 (default):<br/>human presses merge<br/>Rung 3 (autoMerge, opt-in):<br/>GitHub auto-merges"]:::human
+    BP["branch protection · required checks:<br/>CI (Windows + Ubuntu) ∧ verify/verdict"]:::github
+    HM["Rung 2 (default): human presses merge<br/>Rung 3 (autoMerge, opt-in): GitHub auto-merges"]:::human
 
-    TODO --> BA
+    P1 --> P2
     VA --> GATE
     GATE -- "critical / high" --> BLOCKED
-    GATE -- "pass" --> MA
+    GATE -- "pass" --> P3
     GATE -. "openPRs:false" .-> R0
-    MA --> VD
-    VD --> BP
+    P3 --> P4
+    P4 --> BP
     BP --> HM
