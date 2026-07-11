@@ -17,7 +17,14 @@ Compose → k8s mapping (each manifest carries the detailed comments):
 | shared `edge` Caddy reverse proxy | NodePort + kind `extraPortMappings` (Ingress = stretch) |
 | single service, no volumes (ADR-0021 ephemeral) | `replicas: 1`, `strategy: Recreate`, no PVC |
 
-## Runbook (timebox: expect ~1h to first green /healthz)
+## Runbook
+
+**Live-verified end-to-end 2026-07-11** on Windows 11 + Docker Desktop (WSL2,
+cgroup v1) + kind v0.32.0 + kubectl v1.34.1: cluster create ~1 min, pod
+Ready in 48 s (including the GHCR pull), `/healthz` 200 via
+`localhost:8080`, grounded `/chat/stream` answer with citation identical in
+shape to the VPS tenant, and the self-healing demo below (replacement pod
+Ready seconds after a kill, healthz 200 again).
 
 Prereqs: Docker Desktop running; `kubectl` + `kind` installed (kind lands via
 WinGet at `$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Kubernetes.kind_*\kind.exe`
@@ -75,6 +82,11 @@ The replacement pod serves the committed seed again — the k8s analog of
 
 ## Troubleshooting
 
+- **`kind create cluster` fails at "Starting control-plane"** with kubeadm's
+  API POSTs looping on empty responses — check `docker info --format
+  '{{.CgroupVersion}}'`. On cgroup **v1** the default node image
+  (v1.36.1) crash-loops; `kind-cluster.yaml` pins `kindest/node:v1.33.1`
+  for exactly this (observed + fixed 2026-07-11, see comment there).
 - `ImagePullBackOff` — check `kubectl -n ask-wiki-rag describe pod ...`. If
   GHCR rate-limits or the package went private, fall back to §4b side-load.
 - `OOMKilled` (`describe pod` shows exit 137) — the 512Mi bulkhead is sized for

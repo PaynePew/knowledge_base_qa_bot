@@ -10,6 +10,14 @@ kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
   - role: control-plane
+    # Pinned after a live failure (2026-07-11): kind v0.32's default node
+    # image (kindest/node:v1.36.1) crash-loops its apiserver on a Docker
+    # Desktop WSL2 VM still running cgroup v1 (`docker info` -> "Cgroup
+    # Version: 1"); v1.33.1 boots clean on the same host. If your Docker
+    # reports cgroup v2 you may drop this pin. The proper host-side fix is
+    # upgrading WSL2 to cgroup v2 (`.wslconfig` kernelCommandLine) — a
+    # machine-wide change, deliberately not assumed here.
+    image: kindest/node:v1.33.1
     extraPortMappings:
       - containerPort: 30080 # the NodePort opened by service.yaml
         hostPort: 8080       # http://localhost:8080 on the Windows host
