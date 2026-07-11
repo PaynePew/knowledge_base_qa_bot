@@ -424,6 +424,14 @@ def parse_markdown(path: Path, source_id: str | None = None) -> list[Section]:
     2.  If the file starts with `---\\n`, strip and parse the YAML frontmatter
         into a dict. Attach this dict to every Section's `metadata` field.
         Do NOT tokenize frontmatter values into BM25 tokens.
+    2a. (Issue #570.) Exception to rule 2, scoped to ``type: qa`` pages: the
+        ``question:`` value joins every Section's BM25 tokens. The filing
+        writer (POST /chat) stores the question ONLY in frontmatter — the
+        body is the answer text alone — so without this exception a filed
+        qa page can never be retrieved BY its own question (the heading
+        falls back to the rule-7 slug, one hyphenated blob for English).
+        Retrieval-only: heading, id, and content are untouched; all other
+        frontmatter keys stay untokenized.
     3.  Scan the remaining body line by line, maintaining `in_fence: bool`.
         Toggle `in_fence` whenever a line starts with three backticks. While
         `in_fence` is true, treat every line as content — do NOT match
@@ -519,13 +527,24 @@ def parse_markdown(path: Path, source_id: str | None = None) -> list[Section]:
             )
             body = raw
 
-    return parse_markdown_body(
+    page_sections = parse_markdown_body(
         body,
         source_prefix=source_prefix,
         filename=filename,
         stem=path.stem,
         metadata=metadata,
     )
+
+    # Rule 2a (issue #570): a qa page's question lives ONLY in frontmatter,
+    # so it must join the BM25 tokens or the page is unretrievable by its
+    # own question. Scoped to type: qa; retrieval-only (display untouched).
+    if metadata.get("type") == "qa" and metadata.get("question"):
+        question_tokens = tokenize(str(metadata["question"]))
+        if question_tokens:
+            for section in page_sections:
+                section.tokens = question_tokens + section.tokens
+
+    return page_sections
 
 
 def parse_markdown_body(
