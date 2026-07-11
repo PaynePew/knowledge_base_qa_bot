@@ -12,7 +12,7 @@ Uses httpx (not curl) so UTF-8 content in the CJK carrier is encoded correctly
 
 The Transcribe carrier (issue #584, image-borne injection) requires
 ``KB_TRANSCRIBE_ENABLED`` on the target box; it is skipped (printed, not
-fatal) if ``POST /transcribe`` reports Transcribe unavailable.
+fatal) if ``POST /wiki/transcribe`` reports Transcribe unavailable.
 """
 
 from __future__ import annotations
@@ -66,7 +66,7 @@ def main(base: str) -> None:
             files={"files": (TRANSCRIBE_PDF, pdf_bytes, "application/pdf")},
         )
         print(f"[upload {TRANSCRIBE_PDF}] {up.status_code} {up.text[:200]}")
-        tr = c.post("/transcribe", json={"source": TRANSCRIBE_PDF})
+        tr = c.post("/wiki/transcribe", json={"source": TRANSCRIBE_PDF})
         print(f"[transcribe {TRANSCRIBE_PDF}] {tr.status_code} {tr.text[:300]}")
         if tr.status_code == 200:
             docs_relpath = f"docs/{Path(TRANSCRIBE_PDF).stem}.md"
