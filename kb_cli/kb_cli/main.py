@@ -373,11 +373,15 @@ def _print_ingest_batch(batch: object) -> None:
             f"{skipped.sections_count} section(s))."
         )
 
-    # Per failed source.  Surface the deep module's reason (e.g. the size guard)
-    # when present, otherwise the generic line.
+    # Per failed source.  Surface the deep module's error_type + reason
+    # (issue #507 — every ingest_error branch now records both, not just the
+    # size guard) when present, otherwise the generic line.
     for failed in batch.failed_sources:
         reason = batch.failed_reasons.get(failed)
-        if reason:
+        error_type = batch.failed_error_types.get(failed)
+        if reason and error_type:
+            typer.echo(f"Failed: {failed} [{error_type}] — {reason}", err=True)
+        elif reason:
             typer.echo(f"Failed: {failed} — {reason}", err=True)
         else:
             typer.echo(f"Failed: {failed} — could not be processed.", err=True)
