@@ -10,6 +10,25 @@ name: deploy
 on:
   push:
     branches: [main]
+    # Skip the deploy (gate + build + SSH + container recreate) for merges that
+    # cannot change the shipped artifact (issue #587). This is a DENYLIST: only
+    # paths proven inert are listed, so any new/unlisted path still deploys —
+    # fail toward deploying. Two consequences of a skipped deploy: no
+    # :<sha> image tag is published for that commit (rollback map is sparse),
+    # and the box's ephemeral runtime state survives (no container recreate).
+    # `workflow_dispatch` below bypasses this filter entirely (manual deploys
+    # always run).
+    paths-ignore:
+      - 'project-docs/**' # ADRs / plans / security probes — never shipped
+      - '*.md'            # root docs only (README/CLAUDE/CONTEXT/PROMPT);
+                          # wiki/** and docs/** stay deploy-triggering (baked seed)
+      - '.claude/**'      # agent harness config, not in the build context
+      - 'examples/**'     # sample inputs for local experimentation
+      - 'eval/**'         # dockerignored (dev-only; single manifest survivor)
+      - 'scripts/**'      # operator tooling (rebake/fixtures), no runtime imports
+      - '**/tests/**'     # dockerignored — the image is byte-identical
+      - '.github/**'      # workflow edits take effect on their NEXT trigger;
+                          # a deploy just to ship a workflow change is a no-op
   workflow_dispatch:
 
 # Lowercase owner/repo for the GHCR path; github.repository is already
