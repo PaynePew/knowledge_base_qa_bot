@@ -89,7 +89,6 @@ def test_feedback_chrome_keys_present_and_zh_is_real_chinese():
         "feedbackEmpty",
         "feedbackUpLabel",
         "feedbackDownLabel",
-        "feedbackTotalLabel",
         "feedbackColTime",
         "feedbackColReaction",
         "feedbackColQuery",
@@ -153,6 +152,30 @@ def test_render_feedback_result_renders_stats_and_table_for_nonempty():
     fn = _extract_function(text, "renderFeedbackResult")
     assert "renderFeedbackStats(data.counts)" in fn
     assert '"feedback-table"' in fn
+
+
+def test_feedback_stats_shows_only_up_down_not_total_raw():
+    """#564 item 3: total_raw over-counts (a reaction-then-comment on one
+    answer is 2 raw records) so it reads as inflated vs the folded rows shown.
+    The panel renders only up/down, which equal the visible row count; the
+    now-dead feedbackTotalLabel key is gone from LINT_CHROME."""
+    text = _console_text()
+    fn = _extract_function(text, "renderFeedbackStats")
+    assert "counts.up" in fn
+    assert "counts.down" in fn
+    assert "counts.total_raw" not in fn
+    assert "feedbackTotalLabel" not in text
+
+
+def test_feedback_time_rendered_in_local_human_readable_format():
+    """#564 item 2: timestamps stored ISO-8601 UTC render via a local-timezone
+    formatter (not the raw ISO string), with a graceful fallback."""
+    text = _console_text()
+    row_fn = _extract_function(text, "renderFeedbackRow")
+    assert "formatFeedbackTime(rec.ts)" in row_fn
+    helper = _extract_function(text, "formatFeedbackTime")
+    assert "toLocaleString()" in helper
+    assert "isNaN" in helper
 
 
 def test_render_feedback_row_uses_textcontent_only_and_all_columns():
