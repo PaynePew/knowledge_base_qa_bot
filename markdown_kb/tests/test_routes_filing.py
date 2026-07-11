@@ -582,9 +582,61 @@ def test_dispatch_filing_skips_when_all_sources_are_qa_pages(monkeypatch):
     assert calls == [], "maybe_file_answer must NOT be called for all-qa-cited answers"
 
 
-def test_dispatch_filing_still_files_when_mix_of_qa_and_non_qa_sources(monkeypatch):
-    """When cited sources include BOTH qa and non-qa pages, dispatch_filing must
-    still file (ADR-0020 gate is 'all cited are qa'; a mix means new info present).
+# ---------------------------------------------------------------------------
+# issue #573: broadens the gate above from "every cited source is qa" to
+# "the TOP-ranked cited source is qa" (result["sources"] is BM25-rank-ordered
+# best-first). Supersedes the pre-#573 "mix of qa + non-qa still files"
+# coverage: a mix now behaves differently depending on WHICH source is on
+# top — see the two tests below for both directions of that mix.
+# ---------------------------------------------------------------------------
+
+
+def test_dispatch_filing_skips_when_top_citation_is_qa_even_with_non_qa_lower(
+    monkeypatch, tmp_path
+):
+    """issue #573 AC(a): when the TOP-ranked cited source is a live wiki/qa/
+    page, dispatch_filing must skip filing (and log qa_filing_skip) even when
+    a non-qa Source section is cited lower in the list — a lower-ranked,
+    unused retrieval candidate does not mean the answer drew on new
+    information.
+    """
+    from app import qa
+
+    calls: list = []
+    monkeypatch.setattr(qa, "maybe_file_answer", lambda *a, **k: calls.append(a))
+
+    qa_source_id = "how-long-do-refunds-take-abc123"
+    result = {
+        "answer": "Refunds take 5-7 business days per our policy.",
+        "grounding_outcome": _approved_outcome(qa_source_id),
+        "sources": [
+            {
+                "source": qa_source_id,
+                "path": f"wiki/qa/{qa_source_id}.md",  # TOP-ranked
+            },
+            {
+                "source": REFUND_SECTION_ID,
+                "path": None,  # non-qa source (docs/ section), ranked LOWER
+            },
+        ],
+    }
+
+    returned = qa.dispatch_filing("How long do refunds take?", result)
+    assert returned is None, (
+        "dispatch_filing must skip filing when the TOP-ranked cited source is a "
+        "wiki/qa/ page, even with a non-qa source cited lower (issue #573)"
+    )
+    assert calls == [], "maybe_file_answer must NOT be called when the top citation is qa"
+
+    log = (tmp_path / "wiki" / "log.md").read_text(encoding="utf-8")
+    assert "qa_filing_skip" in log, f"Expected qa_filing_skip in log, got:\n{log}"
+    assert "reason=top_citation_is_qa" in log
+
+
+def test_dispatch_filing_still_files_when_top_citation_is_source_section(monkeypatch):
+    """issue #573 AC(b): when the TOP-ranked cited source is a non-qa Source
+    section, dispatch_filing must still file even if a wiki/qa/ page is cited
+    LOWER in the list — the gate is conservative and looks only at position 0.
     """
     from app import qa
 
@@ -597,19 +649,19 @@ def test_dispatch_filing_still_files_when_mix_of_qa_and_non_qa_sources(monkeypat
         "grounding_outcome": _approved_outcome(qa_source_id),
         "sources": [
             {
-                "source": qa_source_id,
-                "path": f"wiki/qa/{qa_source_id}.md",
+                "source": REFUND_SECTION_ID,
+                "path": None,  # non-qa source (docs/ section), TOP-ranked
             },
             {
-                "source": REFUND_SECTION_ID,
-                "path": None,  # non-qa source (docs/ section, no wiki page path)
+                "source": qa_source_id,
+                "path": f"wiki/qa/{qa_source_id}.md",  # qa page cited LOWER
             },
         ],
     }
 
     returned = qa.dispatch_filing("How long do refunds take?", result)
     assert returned == "FILED", (
-        "dispatch_filing must still file when sources include a mix of qa + non-qa pages "
-        "(ADR-0020 gate is strictly 'all cited are qa')"
+        "dispatch_filing must still file when the top-ranked cited source is a "
+        "non-qa Source section, even with a qa page cited lower (issue #573 AC b)"
     )
-    assert len(calls) == 1, "maybe_file_answer must be called for mixed-source answers"
+    assert len(calls) == 1, "maybe_file_answer must be called when the top citation is non-qa"
