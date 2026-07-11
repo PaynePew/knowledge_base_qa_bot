@@ -2623,6 +2623,17 @@ function renderIngestCard(data, batchLabel) {
   var failed   = data.failed_sources   || [];
   var grounding_failed = data.pages_with_failed_grounding || [];
 
+  /* issue #507: failed_source_details carries {source, error_type,
+     error_message} per failed_sources entry (additive — failed_sources
+     itself stays a bare-name list so every other consumer of this response
+     is unaffected). Indexed by source name for the failure-row crumb below;
+     a source with no matching detail (older server, or a name that appears
+     twice) falls back to the label-only row Ingest already rendered. */
+  var failedDetailBySource = {};
+  (data.failed_source_details || []).forEach(function(d) {
+    if (d && d.source) failedDetailBySource[d.source] = d;
+  });
+
   /* Summary line */
   var parts = [];
   if (results.length > 0) {
@@ -2739,14 +2750,25 @@ function renderIngestCard(data, batchLabel) {
     ));
   });
 
-  /* Failed source rows */
+  /* Failed source rows — issue #507: render the reason crumb (error_type
+     badge + error_message) when failed_source_details has a matching entry,
+     mirroring renderImportCard's makeFailureRow treatment. Falls back to the
+     bare label-only row (pre-#507 behaviour) when no detail is available. */
   failed.forEach(function(sourceName) {
     rowIndex++;
-    rows.append(el("div", { class: "rec" },
+    var detail = failedDetailBySource[sourceName];
+    var bodyEl = el("div", { class: "body" },
+      el("div", { class: "id", text: sourceName })
+    );
+    if (detail && detail.error_message) {
+      bodyEl.append(el("div", { class: "crumb" },
+        el("span", { class: "error-type", text: detail.error_type || "" }),
+        document.createTextNode(detail.error_message)
+      ));
+    }
+    rows.append(el("div", { class: "rec rec-failed" },
       el("div", { class: "num", text: String(rowIndex).padStart(2, "0") }),
-      el("div", { class: "body" },
-        el("div", { class: "id",   text: sourceName })
-      ),
+      bodyEl,
       el("div", { class: "label label-failed-grounding", text: chrome.ingestCardFailedLabel })
     ));
   });
