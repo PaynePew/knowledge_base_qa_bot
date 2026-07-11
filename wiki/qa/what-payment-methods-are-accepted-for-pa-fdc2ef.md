@@ -7,12 +7,13 @@ id: what-payment-methods-are-accepted-for-pa-fdc2ef
 open_questions: []
 question: What payment methods are accepted for payments?
 sources:
-- not-accepted#not-accepted
-- payment-methods#payment-methods
 - credit-cards#credit-cards
+- convenience-store-payment-codes#convenience-store-payment-codes
+- mobile-payments#mobile-payments
+- not-accepted#not-accepted
 status: live
 type: qa
-updated: '2026-07-11T06:23:11Z'
+updated: '2026-07-11T07:35:00Z'
 ---
 
-The accepted payment methods include VISA, MasterCard, and JCB credit cards. Payments can be made as a single charge or, for qualifying orders, in installments [Source: credit-cards#credit-cards]. Additionally, all orders must be paid using one of the supported options listed under payment methods, and bank transfers, checks, or foreign-currency payments are not accepted [Source: not-accepted#not-accepted].
+We accept the following payment methods: VISA, MasterCard, and JCB credit cards, paid as a single charge or in installments for qualifying orders [Source: credit-cards#credit-cards]; convenience store payment codes, with a NT$20,000 per-order limit and payment due within 3 days of placing the order [Source: convenience-store-payment-codes#convenience-store-payment-codes]; and mobile payments via Apple Pay and Google Pay [Source: mobile-payments#mobile-payments]. Bank transfers, checks, and foreign-currency payments are not accepted [Source: not-accepted#not-accepted].
