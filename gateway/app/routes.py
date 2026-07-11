@@ -252,12 +252,17 @@ def chat_stream(
             try:
                 self_contained_query = rewrite_query(req.query, history=history)
                 # Emit chat_rewrite log entry only when a rewrite actually happened
-                # (turn 2+).  raw and rewritten are bounded to 60 chars per §5.3.
+                # (turn 2+).  raw and rewritten are bounded to 60 chars per §5.3,
+                # via ``_sanitize_for_log`` (issue #561) — the bare truncate+quote
+                # idiom this used to inline here does NOT strip CR/LF, which lets
+                # a client-controlled query forge a fake ``## [...] <kind> | ...``
+                # operator-audit line in gateway/log.md (CWE-117, same class #558
+                # hardened on the /feedback log site).
                 _gateway_log_event(
                     "chat_rewrite",
                     f"session={session_id} "
-                    f'raw="{req.query[:60].replace(chr(34), chr(39))}" '
-                    f'rewritten="{self_contained_query[:60].replace(chr(34), chr(39))}"',
+                    f'raw="{_sanitize_for_log(req.query)}" '
+                    f'rewritten="{_sanitize_for_log(self_contained_query)}"',
                 )
             except Exception:  # noqa: BLE001
                 # Rewrite error after status:rewriting is committed (HTTP 200
@@ -688,13 +693,14 @@ class FeedbackListResponseSchema(BaseModel):
 def _sanitize_for_log(value: str, limit: int = 60) -> str:
     """Bound + strip CR/LF before a client-supplied field enters a log line.
 
-    Extends the ``chat_rewrite`` idiom above (§5.3: truncate to 60 chars,
-    normalise double quotes to single) with CR/LF stripping, which that
-    idiom lacks — a raw newline in a client-controlled field would otherwise
-    let it forge a fake ``## [...] <kind> | ...`` log line (CWE-117). Used
-    for every client-controlled field interpolated into the ``feedback`` log
-    summary below (``answer_id``, ``stack``, ``grounding``); ``reaction`` is
-    a Pydantic ``Literal`` and therefore never attacker-controlled text.
+    Extends the bare §5.3 idiom (truncate to 60 chars, normalise double
+    quotes to single) with CR/LF stripping, which that idiom lacks — a raw
+    newline in a client-controlled field would otherwise let it forge a fake
+    ``## [...] <kind> | ...`` log line (CWE-117). Used for every
+    client-controlled field interpolated into a log summary: the ``feedback``
+    summary below (``answer_id``, ``stack``, ``grounding`` — ``reaction`` is a
+    Pydantic ``Literal`` and therefore never attacker-controlled text) and the
+    ``chat_rewrite`` summary above (``raw``, ``rewritten`` — issue #561).
     """
     return value[:limit].replace("\r", "").replace("\n", "").replace(chr(34), chr(39))
 

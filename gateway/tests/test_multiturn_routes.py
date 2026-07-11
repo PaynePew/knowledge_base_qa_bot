@@ -643,3 +643,125 @@ def test_rewrite_error_after_status_rewriting_yields_terminal_error(
     # Store must still have only 1 turn (the seeded one, not a new one)
     history = _store_module.store.get_history(existing_id)
     assert len(history) == 1, f"Rewrite error must not write a turn; store has {len(history)} turns"
+
+
+# ---------------------------------------------------------------------------
+# Security hardening (issue #561, same class as #558's /feedback finding):
+# the ``chat_rewrite`` log site interpolates client-controlled ``req.query``
+# (and the rewrite LLM's ``rewritten_query``, which echoes attacker text on a
+# "no rewrite needed" verdict) into gateway/log.md. Without CR/LF stripping,
+# an embedded newline can forge a fake operator-audit line (CWE-117).
+# Mirrors gateway/tests/test_feedback_route.py's forgery tests.
+# ---------------------------------------------------------------------------
+
+
+def _forged_log_line_text() -> str:
+    """A short payload that embeds a newline immediately followed by a
+    fully-formed ``## [...] <kind> | ...`` prefix — the CWE-117 log-forgery
+    shape. If the newline survives sanitization, this becomes a second,
+    independent log line."""
+    return "x\n## [Z] forged_kind|z=1"
+
+
+def _log_event_lines(text: str) -> list[str]:
+    return [ln for ln in text.split("\n") if ln.startswith("## [")]
+
+
+def test_chat_rewrite_raw_query_newline_cannot_forge_a_log_line(
+    indexed_wiki_corpus, monkeypatch, tmp_path
+):
+    """A newline embedded in the raw (turn 2+) query must not forge a log line."""
+    # LOG_PATH is already redirected to tmp_path/gateway/log.md by the
+    # autouse ``_redirect_paths_to_tmp`` fixture above.
+    log_path = tmp_path / "gateway" / "log.md"
+
+    fake_llm = _FakeLLM()
+    monkeypatch.setattr(_retrieval, "_llm", fake_llm)
+    monkeypatch.setattr(_retrieval, "get_llm", lambda: fake_llm)
+    monkeypatch.setattr(
+        _retrieval.grounding_module,
+        "verify",
+        lambda draft, sections: _approved_outcome(),
+    )
+    monkeypatch.setattr(
+        _rewrite_module, "get_rewrite_llm", lambda: _FakeRewriteLLM("how long do exchanges take?")
+    )
+
+    existing_id = str(uuid.uuid4())
+    _store_module.store.append_turn(
+        existing_id,
+        {
+            "question": "How long do refunds take?",
+            "answer": "5-7 business days.",
+            "stack": "wiki",
+            "grounding_reason": "claim_supported",
+            "ts": "2026-05-29T10:00:00Z",
+        },
+    )
+
+    from gateway.app.main import app as _gateway_app
+
+    client = TestClient(_gateway_app)
+    resp = client.post(
+        f"/chat/stream?stack=wiki&session={existing_id}",
+        json={"query": _forged_log_line_text()},
+    )
+    assert resp.status_code == 200
+
+    text = log_path.read_text(encoding="utf-8")
+    assert text.count("\n") == 1, f"embedded newline in raw query survived into the log: {text!r}"
+    event_lines = _log_event_lines(text)
+    assert len(event_lines) == 1, f"newline in raw query forged an extra log line: {text!r}"
+
+
+def test_chat_rewrite_rewritten_query_newline_cannot_forge_a_log_line(
+    indexed_wiki_corpus, monkeypatch, tmp_path
+):
+    """A newline embedded in the rewrite LLM's output must not forge a log line."""
+    # LOG_PATH is already redirected to tmp_path/gateway/log.md by the
+    # autouse ``_redirect_paths_to_tmp`` fixture above.
+    log_path = tmp_path / "gateway" / "log.md"
+
+    fake_llm = _FakeLLM()
+    monkeypatch.setattr(_retrieval, "_llm", fake_llm)
+    monkeypatch.setattr(_retrieval, "get_llm", lambda: fake_llm)
+    monkeypatch.setattr(
+        _retrieval.grounding_module,
+        "verify",
+        lambda draft, sections: _approved_outcome(),
+    )
+    # The rewrite LLM echoes the forged text back verbatim (e.g. rule 2: "query
+    # already self-contained") — this is not attacker-controlled in practice,
+    # but the log site must sanitize both fields defensively regardless of
+    # which one the LLM decides to echo.
+    monkeypatch.setattr(
+        _rewrite_module, "get_rewrite_llm", lambda: _FakeRewriteLLM(_forged_log_line_text())
+    )
+
+    existing_id = str(uuid.uuid4())
+    _store_module.store.append_turn(
+        existing_id,
+        {
+            "question": "How long do refunds take?",
+            "answer": "5-7 business days.",
+            "stack": "wiki",
+            "grounding_reason": "claim_supported",
+            "ts": "2026-05-29T10:00:00Z",
+        },
+    )
+
+    from gateway.app.main import app as _gateway_app
+
+    client = TestClient(_gateway_app)
+    resp = client.post(
+        f"/chat/stream?stack=wiki&session={existing_id}",
+        json={"query": "and exchanges?"},
+    )
+    assert resp.status_code == 200
+
+    text = log_path.read_text(encoding="utf-8")
+    assert text.count("\n") == 1, (
+        f"embedded newline in rewritten query survived into the log: {text!r}"
+    )
+    event_lines = _log_event_lines(text)
+    assert len(event_lines) == 1, f"newline in rewritten query forged an extra log line: {text!r}"
