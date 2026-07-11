@@ -1,0 +1,27 @@
+# Non-secret runtime config. Mirrors docker-compose.prod.yml's `environment:`
+# block, with two DELIBERATE local-first deviations (both are opt-in flags, so
+# "off" is the codebase default, not an override):
+#
+#   - KB_WARMUP_PING=false  — prod trades a few tokens per boot for warm
+#     clients (issue #439). A kind cluster gets created/torn down constantly;
+#     zero-token boots matter more than first-request latency here.
+#   - KB_TRANSCRIBE_ENABLED=false — never let a local experiment auto-bill
+#     vision-model transcription (ADR-0032 keeps this opt-in even with a key).
+#
+# Flip either by editing here + `kubectl apply` + a rollout restart:
+#   kubectl -n ask-wiki-rag rollout restart deployment/ask-wiki-rag
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ask-wiki-rag-config
+  namespace: ask-wiki-rag
+data:
+  KB_WARMUP_PING: "false"
+  KB_TRANSCRIBE_ENABLED: "false"
+  # Kept at prod values so behavior under load matches the VPS tenant
+  # (single worker, in-process semaphores — see deployment.yaml on replicas).
+  KB_TRANSCRIBE_MAX_PAGES: "80"
+  KB_TRANSCRIBE_CONCURRENCY: "3"
+  # Local safety net below the prod $3/day ceiling — a runaway local loop
+  # should die early (read once per request; see .env.example).
+  KB_DAILY_USD_CAP: "1.0"

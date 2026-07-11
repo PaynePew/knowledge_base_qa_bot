@@ -1,0 +1,85 @@
+# The gateway Deployment. Every field below maps a decision the compose file
+# already made — the mapping is the point of the exercise:
+#
+#   compose `mem_limit: 512m` + `cpus: "0.5"`  -> resources.limits (bulkhead)
+#   compose `restart: unless-stopped`          -> Deployment self-healing
+#   compose healthz smoke loop (deploy.yml)    -> startupProbe
+#   "baked read-only KB, ephemeral writes,     -> no volumes at all; pod
+#    no named volume, no backup" (ADR-0021)       restart == reset.yml re-seed
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ask-wiki-rag
+  namespace: ask-wiki-rag
+  labels:
+    app: ask-wiki-rag
+spec:
+  # replicas: 1 is an ARCHITECTURAL constraint, not laziness (be ready to say
+  # this out loud): the gateway assumes a single process — in-process overload
+  # semaphores (KB_MAX_INFLIGHT/KB_MAX_ADMIN), an in-process daily-USD ledger,
+  # and an append-only Wiki Log on the pod's own filesystem. N replicas would
+  # mean N independent budgets/ledgers and N diverging ephemeral KBs behind one
+  # Service. Scaling out first requires extracting that state (shared budget
+  # store, shared/replicated index) — CODING_STANDARD "single-process
+  # assumption", .env.example "Single worker only".
+  replicas: 1
+  # Recreate (not RollingUpdate) mirrors `compose up -d` single-slot semantics:
+  # never two writers of the same identity at once. With no PVC this only costs
+  # a few seconds of downtime per rollout — acceptable for a demo tenant.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: ask-wiki-rag
+  template:
+    metadata:
+      labels:
+        app: ask-wiki-rag
+    spec:
+      containers:
+        - name: ask-wiki-rag
+          # Public GHCR image built by .github/workflows/deploy.yml. For
+          # uncommitted local changes build + side-load instead (README §4b):
+          #   docker build -t ghcr.io/paynepew/knowledge_base_qa_bot:latest .
+          #   kind load docker-image ghcr.io/paynepew/knowledge_base_qa_bot:latest --name ask-wiki-rag
+          # IfNotPresent then prefers the side-loaded image over a registry pull.
+          image: ghcr.io/paynepew/knowledge_base_qa_bot:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000 # uvicorn, fixed by the Dockerfile CMD
+          envFrom:
+            - configMapRef:
+                name: ask-wiki-rag-config
+            - secretRef:
+                name: ask-wiki-rag-secrets
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              # Same bulkhead as prod compose (mem_limit 512m / cpus 0.5).
+              # KB_TRANSCRIBE_CONCURRENCY=3 was sized against exactly this
+              # ceiling (issue #503 OOM post-mortem) — raise them together.
+              memory: "512Mi"
+              cpu: "500m"
+          # Boot is import-heavy (uvicorn + langchain + faiss + baked-seed
+          # load). deploy.yml budgets 10x3s of healthz retries for the same
+          # reason; 30x3s here is deliberately looser for slower laptops.
+          # Liveness only starts counting after startup succeeds.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            periodSeconds: 3
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            periodSeconds: 15
+            failureThreshold: 4
