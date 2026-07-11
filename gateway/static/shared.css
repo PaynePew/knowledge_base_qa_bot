@@ -14,12 +14,25 @@
   --surface:   #ffffff;
   --ink:       #111111;
   --ink-2:     #555555;
-  --ink-3:     #8a8a8a;
-  --ink-4:     #b8b8b8;
+  --ink-3:     #636363;   /* readability pass #566: was #8a8a8a (3.5:1) → ~5.7:1 WCAG AA on --bg */
+  --ink-4:     #6f6f6f;   /* readability pass #566: was #b8b8b8 (1.9:1) → ~4.8:1 WCAG AA on --bg */
   --rule:      #e5e5e3;
   --rule-2:    #ececea;
   --accent:    #1f1f1f;
   --pass:      #2f6b3e;
   --fail:      #a83a26;
+  --warn:      #9a640f;   /* readability pass #566: was #c47f17 (3.1:1) → ~4.8:1 WCAG AA; warn/updated status */
   --selection: #e9e9e7;
+
+  /* Type scale (readability pass #566). Every readable text size maps to one of
+     these; nothing below 12px. Migrated from ad-hoc hardcoded px in the two
+     page files. Steps rise gently so the console's former 10–11px body becomes
+     legible without ballooning the layout. */
+  --fs-2xs:  12px;   /* captions, table meta, chips, eyebrow micro-labels (was 10–11px) */
+  --fs-xs:   13px;   /* small labels, secondary eyebrows (was 11.5–12.5px) */
+  --fs-sm:   14px;   /* secondary body, list rows (was 13px) */
+  --fs-base: 15px;   /* body */
+  --fs-md:   17px;   /* subheads */
+  --fs-lg:   21px;   /* section titles */
+  --fs-xl:   27px;   /* page hero */
 }
