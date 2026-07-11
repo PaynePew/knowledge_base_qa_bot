@@ -2,6 +2,8 @@
 
 How code is shaped in this repo, what conventions hold across modules, what design patterns are in play, and what tooling enforces them. This file is **not the spec** — that lives in `project-docs/prd.md` and `project-docs/adr/*.md` / `CONTEXT.md`. This file is the **consistency layer** that keeps the spec implementable across slices without drifting.
 
+> **Freshness**: last reconciled through **ADR-0040** (2026-07-11). If `project-docs/adr/` holds a newer Accepted ADR than this stamp, this file is stale — reconcile per §0.3.
+
 ## 0. Reading order
 
 In every fresh session, read in this order before writing code:
@@ -48,6 +50,14 @@ This document is the **reviewer agent's** standards reference (see [`project-doc
 **Citation discipline when flagging**: when the reviewer flags an issue, it must cite the section by number and locate the offending code by function or symbol name (e.g. "§3.1 vocabulary drift — `Document` used in `build_index`, should be `Source`"). Avoid line-number citations (file:42 style) — they rot the moment the file is edited. Do NOT dump the section's full prose into the report — the section number is enough for the human to look up.
 
 **Budget**: an active review typically loads §3 + §4 + §5 + §11 eagerly (~80 lines combined) plus 0-2 conditional sections on demand. Total injection is well under 200 lines — fits cleanly in any sub-agent's context window.
+
+## 0.3 Freshness contract
+
+This file lags the ADRs by design (§0.1 — ADRs win on conflict), but the lag must stay visible and bounded:
+
+- A session that lands an Accepted ADR reconciles this file against it **in the same session**: fold repo-wide conventions into the affected sections (most often §11), or note "nothing standard-worthy" in the commit message, then bump the Freshness stamp at the top of this file.
+- Staleness is checkable: newest ADR number > stamp = drift. Sub-agents flag it to the human (this file is human territory — orchestration-plan stop condition 5); they do not edit it.
+- When folding a rule in, keep it abstract: code-site anchors (filenames of modules, scripts, tests) belong in the driving ADR's § Consequences, never here — the purity guard test fails this file on any Python-filename reference (ADR-0007).
 
 ---
 
@@ -199,6 +209,7 @@ The reviewer opens the source file to discover a module's depth — there is no 
 - **No reaching into private state of another module.** Module-level public lists and dicts are public; private attributes (leading `_`) — including module-level `_private` *functions* — are not. **Blessed exception:** a cross-package `_private` import is acceptable ONLY when a named ADR records it as blessed coupling (ADR-0018 blesses `hybrid_kb`'s reuse of `markdown_kb._passes_index_filter` / `_section_lang` and `vector_rag._max_rag_distance()`, because the dense arm MUST share the BM25 arm's exact filter + threshold). Absent that ADR line, it is a §11 drift signal. **Escalation:** the moment a *second* package needs the same `_private` symbol, promote it to the owner's public API instead of importing it privately again (#326 promotes `hybrid_kb._ensure_indexes_loaded` to a public warmup seam for exactly this reason).
 - **No circular imports.** When a module needs another, the import is at the top. When the cycle is unavoidable, use a function-scope import + a comment explaining the cycle (see §1.8 on WHY-comments).
 - **No LangChain types leak to non-LLM modules.** LangChain message types, client types, and `with_structured_output` schemas stay inside **LLM-facing modules** — defined as modules that own an LLM call site. LLM-facing modules are enumerated in ADR-0005 § Consequences. Routes / schemas / indexer / logger / prompt-builder / wiki-index modules see only Python primitives and Pydantic models. The prompt-builder module was extracted precisely so its output can be asserted *as a string* without touching LangChain types.
+- **No bare interpolation of untrusted text into LLM prompts.** Untrusted content spliced into a prompt (Source content, wiki page bodies, chat queries, uploaded/transcribed text) passes through `prompt_safety.wrap_untrusted()`'s fixed-sentinel fence, paired with the `UNTRUSTED_GUARD` system-prompt clause (ADR-0040). Interpolating it as a bare f-string is a §11 drift signal.
 
 ### 2.5 ADR- and PRD-encoded invariants
 
@@ -290,6 +301,10 @@ Adding a shortcut that bypasses the pre-LLM gate ("if score is just barely below
 - Request validation: Pydantic does it at the route boundary via request/response schemas. **No** defensive re-validation inside route handlers.
 - Deep-module ↔ deep-module: trust types. Don't `isinstance`-check inputs from your own codebase.
 
+### 4.5 LLM-judge failures take the restrictive branch
+
+When an LLM-judge call (grounding verify, lint judges, the C5 convergence re-judge, …) errors, times out, or returns indeterminate output, treat the result as the **restrictive** branch: never auto-enable a mutating action (e.g. Reconcile Apply) under judge uncertainty (ADR-0038). Fail-closed here mirrors §4.1 — a judge you could not run is a judge that said no.
+
 ---
 
 ## 5. Logging and observability
@@ -356,6 +371,7 @@ If you want a debug-only signal inside a package, either:
 
 - **One live test per LLM-facing surface** is the policy. LLM-facing surfaces are enumerated in ADR-0005 § Consequences (updated when a new surface ships). Adding a second live test to an existing surface, or a live test to a new surface without explicit PRD authorisation, is scope creep; push the assertion into a mocked integration test instead.
 - A live test asserts **shape** (200, citation pattern present, non-empty sources, all expected frontmatter fields parseable), **never** specific words. Models update; tests outlive them.
+- A post-deploy security/attack probe (e.g. the ADR-0040 injection-probe runner under `project-docs/security/injection-probe/`) verifies a hardening decision against the live deployment; it is an ops runbook artifact, **not** a `@pytest.mark.live` test, and does not consume the one-live-test-per-surface budget.
 
 ### 6.5 Fixtures
 
@@ -475,6 +491,7 @@ For quick recognition during code review. Code-site anchors for each pattern liv
 | **Repository / in-memory store** | Single-process, single-writer; module-level list is the "repository." When this model breaks, the upgrade path is `app.state` or external store. |
 | **Adapter** | LangChain client wraps the OpenAI SDK. Provides timeout/retry plumbing; isolated to the LLM-call wrapper module so the rest of the codebase never sees LangChain types. |
 | **Structured-output adapter via `with_structured_output`** | ADR-0005 pre-blessed component pattern. LLM bound to a Pydantic schema; schema is never exposed outside the owning module. Both classification and synthesis calls use this pattern so LLM output is always validated at the boundary. |
+| **Soft-demote / tombstone** | A defective or stale `status: live` record demotes in place to `draft` (content preserved, reversible, logged) rather than hard-delete; the curator edits / re-promotes or discards it. `qa.demote` is the canonical primitive (ADR-0035 / ADR-0037). |
 
 Notable patterns **rejected** (do not introduce):
 
@@ -513,6 +530,7 @@ Each signal has a **severity** that determines the reviewer's action:
 - [ ] **FAIL** — Pre-LLM Cannot Confirm gate is bypassed when retrieval score is "just barely below threshold" (violates ADR-0001 + §4.3).
 - [ ] **FAIL** — A `Retriever` protocol / plugin layer is extracted **as part of a feature slice** instead of the dedicated #107 refactor. Both stacks now work (ADR-0002's "premature" bar is lifted), but [ADR-0018](adr/0018-hybrid-retrieval-third-stack-rrf-over-wiki.md) adds the third stack (Hybrid) via the existing string→callable dispatch; extracting the protocol would touch the two existing apps, which is out of Phase 13 scope.
 - [ ] **FLAG** — A module imports another *package's* `_private` symbol (function or state) that no ADR blesses (§2.4). Note it + require a WHY-comment and a tracked promotion issue (the #315→#326 pattern). **Escalates to FAIL** if it ships undocumented, or if a *second* package imports the same `_private` symbol — then it MUST be promoted to the owner's public API. Blessed exceptions (grep the ADR for the symbol): ADR-0018 → `_passes_index_filter` / `_section_lang` / `_max_rag_distance`.
+- [ ] **FAIL** — A new LLM-facing prompt splices untrusted content (Source text, wiki bodies, user queries, uploaded/transcribed text) as a bare string instead of through `prompt_safety.wrap_untrusted()` + the `UNTRUSTED_GUARD` clause (ADR-0040; §2.4).
 
 ### Error handling drift (§4)
 
