@@ -57,6 +57,7 @@ This file lags the ADRs by design (§0.1 — ADRs win on conflict), but the lag 
 
 - A session that lands an Accepted ADR reconciles this file against it **in the same session**: fold repo-wide conventions into the affected sections (most often §11), or note "nothing standard-worthy" in the commit message, then bump the Freshness stamp at the top of this file.
 - Staleness is checkable: newest ADR number > stamp = drift. Sub-agents flag it to the human (this file is human territory — orchestration-plan stop condition 5); they do not edit it.
+- When folding a rule in, keep it abstract: code-site anchors (filenames of modules, scripts, tests) belong in the driving ADR's § Consequences, never here — the purity guard test fails this file on any Python-filename reference (ADR-0007).
 
 ---
 
@@ -370,7 +371,7 @@ If you want a debug-only signal inside a package, either:
 
 - **One live test per LLM-facing surface** is the policy. LLM-facing surfaces are enumerated in ADR-0005 § Consequences (updated when a new surface ships). Adding a second live test to an existing surface, or a live test to a new surface without explicit PRD authorisation, is scope creep; push the assertion into a mocked integration test instead.
 - A live test asserts **shape** (200, citation pattern present, non-empty sources, all expected frontmatter fields parseable), **never** specific words. Models update; tests outlive them.
-- A post-deploy security/attack probe (e.g. the ADR-0040 injection probe, `project-docs/security/injection-probe/run_probe.py`) verifies a hardening decision against the live deployment; it is an ops runbook artifact, **not** a `@pytest.mark.live` test, and does not consume the one-live-test-per-surface budget.
+- A post-deploy security/attack probe (e.g. the ADR-0040 injection-probe runner under `project-docs/security/injection-probe/`) verifies a hardening decision against the live deployment; it is an ops runbook artifact, **not** a `@pytest.mark.live` test, and does not consume the one-live-test-per-surface budget.
 
 ### 6.5 Fixtures
 
