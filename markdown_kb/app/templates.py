@@ -30,6 +30,7 @@ from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
 from .indexer import Section, slugify
+from .prompt_safety import UNTRUSTED_GUARD, wrap_untrusted
 from .schemas import SourceType, WikiPageDraft, WikiPageFrontmatter
 
 # ---------------------------------------------------------------------------
@@ -129,7 +130,8 @@ class _ClassifierOutput(BaseModel):
 # Prompt templates — concept
 # ---------------------------------------------------------------------------
 
-_CONCEPT_SYSTEM_PROMPT = """\
+_CONCEPT_SYSTEM_PROMPT = (
+    """\
 You are a knowledge-base curator. Your task is to write a concise, accurate \
 synthesis wiki page for the given Source section.
 
@@ -154,19 +156,24 @@ Constraints: maximum 5 wikilinks per page; do NOT use for common terms \
 (e.g. [[customer]], [[refund]] when the whole page is about refunds); only for \
 concepts that warrant their own page (entity / concept).
 """
+    + "\n\n"
+    + UNTRUSTED_GUARD
+)
 
 
 def _build_concept_user_message(section: Section) -> str:
     """Format a Section as the user message for the concept synthesis call."""
     heading = " > ".join(section.heading_path)
-    return f"[Source: {section.id}]\nHeading: {heading}\n\n{section.content}"
+    inner = f"Heading: {heading}\n\n{section.content}"
+    return f"[Source: {section.id}]\n{wrap_untrusted(inner)}"
 
 
 # ---------------------------------------------------------------------------
 # Prompt templates — entity
 # ---------------------------------------------------------------------------
 
-_ENTITY_SYSTEM_PROMPT = """\
+_ENTITY_SYSTEM_PROMPT = (
+    """\
 You are a knowledge-base curator. Your task is to write a concise, accurate \
 synthesis wiki page for the given Source, treating it as an *entity* (a \
 product, person, place, or named thing that the KB describes as a whole).
@@ -192,22 +199,27 @@ Constraints: maximum 5 wikilinks per page; do NOT use for common terms \
 (e.g. [[customer]], [[product]] when the whole page is about that product); \
 only for concepts that warrant their own page (entity / concept).
 """
+    + "\n\n"
+    + UNTRUSTED_GUARD
+)
 
 
 def _build_entity_user_message(sections: list[Section], source_stem: str) -> str:
     """Format all Sections of a Source as the user message for entity synthesis."""
-    parts = [f"[Entity source: {source_stem}]"]
+    body_parts = []
     for section in sections:
         heading = " > ".join(section.heading_path)
-        parts.append(f"\n## {heading}\n\n{section.content}")
-    return "\n".join(parts)
+        body_parts.append(f"## {heading}\n\n{section.content}")
+    body = "\n".join(body_parts)
+    return f"[Entity source: {source_stem}]\n{wrap_untrusted(body)}"
 
 
 # ---------------------------------------------------------------------------
 # Prompt templates — hub (ADR-0033 decision 3, issue #513)
 # ---------------------------------------------------------------------------
 
-_HUB_SYSTEM_PROMPT = """\
+_HUB_SYSTEM_PROMPT = (
+    """\
 You are a knowledge-base curator. Your task is to write a concise "about \
 this document" orientation page for a Longform Source (e.g. a book or long \
 report), read here as a whole: what it is, its overall themes, and how its \
@@ -227,6 +239,9 @@ apparent from the source. Leave the list empty if there are none.
 - Do NOT use [[wikilinks]] yourself — the chapter list is appended after \
 your prose by the pipeline, not by you.
 """
+    + "\n\n"
+    + UNTRUSTED_GUARD
+)
 
 
 # ---------------------------------------------------------------------------
@@ -292,7 +307,8 @@ def build_outline(content: str, *, max_tokens: int = 2000) -> str:
 # Prompt templates — classifier
 # ---------------------------------------------------------------------------
 
-_CLASSIFIER_SYSTEM_PROMPT = """\
+_CLASSIFIER_SYSTEM_PROMPT = (
+    """\
 You are a knowledge-base classifier. Given the full Markdown content of one \
 Source document, decide whether it describes:
 - "concept": a policy, process, how-to guide, or FAQ (multiple independent \
@@ -302,11 +318,14 @@ Source document, decide whether it describes:
 
 Respond with a single JSON object: {"type": "concept"} or {"type": "entity"}.
 """
+    + "\n\n"
+    + UNTRUSTED_GUARD
+)
 
 
 def _build_classifier_user_message(content: str) -> str:
     """Format Source Markdown content as the user message for classification."""
-    return f"Classify this Source document:\n\n{content}"
+    return f"Classify this Source document:\n{wrap_untrusted(content)}"
 
 
 # ---------------------------------------------------------------------------

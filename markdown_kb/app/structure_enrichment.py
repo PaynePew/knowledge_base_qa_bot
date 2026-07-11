@@ -55,6 +55,7 @@ from pydantic import BaseModel
 from . import indexer as indexer_module
 from . import ingest as ingest_module
 from .logger import log_event
+from .prompt_safety import UNTRUSTED_GUARD, wrap_untrusted
 
 # ---------------------------------------------------------------------------
 # Longform predicate knobs (ADR-0033: "thresholds are env-tunable with named
@@ -389,7 +390,8 @@ def _strip_page_furniture(body: str) -> tuple[str, int]:
 # LLM chapter proposal (the one new call site — LangChain confined here)
 # ---------------------------------------------------------------------------
 
-_ENRICH_SYSTEM_PROMPT = """\
+_ENRICH_SYSTEM_PROMPT = (
+    """\
 You are segmenting a long, mechanically-unstructured document into chapters \
 for a knowledge base.
 
@@ -406,6 +408,9 @@ not propose overlapping or out-of-order boundaries.
 - Do not invent content — only propose boundaries for structure that is \
 actually present in the document.
 """
+    + "\n\n"
+    + UNTRUSTED_GUARD
+)
 
 
 class _ChapterProposal(BaseModel):
@@ -452,7 +457,7 @@ def _propose_chapters(text: str) -> list[_ChapterProposal]:
     output: _ChapterOutline = chain.invoke(
         [
             SystemMessage(content=_ENRICH_SYSTEM_PROMPT),
-            HumanMessage(content=text),
+            HumanMessage(content=wrap_untrusted(text)),
         ]
     )
     if not output.chapters:
