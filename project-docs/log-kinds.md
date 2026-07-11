@@ -199,6 +199,12 @@ three kinds here; the emitters arrive across slices 6-1 / 6-2 / 6-3.
 |---|---|---|
 | `qa_demoted` | `POST /qa/{slug}/demote` successfully flipped a `status: live` `wiki/qa/<slug>.md` page to `draft` in place (content preserved). A distinct kind from `qa_reflect` — this is a curator-invoked Lifecycle action, not a filing reflect entry. Only fires on an actual `live -> draft` write — the idempotent no-op path (already `draft`) and every refusal (`QaPageNotFound` 404, `QaPageCorrupt` 500) do not emit a log entry (mirrors `qa_deleted`'s "only fires on success" convention). Authorized by [ADR-0037](adr/0037-c10-schema-invalid-live-qa-demote-to-draft.md) (issue #535). | `slug=<slug> prev_status=live` |
 
+### `qa_filing_skip` kind
+
+| Kind | When fired | Summary template |
+|---|---|---|
+| `qa_filing_skip` | `qa.dispatch_filing` skipped `maybe_file_answer` because the top-ranked cited source (`result["sources"][0]`) was already a live `wiki/qa/*.md` page (ADR-0020's novelty gate, broadened by issue #573 from "every cited source is qa" to "the top-ranked cited source is qa" — the fix for a reported near-duplicate-draft accumulation bug). Distinct from `qa_reflect` — no page is created or touched on this path. | `"<truncated query>" reason=top_citation_is_qa top=<top cited section id>` |
+
 ### `qa_filing_error` `reason=` sub-tags
 
 | Sub-reason | When | Source |

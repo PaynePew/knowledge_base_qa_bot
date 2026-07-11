@@ -79,6 +79,18 @@ loop. Generalises the demote-to-draft primitive ADR-0035 built inline inside
 ``refile``'s retire step into a standalone, first-class Lifecycle action —
 a distinct primitive from that inline step, which keeps its own
 reason-parametrized ``qa_reflect op=retired`` logging for the C9 audit trail.
+
+issue #573 — ``dispatch_filing``'s novelty gate (ADR-0020) skipped filing
+only when *every* cited source was a ``wiki/qa/`` page. That missed the
+case where the answer's only meaningfully-used citation was a live QA page
+but the BM25 top-k (``result["sources"]``) also carried one or two
+lower-ranked, unused non-qa candidates — the stricter "all" check saw a
+mix and filed a near-duplicate draft anyway. ``_top_citation_is_qa``
+broadens the gate to "the top-ranked cited source is a ``wiki/qa/`` page"
+(``sources`` is already rank-ordered best-first), which subsumes the
+original all-qa case and additionally catches this one; it emits the new
+``qa_filing_skip`` kind so the skip is observable. Deliberately
+conservative: a QA page cited only *below* position 0 does not gate.
 """
 
 from __future__ import annotations
@@ -539,26 +551,40 @@ class _SectionRef:
         self.content = ""
 
 
-def _all_cited_are_qa(sources: list[dict]) -> bool:
-    """Return True when every cited source is a ``wiki/qa/`` page.
+def _top_citation_is_qa(sources: list[dict]) -> bool:
+    """Return True when the highest-ranked cited source is a ``wiki/qa/`` page.
 
-    ADR-0020 novelty gate: when an answer is fully derived from already-curated
-    Q&A pages, there is nothing new to capture — filing would produce a near-
-    duplicate draft that the Curation Queue surfaces immediately as a promotion
-    candidate, making Promote appear to be a no-op.
+    Issue #573 novelty gate — broadens the original ADR-0020 "every cited
+    source is qa" check to "the *top* cited source is qa": when the answer's
+    best-ranked citation is itself a live QA page, there is nothing new to
+    capture even if the retrieval top-k also carried lower-ranked, unused
+    non-qa candidates. Filing anyway would produce a near-duplicate draft
+    that the Curation Queue surfaces immediately as a promotion candidate,
+    making Promote appear to be a no-op — the ADR-0020 problem statement,
+    just missed by the stricter "all" predicate when the top-k mixes qa and
+    non-qa sources.
+
+    ``sources`` (``result["sources"]``) is already rank-ordered best-first —
+    ``indexer.search`` sorts descending by BM25 score before ``retrieval.py``
+    builds this list — so ``sources[0]`` is the top citation. Deliberately
+    conservative per the issue's scope decision: a QA page cited only *below*
+    position 0 does not gate; that combination still files (a Source section
+    on top means genuinely new coverage even if a QA page is cited lower).
 
     Detection: a source is a qa page when its ``path`` key starts with
     ``"wiki/qa/"`` (set by ``retrieval._wiki_page_path_for_section``; issue
-    #266). Sources from ``docs/`` have ``path=None``; sources from
-    ``wiki/entities/`` or ``wiki/concepts/`` have ``path="wiki/entities/…"``
-    or ``path="wiki/concepts/…"``.
+    #266). No separate ``status == "live"`` lookup is needed — ``indexer.
+    _passes_index_filter`` admits only ``status: live`` pages under
+    ``wiki/qa/`` into the BM25 corpus, so any ``wiki/qa/`` citation reaching
+    this function is already guaranteed live (a draft or retired page can
+    never be retrieved, let alone cited).
 
-    Empty sources list: returns ``False`` — we cannot gate when nothing was
-    cited (should not happen after grounding passes, but be conservative).
+    Empty sources list: returns ``False`` — nothing to gate on (should not
+    happen after grounding passes, but be conservative).
     """
     if not sources:
         return False
-    return all((s.get("path") or "").startswith("wiki/qa/") for s in sources)
+    return (sources[0].get("path") or "").startswith("wiki/qa/")
 
 
 def dispatch_filing(query: str, result: dict) -> FiledStatus | None:
@@ -576,9 +602,11 @@ def dispatch_filing(query: str, result: dict) -> FiledStatus | None:
       emit that sentence itself; it then trivially passes grounding
       (``passed == True``, no unsupported claims) yet is a non-answer that must
       never be filed as a curatable draft.
-    - All cited sources are ``wiki/qa/`` pages (ADR-0020 novelty gate): the
-      answer is fully derived from already-curated Q&A; nothing new to capture.
-      A mix of qa + non-qa sources still files (the gate is strictly "all qa").
+    - The top-ranked cited source is a ``wiki/qa/`` page (ADR-0020 / issue
+      #573 novelty gate): the answer's best evidence is already-curated Q&A;
+      nothing new to capture. Emits ``qa_filing_skip`` when this fires. A
+      Source section on top with a QA page cited only *lower* still files
+      (the gate looks at position 0 only — see ``_top_citation_is_qa``).
     - RAG paths never call this function (caller contract; enforcement is
       the caller's responsibility — this function does not inspect the stack).
 
@@ -609,11 +637,17 @@ def dispatch_filing(query: str, result: dict) -> FiledStatus | None:
     if result.get("answer", "").strip() == CANNOT_CONFIRM_PHRASE:
         return None
 
-    # ADR-0020 novelty gate: skip filing when the answer is fully derived from
-    # already-curated Q&A pages (all cited sources are wiki/qa/ pages). A re-ask
-    # whose rewritten/rephrased query misses the promoted qa page and is answered
-    # from raw Sources still files — accepted as a legitimate coverage signal.
-    if _all_cited_are_qa(result.get("sources", [])):
+    # ADR-0020 / issue #573 novelty gate: skip filing when the top-ranked
+    # cited source is already a live wiki/qa/ page. A re-ask whose rewritten/
+    # rephrased query misses the promoted qa page and is answered from raw
+    # Sources still files — accepted as a legitimate coverage signal.
+    sources = result.get("sources", [])
+    if _top_citation_is_qa(sources):
+        top_source = sources[0].get("source", "")
+        log_event(
+            "qa_filing_skip",
+            f'"{_truncate(query)}" reason=top_citation_is_qa top={top_source}',
+        )
         return None
 
     cited_refs = [_SectionRef(id=s["source"]) for s in result["sources"]]
