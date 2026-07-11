@@ -480,7 +480,8 @@ def ingest(req: IngestRequest | None = None) -> IngestResponse:
     (CODING_STANDARD §2.3).
 
     Returns 200 with the IngestResponse in all cases, including when a Source
-    is not found (reflected in ``failed_sources``).
+    is not found (reflected in ``failed_sources``, with the reason in
+    ``failed_source_details`` — issue #507).
     """
     force = req.force if req is not None else False
     if req is not None and req.sources:
