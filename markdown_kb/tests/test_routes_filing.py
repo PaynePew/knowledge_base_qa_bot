@@ -240,7 +240,7 @@ def test_chat_filing_io_error_failsoft(grounded_client, tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_chat_concurrent_same_query_creates_one_file(grounded_client, tmp_path):
+def test_chat_concurrent_same_query_creates_one_file(grounded_client, tmp_path, monkeypatch):
     """8 parallel /chat calls with the same query → one file, count=8.
 
     TestClient is thread-safe for the FastAPI app (each ``post`` is independent);
@@ -248,6 +248,9 @@ def test_chat_concurrent_same_query_creates_one_file(grounded_client, tmp_path):
     ``maybe_file_answer``. Verifies the lock-around-decision contract holds
     when the entry point is the route, not the qa module directly.
     """
+    # Write-through mode per #581 scope — this test pins the persistence contract,
+    # batching is covered by test_qa_count_flush.py.
+    monkeypatch.setenv("KB_QA_COUNT_FLUSH_SEC", "0")
     client, _ = grounded_client
 
     def post_once(_i):

@@ -180,10 +180,13 @@ def test_create_emits_qa_reflect_created_log(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_touch_preserves_body_and_bumps_count(tmp_path):
+def test_touch_preserves_body_and_bumps_count(tmp_path, monkeypatch):
     """B2 semantics: re-asking the same Q keeps the body verbatim, bumps count."""
     from app.qa import maybe_file_answer
 
+    # Write-through mode per #581 scope — this test pins the persistence contract,
+    # batching is covered by test_qa_count_flush.py.
+    monkeypatch.setenv("KB_QA_COUNT_FLUSH_SEC", "0")
     query = "How do I cancel my order?"
     first_answer = "Within 24h."
     cited = [_stub("refund-policy#cancellation-window")]
@@ -336,7 +339,7 @@ def test_filing_failsoft_on_oserror_returns_none(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_concurrent_filings_produce_one_file_and_correct_count(tmp_path):
+def test_concurrent_filings_produce_one_file_and_correct_count(tmp_path, monkeypatch):
     """8 threads filing the same query → exactly 1 created + correct final count.
 
     PRD #78 Q7 L1: ``_filing_lock`` covers the whole filing decision so two
@@ -345,6 +348,9 @@ def test_concurrent_filings_produce_one_file_and_correct_count(tmp_path):
     """
     from app.qa import compute_slug, maybe_file_answer
 
+    # Write-through mode per #581 scope — this test pins the persistence contract,
+    # batching is covered by test_qa_count_flush.py.
+    monkeypatch.setenv("KB_QA_COUNT_FLUSH_SEC", "0")
     query = "How do I cancel my order?"
     cited = [_stub("refund-policy#cancellation-window")]
 
