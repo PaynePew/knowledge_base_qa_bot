@@ -22,6 +22,7 @@ Authorized by [`prd.md`](prd.md) (Phase 1).
 | `chat_fallback` | Pre-LLM Cannot Confirm gate fires | `"<truncated query>" reason=<not_indexed\|below_threshold> [top_score=X] [top_section=<id>]` |
 | `chat_grounding_fallback` | Post-LLM verifier returned not-passed; reply replaced with Cannot Confirm | `"<truncated query>" reason=<outcome.reason> cited=<comma_separated_section_ids>` |
 | `chat_error` | OpenAI exception during `/chat`; mapped per [`CODING_STANDARD.md`](CODING_STANDARD.md) § 4.2 | `"<truncated query>" kind=<openai_transient\|openai_auth\|openai_api> exc=<ExcClass>` |
+| `chat_degraded` | `stream_query(..., degraded=True)` served a budget-exhausted request with no LLM call (issue #598 Slice B, `ProdMiddleware` admitted the request past an exhausted `KB_DAILY_USD_CAP` instead of 503ing) | `"<truncated query>" mode=cached_qa slug=<qa Section id>` (a live `wiki/qa/` page ranked top and cleared the gate threshold — its body is replayed verbatim) or `"<truncated query>" mode=cannot_confirm` (no qualifying live QA hit — the canonical Cannot Confirm sentinel is returned) |
 
 ### `chat_error` `kind=` sub-tags
 
@@ -367,6 +368,16 @@ Slice A (read-reserved budget + per-IP rate limit). Emitted by the same
 per-IP fixed-window gate (`gateway/app/ratelimit.py`), before it can consume
 budget or a concurrency slot.
 
+The `budget_degraded` kind is gateway-specific, authorized by GitHub issue
+#598 Slice B (degraded key-free serving). Emitted by the same
+`ProdMiddleware` in place of `budget_block` for the one over-cap request
+shape that is admitted instead of rejected — `POST /chat/stream?stack=wiki`
+(see `middleware.py::_can_serve_degraded`) — so the log distinguishes "shed"
+from "degraded-admitted" even though neither charges the daily budget. The
+per-file `chat_degraded` kind (see the `/chat` route table above) is the
+companion event the wiki stack itself emits once it decides HOW it served
+the degraded answer (cached QA vs Cannot Confirm).
+
 The `feedback` kind is gateway-specific, authorized by GitHub issue #558
 (Reader Feedback). Emitted by `gateway/app/routes.py::submit_feedback` on
 every accepted `POST /feedback` — never on a 422 (Pydantic boundary
@@ -380,6 +391,7 @@ lives in `.kb/feedback.jsonl`, itself gitignored/ephemeral).
 |---|---|---|
 | `chat_rewrite` | Turn 2+ query rewriting succeeded inside `_sse_generator`; emitted right after `rewrite_query()` returns | `session=<uuid> raw="<60-char-bounded raw follow-up>" rewritten="<60-char-bounded self-contained query>"` |
 | `budget_block` | A heavy request is rejected because the UTC-day cost estimate has reached the relevant ceiling (full cap for reads, `cap - KB_READ_RESERVED_USD` for admin, issue #598) | `path=<mounted-path> cap=<usd> read_reserved=<usd>` |
+| `budget_degraded` | An over-cap `POST /chat/stream?stack=wiki` request is admitted with the `kb_degraded` scope flag instead of rejected (issue #598 Slice B) — never charged | `path=/chat/stream cap=<usd>` |
 | `overload_shed` | A heavy request is rejected because its semaphore is fully held | `path=<mounted-path> kind=<read\|admin\|sse>` — `sse` (issue #599) is the dedicated `/chat/stream` concurrent-SSE pool (`KB_SSE_MAX_CONCURRENT`), checked in addition to `read` |
 | `rate_limited` | A heavy request (read or admin) is rejected because its client IP has hit `KB_RATE_LIMIT_PER_IP` for the current 5-minute window | `path=<mounted-path> ip=<client-ip>` |
 | `provider_quota_503` | A non-streaming heavy request raised an OpenAI `insufficient_quota` / 429, mapped to a friendly 503 | `path=<mounted-path> exc=<ExceptionClassName>` |

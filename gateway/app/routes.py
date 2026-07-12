@@ -68,7 +68,7 @@ import uuid
 from collections.abc import Callable, Iterator
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 # Hybrid Retrieval (Stack C) — Phase 13 S4 (issue #314). Additive third stack;
@@ -163,12 +163,22 @@ _STACK_STREAM_FN: dict[str, Callable[[str], Iterator[dict]]] = {
 @router.post("/chat/stream")
 def chat_stream(
     req: ChatRequest,
+    request: Request,
     stack: str = "wiki",
     session: str | None = None,
 ) -> StreamingResponse:
     """Stream a grounded answer as SSE events.
 
     Dispatches to the selected Retrieval Stack via ``_STACK_STREAM_FN``.
+
+    Issue #598 Slice B: ``request.scope["kb_degraded"]`` is set by
+    ``ProdMiddleware`` when this request was admitted past an exhausted
+    daily budget instead of 503'd (only possible for ``stack=wiki`` — see
+    ``middleware.py::_can_serve_degraded``). When set, the wiki dispatch
+    below forwards ``degraded=True`` into ``stream_query`` (a no-LLM
+    serving branch) and the ``done`` event carries an additive
+    ``degraded`` field so the reader can distinguish a real answer from a
+    budget-exhausted one.
 
     Phase 11 Slice 1 multi-turn additions:
     - ``session`` query param identifies the conversation session.  Absent on
@@ -209,7 +219,9 @@ def chat_stream(
          on any CC path); no unverified draft ever reaches the stream.
       5. ``done`` — grounding outcome (passed, reason), optional filing status,
          and ``session`` id.  ``done.filed`` is always null for ``stack=rag``
-         (RAG never files).
+         (RAG never files). ``done.degraded`` (issue #598 Slice B) is an
+         ADDITIVE bool, always present: true only for a budget-exhausted
+         no-LLM wiki answer (never a new SSE event type — ADR-0009).
          OR
          ``error`` — terminal failure event when the rewriter or LLM/infra
          errors AFTER HTTP 200 is committed (status:rewriting or sources event
@@ -254,6 +266,11 @@ def chat_stream(
     history = _conv_store_module.store.get_history(session_id)
 
     stream_fn = _STACK_STREAM_FN[stack]
+
+    # Issue #598 Slice B: ProdMiddleware sets this scope key only for an
+    # over-cap stack=wiki request (middleware.py::_can_serve_degraded), so
+    # `degraded` is always False for every other stack/path by construction.
+    degraded: bool = bool(request.scope.get("kb_degraded", False))
 
     def _sse_generator():
         """Consume stream_fn() and yield SSE frames.
@@ -338,8 +355,16 @@ def chat_stream(
         # neither needs the widened call — kept off their call sites entirely
         # (CODING_STANDARD §11: do not widen a call shape every caller must
         # accept when only one caller needs the new argument).
-        if stack == "wiki" and history:
-            gen = stream_fn(self_contained_query, original_question=req.query)
+        # Issue #598 Slice B: ``degraded`` is forwarded the same way — it is
+        # only ever True for stack=="wiki" (middleware only sets the scope
+        # flag for stack=wiki requests), so RAG/Hybrid never see the kwarg.
+        if stack == "wiki":
+            wiki_kwargs: dict = {}
+            if history:
+                wiki_kwargs["original_question"] = req.query
+            if degraded:
+                wiki_kwargs["degraded"] = True
+            gen = stream_fn(self_contained_query, **wiki_kwargs)
         else:
             gen = stream_fn(self_contained_query)
 
@@ -430,6 +455,10 @@ def chat_stream(
         )
         done_payload: dict = json.loads(done_data_line[len("data: ") :])
         done_payload["session"] = session_id
+        # Issue #598 Slice B: additive field, always present (ADR-0009 — no
+        # new SSE event types); True only for the budget-exhausted no-LLM
+        # wiki path (`degraded` is always False for every other stack/path).
+        done_payload["degraded"] = degraded
         yield encode_event("done", done_payload)
 
         # Append turn to the Conversation Store (only reached on normal done —

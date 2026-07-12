@@ -16,6 +16,15 @@ guards, in this order, for every request:
      gate on the full ``KB_DAILY_USD_CAP``; ADMIN_PATHS gate on the reduced
      ``KB_DAILY_USD_CAP - KB_READ_RESERVED_USD`` ceiling (issue #598 Slice A),
      so admin/mutating traffic can never spend the read-reserved floor.
+     Exception (issue #598 Slice B): an over-cap ``POST /chat/stream?stack=wiki``
+     request is NOT 503'd — it is admitted with a ``scope["kb_degraded"]``
+     flag and never charged, because ``markdown_kb.app.retrieval.stream_query``
+     has a no-LLM degraded-serving branch for exactly this stack (see
+     ``_can_serve_degraded``). Every other over-cap READ_PATHS request
+     (``stack=rag``/``stack=hybrid``, ``/wiki/chat``, ``/rag/chat``) has no
+     such branch downstream, so admitting it here would let a real
+     (uncounted) LLM call through past the budget ceiling — those keep the
+     hard 503.
   3. **Per-IP rate limit** — a fixed-window counter (``KB_RATE_LIMIT_PER_IP``,
      default 30 requests / 5 min per IP; ``0`` disables) over every heavy path,
      read or admin (see ``ratelimit``). Over-limit → 429
@@ -100,6 +109,7 @@ import json
 import os
 import re
 import threading
+from urllib.parse import parse_qs
 
 import openai
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -283,6 +293,40 @@ def _canonical_path(raw_path: str) -> str:
     return path
 
 
+# The one degradable heavy path (issue #598 Slice B) — kept as a named
+# constant rather than a literal inline so ``_can_serve_degraded`` reads as
+# "the SSE stream endpoint", not a magic string.
+_DEGRADABLE_STREAM_PATH = "/chat/stream"
+
+
+def _stack_param(scope: Scope) -> str:
+    """Return the ``stack`` query-param value, defaulting to ``"wiki"`` — the
+    ``POST /chat/stream`` route's own default (``gateway/app/routes.py``).
+
+    Needed at the ASGI layer (issue #598 Slice B), before FastAPI parses the
+    request, to decide whether an over-cap ``/chat/stream`` request can be
+    admitted degraded instead of hard-503'd.
+    """
+    values = parse_qs(scope.get("query_string", b"").decode("latin-1")).get("stack")
+    return values[0] if values else "wiki"
+
+
+def _can_serve_degraded(path: str, scope: Scope) -> bool:
+    """True when an over-cap READ_PATHS request has a no-LLM degraded-serving
+    branch downstream (issue #598 Slice B) and can therefore be admitted past
+    the budget gate instead of hard-503ing.
+
+    Scoped to ``/chat/stream?stack=wiki`` only: the wiki stack is the one
+    surface with both a QA layer to fall back on (BM25 over ``wiki/qa/`` —
+    a live Filed Answer) and the SSE ``done`` event contract that carries the
+    additive ``degraded`` flag (ADR-0009). ``stack=rag``/``stack=hybrid`` and
+    the sub-apps' own ``/wiki/chat``/``/rag/chat`` endpoints have no such
+    branch — admitting them here would let a real (uncounted) LLM call
+    through past the budget ceiling, so they keep the existing hard 503.
+    """
+    return path == _DEGRADABLE_STREAM_PATH and _stack_param(scope) == "wiki"
+
+
 def _bearer_token(scope: Scope) -> str | None:
     """Extract the Bearer token from the ASGI ``Authorization`` header, if any."""
     for key, value in scope.get("headers", []):
@@ -356,16 +400,27 @@ class ProdMiddleware:
         #    here instead would let a burst of shed traffic drain the $/day
         #    ceiling on zero real spend and 503 all heavy paths for the rest
         #    of the UTC day.
+        #
+        #    issue #598 Slice B: an over-cap request that CAN be served
+        #    degraded (see _can_serve_degraded) is admitted instead of
+        #    rejected — ``degraded`` short-circuits the charge below, since a
+        #    degraded response never calls the LLM (nothing real to charge).
         budget_exhausted = (
             _budget.budget.over_admin_cap() if is_admin else _budget.budget.over_cap()
         )
+        degraded = False
         if budget_exhausted:
-            _log_event(
-                "budget_block",
-                f"path={path} cap={_budget.budget.cap_usd} read_reserved={_budget.budget.read_reserved_usd}",
-            )
-            await _send_json(send, 503, {"detail": "daily demo budget reached"})
-            return
+            if is_read and _can_serve_degraded(path, scope):
+                degraded = True
+                scope["kb_degraded"] = True
+                _log_event("budget_degraded", f"path={path} cap={_budget.budget.cap_usd}")
+            else:
+                _log_event(
+                    "budget_block",
+                    f"path={path} cap={_budget.budget.cap_usd} read_reserved={_budget.budget.read_reserved_usd}",
+                )
+                await _send_json(send, 503, {"detail": "daily demo budget reached"})
+                return
 
         # 3. Per-IP rate limit — heavy paths only (read AND admin, issue #598
         #    Slice A). Runs BEFORE the semaphore/charge so a rate-limited
@@ -400,8 +455,11 @@ class ProdMiddleware:
         # Admitted past every gate → only now charge the conservative estimate.
         # Only requests that actually proceed to the handler (and may call
         # OpenAI) consume budget; over-cap, rate-limited, and shed rejections
-        # never do.
-        _budget.budget.charge(path)
+        # never do. A degraded admission (issue #598 Slice B) never calls the
+        # LLM either, so it is skipped too — charging it would burn budget
+        # for zero real spend.
+        if not degraded:
+            _budget.budget.charge(path)
 
         try:
             # 5. Graceful provider failure for NON-streaming heavy handlers.
