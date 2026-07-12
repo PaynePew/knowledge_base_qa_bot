@@ -158,3 +158,29 @@ def test_canonical_path_collapses_promote_demote_and_item():
     assert mw_mod._canonical_path("/wiki/qa/refund-policy/demote") == mw_mod.QA_DEMOTE_TEMPLATE
     assert mw_mod._canonical_path("/wiki/qa/refund-policy") == mw_mod.QA_ITEM_TEMPLATE
     assert mw_mod._canonical_path("/wiki/qa/promote-batch") == "/wiki/qa/promote-batch"
+
+
+# ---------------------------------------------------------------------------
+# Inverse audit: a READ route must never be swallowed INTO an admin template.
+# Found by the console bare-fetch audit (test_ui_console_admin_token.py):
+# GET /wiki/pages/resolution-map (ADR-0030 Invariant — the ONE shared slug
+# map every wikilink surface reads) matched _PAGES_DELETE_RE and classified
+# as ADMIN_PATHS, so setting KB_ADMIN_TOKEN would have 401'd every wikilink
+# render on the reader AND console — exactly the "read paths never gated"
+# regression the issue #583 scope decision forbids.
+# ---------------------------------------------------------------------------
+
+
+def test_resolution_map_is_not_swallowed_by_the_pages_delete_template():
+    assert mw_mod._canonical_path("/wiki/pages/resolution-map") == "/wiki/pages/resolution-map", (
+        "GET /wiki/pages/resolution-map is a read-only lookup — it must not "
+        "canonicalise into PAGES_DELETE_TEMPLATE (ADMIN_PATHS), or enabling "
+        "KB_ADMIN_TOKEN 401s every wikilink render (issue #583)"
+    )
+
+
+def test_resolution_map_read_stays_open_when_token_set(monkeypatch):
+    monkeypatch.setenv("KB_ADMIN_TOKEN", "s3cret")
+    client = TestClient(main_mod.app)
+    resp = client.get("/wiki/pages/resolution-map")
+    assert resp.status_code != 401

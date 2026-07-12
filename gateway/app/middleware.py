@@ -155,9 +155,20 @@ _QA_ITEM_RE = re.compile(r"^/wiki/qa/(?!promote-batch$)[^/]+$")
 # issue #381). Excludes the "reconcile" literal segment so it never collapses
 # ``/wiki/pages/reconcile`` (a distinct, already-classified path) onto this
 # template; ``/wiki/pages/collision/...`` has an extra path segment and never
-# matches the single-segment ``[^/]+$`` shape in the first place.
+# matches the single-segment ``[^/]+$`` shape in the first place. Also
+# excludes "resolution-map": ``GET /wiki/pages/resolution-map`` (ADR-0030
+# Invariant — the ONE shared slug map every wikilink surface reads) is a
+# read-only, LLM-free lookup that was silently swallowed by this template
+# and classified ADMIN, so enabling the KB_ADMIN_TOKEN kill-switch would
+# have 401'd every wikilink render (found by issue #583's bare-fetch audit;
+# it also burned an admin-semaphore slot per call). Accepted trade-off,
+# identical to the "reconcile" exclusion above: a page whose slug is
+# literally "resolution-map" (or "reconcile") cannot be admin-gated for
+# delete — prompt-derived slugs of that exact shape do not occur in this
+# corpus, and the alias templates below keep their own exclusion lists
+# unchanged (a slug named "resolution-map" WOULD still be gated there).
 PAGES_DELETE_TEMPLATE = "/wiki/pages/{slug}"
-_PAGES_DELETE_RE = re.compile(r"^/wiki/pages/(?!reconcile$)[^/]+$")
+_PAGES_DELETE_RE = re.compile(r"^/wiki/pages/(?!reconcile$|resolution-map$)[^/]+$")
 
 # Canonical billing/classification key for the assign-alias path (ADR-0030
 # decision 3, issue #409). Excludes "reconcile"/"collision" as the slug
