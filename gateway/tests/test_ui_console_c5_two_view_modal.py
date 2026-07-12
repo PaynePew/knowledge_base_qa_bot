@@ -233,8 +233,8 @@ def test_batch_run_uploads_sequentially_with_per_target_overwrite_relpath():
 
 def test_batch_run_drives_exactly_one_force_reingest_and_one_deep_audit():
     fn = _extract_function(_console_text(), "runC5FixSourceBatch")
-    assert fn.count('fetch("/wiki/ingest"') == 1
-    assert fn.count('fetch("/wiki/lint?include_c5=true"') == 1
+    assert fn.count('adminFetch("/wiki/ingest"') == 1
+    assert fn.count('adminFetch("/wiki/lint?include_c5=true"') == 1
     assert "force: true," in fn
 
 

@@ -129,8 +129,8 @@ def test_batch_run_still_drives_exactly_one_force_reingest_and_one_deep_audit():
     """Regression: still ONE force re-ingest + ONE deep-audit per batch
     (ADR-0036 decision 5) — unaffected by the matching-loop fix."""
     fn = _extract_function(_console_text(), "runC5FixSourceBatch")
-    assert fn.count('fetch("/wiki/ingest"') == 1
-    assert fn.count('fetch("/wiki/lint?include_c5=true"') == 1
+    assert fn.count('adminFetch("/wiki/ingest"') == 1
+    assert fn.count('adminFetch("/wiki/lint?include_c5=true"') == 1
     assert "force: true," in fn
 
 
