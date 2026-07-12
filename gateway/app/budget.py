@@ -44,6 +44,7 @@ Per-endpoint estimate table (USD per request, deliberately generous):
     | /wiki/pages/{slug}/aliases/{alias} (DELETE) | 0.00 | Direct-tier remove-alias: no LLM call — one frontmatter field write, no reindex (ADR-0030 extension, issue #491) |
     | /sources/retire  | 0.00     | Confirmed retire: no LLM call — one atomic Source-file move, no reindex (ADR-0041, issue #604) |
     | /sources/restore | 0.00     | Direct restore: no LLM call — one atomic Source-file move, no reindex (ADR-0041, issue #604) |
+    | /sources/rename  | 0.00     | Direct rename: no LLM call — one atomic Source-file move + mechanical citation re-point + one BM25 reindex (ADR-0041 decision 5, issue #605) |
     | (default heavy)  | 0.10     | unknown heavy path → assume a mid-range cost    |
 
 The ``/wiki/qa/{slug}/refile``, ``/wiki/pages/{slug}``,
@@ -147,6 +148,7 @@ _COST_ESTIMATES: dict[str, float] = {
     "/wiki/pages/{slug}/aliases/{alias}": 0.00,
     "/sources/retire": 0.00,
     "/sources/restore": 0.00,
+    "/sources/rename": 0.00,
 }
 
 # Fallback for any heavy path missing from the table — assume a mid-range cost

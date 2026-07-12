@@ -1,17 +1,19 @@
-"""Prod-middleware wiring for the Source lifecycle mutation endpoints (issue
-#604, ADR-0041).
+"""Prod-middleware wiring for the Source lifecycle mutation endpoints (issues
+#604/#605, ADR-0041).
 
-``POST /sources/retire`` / ``POST /sources/restore`` mutate the live corpus
-(a Source file move) even though neither calls an LLM (Confirmed retire /
-Direct restore), so — like every sibling heavy endpoint (precedent: ``DELETE
-/wiki/pages/{slug}``, issue #381) — they must be classified in ADMIN_PATHS
-and priced in ``_COST_ESTIMATES``. An unclassified path bypasses ALL five
-production guards (budget cap, concurrency shed, kill-switch, quota->503
-mapping), which on the public demo deploy is an unauthenticated-mutation
-vector. Neither path is parameterized (relpath/timestamp travel in the
-request body), so — unlike ``PAGES_DELETE_TEMPLATE`` — no canonicalisation
-is needed; this file pins the plain string membership + an end-to-end
-kill-switch check instead.
+``POST /sources/retire`` / ``POST /sources/restore`` / ``POST
+/sources/rename`` mutate the live corpus (a Source file move; rename also
+re-points derived-page frontmatter and reindexes) even though none calls an
+LLM (Confirmed retire / Direct restore / Direct rename), so — like every
+sibling heavy endpoint (precedent: ``DELETE /wiki/pages/{slug}``, issue
+#381) — they must be classified in ADMIN_PATHS and priced in
+``_COST_ESTIMATES``. An unclassified path bypasses ALL five production
+guards (budget cap, concurrency shed, kill-switch, quota->503 mapping),
+which on the public demo deploy is an unauthenticated-mutation vector. None
+of the three paths is parameterized (relpath/timestamp/new_basename all
+travel in the request body), so — unlike ``PAGES_DELETE_TEMPLATE`` — no
+canonicalisation is needed; this file pins the plain string membership + an
+end-to-end kill-switch check instead.
 
 The read-only siblings (``GET /sources/{relpath}/impact``, ``GET
 /sources/trash``) are deliberately UNCLASSIFIED (mirrors ``GET /read/*`` /
@@ -25,25 +27,27 @@ import pytest
 
 from gateway.app.middleware import ADMIN_PATHS, READ_PATHS
 
+_MUTATION_PATHS = ["/sources/retire", "/sources/restore", "/sources/rename"]
+
 # ---------------------------------------------------------------------------
-# Classification + budget: both mutation endpoints in ADMIN_PATHS and priced
+# Classification + budget: all three mutation endpoints in ADMIN_PATHS and priced
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("path", ["/sources/retire", "/sources/restore"])
+@pytest.mark.parametrize("path", _MUTATION_PATHS)
 def test_mutation_endpoint_in_admin_paths(path):
     assert path in ADMIN_PATHS, (
-        f"{path} must be in ADMIN_PATHS or it bypasses every prod guard (ADR-0041 / issue #604)"
+        f"{path} must be in ADMIN_PATHS or it bypasses every prod guard (ADR-0041 / issues #604/#605)"
     )
 
 
-@pytest.mark.parametrize("path", ["/sources/retire", "/sources/restore"])
+@pytest.mark.parametrize("path", _MUTATION_PATHS)
 def test_mutation_endpoint_cost_estimate_is_explicit_zero(path):
-    """No LLM call anywhere in retire/restore — priced at an explicit $0.00,
-    not left to the un-tabulated default-heavy fallback."""
+    """No LLM call anywhere in retire/restore/rename — priced at an explicit
+    $0.00, not left to the un-tabulated default-heavy fallback."""
     from gateway.app.budget import _COST_ESTIMATES, estimate_cost
 
-    assert path in _COST_ESTIMATES, f"{path} must have an explicit cost estimate (issue #604)"
+    assert path in _COST_ESTIMATES, f"{path} must have an explicit cost estimate (issue #604/#605)"
     assert estimate_cost(path) == pytest.approx(0.0)
 
 
@@ -64,7 +68,7 @@ def test_read_only_endpoints_are_unclassified(path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("path", ["/sources/retire", "/sources/restore"])
+@pytest.mark.parametrize("path", _MUTATION_PATHS)
 def test_mutation_endpoint_blocked_by_admin_token_gate(monkeypatch, path):
     """When KB_ADMIN_TOKEN is set, POSTing without a Bearer token -> 401 from
     the middleware, before the handler (so no filesystem fixture is needed;
@@ -76,7 +80,7 @@ def test_mutation_endpoint_blocked_by_admin_token_gate(monkeypatch, path):
     from gateway.app.main import app as _gateway_app
 
     client = TestClient(_gateway_app)
-    resp = client.post(path, json={"relpath": "anything.md"})
+    resp = client.post(path, json={"relpath": "anything.md", "new_basename": "other.md"})
     assert resp.status_code == 401, (
         f"Expected 401 for {path} without a Bearer token; got {resp.status_code}"
     )
