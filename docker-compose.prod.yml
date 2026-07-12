@@ -46,6 +46,20 @@ services:
       # the pre-#459 30+ min sequential run). Read at import time - a
       # restart (deploy/reset) applies it.
       KB_TRANSCRIBE_CONCURRENCY: "3"
+      # Admin-token kill-switch (issue #583, dark-ship scope decision): gates
+      # every ADMIN_PATHS mutating endpoint in gateway/app/middleware.py behind
+      # `Authorization: Bearer <token>` once set. `${KB_ADMIN_TOKEN:-}` passes
+      # it through from the HOST shell env that invokes `docker compose`
+      # (deploy.yml / reset.yml's SSH script), NOT from the hand-maintained
+      # `.env.prod` file — deliberately so the switch can be flipped without
+      # editing that file on the box. Unset/empty on the host = empty string
+      # here = the existing "admin open" demo behavior (current default;
+      # nothing sets this today). Turning it on for real needs a
+      # `.github/workflows/*` change to export a `secrets.KB_ADMIN_TOKEN`
+      # value in the SSH script before `docker compose up` — out of this
+      # slice's scope (implement agents don't touch workflows); an ops step
+      # for the human.
+      KB_ADMIN_TOKEN: ${KB_ADMIN_TOKEN:-}
     networks:
       - default
       - edge
