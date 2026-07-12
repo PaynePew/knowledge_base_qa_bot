@@ -107,23 +107,84 @@ def test_expired_windows_are_pruned_bounding_the_store():
 
 
 # ---------------------------------------------------------------------------
-# client_ip — X-Forwarded-For first hop, else scope["client"]
+# retry_after_seconds (issue #598 scope addendum point 5) — backs the 429
+# response's Retry-After header.
 # ---------------------------------------------------------------------------
 
 
-def test_client_ip_uses_first_x_forwarded_for_hop():
+def test_retry_after_seconds_counts_down_from_window_start():
+    ratelimit_mod = _reload()
+    rl = ratelimit_mod.RateLimiter(limit=1, window_sec=300.0)
+    rl.allow("1.2.3.4", now=0.0)
+    assert rl.retry_after_seconds("1.2.3.4", now=0.0) == 300.0
+    assert rl.retry_after_seconds("1.2.3.4", now=100.0) == 200.0
+
+
+def test_retry_after_seconds_never_negative_past_window_end():
+    ratelimit_mod = _reload()
+    rl = ratelimit_mod.RateLimiter(limit=1, window_sec=300.0)
+    rl.allow("1.2.3.4", now=0.0)
+    assert rl.retry_after_seconds("1.2.3.4", now=999.0) == 0.0
+
+
+def test_retry_after_seconds_returns_full_window_for_unknown_ip():
+    """No recorded window for the ip -> the conservative full window_sec."""
+    ratelimit_mod = _reload()
+    rl = ratelimit_mod.RateLimiter(limit=1, window_sec=300.0)
+    assert rl.retry_after_seconds("9.9.9.9", now=0.0) == 300.0
+
+
+def test_retry_after_seconds_does_not_mutate_state():
+    ratelimit_mod = _reload()
+    rl = ratelimit_mod.RateLimiter(limit=1, window_sec=300.0)
+    rl.allow("1.2.3.4", now=0.0)
+    before = dict(rl._windows)
+    rl.retry_after_seconds("1.2.3.4", now=50.0)
+    assert rl._windows == before, "retry_after_seconds must be read-only"
+
+
+# ---------------------------------------------------------------------------
+# client_ip — X-Forwarded-For RIGHTMOST hop (issue #598 scope addendum point
+# 4), else scope["client"]
+# ---------------------------------------------------------------------------
+
+
+def test_client_ip_uses_rightmost_x_forwarded_for_hop():
     ratelimit_mod = _reload()
     scope = {
         "headers": [(b"x-forwarded-for", b"9.9.9.9, 10.0.0.1, 10.0.0.2")],
         "client": ("127.0.0.1", 12345),
     }
-    assert ratelimit_mod.client_ip(scope) == "9.9.9.9"
+    assert ratelimit_mod.client_ip(scope) == "10.0.0.2"
 
 
-def test_client_ip_strips_whitespace_around_first_hop():
+def test_client_ip_strips_whitespace_around_rightmost_hop():
     ratelimit_mod = _reload()
-    scope = {"headers": [(b"x-forwarded-for", b"  9.9.9.9  , 10.0.0.1")], "client": None}
+    scope = {"headers": [(b"x-forwarded-for", b"9.9.9.9,  10.0.0.1  ")], "client": None}
+    assert ratelimit_mod.client_ip(scope) == "10.0.0.1"
+
+
+def test_client_ip_single_hop_is_both_leftmost_and_rightmost():
+    ratelimit_mod = _reload()
+    scope = {"headers": [(b"x-forwarded-for", b"9.9.9.9")], "client": None}
     assert ratelimit_mod.client_ip(scope) == "9.9.9.9"
+
+
+def test_client_ip_rightmost_hop_cannot_be_spoofed_by_a_forged_leading_hop():
+    """Security property (issue #598 scope addendum point 4): a client that
+    sets its OWN X-Forwarded-For header can only prepend forged hops ahead of
+    whatever the trusted edge appends -- the edge-appended rightmost hop is
+    what must be trusted, never the client-controlled first one."""
+    ratelimit_mod = _reload()
+    forged_first_hop = "6.6.6.6"  # attacker-controlled, spoofed to evade the limiter
+    edge_appended_real_client = "9.9.9.9"  # appended by the trusted edge, last
+    scope = {
+        "headers": [
+            (b"x-forwarded-for", f"{forged_first_hop}, {edge_appended_real_client}".encode())
+        ],
+        "client": None,
+    }
+    assert ratelimit_mod.client_ip(scope) == edge_appended_real_client
 
 
 def test_client_ip_falls_back_to_scope_client_when_header_absent():

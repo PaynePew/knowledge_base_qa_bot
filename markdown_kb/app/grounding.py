@@ -112,6 +112,13 @@ class GroundingOutcome(BaseModel):
         "below_threshold",
         "retrieval_empty",
         "index_missing",
+        # degraded serving (verifier never ran -- no LLM call at all; issue
+        # #598 Slice B). Neither is a content failure: the corpus may well
+        # have supported the answer, the server just chose not to spend
+        # against an exhausted daily budget. Kept out of
+        # CONTENT_FAILURE_REASONS below for exactly that reason.
+        "degraded_cached_qa",
+        "degraded_budget_exhausted",
     ]
     result: GroundingResult | None = None
     error_type: VerifierErrorType | None = None

@@ -78,6 +78,21 @@ def test_read_path_over_limit_returns_429(monkeypatch):
     assert second.json() == {"detail": "rate limited, please retry later"}
 
 
+def test_read_path_over_limit_429_carries_retry_after_header(monkeypatch):
+    """Scope addendum point 5: the 429 names how long to back off."""
+    monkeypatch.setenv("KB_RATE_LIMIT_PER_IP", "1")
+    client = TestClient(_fresh_app())
+    client.post("/wiki/chat", json={"query": "hi"})  # consumes the one slot
+    blocked = client.post("/wiki/chat", json={"query": "hi"})
+    assert blocked.status_code == 429
+    assert "retry-after" in blocked.headers
+    retry_after = int(blocked.headers["retry-after"])
+    # A fresh window was just opened by the first request against the real
+    # clock (no injectable ``now`` through the live ASGI path), so the
+    # remaining time is close to the full 300s window minus test overhead.
+    assert 0 < retry_after <= 300
+
+
 def test_admin_path_is_also_rate_limited(monkeypatch):
     """Heavy paths includes ADMIN_PATHS, not just READ_PATHS (issue #598 Q3)."""
     monkeypatch.setenv("KB_RATE_LIMIT_PER_IP", "1")
