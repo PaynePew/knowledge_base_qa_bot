@@ -42,6 +42,14 @@ from pydantic import BaseModel
 # LLM singleton (lazy, monkeypatch-swappable per §2.7)
 # ---------------------------------------------------------------------------
 
+# Fixed seed for the rewriter LLM (ADR-0038's C5-judge pattern, extended to the
+# serving chain by ADR-0042 / issue #572). Per-module private constant — the
+# gateway and markdown_kb packages stay decoupled, no cross-package shared
+# constant. Best-effort only: OpenAI's seed is not a hard guarantee, but paired
+# with temperature=0 it cuts run-to-run rewrite drift (a re-worded follow-up
+# retrieves different Sections, propagating the flip one stage earlier).
+_REWRITE_LLM_SEED = 7
+
 _rewrite_llm: ChatOpenAI | None = None
 
 
@@ -64,6 +72,7 @@ def get_rewrite_llm() -> ChatOpenAI:
         _rewrite_llm = ChatOpenAI(
             model=model_name,
             temperature=0,
+            seed=_REWRITE_LLM_SEED,
             timeout=30,
             max_retries=1,
         )

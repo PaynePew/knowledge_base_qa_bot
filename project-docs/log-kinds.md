@@ -263,14 +263,15 @@ Authorized by GitHub issue #409 and [ADR-0030](adr/0030-alias-frontmatter-link-l
 
 ---
 
-## `/sources/retire`, `/sources/restore` routes (source lifecycle S1, issue #604)
+## `/sources/retire`, `/sources/restore`, `/sources/rename` routes (source lifecycle S1/S2, issues #604/#605)
 
-Authorized by GitHub issue #604 and [ADR-0041](adr/0041-governed-source-lifecycle-trash-retire-restore-rename.md).
+Authorized by GitHub issues #604 / #605 and [ADR-0041](adr/0041-governed-source-lifecycle-trash-retire-restore-rename.md).
 
 | Kind | When fired | Summary template |
 |---|---|---|
 | `source_retired` | `source_lifecycle.retire()` successfully moved a Source into the Source Trash. Only fires on an actual move — the `InvalidRelpath` (422) and `SourceNotFound` (404) refusal paths do not emit a log entry (mirrors `orphan_page_deleted`'s "only fires on success" convention). | `relpath=<relpath> timestamp=<trash timestamp> full_orphans=<count> partial_orphans=<count>` |
 | `source_restored` | `source_lifecycle.restore()` successfully moved a trash entry back to `docs/`. Only fires on an actual move — every refusal (`InvalidRelpath` 422, `TrashEntryNotFound` 404, `RestoreTargetOccupied` 409, `RestoreBasenameCollision` 409) does not emit a log entry. | `relpath=<relpath> timestamp=<trash timestamp>` |
+| `source_renamed` | `source_lifecycle.rename()` successfully moved a Source to its new basename and re-pointed every citing derived page. Only fires on an actual move — every refusal (`InvalidRelpath` 422, `SourceNotFound` 404, `SourceOriginAmbiguous` 409, `RenameBasenameCollision` 409) does not emit a log entry. | `old_relpath=<relpath> new_relpath=<relpath> repointed_pages=<count>` |
 
 No log entry is emitted for `GET /sources/{relpath}/impact` or `GET /sources/trash` — both are pure reads (mirrors `GET /pages/resolution-map` staying silent).
 
@@ -349,16 +350,22 @@ The production overload + cost-protection kinds (`budget_block`,
 `overload_shed`, `provider_quota_503`) are gateway-specific, authorized by
 GitHub issue #269 (deploy S1 — Gateway production middleware). They are emitted
 by `gateway/app/middleware.py::ProdMiddleware` when a heavy request is rejected
-by one of the three demo guards (daily USD budget, concurrency cap, provider
-quota), so the `gateway/log.md` carries an operator-facing audit of every shed.
-Issue #599 (SSE slow-client capacity) widens `overload_shed`'s `kind=` values
-from `<read|admin>` to `<read|admin|sse>`: the SSE-specific concurrent cap
-(`KB_SSE_MAX_CONCURRENT`, `gateway/app/sse_capacity.py`) is a dedicated,
-tighter pool checked in addition to the read semaphore for `/chat/stream`
-only, and reuses this same kind rather than a new one (same event — a
-concurrency cap rejecting a request — just a third pool). Issue #599 also
-adds `sse_idle_timeout` (see below), a distinct kind because it fires well
-AFTER admission, mid-stream, not at the concurrency gate.
+by one of the demo guards (daily USD budget, per-IP rate limit, concurrency
+cap, provider quota), so the `gateway/log.md` carries an operator-facing audit
+of every shed. Issue #599 (SSE slow-client capacity) widens `overload_shed`'s
+`kind=` values from `<read|admin>` to `<read|admin|sse>`: the SSE-specific
+concurrent cap (`KB_SSE_MAX_CONCURRENT`, `gateway/app/sse_capacity.py`) is a
+dedicated, tighter pool checked in addition to the read semaphore for
+`/chat/stream` only, and reuses this same kind rather than a new one (same
+event — a concurrency cap rejecting a request — just a third pool). Issue #599
+also adds `sse_idle_timeout` (see below), a distinct kind because it fires
+well AFTER admission, mid-stream, not at the concurrency gate.
+
+The `rate_limited` kind is gateway-specific, authorized by GitHub issue #598
+Slice A (read-reserved budget + per-IP rate limit). Emitted by the same
+`ProdMiddleware` when a heavy request (read or admin) is rejected by the
+per-IP fixed-window gate (`gateway/app/ratelimit.py`), before it can consume
+budget or a concurrency slot.
 
 The `feedback` kind is gateway-specific, authorized by GitHub issue #558
 (Reader Feedback). Emitted by `gateway/app/routes.py::submit_feedback` on
@@ -372,8 +379,9 @@ lives in `.kb/feedback.jsonl`, itself gitignored/ephemeral).
 | Kind | When fired | Summary template |
 |---|---|---|
 | `chat_rewrite` | Turn 2+ query rewriting succeeded inside `_sse_generator`; emitted right after `rewrite_query()` returns | `session=<uuid> raw="<60-char-bounded raw follow-up>" rewritten="<60-char-bounded self-contained query>"` |
-| `budget_block` | A heavy request is rejected because the UTC-day cost estimate has reached `KB_DAILY_USD_CAP` | `path=<mounted-path> cap=<usd>` |
+| `budget_block` | A heavy request is rejected because the UTC-day cost estimate has reached the relevant ceiling (full cap for reads, `cap - KB_READ_RESERVED_USD` for admin, issue #598) | `path=<mounted-path> cap=<usd> read_reserved=<usd>` |
 | `overload_shed` | A heavy request is rejected because its semaphore is fully held | `path=<mounted-path> kind=<read\|admin\|sse>` — `sse` (issue #599) is the dedicated `/chat/stream` concurrent-SSE pool (`KB_SSE_MAX_CONCURRENT`), checked in addition to `read` |
+| `rate_limited` | A heavy request (read or admin) is rejected because its client IP has hit `KB_RATE_LIMIT_PER_IP` for the current 5-minute window | `path=<mounted-path> ip=<client-ip>` |
 | `provider_quota_503` | A non-streaming heavy request raised an OpenAI `insufficient_quota` / 429, mapped to a friendly 503 | `path=<mounted-path> exc=<ExceptionClassName>` |
 | `feedback` | `POST /feedback` accepted a valid Reader Feedback record | `answer_id=<uuid> reaction=<up\|down> stack=<wiki\|rag\|hybrid> grounding=<reason> has_comment=<bool>` |
 | `sse_idle_timeout` | An open `/chat/stream` connection is closed server-side because a `send()` to the client made zero read progress for `KB_SSE_IDLE_TIMEOUT_SEC` (issue #599, `gateway/app/sse_capacity.py::run_with_heartbeat`) | `idle_timeout_sec=<seconds> path=/chat/stream` |

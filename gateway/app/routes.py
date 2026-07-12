@@ -4,9 +4,14 @@ Gateway HTTP wiring for ``POST /chat/stream`` and ``POST /upload``.
 
 Source lifecycle S1 (issue #604, ADR-0041) — ``GET /sources/{relpath}/impact``,
 ``POST /sources/retire``, ``POST /sources/restore``, ``GET /sources/trash``.
-Delegates entirely to ``markdown_kb.app.source_lifecycle`` (deep module);
-this is a Console/Upload-adjacent system boundary, a Gateway concern per
-ADR-0010, same rationale as ``POST /upload`` and ``GET /read/*``.
+Source lifecycle S2 (issue #605, ADR-0041 decision 5) — ``POST
+/sources/rename``: unlike retire/restore, a successful rename DOES trigger
+exactly one ``build_index()`` here (the delete/promote pattern — reindex is
+a route-layer concern, not a domain-layer one), because the mechanical
+re-point rewrites derived pages' frontmatter. Delegates entirely to
+``markdown_kb.app.source_lifecycle`` (deep module); this is a
+Console/Upload-adjacent system boundary, a Gateway concern per ADR-0010,
+same rationale as ``POST /upload`` and ``GET /read/*``.
 
 Phase 9 Slice 1 — Wiki SSE happy-path tracer bullet (ADR-0009, ADR-0010).
 Phase 9 Slice 2 (issue #119) — Full SSE event contract: status event (liveness
@@ -74,6 +79,7 @@ from fastapi.responses import StreamingResponse
 from hybrid_kb.app.dense_index import build_index as _hybrid_build_index
 from hybrid_kb.app.query import stream_query as _hybrid_stream_query
 from markdown_kb.app.errors import LLMError
+from markdown_kb.app.indexer import build_index as _build_index
 from markdown_kb.app.indexer import index_stale as _index_stale
 from markdown_kb.app.indexer import indexed_sections_count as _indexed_sections_count
 from markdown_kb.app.indexer import wiki_page_count as _wiki_page_count
@@ -88,13 +94,18 @@ from markdown_kb.app.retrieval import stream_query as _wiki_stream_query
 from markdown_kb.app.schemas import ChatRequest
 from markdown_kb.app.source_lifecycle import InvalidRelpath as _SourceInvalidRelpath
 from markdown_kb.app.source_lifecycle import (
+    RenameBasenameCollision as _SourceRenameBasenameCollision,
+)
+from markdown_kb.app.source_lifecycle import (
     RestoreBasenameCollision as _SourceRestoreBasenameCollision,
 )
 from markdown_kb.app.source_lifecycle import RestoreTargetOccupied as _SourceRestoreTargetOccupied
 from markdown_kb.app.source_lifecycle import SourceNotFound as _SourceNotFound
+from markdown_kb.app.source_lifecycle import SourceOriginAmbiguous as _SourceOriginAmbiguous
 from markdown_kb.app.source_lifecycle import TrashEntryNotFound as _SourceTrashEntryNotFound
 from markdown_kb.app.source_lifecycle import compute_impact as _compute_impact
 from markdown_kb.app.source_lifecycle import list_trash as _list_trash
+from markdown_kb.app.source_lifecycle import rename as _rename_source
 from markdown_kb.app.source_lifecycle import restore as _restore_source
 from markdown_kb.app.source_lifecycle import retire as _retire_source
 from markdown_kb.app.sse import encode_event, events_for_result
@@ -761,6 +772,23 @@ class RestoreRequest(BaseModel):
     relpath: str
 
 
+class RenameRequest(BaseModel):
+    """Request body for ``POST /sources/rename`` — same-directory basename
+    move (ADR-0041 decision 5). ``new_basename`` is a bare filename, no
+    directory component (v1 renames the basename only)."""
+
+    relpath: str
+    new_basename: str
+
+
+class RenameResponseSchema(BaseModel):
+    """Response body for ``POST /sources/rename``."""
+
+    old_relpath: str
+    new_relpath: str
+    repointed_pages: list[str]
+
+
 class TrashEntrySchema(BaseModel):
     """One entry in the Source Trash, as returned by ``GET /sources/trash``."""
 
@@ -875,6 +903,54 @@ def source_restore(request: RestoreRequest) -> None:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except _SourceRestoreBasenameCollision as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/sources/rename", response_model=RenameResponseSchema)
+def source_rename(request: RenameRequest) -> RenameResponseSchema:
+    """Rename a Source: atomic same-directory basename move + mechanical
+    re-point of every derived page's ``sources``/``source_hashes`` reference.
+
+    Direct class (ADR-0041 decision 5) — no LLM, no alias (page slugs are
+    outline-minted and a file rename moves no page identity). Delegates to
+    ``markdown_kb.app.source_lifecycle.rename`` (deep module). Unlike
+    retire/restore, a successful rename DOES rewrite ``wiki/`` page
+    frontmatter, so ``build_index()`` is called here, once, after a
+    successful rename — mirrors ``DELETE /pages/{slug}``'s auto-reindex
+    convention (reindex is a route-layer concern, not a domain-layer one).
+
+    Exception mapping (``build_index`` is NOT called on any exception path):
+
+    - ``InvalidRelpath``          -> ``422`` (bad ``relpath``/``new_basename``,
+      or ``new_basename`` equals the current basename)
+    - ``SourceNotFound``          -> ``404`` (no file at ``docs/<relpath>``)
+    - ``SourceOriginAmbiguous``   -> ``409`` (the current basename matches
+      2+ files under ``docs/`` — an anomalous pre-existing state)
+    - ``RenameBasenameCollision`` -> ``409`` (``new_basename`` already exists
+      somewhere under ``docs/``; renaming would mint an ``ambiguous_source``
+      state)
+
+    Returns:
+        ``RenameResponseSchema`` with the new relpath and the sorted list of
+        page slugs whose citations were re-pointed.
+    """
+    try:
+        result = _rename_source(request.relpath, request.new_basename)
+    except _SourceInvalidRelpath as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except _SourceNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except _SourceOriginAmbiguous as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except _SourceRenameBasenameCollision as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    # ADR-0041 decision 5: a successful rename triggers exactly one BM25 reindex.
+    _build_index()
+    return RenameResponseSchema(
+        old_relpath=result.old_relpath,
+        new_relpath=result.new_relpath,
+        repointed_pages=result.repointed_pages,
+    )
 
 
 @router.get("/sources/trash", response_model=TrashListSchema)

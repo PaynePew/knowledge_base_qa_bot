@@ -1,76 +1,64 @@
-"""Determinism guard (Wiki stack): the draft LLM and the grounding verifier
-must run at ``temperature=0``.
+"""Determinism guard (Wiki stack): every answer-chain LLM call runs at
+``temperature=0`` **and** a fixed ``seed`` (ADR-0038's C5-judge pattern,
+extended to the serving chain by ADR-0042 / issue #572).
 
 Why: with the langchain default temperature the draft and the verifier sample
 non-deterministically, so the *same* question intermittently flip-flops between
 a correct grounded answer and a false "Cannot Confirm" (the draft sometimes
 self-refuses; the strict fail-closed verifier sometimes marks a supported claim
-unsupported). Pinning temperature=0 makes the answer/grounding stage stable.
+unsupported). ``temperature=0`` makes the answer/grounding stage close to
+stable; the seed narrows the residual sampling flap further (best-effort only
+— OpenAI's seed is not a hard guarantee).
 
-No live OpenAI call: ``get_llm`` / ``get_retry_llm`` only construct the client
-(we read the ``temperature`` field); the verifier construction site is exercised
-via a spy that records the ``ChatOpenAI`` kwargs and short-circuits the
-structured-output call.
+No live OpenAI call: every getter here only constructs the ``ChatOpenAI``
+client — we read the ``temperature`` / ``seed`` fields directly off the
+constructed instance. The verifier getter (``get_verifier_llm``) is asserted
+the same way as ``get_llm`` / ``get_retry_llm`` — through the getter's own
+monkeypatch seam (§6.3) — never by patching ``ChatOpenAI`` internals.
 """
 
 from __future__ import annotations
 
 import app.grounding as grounding_module
 import app.retrieval as retrieval_module
-from app.grounding import GroundingClaim, GroundingResult
 
 
-def test_draft_llm_pinned_to_temperature_zero(monkeypatch):
-    """retrieval.get_llm() must build the draft LLM with temperature=0."""
+def test_draft_llm_pinned_to_temperature_zero_and_seed(monkeypatch):
+    """retrieval.get_llm() must build the draft LLM with temperature=0 and the fixed seed."""
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-determinism")
     monkeypatch.setattr(retrieval_module, "_llm", None)  # bypass any cached singleton
 
     llm = retrieval_module.get_llm()
 
     assert llm.temperature == 0, "draft LLM must be deterministic (temperature=0)"
+    assert llm.seed == retrieval_module._ANSWER_CHAIN_LLM_SEED, "draft LLM must pin the fixed seed"
 
 
-def test_retry_llm_stays_temperature_zero(monkeypatch):
-    """The grounding-retry LLM was already temperature=0; guard against drift."""
+def test_retry_llm_stays_temperature_zero_and_seed(monkeypatch):
+    """The grounding-retry LLM was already temperature=0; guard against drift, plus the seed pin."""
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-determinism")
     monkeypatch.setattr(retrieval_module, "_retry_llm", None)
 
     llm = retrieval_module.get_retry_llm()
 
     assert llm.temperature == 0
+    assert llm.seed == retrieval_module._ANSWER_CHAIN_LLM_SEED
 
 
-class _FakeSection:
-    """Minimal CitableContent (id / heading_path / content) for verify()."""
+def test_verifier_llm_pinned_to_temperature_zero_and_seed(monkeypatch):
+    """grounding.get_verifier_llm() must build the verifier LLM with temperature=0 and the fixed seed.
 
-    id = "s1"
-    heading_path = ["Heading"]
-    content = "Standard shipping usually takes 3-5 business days."
+    Asserts through the getter's own monkeypatch seam (§6.3) — reset the cached
+    singleton, then read the constructed instance's fields directly — rather
+    than patching ``ChatOpenAI`` internals (ADR-0042 / issue #572, the #483
+    singleton discipline: the verifier construction site used to live inline
+    in ``verify()`` and rebuild on every call; it is now a lazy singleton
+    getter like every other LLM call site).
+    """
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-determinism")
+    monkeypatch.setattr(grounding_module, "_verifier_llm", None)  # bypass any cached singleton
 
+    llm = grounding_module.get_verifier_llm()
 
-def test_verifier_llm_pinned_to_temperature_zero(monkeypatch):
-    """grounding.verify() must construct the verifier LLM with temperature=0."""
-    captured: dict = {}
-
-    class _FakeChain:
-        def invoke(self, _user_message):
-            return GroundingResult(
-                reasoning="claim supported by the cited section",
-                claims=[GroundingClaim(text="c", supported=True, citing_section_ids=["s1"])],
-                unsupported_claims=[],
-                passed=True,
-            )
-
-    class _FakeChatOpenAI:
-        def __init__(self, **kwargs):
-            captured.update(kwargs)
-
-        def with_structured_output(self, _schema):
-            return _FakeChain()
-
-    monkeypatch.setattr(grounding_module, "ChatOpenAI", _FakeChatOpenAI)
-
-    outcome = grounding_module.verify("Shipping takes 3-5 business days.", [_FakeSection()])
-
-    assert outcome.passed is True  # the spy returns a passing verification
-    assert captured.get("temperature") == 0, "verifier LLM must be temperature=0"
+    assert llm.temperature == 0, "verifier LLM must be deterministic (temperature=0)"
+    assert llm.seed == grounding_module._VERIFIER_LLM_SEED, "verifier LLM must pin the fixed seed"
