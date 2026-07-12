@@ -378,7 +378,7 @@ class ProdMiddleware:
             await _send_json(send, 503, {"detail": "server busy, please retry"})
             return
 
-        # 3b. SSE-specific concurrency cap (issue #599) — a SEPARATE, tighter
+        # 4b. SSE-specific concurrency cap (issue #599) — a SEPARATE, tighter
         # pool just for /chat/stream: an SSE connection is held for the FULL
         # stream duration (seconds), unlike a normal request/response cycle,
         # so a slow/stalled reader can starve capacity even while the general
@@ -404,7 +404,7 @@ class ProdMiddleware:
             #    (gateway/app/routes.py), so we never wrap it here — an exception
             #    after the response has started cannot be turned into a 503.
             if is_sse:
-                # 5. SSE heartbeat + idle-read timeout (issue #599) — wraps the
+                # 6. SSE heartbeat + idle-read timeout (issue #599) — wraps the
                 #    same quota-guarded call, so the provider-failure mapping
                 #    above still applies unchanged; this layer only injects
                 #    heartbeat comment frames and enforces the idle-read cap.
