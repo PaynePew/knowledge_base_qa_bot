@@ -323,6 +323,10 @@ def _flush_one_pending_locked(path: Path) -> bool:
             open_questions=existing.get("open_questions") or [],
             question=existing.get("question"),
             count=disk_count + pending.delta,
+            # Issue #579: preserve verbatim — a deferred flush only persists
+            # count/updated, it does not know the retrieval_query of whichever
+            # buffered touch(es) triggered this flush.
+            retrieval_query=existing.get("retrieval_query"),
         )
     except Exception:  # noqa: BLE001 — defensive, mirrors maybe_file_answer's touch path
         del _pending_counts[path]
@@ -444,6 +448,7 @@ def _render_frontmatter_yaml(fm: WikiPageFrontmatter) -> str:
         "open_questions": fm.open_questions,
         "question": fm.question,
         "count": fm.count,
+        "retrieval_query": fm.retrieval_query,
     }
     return yaml.dump(data, default_flow_style=False, allow_unicode=True).rstrip()
 
@@ -588,10 +593,22 @@ def maybe_file_answer(
     query: str,
     answer: str,
     cited_sections: list[CitableContent],
+    retrieval_query: str | None = None,
 ) -> FiledStatus | None:
     """File or touch ``wiki/qa/<slug>.md`` for a grounding-passing chat answer.
 
     Phase 6 Slice 6-2 core: synchronous, thread-safe-within-uvicorn, fail-soft.
+
+    Issue #579: ``query`` is always the user's literal question (used for the
+    slug and the ``question`` frontmatter field) — the caller resolves it to
+    the ORIGINAL ask, never a Gateway rewrite. ``retrieval_query`` is the
+    query text that actually retrieved this answer (the rewritten,
+    self-contained follow-up on turn 2+); it defaults to ``query`` when the
+    caller has no rewrite to report (single-turn ``/chat``, turn 1
+    passthrough). Every successful call (create AND touch) writes the
+    CURRENT ``retrieval_query`` value — unlike ``question``, which a touch
+    preserves verbatim, ``retrieval_query`` is audit metadata and stays fresh
+    so the curator sees the most recent rewrite that hit this page.
 
     Flow inside ``_filing_lock``:
 
@@ -622,6 +639,9 @@ def maybe_file_answer(
     path = qa_dir / f"{slug}.md"
     cited_ids = [_citation_id(s) for s in cited_sections]
     now = _utc_now_iso()
+    # Issue #579: passthrough default — no rewrite to report means the
+    # retrieval query IS the (original) query.
+    resolved_retrieval_query = retrieval_query if retrieval_query is not None else query
 
     with _filing_lock:
         existing = _read_existing_frontmatter(path)
@@ -649,6 +669,7 @@ def maybe_file_answer(
                 open_questions=[],
                 question=query,
                 count=1,
+                retrieval_query=resolved_retrieval_query,
             )
             content = _render_qa_page(fm, answer)
             try:
@@ -708,6 +729,15 @@ def maybe_file_answer(
                 open_questions=existing_open_questions,
                 question=existing_question,
                 count=true_count,
+                # Issue #579: unlike `question`, a touch REFRESHES retrieval_query
+                # to the current call's value (audit metadata — freshest rewrite
+                # wins). Only takes effect when this write actually reaches disk
+                # this round; a buffered touch's value is superseded by whatever
+                # a later flush's own re-read carries (see
+                # ``_flush_one_pending_locked``, which preserves rather than
+                # refreshes — same staleness envelope as `count` under #581
+                # batching).
+                retrieval_query=resolved_retrieval_query,
             )
         except Exception as exc:  # noqa: BLE001 — defensive
             # Existing file's frontmatter dict didn't validate against our schema
@@ -811,7 +841,11 @@ def _top_citation_is_qa(sources: list[dict]) -> bool:
     return (sources[0].get("path") or "").startswith("wiki/qa/")
 
 
-def dispatch_filing(query: str, result: dict) -> FiledStatus | None:
+def dispatch_filing(
+    query: str,
+    result: dict,
+    retrieval_query: str | None = None,
+) -> FiledStatus | None:
     """Gate-and-dispatch filing for a single query result.
 
     Shared helper used by both ``POST /chat`` (routes.py) and the Wiki
@@ -835,11 +869,18 @@ def dispatch_filing(query: str, result: dict) -> FiledStatus | None:
       the caller's responsibility — this function does not inspect the stack).
 
     Args:
-        query:  The original user question (used for slug computation).
+        query:  The original user question (used for slug computation and
+                the ``question`` frontmatter field — issue #579: callers must
+                resolve this to the literal ask, never a Gateway rewrite).
         result: A result dict as returned by ``query()`` / the final yield
                 of ``stream_query()``.  Must contain ``sources`` (list of
                 dicts each with a ``source`` key carrying the section id)
                 and ``grounding_outcome`` (a ``GroundingOutcome`` instance).
+        retrieval_query: Issue #579 — the query actually used to retrieve
+                this answer (the rewritten, self-contained follow-up on
+                turn 2+). Forwarded verbatim to ``maybe_file_answer``, which
+                defaults it to ``query`` when ``None`` (single-turn / turn 1
+                passthrough — nothing to distinguish).
 
     Returns:
         ``FiledStatus`` describing what happened, or ``None`` on any
@@ -875,7 +916,7 @@ def dispatch_filing(query: str, result: dict) -> FiledStatus | None:
         return None
 
     cited_refs = [_SectionRef(id=s["source"]) for s in sources]
-    return maybe_file_answer(query, result["answer"], cited_refs)
+    return maybe_file_answer(query, result["answer"], cited_refs, retrieval_query=retrieval_query)
 
 
 # ---------------------------------------------------------------------------
@@ -942,6 +983,7 @@ def _flip_draft_to_live(slug: str, path: Path, existing: dict) -> int:
         open_questions=existing.get("open_questions") or [],
         question=existing.get("question"),
         count=existing_count,
+        retrieval_query=existing.get("retrieval_query"),  # issue #579: preserve verbatim
     )
     body = _read_existing_body(path)
     content = _render_qa_page(fm, body)
@@ -1344,6 +1386,7 @@ def edit(slug: str, question: str, body: str) -> FiledStatus:
             open_questions=existing_open_questions,
             question=question,
             count=existing_count,
+            retrieval_query=existing.get("retrieval_query"),  # issue #579: preserve verbatim
         )
         content = _render_qa_page(fm, body)
         _atomic_write(path, content)
@@ -1557,6 +1600,7 @@ def demote(slug: str) -> FiledStatus:
             open_questions=existing.get("open_questions") or [],
             question=existing.get("question"),
             count=existing_count,
+            retrieval_query=existing.get("retrieval_query"),  # issue #579: preserve verbatim
         )
         body = _read_existing_body(path)
         content = _render_qa_page(fm, body)
@@ -1745,6 +1789,7 @@ def refile(slug: str) -> RefiledAnswer:
             existing_count = 1
         existing_created = existing.get("created", _utc_now_iso())
         existing_open_questions = existing.get("open_questions") or []
+        existing_retrieval_query = existing.get("retrieval_query")  # issue #579: preserve verbatim
 
     # ---- re-synthesize + grounding-check OUTSIDE the lock (LLM round-trip,
     # ADR-0026 decision 1 steps 1-2). Lazy import: retrieval.py lazy-imports
@@ -1800,6 +1845,7 @@ def refile(slug: str) -> RefiledAnswer:
                     open_questions=current.get("open_questions") or [],
                     question=current.get("question") or question,
                     count=retired_count,
+                    retrieval_query=current.get("retrieval_query"),  # issue #579: preserve verbatim
                 )
                 body = _read_existing_body(path)
                 content = _render_qa_page(fm, body)
@@ -1830,6 +1876,7 @@ def refile(slug: str) -> RefiledAnswer:
             open_questions=existing_open_questions,
             question=question,
             count=existing_count,
+            retrieval_query=existing_retrieval_query,  # issue #579: preserve verbatim
         )
         content = _render_qa_page(fm, result["answer"])
         _atomic_write(path, content)

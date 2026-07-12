@@ -36,7 +36,9 @@ shared serializer renders them as-is.
 
 SSE event contract (ADR-0009, extended by Phase 11):
   status{phase:"rewriting"}  — emitted on turn 2+ BEFORE sources (Phase 11 Slice 4)
-  sources            — immediately after retrieval (real latency win)
+  sources{sources,rewritten_query?} — immediately after retrieval (real latency
+                       win); ``rewritten_query`` present only on turn 2+ (issue
+                       #579 — surfaces what was actually searched for)
   status{phase:"verifying"}  — liveness between sources and first token; LLM path only
   token(s)           — verified answer or CANNOT_CONFIRM_PHRASE; one per word
   done{grounding:{passed,reason},filed,stack,session} — terminal success event
@@ -118,7 +120,11 @@ class HybridIndexResponseSchema(BaseModel):
 
 
 # Per-stack dispatch mapping.  Adding a new stack = one entry here; the
-# generator body below is identical for every stack (ADR-0010).
+# generator body below is identical for every stack (ADR-0010). Every entry
+# supports the ``(query: str) -> Iterator[dict]`` call shape below; the wiki
+# entry ALSO accepts an ``original_question`` keyword (issue #579, filing
+# under the original ask on turn 2+) that only the wiki call site in
+# ``_sse_generator`` ever passes — the shared type stays the common subset.
 _STACK_STREAM_FN: dict[str, Callable[[str], Iterator[dict]]] = {
     "wiki": _wiki_stream_query,
     "rag": _rag_stream_query,
@@ -164,7 +170,10 @@ def chat_stream(
          docs/-relative ``path`` for the clickable citation (#307; present when
          the chunk carries source-path metadata) — but no score, no derived_from.
          This is the genuine latency win — retrieval is ~instant; the user sees
-         grounding context while the LLM drafts (~4-7s).
+         grounding context while the LLM drafts (~4-7s). On turn 2+ ALSO carries
+         ``rewritten_query`` (issue #579) — the self-contained query that was
+         actually retrieved against, so the reader can see what the follow-up
+         resolved to; absent on turn 1 (passthrough, nothing new to show).
       3. ``status:{phase:"verifying"}`` — liveness signal emitted after sources,
          before the first token, on the LLM path only (early-exit CC paths skip
          this).
@@ -243,7 +252,15 @@ def chat_stream(
           - Turn 1 (empty history): passthrough — no status:rewriting, no
             rewrite LLM call (preserves Phase 9 sources-first latency win).
           - Dispatch uses ``self_contained_query`` (rewritten or passthrough),
-            never ``req.query`` directly.
+            never ``req.query`` directly — retrieval always searches on the
+            self-contained form.
+          - Issue #579: on turn 2+, ``stack=wiki`` filing dispatch ADDITIONALLY
+            receives ``req.query`` (the literal ask) so the filed page's
+            ``question`` never drifts to the rewrite; the rewrite still lands
+            in the page's ``retrieval_query`` audit field. The Conversation
+            Store's stored turn is UNCHANGED by this — it still records
+            ``self_contained_query`` (see the ``append_turn`` call below),
+            since that is what the NEXT turn's rewrite needs as history.
           - On ``done``: append turn to Conversation Store; inject ``session``
             into the ``done`` payload.
           - On ``error`` (before ``done``): forward the error, do NOT write.
@@ -284,7 +301,19 @@ def chat_stream(
             # Turn 1: passthrough (no rewrite, no status:rewriting event).
             self_contained_query = req.query
 
-        gen = stream_fn(self_contained_query)
+        # Issue #579: on turn 2+, the Wiki stack additionally needs the raw
+        # ask (req.query) alongside the rewrite so filing can record the
+        # ORIGINAL question while still retrieving on the rewrite — see
+        # markdown_kb.app.retrieval.stream_query's ``original_question`` arg.
+        # Turn 1 is passthrough (self_contained_query already IS req.query,
+        # so the extra arg would be redundant) and RAG/Hybrid never file, so
+        # neither needs the widened call — kept off their call sites entirely
+        # (CODING_STANDARD §11: do not widen a call shape every caller must
+        # accept when only one caller needs the new argument).
+        if stack == "wiki" and history:
+            gen = stream_fn(self_contained_query, original_question=req.query)
+        else:
+            gen = stream_fn(self_contained_query)
 
         # First yield: sources_ready partial — emit sources event only.
         partial = next(gen)
@@ -316,7 +345,14 @@ def chat_stream(
             if s.get("lint"):
                 entry["lint"] = s["lint"]
             source_list.append(entry)
-        yield encode_event("sources", {"sources": source_list})
+        sources_payload: dict = {"sources": source_list}
+        # Issue #579: surface the rewritten query on turn 2+ so the reader can
+        # see what was actually searched for (the follow-up may drift from
+        # what was literally asked). Omitted on turn 1 — passthrough means
+        # it would be identical to the visible query, nothing new to show.
+        if history:
+            sources_payload["rewritten_query"] = self_contained_query
+        yield encode_event("sources", sources_payload)
 
         # Emit status{phase:"verifying"} on the LLM path only (early_exit=False).
         # Early-exit CC paths skip the LLM entirely — emitting "verifying" there
