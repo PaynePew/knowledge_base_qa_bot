@@ -39,6 +39,12 @@ visibility, writes none).
 ``kb transcribe <path>`` (issue #426 / ADR-0032) force-transcribes a local
 PDF via the model-assisted Transcribe converter, bypassing the text-layer
 probe ``kb import`` applies automatically — the designed-PDF escape hatch.
+
+``kb source retire|restore|rename|trash`` (issue #606 / ADR-0041) wraps
+``markdown_kb.app.source_lifecycle`` — governed Source moves (retire into the
+Source Trash, restore the inverse, rename with mechanical citation re-point).
+Same human-surfaces-only rationale as ``kb qa`` / ``kb alias``: MCP sees
+Source Trash state (``kb_source_trash_v1``) but writes none of it.
 """
 
 from __future__ import annotations
@@ -1003,6 +1009,192 @@ def alias_add_cmd(
         raise typer.Exit(code=1) from None
 
     typer.echo(f"Assigned alias '{alias}' to page '{page_slug}'.")
+
+
+# ---------------------------------------------------------------------------
+# kb source (issue #606 / ADR-0041) — thin wrapper over
+# markdown_kb.app.source_lifecycle's retire/restore/rename/list_trash, one of
+# the three human-surface entry points (Console's rail + Trash section is
+# another) that share the same POST /sources/* endpoints' domain logic.
+# Direct-class writes, human-surfaces-only — mirrors ``kb alias``'s own
+# rationale: MCP sees Source Trash state (``kb_source_trash_v1``) but writes
+# none of it (ADR-0041 Invariant).
+# ---------------------------------------------------------------------------
+
+source_app = typer.Typer(
+    name="source",
+    help=(
+        "Govern the Source lifecycle: retire / restore / rename Source files, "
+        "list the Source Trash (ADR-0041). Direct-class writes, human-"
+        "surfaces-only — MCP sees Source Trash state but writes none of it."
+    ),
+    add_completion=False,
+)
+app.add_typer(source_app, name="source")
+
+
+def _print_impact_preview(impact: object) -> None:
+    """Shared impact-preview rendering for ``kb source retire``."""
+    full = ", ".join(impact.full_orphans) if impact.full_orphans else "(none)"
+    partial = ", ".join(impact.partial_orphans) if impact.partial_orphans else "(none)"
+    typer.echo(f"  full orphans:    {full}")
+    typer.echo(f"  partial orphans: {partial}")
+
+
+@source_app.command(name="retire")
+def source_retire_cmd(
+    relpath: str = typer.Argument(
+        ..., help="Source path relative to docs/, e.g. 'policy.md' or 'demo-zh/policy.md'."
+    ),
+) -> None:
+    """Retire the Source at docs/<relpath> into the Source Trash (ADR-0041 decision 2).
+
+    Prints the server-computed impact preview (which derived wiki pages would
+    become full/partial orphans, per ``markdown_kb.app.source_lifecycle.
+    compute_impact``) and asks for confirmation before moving the file —
+    mirrors the Console's confirmation dialog. Wraps ``source_lifecycle.
+    retire``: one atomic whole-file move, reversible via ``kb source
+    restore``. No cascade onto wiki pages, no reindex (ADR-0041 Invariant —
+    retire never touches wiki/); derived pages surface as C11 orphan findings
+    on the next ``kb lint``.
+
+    Exit codes follow the ADR-0015 CLI contract: 0 on success or a declined
+    confirmation, 1 on refusal (bad relpath, no Source at that path).
+    """
+    from markdown_kb.app import source_lifecycle
+
+    try:
+        impact = source_lifecycle.compute_impact(relpath)
+    except source_lifecycle.InvalidRelpath as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+    except source_lifecycle.SourceNotFound as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+
+    typer.echo(f"Retiring docs/{relpath} would affect:")
+    _print_impact_preview(impact)
+
+    if not typer.confirm(f"Retire docs/{relpath}?"):
+        typer.echo("Retire cancelled.")
+        return
+
+    try:
+        result = source_lifecycle.retire(relpath)
+    except source_lifecycle.InvalidRelpath as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+    except source_lifecycle.SourceNotFound as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+
+    typer.echo(f"Retired docs/{result.relpath} -> .trash/{result.timestamp}/docs/{result.relpath}")
+    typer.echo(
+        f"  {len(result.impact.full_orphans)} full orphan(s), "
+        f"{len(result.impact.partial_orphans)} partial orphan(s) — "
+        "run 'kb lint' for the resulting C11 findings."
+    )
+
+
+@source_app.command(name="restore")
+def source_restore_cmd(
+    timestamp: str = typer.Argument(
+        ..., help="Trash act-folder timestamp (from 'kb source trash')."
+    ),
+    relpath: str = typer.Argument(..., help="Original Source path relative to docs/."),
+) -> None:
+    """Restore a Source Trash entry back to docs/<relpath> (ADR-0041 decision 4).
+
+    Wraps ``markdown_kb.app.source_lifecycle.restore``: the atomic inverse of
+    ``kb source retire``. Refuses — never overwrites, never auto-suffixes —
+    when the original relpath is now occupied or the basename collides
+    elsewhere under docs/.
+
+    Exit codes follow the ADR-0015 CLI contract: 0 on success, 1 on any
+    refusal.
+    """
+    from markdown_kb.app import source_lifecycle
+
+    try:
+        source_lifecycle.restore(timestamp, relpath)
+    except source_lifecycle.InvalidRelpath as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+    except source_lifecycle.TrashEntryNotFound as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+    except source_lifecycle.RestoreTargetOccupied as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+    except source_lifecycle.RestoreBasenameCollision as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+
+    typer.echo(f"Restored docs/{relpath} from .trash/{timestamp}/docs/{relpath}")
+
+
+@source_app.command(name="rename")
+def source_rename_cmd(
+    relpath: str = typer.Argument(
+        ..., help="Source path relative to docs/, e.g. 'policy.md' or 'demo-zh/policy.md'."
+    ),
+    new_basename: str = typer.Argument(..., help="New bare filename, same directory (no path)."),
+) -> None:
+    """Rename the Source at docs/<relpath> to new_basename (ADR-0041 decision 5).
+
+    Wraps ``markdown_kb.app.source_lifecycle.rename``: one atomic same-
+    directory basename move plus a mechanical re-point of every derived wiki
+    page's ``sources``/``source_hashes`` frontmatter, then triggers exactly
+    one reindex — mirrors ``POST /sources/rename``'s two-step contract (the
+    Gateway route calls ``build_index()`` after a successful rename; this
+    command does the same, matching ``kb qa promote``'s own reindex pattern).
+
+    Exit codes follow the ADR-0015 CLI contract: 0 on success, 1 on any
+    refusal.
+    """
+    from markdown_kb.app import source_lifecycle
+    from markdown_kb.app.indexer import build_index
+
+    try:
+        result = source_lifecycle.rename(relpath, new_basename)
+    except source_lifecycle.InvalidRelpath as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+    except source_lifecycle.SourceNotFound as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+    except source_lifecycle.SourceOriginAmbiguous as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+    except source_lifecycle.RenameBasenameCollision as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+
+    files_indexed, sections_indexed = build_index()
+    typer.echo(f"Renamed docs/{result.old_relpath} -> docs/{result.new_relpath}")
+    repointed = ", ".join(result.repointed_pages) if result.repointed_pages else "(none)"
+    typer.echo(f"Repointed {len(result.repointed_pages)} page(s): {repointed}")
+    typer.echo(f"Reindexed {files_indexed} file(s), {sections_indexed} section(s).")
+
+
+@source_app.command(name="trash")
+def source_trash_cmd() -> None:
+    """List every entry in the Source Trash (ADR-0041 decision 8).
+
+    Wraps ``markdown_kb.app.source_lifecycle.list_trash`` — read-only, the
+    same state ``kb_source_trash_v1`` (MCP) and ``GET /sources/trash``
+    (Console) expose.
+    """
+    from markdown_kb.app import source_lifecycle
+
+    entries = source_lifecycle.list_trash()
+    if not entries:
+        typer.echo("Source Trash is empty.")
+        return
+
+    typer.echo(f"Source Trash — {len(entries)} entr{'y' if len(entries) == 1 else 'ies'}:")
+    for entry in entries:
+        typer.echo(f"  • {entry.timestamp}  docs/{entry.relpath}")
 
 
 # ---------------------------------------------------------------------------

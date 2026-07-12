@@ -705,12 +705,25 @@
   /* Entry rows */
   .entry-row {
     display: grid;
-    grid-template-columns: 20px 1fr auto;
+    /* 4th "auto" column is Source lifecycle actions (issue #606, ADR-0041) —
+       only docs/ file rows populate it; rows with 3 children (directories,
+       non-docs files) simply leave that track empty, no layout shift. */
+    grid-template-columns: 20px 1fr auto auto;
     column-gap: 10px;
     padding: 11px 16px;
     border-top: 1px solid var(--rule-2);
     cursor: pointer;
     transition: background .12s ease;
+  }
+  /* Per-row Source lifecycle actions (Rename/Retire on a Browse docs/ file
+     row; Restore on a Source Trash row) — a plain flex wrapper reusing the
+     existing .fix-source-btn/.discard-btn/.promote-btn button chrome, no new
+     button style. Click handlers stopPropagation so an action click never
+     also triggers the row's own navigate/openFile handler. */
+  .entry-row-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
   .entry-row:first-child { border-top: none; }
   .entry-row:hover { background: var(--rule-2); }
@@ -2241,6 +2254,9 @@
         <div id="browser-section">
           <!-- Resource browser built by JS below (Phase 15 S5, issue #171) -->
         </div>
+        <div id="source-trash-section">
+          <!-- Source Trash built by JS below (issue #606, ADR-0041) -->
+        </div>
       </aside>
     </div>
   </div>
@@ -3650,6 +3666,40 @@ var LINT_CHROME = {
     viewerRaw:           "raw",
     viewerFailedPrefix:  "Failed: ",
 
+    /* issue #606 (ADR-0041): Source lifecycle — Browse rail per-row actions
+       (Rename/Retire) + the Source Trash section (Restore). */
+    sourceRenameBtn:     "Rename",
+    sourceRetireBtn:     "Retire",
+    sourceRetireModalTitle: "Retire Source",
+    sourceRetireModalBodyPrefix: "Retire docs/",
+    sourceRetireModalBodySuffix: "? This moves the file to the Source Trash — reversible via Restore.",
+    sourceRetireImpactFullLabel: "Full orphans (deletable via Lint C11):",
+    sourceRetireImpactPartialLabel: "Partial orphans:",
+    sourceRetireImpactNone: "(none)",
+    sourceRetireImpactLoadFailedPrefix: "Couldn't load impact preview: ",
+    sourceRetireConfirmBtn: "Retire",
+    sourceRetireCancelBtn: "Cancel",
+    sourceRetireWorking:  "Retiring…",
+    /* issue #606 follow-up (ADR-0041 decision 2): shown as a one-shot
+       lastBatchSummary banner on the Lint card's NEXT render — routes the
+       curator to the resulting C11 findings using the retire RESPONSE's
+       impact payload (not the pre-confirm preview). {full}/{partial} are
+       replaced with the response's counts verbatim (§12.5: server data
+       only). */
+    sourceRetireOutcomeSummary: "{full} full orphan(s), {partial} partial orphan(s) — run Lint below for the resulting C11 findings.",
+    sourceRenameModalTitlePrefix: "Rename docs/",
+    sourceRenameInputLabel: "New filename",
+    sourceRenameConfirmBtn: "Rename",
+    sourceRenameCancelBtn: "Cancel",
+    sourceRenameWorking:  "Renaming…",
+    sourceRenameBlankError: "New filename must not be blank.",
+    sourceTrashSectionLabel: "Source Trash",
+    sourceTrashLoadFailedPrefix: "Failed to load Source Trash: ",
+    sourceTrashEmpty:     "Source Trash is empty.",
+    sourceTrashRestoreBtn: "Restore",
+    sourceTrashRestoreWorking: "Restoring…",
+    sourceTrashRestoreFailedPrefix: "Restore failed: ",
+
     /* issue #498: banners (static HTML, bound via bindText) */
     bannerDemoStrong: "Demo environment",
     bannerDemoText: " — changes are real but ephemeral. This console resets to the seeded knowledge base periodically (~2 days) and on each deploy.",
@@ -3949,6 +3999,32 @@ var LINT_CHROME = {
     viewerClose:         "關閉",
     viewerRaw:           "原始檔",
     viewerFailedPrefix:  "失敗:",
+
+    sourceRenameBtn:     "重新命名",
+    sourceRetireBtn:     "退役",
+    sourceRetireModalTitle: "退役 Source",
+    sourceRetireModalBodyPrefix: "退役 docs/",
+    sourceRetireModalBodySuffix: "？此操作會將檔案移至來源垃圾桶 — 可透過「復原」還原。",
+    sourceRetireImpactFullLabel: "完全孤兒（可透過 Lint C11 刪除）：",
+    sourceRetireImpactPartialLabel: "部分孤兒：",
+    sourceRetireImpactNone: "（無）",
+    sourceRetireImpactLoadFailedPrefix: "無法載入影響預覽：",
+    sourceRetireConfirmBtn: "退役",
+    sourceRetireCancelBtn: "取消",
+    sourceRetireWorking:  "退役中…",
+    sourceRetireOutcomeSummary: "{full} 個完全孤兒、{partial} 個部分孤兒 — 請至下方執行 Lint 以檢視對應的 C11 發現。",
+    sourceRenameModalTitlePrefix: "重新命名 docs/",
+    sourceRenameInputLabel: "新檔名",
+    sourceRenameConfirmBtn: "重新命名",
+    sourceRenameCancelBtn: "取消",
+    sourceRenameWorking:  "重新命名中…",
+    sourceRenameBlankError: "新檔名不可為空白。",
+    sourceTrashSectionLabel: "來源垃圾桶",
+    sourceTrashLoadFailedPrefix: "載入來源垃圾桶失敗：",
+    sourceTrashEmpty:     "來源垃圾桶是空的。",
+    sourceTrashRestoreBtn: "復原",
+    sourceTrashRestoreWorking: "復原中…",
+    sourceTrashRestoreFailedPrefix: "復原失敗：",
 
     bannerDemoStrong: "展示環境",
     bannerDemoText: " — 所做的變更是真實的,但暫時性。此展示環境會定期(約每 2 天)以及每次部署時重置為種子知識庫。",
@@ -8191,6 +8267,20 @@ refreshIndexFreshness(); /* issue #559 A2: after buildPipeline so #artifact-fres
       if (lastLintData && !remediationInFlight) {
         renderCurationQueue(document.getElementById("curation-queue-root"), lastLintData);
       }
+      /* issue #606: the Browse rail's per-row Rename/Retire button labels and
+         the Source Trash section are the first LOCALIZED text inside these
+         two lists (every other field is raw server data) — re-render both
+         from cache (no refetch) so a toggle mid-browse does not leave a
+         stale-language button behind. Guarded on sourceLifecycleInFlight the
+         same way the blocks above guard on remediationInFlight: a retire/
+         restore/rename in flight must keep its own disabled buttons, not get
+         replaced with fresh enabled ones. */
+      if (lastBrowserEntries && !sourceLifecycleInFlight) {
+        renderEntries(lastBrowserEntries);
+      }
+      if (lastSourceTrashEntries && !sourceLifecycleInFlight) {
+        renderSourceTrash(lastSourceTrashEntries);
+      }
     });
   }
   applyConsoleLang();
@@ -8694,10 +8784,29 @@ function navigateTo(relpath) {
 }
 
 /* ── Render directory entries ────────────────────────────── */
+/* Last directory listing rendered — cached so the lang-toggle handler can
+   re-render in place (issue #606: Rename/Retire button labels are the FIRST
+   localized text inside an entry row; every other field is raw server data,
+   so this cache did not need to exist before this slice). */
+var lastBrowserEntries = null;
+
+/* A file row is a governed Source only when it lives under docs/ (Sources
+   are the only lifecycle-governed root — raw/, wiki/, .trash/ rows never get
+   Rename/Retire). Strips the "docs/" root prefix list_tree prepends, giving
+   the bare relpath the /sources/* endpoints expect (ADR-0041). Returns null
+   for directories and non-docs files, which get no action buttons. */
+function sourceRelpathFromEntry(entry) {
+  if (entry.is_dir || entry.relpath.indexOf("docs/") !== 0) return null;
+  return entry.relpath.slice("docs/".length);
+}
+
 function renderEntries(entries) {
+  lastBrowserEntries = entries;
+  var chrome = LINT_CHROME[consoleLang];
+
   if (entries.length === 0) {
     entriesEl.replaceChildren(
-      el("div", { class: "browser-empty", text: LINT_CHROME[consoleLang].browseEmptyDirectory })
+      el("div", { class: "browser-empty", text: chrome.browseEmptyDirectory })
     );
     return;
   }
@@ -8741,6 +8850,25 @@ function renderEntries(entries) {
       el("span", { class: "entry-meta", text: meta })
     );
 
+    /* Per-file-row Source lifecycle actions (issue #606, ADR-0041): Rename
+       (Direct, outline chrome) + Retire (Confirmed Remediation, same red
+       .discard-btn chrome the C11 orphan-delete trigger uses). stopPropagation
+       so a button click never also fires the row's own openFile handler. */
+    var sourceRelpath = sourceRelpathFromEntry(entry);
+    if (sourceRelpath) {
+      var renameBtn = el("button", { class: "fix-source-btn", type: "button", text: chrome.sourceRenameBtn });
+      renameBtn.addEventListener("click", function(e) {
+        e.stopPropagation();
+        openRenameModal(sourceRelpath);
+      });
+      var retireBtn = el("button", { class: "discard-btn", type: "button", text: chrome.sourceRetireBtn });
+      retireBtn.addEventListener("click", function(e) {
+        e.stopPropagation();
+        openRetireConfirm(sourceRelpath);
+      });
+      row.append(el("span", { class: "entry-row-actions" }, renameBtn, retireBtn));
+    }
+
     rows.push(row);
     toAnimate.push(row);
     if (noticeEl) rows.push(noticeEl);
@@ -8756,6 +8884,330 @@ function renderEntries(entries) {
       animateIn(row, 300, Math.min(i * 26, 260), 5);
     });
   }
+}
+
+/* ── Source lifecycle (issue #606, ADR-0041) ──────────────────────────────
+   Retire/Rename mount as per-file-row actions on the EXISTING Browse rail
+   (renderEntries above); Restore lives in its own Source Trash section
+   below. No business logic here (§12.5): the impact preview, refusal
+   reasons, and re-point counts all come from the server verbatim — the
+   client only renders them and issues the request. Retire/Restore/Rename are
+   ADMIN_PATHS (middleware.py) and go through adminFetch; the read-only
+   impact preview and trash listing are plain fetch, mirroring GET /read/*
+   staying ungated. One shared in-flight flag (sourceLifecycleInFlight, NOT
+   the Lint card's remediationInFlight — a different card, a different
+   guard) blocks a double-submit across all three write actions. */
+var sourceLifecycleInFlight = false;
+
+/* /sources/{relpath:path}/impact is a PATH parameter that may itself contain
+   "/" (nested docs/ subdirectories) — encode each segment, never the whole
+   string (encodeURIComponent would %2F-escape the legitimate separators). */
+function encodeSourceRelpath(relpath) {
+  return relpath.split("/").map(encodeURIComponent).join("/");
+}
+
+function sourceImpactRequest(relpath) {
+  // Built into a url variable, then passed to fetch by reference — not a bare
+  // string-literal fetch call — so the admin-token bare-fetch audit
+  // (test_ui_console_admin_token.py) does not mistake this ungated GET for
+  // one of the ADMIN_PATHS retire/restore/rename siblings under the same
+  // route prefix.
+  var url = "/sources/" + encodeSourceRelpath(relpath) + "/impact";
+  return fetch(url).then(function(resp) {
+    if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+    return resp.json();
+  });
+}
+
+function retireSourceRequest(relpath) {
+  return adminFetch("/sources/retire", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ relpath: relpath }),
+  }).then(function(resp) {
+    if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+    return resp.json();
+  });
+}
+
+function restoreSourceRequest(timestamp, relpath) {
+  return adminFetch("/sources/restore", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ timestamp: timestamp, relpath: relpath }),
+  }).then(function(resp) {
+    if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+    return null;
+  });
+}
+
+function renameSourceRequest(relpath, newBasename) {
+  return adminFetch("/sources/rename", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ relpath: relpath, new_basename: newBasename }),
+  }).then(function(resp) {
+    if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+    return resp.json();
+  });
+}
+
+function sourceTrashListRequest() {
+  return fetch("/sources/trash").then(function(resp) {
+    if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
+    return resp.json();
+  });
+}
+
+/* Retire confirmation dialog (ADR-0024 Confirmed Remediation — names the
+   operation and target before it runs). Reuses the SAME .reconcile-overlay/
+   .reconcile-modal/.reconcile-actions chrome as openDeleteOrphanConfirm
+   (the C11 orphan-delete precedent) rather than inventing a second modal
+   system. The body starts as a spinner and fills in with the server-computed
+   impact preview (GET /sources/{relpath}/impact) — the Confirm button stays
+   disabled until that preview lands, so the curator never confirms blind. On
+   success, closes and refreshes BOTH the current Browse listing (the file
+   left docs/) and the Source Trash section (the file arrived there).
+   Routing the curator to the resulting C11 findings (ADR-0041 decision 2)
+   uses the RETIRE RESPONSE's own impact payload — not the pre-confirm
+   preview above, which was computed before the move and can go stale during
+   the confirm click's async window (mirrors kb_cli's source_retire_cmd,
+   which prints result.impact, never the pre-confirm preview, once the move
+   is durable). Reuses two EXISTING mechanisms rather than inventing a new
+   one: lastBatchSummary, the same one-shot banner every other card action
+   already uses to leave a note for the Lint card's next render, and
+   scrollSoftIntoView, the same navigation helper Browse/openFile already
+   use. Silent when nothing was orphaned (§12.5: no false affordance). */
+function openRetireConfirm(relpath) {
+  var chrome = LINT_CHROME[consoleLang];
+  var overlay = el("div", { class: "reconcile-overlay" });
+  var statusMsgEl = el("span", { class: "card-status-msg" });
+  var cancelBtn = el("button", { class: "reconcile-cancel-btn", type: "button", text: chrome.sourceRetireCancelBtn });
+  var confirmBtn = el("button", { class: "discard-btn", type: "button", text: chrome.sourceRetireConfirmBtn, disabled: "" });
+
+  function closeModal() { overlay.remove(); }
+  overlay.addEventListener("click", function(e) { if (e.target === overlay) closeModal(); });
+  cancelBtn.addEventListener("click", function() {
+    if (cancelBtn.disabled) return;
+    closeModal();
+  });
+
+  var bodyEl = el("div", { class: "reconcile-modal-body" },
+    el("p", { text: chrome.sourceRetireModalBodyPrefix + relpath + chrome.sourceRetireModalBodySuffix }),
+    el("span", { class: "spinner" })
+  );
+
+  confirmBtn.addEventListener("click", function() {
+    if (confirmBtn.disabled || sourceLifecycleInFlight) return;
+    sourceLifecycleInFlight = true;
+    confirmBtn.disabled = true;
+    cancelBtn.disabled = true;
+    statusMsgEl.replaceChildren(el("span", { class: "spinner" }), document.createTextNode(chrome.sourceRetireWorking));
+    statusMsgEl.className = "card-status-msg";
+
+    retireSourceRequest(relpath)
+      .then(function(result) {
+        sourceLifecycleInFlight = false;
+        closeModal();
+        navigateTo(browserPath);
+        loadSourceTrash();
+        var fullCount = (result.impact.full_orphans || []).length;
+        var partialCount = (result.impact.partial_orphans || []).length;
+        if (fullCount || partialCount) {
+          lastBatchSummary = chrome.sourceRetireOutcomeSummary
+            .replace("{full}", String(fullCount))
+            .replace("{partial}", String(partialCount));
+          if (lintResultEl) scrollSoftIntoView(lintResultEl);
+        }
+      })
+      .catch(function(err) {
+        sourceLifecycleInFlight = false;
+        confirmBtn.disabled = false;
+        cancelBtn.disabled = false;
+        statusMsgEl.textContent = "Error: " + (err.message || String(err));
+        statusMsgEl.className = "card-status-msg err";
+      });
+  });
+
+  var modal = el("div", { class: "reconcile-modal" },
+    el("div", { class: "reconcile-modal-head" }, el("span", { text: chrome.sourceRetireModalTitle + ": docs/" + relpath })),
+    bodyEl,
+    el("div", { class: "reconcile-actions" }, confirmBtn, cancelBtn, statusMsgEl)
+  );
+  overlay.append(modal);
+  document.body.append(overlay);
+
+  sourceImpactRequest(relpath)
+    .then(function(impact) {
+      var full = (impact.full_orphans || []).length ? impact.full_orphans.join(", ") : chrome.sourceRetireImpactNone;
+      var partial = (impact.partial_orphans || []).length ? impact.partial_orphans.join(", ") : chrome.sourceRetireImpactNone;
+      bodyEl.replaceChildren(
+        el("p", { text: chrome.sourceRetireModalBodyPrefix + relpath + chrome.sourceRetireModalBodySuffix }),
+        el("p", {}, el("strong", { text: chrome.sourceRetireImpactFullLabel }), document.createTextNode(" " + full)),
+        el("p", {}, el("strong", { text: chrome.sourceRetireImpactPartialLabel }), document.createTextNode(" " + partial))
+      );
+      confirmBtn.disabled = false;
+    })
+    .catch(function(err) {
+      bodyEl.replaceChildren(
+        el("p", { style: "color:var(--fail);", text: chrome.sourceRetireImpactLoadFailedPrefix + (err.message || String(err)) })
+      );
+    });
+}
+
+/* Rename dialog (Direct — no confirmation-of-consequence needed, just the
+   new name). Same modal chrome as openRetireConfirm; a plain text input
+   pre-filled with the current basename. Refuses client-side only on BLANK
+   input (§12.5: every other refusal — collision, ambiguous origin — is a
+   server judgment surfaced verbatim from the 409/422 response body, never
+   re-derived here). On success, closes and refreshes the current Browse
+   listing so the renamed file (and its re-pointed citations, invisible to
+   this rail) appear under the new name immediately. */
+function openRenameModal(relpath) {
+  var chrome = LINT_CHROME[consoleLang];
+  var overlay = el("div", { class: "reconcile-overlay" });
+  var statusMsgEl = el("span", { class: "card-status-msg" });
+  var input = el("input", { type: "text", value: relpath.split("/").pop() });
+  var cancelBtn = el("button", { class: "reconcile-cancel-btn", type: "button", text: chrome.sourceRenameCancelBtn });
+  var confirmBtn = el("button", { class: "promote-btn", type: "button", text: chrome.sourceRenameConfirmBtn });
+
+  function closeModal() { overlay.remove(); }
+  overlay.addEventListener("click", function(e) { if (e.target === overlay) closeModal(); });
+  cancelBtn.addEventListener("click", function() {
+    if (cancelBtn.disabled) return;
+    closeModal();
+  });
+
+  confirmBtn.addEventListener("click", function() {
+    if (confirmBtn.disabled || sourceLifecycleInFlight) return;
+    var newBasename = input.value.trim();
+    if (!newBasename) {
+      statusMsgEl.textContent = chrome.sourceRenameBlankError;
+      statusMsgEl.className = "card-status-msg err";
+      return;
+    }
+    sourceLifecycleInFlight = true;
+    confirmBtn.disabled = true;
+    cancelBtn.disabled = true;
+    statusMsgEl.replaceChildren(el("span", { class: "spinner" }), document.createTextNode(chrome.sourceRenameWorking));
+    statusMsgEl.className = "card-status-msg";
+
+    renameSourceRequest(relpath, newBasename)
+      .then(function() {
+        sourceLifecycleInFlight = false;
+        closeModal();
+        navigateTo(browserPath);
+      })
+      .catch(function(err) {
+        sourceLifecycleInFlight = false;
+        confirmBtn.disabled = false;
+        cancelBtn.disabled = false;
+        statusMsgEl.textContent = "Error: " + (err.message || String(err));
+        statusMsgEl.className = "card-status-msg err";
+      });
+  });
+
+  var modal = el("div", { class: "reconcile-modal" },
+    el("div", { class: "reconcile-modal-head" }, el("span", { text: chrome.sourceRenameModalTitlePrefix + relpath })),
+    el("div", { class: "reconcile-modal-body" },
+      el("label", { text: chrome.sourceRenameInputLabel }),
+      input
+    ),
+    el("div", { class: "reconcile-actions" }, confirmBtn, cancelBtn, statusMsgEl)
+  );
+  overlay.append(modal);
+  document.body.append(overlay);
+  try { input.focus(); input.select(); } catch (e) { /* non-focusable in some test harnesses */ }
+}
+
+/* ── Source Trash section (issue #606, ADR-0041 decision 8) ──────────────
+   A dedicated section on the rail (distinct from the generic Browse tree,
+   though Restore's content preview reuses the SAME openFile()/GET /read/file
+   path over the read-only .trash root S1 already whitelisted) — entries show
+   (timestamp, original relpath) per GET /sources/trash and a Restore button.
+   lastSourceTrashEntries caches the last listing so the lang-toggle handler
+   can re-render without a refetch (mirrors lastLintData / renderLintCard). */
+var sourceTrashSection = document.getElementById("source-trash-section");
+var sourceTrashEntriesEl = el("div", { class: "browser-entries" });
+sourceTrashSection.append(
+  bindText(el("div", { class: "section-label" }), "sourceTrashSectionLabel"),
+  sourceTrashEntriesEl
+);
+var lastSourceTrashEntries = null;
+
+function loadSourceTrash() {
+  sourceTrashListRequest()
+    .then(function(data) {
+      lastSourceTrashEntries = data.entries || [];
+      renderSourceTrash(lastSourceTrashEntries);
+    })
+    .catch(function(err) {
+      sourceTrashEntriesEl.replaceChildren(
+        el("div", { class: "browser-empty", text: LINT_CHROME[consoleLang].sourceTrashLoadFailedPrefix + (err.message || String(err)) })
+      );
+    });
+}
+
+function renderSourceTrash(entries) {
+  var chrome = LINT_CHROME[consoleLang];
+
+  if (entries.length === 0) {
+    sourceTrashEntriesEl.replaceChildren(el("div", { class: "browser-empty", text: chrome.sourceTrashEmpty }));
+    return;
+  }
+
+  var kids = [];
+  entries.forEach(function(entry) {
+    var trashPath = ".trash/" + entry.timestamp + "/docs/" + entry.relpath;
+    var noticeEl = el("div", { class: "entry-row-notice" });
+
+    var restoreBtn = el("button", { class: "promote-btn", type: "button", text: chrome.sourceTrashRestoreBtn });
+    restoreBtn.addEventListener("click", function(e) {
+      e.stopPropagation();
+      if (restoreBtn.disabled || sourceLifecycleInFlight) return;
+      sourceLifecycleInFlight = true;
+      restoreBtn.disabled = true;
+      restoreBtn.textContent = chrome.sourceTrashRestoreWorking;
+      noticeEl.textContent = "";
+      noticeEl.classList.remove("visible");
+
+      restoreSourceRequest(entry.timestamp, entry.relpath)
+        .then(function() {
+          sourceLifecycleInFlight = false;
+          loadSourceTrash();
+          navigateTo(browserPath);
+        })
+        .catch(function(err) {
+          sourceLifecycleInFlight = false;
+          restoreBtn.disabled = false;
+          restoreBtn.textContent = chrome.sourceTrashRestoreBtn;
+          noticeEl.textContent = chrome.sourceTrashRestoreFailedPrefix + (err.message || String(err));
+          noticeEl.classList.add("visible");
+        });
+    });
+
+    var row = el("div", { class: "entry-row",
+      onclick: function() {
+        noticeEl.textContent = "";
+        noticeEl.classList.remove("visible");
+        openFile(trashPath, entry.relpath, {
+          onError: function(message) {
+            noticeEl.textContent = chrome.viewerFailedPrefix + message;
+            noticeEl.classList.add("visible");
+          }
+        });
+      }
+    },
+      el("span", { class: "entry-icon", text: "·" }),
+      el("span", { class: "entry-name", text: entry.relpath }),
+      el("span", { class: "entry-meta", text: entry.timestamp }),
+      el("span", { class: "entry-row-actions" }, restoreBtn)
+    );
+
+    kids.push(row, noticeEl);
+  });
+
+  sourceTrashEntriesEl.replaceChildren.apply(sourceTrashEntriesEl, kids);
 }
 
 /* ── Wikilink linkify (issue #410, ADR-0030 decision 5) ──────────────────
@@ -8919,6 +9371,7 @@ function openFile(relpath, name) {
 
 /* ── Boot the browser ────────────────────────────────────── */
 navigateTo("");
+loadSourceTrash();
 </script>
 </body>
 </html>

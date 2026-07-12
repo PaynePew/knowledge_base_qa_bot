@@ -15,6 +15,8 @@ modules directly (NOT the Gateway).  Exposes:
   - ``kb_import_v1``         — import a local file into docs/ via the Import deep module (Slice 6, #233)
   - ``kb_transcribe_v1``     — force-transcribe a local PDF into docs/ via the Transcribe
                                deep module (issue #427, ADR-0017/ADR-0032 parity)
+  - ``kb_source_trash_v1``   — list the Source Trash via source_lifecycle.list_trash
+                               (issue #606, ADR-0041 — visibility only, no write verb)
 
 Launch via ``python -m kb_mcp`` (stdio transport, Claude Desktop compatible).
 
@@ -384,6 +386,40 @@ def kb_index_v1() -> dict:
 
     files_indexed, sections_indexed = build_index()
     return {"files_indexed": files_indexed, "sections_indexed": sections_indexed}
+
+
+# ---------------------------------------------------------------------------
+# Tool: kb_source_trash_v1 (issue #606, ADR-0041)
+# ---------------------------------------------------------------------------
+@mcp.tool(
+    name="kb_source_trash_v1",
+    description=(
+        "List every entry in the Source Trash (ADR-0041) — visibility only. "
+        "MCP exposes no Source-lifecycle write verb: retire/restore/rename "
+        "are Console/CLI-only (ADR-0041 Invariant, mirrors ADR-0026's 'MCP "
+        "sees everything and approves nothing'); this tool only reads the "
+        "existing trash tree, the same state `kb source trash` (CLI) and "
+        "`GET /sources/trash` (Console) expose.\n\n"
+        "Takes no parameters.\n\n"
+        "Returns: {entries: [{timestamp, relpath}, ...]}\n"
+        "  timestamp — the trash act-folder name (UTC, sortable, from the "
+        "retire that produced it).\n"
+        "  relpath   — the Source's original path relative to docs/.\n"
+        "  Empty list when no Source has ever been retired."
+    ),
+)
+def kb_source_trash_v1() -> dict:
+    """Read-only Source Trash listing via source_lifecycle.list_trash (ADR-0041).
+
+    Thin wrapper, zero-arg: no gate, no mutation, no LLM call — mirrors
+    kb_index_v1's shape. Registering a retire/restore/rename tool alongside
+    this would violate ADR-0041's own Invariant ("MCP exposes no
+    Source-lifecycle write verb"); only the read side is exposed here.
+    """
+    from markdown_kb.app.source_lifecycle import list_trash
+
+    entries = list_trash()
+    return {"entries": [{"timestamp": e.timestamp, "relpath": e.relpath} for e in entries]}
 
 
 def _routed_fill_hint(route: str | None) -> str:
@@ -1118,6 +1154,7 @@ def _add_strict_schema() -> None:
         "kb_read_hot_v1",
         "kb_save_hot_v1",
         "kb_index_v1",
+        "kb_source_trash_v1",
         "kb_lint_v1",
         "kb_ingest_v1",
         "kb_ingest_start_v1",
