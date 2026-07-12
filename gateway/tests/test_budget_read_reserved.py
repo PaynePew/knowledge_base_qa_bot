@@ -3,8 +3,9 @@
 A visitor burst (or abuse — the box is public and key-free) on ingest/index/
 transcribe paths could otherwise drain the whole ``KB_DAILY_USD_CAP`` before
 any reader ever gets a grounded answer. ``KB_READ_RESERVED_USD`` (default
-$1.00) carves out a floor of the daily cap that ADMIN_PATHS cannot spend into
-— ``DailyBudget.over_admin_cap()`` trips at ``cap_usd - read_reserved_usd``
+$0.60 — recalibrated from $1.00, issue #598 scope addendum point 6) carves
+out a floor of the daily cap that ADMIN_PATHS cannot spend into —
+``DailyBudget.over_admin_cap()`` trips at ``cap_usd - read_reserved_usd``
 while READ_PATHS keep gating on the unchanged ``over_cap()`` (full cap).
 
 All hermetic — no OPENAI_API_KEY, no real network (mirrors
@@ -30,10 +31,15 @@ def _reload():
 # ---------------------------------------------------------------------------
 
 
-def test_read_reserved_usd_default_is_one_dollar(monkeypatch):
+def test_read_reserved_usd_default_is_sixty_cents(monkeypatch):
+    """Recalibrated from $1.00 (issue #598 scope addendum point 6): exactly
+    KB_RATE_LIMIT_PER_IP's default window allowance (30 requests) times the
+    /chat/stream per-request estimate ($0.02) -- see budget.py's module
+    docstring "Read-reserved admin ceiling" paragraph for the full reasoning.
+    """
     monkeypatch.delenv("KB_READ_RESERVED_USD", raising=False)
     budget_mod = _reload()
-    assert pytest.approx(1.0) == budget_mod.READ_RESERVED_USD
+    assert pytest.approx(0.60) == budget_mod.READ_RESERVED_USD
 
 
 def test_read_reserved_usd_reads_env_override(monkeypatch):
@@ -45,7 +51,7 @@ def test_read_reserved_usd_reads_env_override(monkeypatch):
 def test_read_reserved_usd_falls_back_on_bad_value(monkeypatch):
     monkeypatch.setenv("KB_READ_RESERVED_USD", "not-a-number")
     budget_mod = _reload()
-    assert pytest.approx(1.0) == budget_mod.READ_RESERVED_USD
+    assert pytest.approx(0.60) == budget_mod.READ_RESERVED_USD
 
 
 def test_module_singleton_carries_read_reserved(monkeypatch):
