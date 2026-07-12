@@ -77,6 +77,14 @@ __all__ = [
 # ---------------------------------------------------------------------------
 # LLM singleton (lazy — CODING_STANDARD §2.7 / §10 lazy-singleton)
 # ---------------------------------------------------------------------------
+# Fixed seed for the answer-synthesis LLM (ADR-0038's C5-judge pattern,
+# extended to the serving chain by ADR-0042 / issue #572, completed here for
+# Stack C by issue #619). Per-module private constant. Best-effort only:
+# OpenAI's seed is not a hard guarantee, but paired with temperature=0 it cuts
+# run-to-run draft rewording that would otherwise flip the same question
+# between a grounded answer and a false Cannot Confirm across calls.
+_HYBRID_DRAFT_LLM_SEED = 7
+
 _llm: ChatOpenAI | None = None
 
 
@@ -86,15 +94,16 @@ def get_llm() -> ChatOpenAI:
     Hybrid owns its own call site (a new LLM-facing surface, ADR-0005), so this
     getter is the single seam hermetic tests monkeypatch — the deep retrieval /
     grounding modules are never mocked (CODING_STANDARD §6.3 / implement.md trap
-    #1). ``temperature=0`` so a question never flip-flops between a grounded
-    answer and a false Cannot Confirm across calls (parity with the Wiki/RAG
-    stacks).
+    #1). ``temperature=0`` plus a fixed seed so a question never flip-flops
+    between a grounded answer and a false Cannot Confirm across calls (parity
+    with the Wiki/RAG stacks).
     """
     global _llm
     if _llm is None:
         _llm = ChatOpenAI(
             model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
             temperature=0,
+            seed=_HYBRID_DRAFT_LLM_SEED,
             timeout=20,
             max_retries=1,
         )
