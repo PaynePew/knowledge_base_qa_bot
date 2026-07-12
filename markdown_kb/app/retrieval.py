@@ -80,6 +80,24 @@ _SCORE_THRESHOLD = float(os.getenv("KB_SCORE_THRESHOLD", str(_KB_SCORE_THRESHOLD
 _KB_SCORE_THRESHOLD_ZH_DEFAULT = 4.0
 _SCORE_THRESHOLD_ZH = float(os.getenv("KB_SCORE_THRESHOLD_ZH", str(_KB_SCORE_THRESHOLD_ZH_DEFAULT)))
 
+# Dominant-script gate routing (#582). A code-switched query used to be gated by
+# TWO independently maintained classifiers that could disagree: _is_cjk_query
+# (any CJK char present -> the zh threshold) decided the threshold, while
+# indexer.detect_lang's ratio (>= 0.20 -> "zh") decided the corpus slice. A
+# Latin-dominant query naming a single CJK product could get the zh threshold
+# applied to an en-only corpus slice's score -- a false Cannot Confirm (pinned
+# by #601's characterization fixtures). _dominant_script() below replaces both
+# with ONE classifier so the threshold and the corpus slice always agree.
+#
+# The band is deliberately wider than indexer._ZH_RATIO_THRESHOLD (0.20): that
+# ratio is tuned for index-time Section TAGGING (a whole page's dominant
+# language), not for a short, possibly genuinely-balanced QUERY. Inside the
+# band neither script is a confident majority, so _gate_route() falls back to
+# union (both corpus slices searched, gate passes if either clears its own
+# threshold) instead of committing to a single, possibly-wrong route.
+_DOMINANT_SCRIPT_LOW = 0.40
+_DOMINANT_SCRIPT_HIGH = 0.60
+
 # Sentinel strings the system returns to /chat clients. Tests import these
 # constants so a typo in production is caught instead of silently passing
 # against a hardcoded test literal.
@@ -306,22 +324,13 @@ def _retrieve_and_gate(question: str, exclude_qa: bool = False) -> dict:
             "ranked": [],
         }
 
-    # exclude_qa is forwarded only when truthy, so the default call shape
-    # (indexer.search(question, k=3)) is byte-identical to every pre-#380
-    # caller — several test doubles across the suite replace indexer.search
-    # with a fixed lambda(query, k=3) and would TypeError on an unconditional
-    # extra kwarg (CODING_STANDARD §11: do not widen a call site's shape for
-    # every caller when only one caller needs the new argument).
-    if exclude_qa:
-        ranked = indexer.search(question, k=3, exclude_qa=True)
-    else:
-        ranked = indexer.search(question, k=3)
+    # Dominant-script gate routing (#582) — supersedes the #261 any-char
+    # _is_cjk_query threshold pick. One classifier decides both which
+    # threshold applies and which corpus slice is searched, so they can never
+    # disagree; a near-50/50 query falls back to union (both slices searched,
+    # gate passes if either clears its own threshold). See _gate_route.
+    ranked, threshold = _gate_route(question, exclude_qa)
     top_score = ranked[0][1] if ranked else 0.0
-
-    # Per-language gate routing (#261): a CJK query is gated by the Chinese-calibrated
-    # threshold, a Latin query by the English one. Call-time so a single mixed-language
-    # index serves both. INTERIM — retired by the Phase 13 reranker (see _SCORE_THRESHOLD_ZH).
-    threshold = _SCORE_THRESHOLD_ZH if _is_cjk_query(question) else _SCORE_THRESHOLD
 
     # Phase 6 Slice 6-3: each entry carries an optional ``derived_from`` chain
     # populated from the parent wiki page's ``frontmatter.sources``. This is
@@ -460,13 +469,133 @@ def _draft_and_verify(
 
 
 def _is_cjk_query(question: str) -> bool:
-    """True when the query contains any CJK character → route to the zh threshold (#261).
+    """True when the query contains any CJK character (#261).
 
     Reuses ``indexer._is_cjk`` (the same predicate the CJK-bigram tokeniser uses,
     ADR-0014) so query-language detection and tokenisation never drift apart.
-    INTERIM — retired by the Phase 13 reranker (see ``_SCORE_THRESHOLD_ZH``).
+
+    No longer used for gate threshold routing — ``_dominant_script`` (#582)
+    replaced this any-char predicate there because it could disagree with
+    ``indexer.detect_lang``'s ratio-based corpus-slice pick for a code-switched
+    query (#601). Kept as a plain, still-tested predicate; not dead code to
+    remove, just no longer wired into ``_retrieve_and_gate``.
     """
     return any(indexer._is_cjk(ch) for ch in question)
+
+
+def _script_ratio(question: str) -> float:
+    """CJK-vs-Latin codepoint ratio of ``question`` for #582 dominant-script routing.
+
+    Counts CJK ideographs (``indexer._is_cjk``) against Latin/alphabetic
+    letters; digits, whitespace, and punctuation are neutral and excluded from
+    both the numerator and the denominator — mirrors the "letter characters
+    only" exclusion in ``indexer.detect_lang`` so the ratio is neither diluted
+    nor inflated by non-language-bearing characters.
+
+    A query with no letters at all (empty, digits/symbols only) has no script
+    signal and reads as ``0.0`` — the low end of the range, resolving to the
+    "en" fail-closed default via ``_dominant_script`` (mirrors
+    ``indexer._DEFAULT_LANG``).
+    """
+    cjk = 0
+    latin = 0
+    for ch in question:
+        if indexer._is_cjk(ch):
+            cjk += 1
+        elif ch.isalpha():
+            latin += 1
+    total = cjk + latin
+    return cjk / total if total else 0.0
+
+
+def _dominant_script(question: str) -> str:
+    """Classify ``question``'s dominant script for gate routing (#582).
+
+    Returns ``"zh"`` when the CJK ratio (``_script_ratio``) is at or above
+    ``_DOMINANT_SCRIPT_HIGH``, ``"en"`` when at or below
+    ``_DOMINANT_SCRIPT_LOW``, else ``"mixed"`` — the near-50/50 boundary that
+    ``_gate_route`` resolves via union rather than committing to a single,
+    possibly-wrong route.
+    """
+    ratio = _script_ratio(question)
+    if ratio >= _DOMINANT_SCRIPT_HIGH:
+        return "zh"
+    if ratio <= _DOMINANT_SCRIPT_LOW:
+        return "en"
+    return "mixed"
+
+
+def _search_for_lang(
+    question: str, lang: str, exclude_qa: bool
+) -> list[tuple[indexer.Section, float]]:
+    """Search the ``lang`` corpus slice, forcing an override only when it matters.
+
+    ``indexer.search`` already resolves its own corpus slice via
+    ``indexer.detect_lang(question)`` (ratio >= 0.20) when no ``lang=`` is
+    given. That bar is lower than the #582 dominant-script band
+    (``_DOMINANT_SCRIPT_LOW``/``_HIGH``), so the two classifiers can disagree
+    for a query whose CJK ratio sits in [0.20, ``_DOMINANT_SCRIPT_LOW``) —
+    exactly the #601 mismatch this routing closes. An explicit ``lang=``
+    override is passed only when it would change ``indexer.search``'s own
+    pick, so the call shape stays ``indexer.search(question, k=3[,
+    exclude_qa=True])`` — byte-identical to every pre-#582 caller — whenever
+    no override is needed. Several test doubles across the suite (e.g.
+    ``kb_cli``'s CLI tests) replace ``indexer.search`` with a fixed
+    ``lambda query, k=3: ...`` and would TypeError on an unconditional new
+    kwarg — the same reason the pre-#582 ``exclude_qa`` argument is forwarded
+    conditionally in ``_retrieve_and_gate``.
+    """
+    override = lang if indexer.detect_lang(question) != lang else None
+    if exclude_qa:
+        if override:
+            return indexer.search(question, k=3, exclude_qa=True, lang=override)
+        return indexer.search(question, k=3, exclude_qa=True)
+    if override:
+        return indexer.search(question, k=3, lang=override)
+    return indexer.search(question, k=3)
+
+
+def _gate_route(
+    question: str, exclude_qa: bool
+) -> tuple[list[tuple[indexer.Section, float]], float]:
+    """Return ``(ranked, threshold)`` — the #582 dominant-script routing decision.
+
+    A clear script majority (outside the near-50/50 band, ``_dominant_script``)
+    routes to a single corpus slice AND that language's threshold together —
+    the same classifier decides both, so they can never disagree (closes the
+    #601 mismatch: the old ``_is_cjk_query`` any-char threshold predicate and
+    ``indexer.detect_lang``'s ratio-based corpus predicate could pick
+    different languages for the same query).
+
+    A near-50/50 query (``"mixed"``) falls back to union: BOTH corpus slices
+    are searched and the gate passes if EITHER clears its own threshold. The
+    caller only ever receives one ``(ranked, threshold)`` pair — never a
+    cross-language merge, so downstream context building always stays
+    single-language (PRD #284) — chosen as follows:
+      * exactly one route passes -> that route (the one that actually clears);
+      * both pass, or both fail -> the route matching the query's own script
+        lean (``_script_ratio`` >= 0.5 -> zh), for a deterministic, explicable
+        choice when the routes already agree on pass/fail.
+    """
+    script = _dominant_script(question)
+    if script != "mixed":
+        threshold = _SCORE_THRESHOLD_ZH if script == "zh" else _SCORE_THRESHOLD
+        return _search_for_lang(question, script, exclude_qa), threshold
+
+    zh_ranked = _search_for_lang(question, "zh", exclude_qa)
+    en_ranked = _search_for_lang(question, "en", exclude_qa)
+    zh_top = zh_ranked[0][1] if zh_ranked else 0.0
+    en_top = en_ranked[0][1] if en_ranked else 0.0
+    zh_pass = zh_top >= _SCORE_THRESHOLD_ZH
+    en_pass = en_top >= _SCORE_THRESHOLD
+
+    if zh_pass and not en_pass:
+        return zh_ranked, _SCORE_THRESHOLD_ZH
+    if en_pass and not zh_pass:
+        return en_ranked, _SCORE_THRESHOLD
+    if _script_ratio(question) >= 0.5:
+        return zh_ranked, _SCORE_THRESHOLD_ZH
+    return en_ranked, _SCORE_THRESHOLD
 
 
 def _wiki_page_path_for_section(sec: indexer.Section) -> str | None:
