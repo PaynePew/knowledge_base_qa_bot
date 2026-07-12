@@ -266,6 +266,43 @@
     user-select: none;
   }
 
+  /* Artifact nodes interleaved into the step track (issue #559 A1) — the
+     Console reads as pipeline semantics (data dependency), not wizard
+     semantics (task order): [Upload] -> raw/ -> [Import] -> docs/ ->
+     [Ingest] -> wiki/ -> [Index] -> .kb -> [Lint]. Deliberately flat/neutral
+     styling — NO state-derived coloring here (that is a separate slice,
+     scoped to the Index node's fresh/stale badge only). */
+  .artifact-pill {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: var(--fs-2xs);
+    letter-spacing: .02em;
+    white-space: nowrap;
+    padding: 3px 9px;
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    background: var(--rule-2);
+    flex-shrink: 0;
+  }
+  .artifact-pill .artifact-name { color: var(--ink-3); }
+  .artifact-pill .artifact-count { color: var(--ink-2); font-weight: 600; }
+
+  /* Operation card input-state line (issue #559 A1) — informational only,
+     "inform, never gate" (frozen design): shows the live count of the
+     step's upstream artifact. Never disables the Run button. Empty (before
+     the boot fetch resolves) collapses via :empty so there is no flash of
+     an empty bordered strip. */
+  .step-input-state {
+    padding: 8px 16px;
+    font-size: var(--fs-xs);
+    color: var(--ink-3);
+    border-bottom: 1px solid var(--rule);
+    background: var(--bg);
+  }
+  .step-input-state:empty { display: none; }
+
   /* Individual step panel */
   .step-panel {
     border: 1px solid var(--rule);
@@ -3229,6 +3266,23 @@ var LINT_CHROME = {
     stepRun:             "Run",
     stepPipelineHeader:  "Pipeline",
 
+    /* issue #559 A1: artifact nodes interleaved into the step track, each
+       showing a live file/page count fetched from GET /read/counts — the
+       Console reads as pipeline (data-dependency) semantics rather than a
+       wizard's enforced task order. NO state-derived coloring here (that
+       is a separate, later slice scoped to the Index node only). */
+    artifactNodeRaw:  "raw/",
+    artifactNodeDocs: "docs/",
+    artifactNodeWiki: "wiki/",
+    artifactNodeKb:   ".kb",
+    /* Per-step input-state line — "inform, never gate" (frozen design):
+       shows the live count of the step's upstream artifact; the Run button
+       is never disabled by it. {n} is replaced with the fetched count. */
+    inputStateRaw:  "Input: raw/ currently has {n} file(s)",
+    inputStateDocs: "Input: docs/ currently has {n} Source(s)",
+    inputStateWiki: "Input: wiki/ currently has {n} page(s)",
+    inputStateKb:   "Input: .kb currently has {n} indexed Section(s)",
+
     /* issue #498: Upload drop zone + Upload result card */
     uploadChooseFiles:  "Choose files",
     uploadDragDrop:      "Drag and drop files here",
@@ -3536,6 +3590,15 @@ var LINT_CHROME = {
     stepLintDesc:   "檢查:在本地稽核 wiki 的孤立頁面與失效連結 — 維持知識庫一致性(深度稽核會加入 LLM 矛盾檢查)。",
     stepRun:             "執行",
     stepPipelineHeader:  "流程",
+
+    artifactNodeRaw:  "raw/",
+    artifactNodeDocs: "docs/",
+    artifactNodeWiki: "wiki/",
+    artifactNodeKb:   ".kb",
+    inputStateRaw:  "輸入:raw/ 現有 {n} 個檔案",
+    inputStateDocs: "輸入:docs/ 現有 {n} 個 Source",
+    inputStateWiki: "輸入:wiki/ 現有 {n} 個頁面",
+    inputStateKb:   "輸入:.kb 已索引 {n} 個 Section",
 
     uploadChooseFiles:  "選擇檔案",
     uploadDragDrop:      "拖放檔案到這裡",
@@ -4316,6 +4379,13 @@ function applyConsoleLang() {
      I18N_BOUND, since its text is templated with server-derived numbers, not
      static chrome. */
   renderBudgetUsage(lastBudgetSnapshot);
+  /* issue #559 A1: re-render the artifact-node counts + input-state lines in
+     the new language too — driven by lastArtifactCounts (fetched once at
+     boot / after each mutating step) rather than I18N_BOUND, since the
+     input-state text is templated with a server-derived number. A no-op
+     before the boot fetch resolves (lastArtifactCounts is still null; the
+     elements just stay at their initial "…" / empty state). */
+  renderArtifactCounts(lastArtifactCounts);
   /* issue #558: re-render the Reader Feedback result in the new language too,
      from the already-fetched lastFeedbackData — no re-fetch needed. A no-op
      before the operator's first "Load feedback" click (lastFeedbackData is
@@ -6302,7 +6372,10 @@ function buildUploadBody(resultEl) {
       })
       .then(function(data) { resultEl.replaceChildren(renderUploadCard(data.results || [])); })
       .catch(function(err)  { resultEl.replaceChildren(renderErrorCard(LINT_CHROME[consoleLang].stepUploadLabel, err.message || String(err))); })
-      .finally(function()   { setUploadBusy(false); });
+      .finally(function()   {
+        setUploadBusy(false);
+        refreshArtifactCounts(); /* issue #559 A1: Upload writes raw/ or docs/ */
+      });
   }
 
   fileInput.addEventListener("change", function() {
@@ -6370,6 +6443,10 @@ var STEP_DEFS = [
     id: "import",
     labelKey: "stepImportLabel",
     descKey: "stepImportDesc",
+    /* issue #559 A1: input-state line reads this step's upstream artifact
+       node ("raw" -> raw/) from ARTIFACT_DEFS. Informational only — the
+       step is never gated on it (frozen design "inform, never gate"). */
+    inputArtifact: "raw",
     buildBody: null,
     run: function(resultEl, setStepBusy) {
       /* issue #497: Import runs as a background job (POST /wiki/import/jobs
@@ -6398,6 +6475,7 @@ var STEP_DEFS = [
           }).filter(Boolean);
         }
         setStepBusy(false);
+        refreshArtifactCounts(); /* issue #559 A1: Import moves raw/ -> docs/ */
       }
       function fail(err) {
         resultEl.replaceChildren(renderErrorCard("Import", err.message || String(err)));
@@ -6430,6 +6508,7 @@ var STEP_DEFS = [
     id: "ingest",
     labelKey: "stepIngestLabel",
     descKey: "stepIngestDesc",
+    inputArtifact: "docs",
     buildBody: null,
     run: function(resultEl, setStepBusy) {
       /* Phase 15 S3 (#172): single-batch-call rule (§12.8 / ADR-0011).
@@ -6447,7 +6526,10 @@ var STEP_DEFS = [
       setStepBusy(true);
       var onIngestStepDone = function(b) {
         setStepBusy(b);
-        if (b === false) markIngestDone();
+        if (b === false) {
+          markIngestDone();
+          refreshArtifactCounts(); /* issue #559 A1: Ingest writes wiki/ pages */
+        }
       };
       runIngestBatches(lastImportedDocFilenames, resultEl, onIngestStepDone);
     },
@@ -6456,6 +6538,7 @@ var STEP_DEFS = [
     id: "index",
     labelKey: "stepIndexLabel",
     descKey: "stepIndexDesc",
+    inputArtifact: "wiki",
     buildBody: null,
     run: function(resultEl, setStepBusy) {
       /* Phase 15 S4 (#173): real IndexResponse card + staleness guard clear */
@@ -6472,6 +6555,7 @@ var STEP_DEFS = [
         .finally(function()   {
           setStepBusy(false);
           markIndexDone(); /* staleness guard: clear stale signal after Index run */
+          refreshArtifactCounts(); /* issue #559 A1: Index rebuilds .kb — keep the live count fresh */
         });
     },
   },
@@ -6479,6 +6563,7 @@ var STEP_DEFS = [
     id: "lint",
     labelKey: "stepLintLabel",
     descKey: "stepLintDesc",
+    inputArtifact: "kb",
     buildBody: null,
     run: function(resultEl, setStepBusy) {
       /* Phase 15 S4 (#173): real LintResponse card with per-check grouped findings */
@@ -6552,6 +6637,20 @@ var STEP_DEFS = [
   },
 ];
 
+/* ── Artifact nodes (issue #559 A1) ──────────────────────────
+   Interleaved into the step track between the STEP_DEFS they connect —
+   ARTIFACT_DEFS[i] sits between STEP_DEFS[i] and STEP_DEFS[i+1]:
+     [Upload] -> raw/ -> [Import] -> docs/ -> [Ingest] -> wiki/ -> [Index] -> .kb -> [Lint]
+   Each node shows a live file/page count fetched from GET /read/counts
+   (renderArtifactCounts below). NO state-derived coloring — that is a
+   separate, later slice scoped to the Index node's fresh/stale badge only. */
+var ARTIFACT_DEFS = [
+  { id: "raw",  nodeKey: "artifactNodeRaw" },
+  { id: "docs", nodeKey: "artifactNodeDocs" },
+  { id: "wiki", nodeKey: "artifactNodeWiki" },
+  { id: "kb",   nodeKey: "artifactNodeKb" },
+];
+
 /* ============================================================
    Build the pipeline DOM
    ============================================================ */
@@ -6559,7 +6658,17 @@ function buildPipeline(rootEl) {
   /* ── Step track (breadcrumb row) ─────────────────────── */
   var trackItems = [];
   STEP_DEFS.forEach(function(step, i) {
-    if (i > 0) trackItems.push(el("span", { class: "step-arrow", text: "→" }));
+    if (i > 0) {
+      var artifact = ARTIFACT_DEFS[i - 1];
+      trackItems.push(el("span", { class: "step-arrow", text: "→" }));
+      trackItems.push(
+        el("span", { class: "artifact-pill", id: "artifact-" + artifact.id },
+          bindText(el("span", { class: "artifact-name" }), artifact.nodeKey),
+          el("span", { class: "artifact-count", id: "artifact-count-" + artifact.id })
+        )
+      );
+      trackItems.push(el("span", { class: "step-arrow", text: "→" }));
+    }
     trackItems.push(
       el("span", { class: "step-pill" + (i === 0 ? " active" : ""), id: "track-" + step.id },
         el("span", { class: "step-num", text: String(i + 1) }),
@@ -6636,6 +6745,15 @@ function buildPipeline(rootEl) {
         el.apply(null, ["div", { class: "step-panel-actions" }].concat(headActions)));
     }
 
+    /* issue #559 A1: input-state line — "inform, never gate" (frozen
+       design). Shows the live count of this step's upstream artifact node;
+       starts empty (collapsed via CSS :empty) until renderArtifactCounts
+       fills it in. Steps with no upstream artifact (Upload) get none. */
+    var inputStateEl = null;
+    if (step.inputArtifact) {
+      inputStateEl = el("div", { class: "step-input-state", id: "input-state-" + step.id });
+    }
+
     /* Body */
     var bodyChildren = [];
     if (step.buildBody) {
@@ -6643,7 +6761,11 @@ function buildPipeline(rootEl) {
     }
     bodyChildren.push(resultEl);
 
-    var panel = el.apply(null, ["div", { class: "step-panel" }, headEl].concat(bodyChildren));
+    var panelChildren = [headEl];
+    if (inputStateEl) panelChildren.push(inputStateEl);
+    panelChildren = panelChildren.concat(bodyChildren);
+
+    var panel = el.apply(null, ["div", { class: "step-panel" }].concat(panelChildren));
     panels.append(panel);
   });
 
@@ -7611,6 +7733,66 @@ var lastBudgetSnapshot = null;
 var lastFeedbackData = null;
 var feedbackResultEl = null;
 
+/* Live artifact-node counts (issue #559 A1). ``lastArtifactCounts`` holds
+   the most recent GET /read/counts response ({raw,docs,wiki,kb} — or
+   ``false`` if that fetch failed); ``null`` means it has not resolved yet.
+   ``renderArtifactCounts`` is the single render path — called once after
+   buildPipeline (below) so the artifact-pill / input-state elements already
+   exist, again after every step whose operation changes an artifact's
+   contents (keeps the counts genuinely "live" without polling), and again
+   from applyConsoleLang() on every language toggle so the input-state
+   wording stays in the active language without re-fetching. */
+var lastArtifactCounts = null;
+
+/* Renders both halves of the live-count feature from one fetched snapshot:
+   the artifact-pill counts in the step track, and each operation card's
+   input-state line ("inform, never gate" — never disables the Run button).
+   counts === null (not yet fetched) or false (fetch failed) leaves the
+   pill text as "…" and the input-state line empty (collapsed via CSS
+   :empty) rather than showing a stale or fabricated number. */
+function renderArtifactCounts(counts) {
+  var chrome = LINT_CHROME[consoleLang];
+  ARTIFACT_DEFS.forEach(function(artifact) {
+    var countEl = document.getElementById("artifact-count-" + artifact.id);
+    if (!countEl) return;
+    var n = counts && counts[artifact.id];
+    countEl.textContent = typeof n === "number" ? String(n) : "…";
+  });
+  STEP_DEFS.forEach(function(step) {
+    if (!step.inputArtifact) return;
+    var lineEl = document.getElementById("input-state-" + step.id);
+    if (!lineEl) return;
+    var n = counts && counts[step.inputArtifact];
+    if (typeof n !== "number") {
+      lineEl.textContent = "";
+      return;
+    }
+    var key = "inputState" + step.inputArtifact.charAt(0).toUpperCase() + step.inputArtifact.slice(1);
+    lineEl.textContent = chrome[key].replace("{n}", String(n));
+  });
+}
+
+/* Fetches the read-only GET /read/counts probe. Called once after
+   buildPipeline at boot, and again after Upload/Import/Ingest/Index
+   complete (each mutates one of raw/docs/wiki/.kb) — cheap directory
+   listings + a persisted-stat read, never a retrieval computation
+   (issue #559 A1), so re-fetching on every step completion is fine. */
+function refreshArtifactCounts() {
+  fetch("/read/counts")
+    .then(function(resp) {
+      if (!resp.ok) throw new Error("bad status " + resp.status);
+      return resp.json();
+    })
+    .then(function(data) {
+      lastArtifactCounts = data;
+      renderArtifactCounts(lastArtifactCounts);
+    })
+    .catch(function() {
+      lastArtifactCounts = false;
+      renderArtifactCounts(lastArtifactCounts);
+    });
+}
+
 function renderBudgetUsage(snapshot) {
   var textEl = document.getElementById("budget-usage-text");
   if (!textEl) return;
@@ -7665,6 +7847,7 @@ function renderBudgetUsage(snapshot) {
 })();
 
 buildPipeline(document.getElementById("pipeline-root"));
+refreshArtifactCounts(); /* issue #559 A1: after buildPipeline so the artifact-pill / input-state elements already exist */
 
 /* zh/en Console header language toggle (issue #365) — wired after
    buildPipeline so lintResultEl is already set. Persists the choice to

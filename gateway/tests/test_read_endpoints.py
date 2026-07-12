@@ -1,5 +1,8 @@
 """Gateway endpoint tests for GET /read/tree and GET /read/file (Phase 15 S5, issue #171).
 
+Also covers GET /read/counts (issue #559 A1 — Operator Console live
+artifact-node counts).
+
 Tests use Starlette TestClient (in-process) with monkeypatched roots so that:
   - No real docs/ / raw/ / wiki/ directories are required.
   - No OPENAI_API_KEY is needed.
@@ -10,6 +13,7 @@ Hermetic pattern mirrors test_chat_stream_filing.py (tmp_path + monkeypatch).
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -225,3 +229,85 @@ def test_file_on_directory_returns_400(read_env):
     (read_env["docs"] / "subdir").mkdir()
     resp = client.get("/read/file", params={"path": "docs/subdir"})
     assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# GET /read/counts (issue #559 A1 — Operator Console artifact-node counts)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def counts_env(tmp_path, monkeypatch):
+    """Wire read.py's whitelist AND indexer.py's WIKI_DIR/INDEX_PATH to tmp dirs.
+
+    GET /read/counts composes markdown_kb.app.read.count_tree (raw/docs) with
+    markdown_kb.app.indexer.wiki_page_count / indexed_sections_count (wiki/kb),
+    so both modules' roots need redirecting for a hermetic test — read_env
+    above only covers the read.py side.
+    """
+    import markdown_kb.app.indexer as indexer_module
+    import markdown_kb.app.read as read_module
+
+    docs = tmp_path / "docs"
+    raw = tmp_path / "raw"
+    wiki = tmp_path / "wiki"
+    for d in (docs, raw, wiki):
+        d.mkdir(parents=True, exist_ok=True)
+    index_path = tmp_path / ".kb" / "index.json"
+
+    monkeypatch.setattr(read_module, "_WHITELIST_ROOTS", {"docs": docs, "raw": raw, "wiki": wiki})
+    monkeypatch.setattr(indexer_module, "WIKI_DIR", wiki)
+    monkeypatch.setattr(indexer_module, "INDEX_PATH", index_path)
+
+    from gateway.app.main import app
+
+    client = TestClient(app, raise_server_exceptions=True)
+
+    return {"client": client, "docs": docs, "raw": raw, "wiki": wiki, "index_path": index_path}
+
+
+def test_counts_all_zero_on_a_fresh_pipeline(counts_env):
+    """GET /read/counts on empty roots + no .kb/index.json returns all zeros."""
+    client = counts_env["client"]
+    resp = client.get("/read/counts")
+    assert resp.status_code == 200
+    assert resp.json() == {"raw": 0, "docs": 0, "wiki": 0, "kb": 0}
+
+
+def test_counts_raw_and_docs_reflect_file_counts(counts_env):
+    """raw/docs counts mirror the files actually on disk under each root."""
+    client = counts_env["client"]
+    (counts_env["raw"] / "a.html").write_text("<p>a</p>", encoding="utf-8")
+    (counts_env["raw"] / "b.txt").write_text("b", encoding="utf-8")
+    (counts_env["docs"] / "policy.md").write_text("# Policy\n", encoding="utf-8")
+
+    data = client.get("/read/counts").json()
+    assert data["raw"] == 2
+    assert data["docs"] == 1
+
+
+def test_counts_wiki_only_counts_entities_concepts_qa(counts_env):
+    """wiki count excludes root meta files (index.md/log.md) — pages only."""
+    client = counts_env["client"]
+    wiki = counts_env["wiki"]
+    (wiki / "entities").mkdir()
+    (wiki / "entities" / "acme.md").write_text("# Acme\n", encoding="utf-8")
+    (wiki / "index.md").write_text("meta", encoding="utf-8")
+    (wiki / "log.md").write_text("meta", encoding="utf-8")
+
+    data = client.get("/read/counts").json()
+    assert data["wiki"] == 1
+
+
+def test_counts_kb_reflects_persisted_index_json(counts_env):
+    """kb count reads .kb/index.json's stats.sections_indexed verbatim."""
+    client = counts_env["client"]
+    index_path = counts_env["index_path"]
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    index_path.write_text(
+        json.dumps({"sections": [], "stats": {"sections_indexed": 12, "files_indexed": 4}}),
+        encoding="utf-8",
+    )
+
+    data = client.get("/read/counts").json()
+    assert data["kb"] == 12
