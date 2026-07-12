@@ -25,6 +25,13 @@ eval/paraphrase_comparison/charts/*.tmp
 /raw/*
 !/raw/README.md
 
+# /.trash/ — Source lifecycle trash tree (ADR-0041, issue #604), same
+# local-only-runtime-state posture as /raw/*: retired Sources are per-deployment
+# state (the timestamped tree IS the audit trail per ADR-0041 decision 8), not
+# corpus content to version. No exception needed — the directory doesn't exist
+# until the first retire (created lazily by source_lifecycle.retire()).
+/.trash/*
+
 # wiki/ — generated artifacts and per-user runtime traces (see wiki/README.md)
 wiki/index.md
 wiki/lint-report.md

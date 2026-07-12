@@ -42,6 +42,8 @@ Per-endpoint estimate table (USD per request, deliberately generous):
     | /wiki/qa/promote-batch | 0.00 | Direct-tier batch promote: no LLM call — per-slug status flips + one BM25 reindex (ADR-0023, issue #382) |
     | /wiki/pages/{slug}/aliases (POST) | 0.00 | Direct-tier assign-alias: no LLM call — one frontmatter field write, no reindex (ADR-0030, issue #409) |
     | /wiki/pages/{slug}/aliases/{alias} (DELETE) | 0.00 | Direct-tier remove-alias: no LLM call — one frontmatter field write, no reindex (ADR-0030 extension, issue #491) |
+    | /sources/retire  | 0.00     | Confirmed retire: no LLM call — one atomic Source-file move, no reindex (ADR-0041, issue #604) |
+    | /sources/restore | 0.00     | Direct restore: no LLM call — one atomic Source-file move, no reindex (ADR-0041, issue #604) |
     | (default heavy)  | 0.10     | unknown heavy path → assume a mid-range cost    |
 
 The ``/wiki/qa/{slug}/refile``, ``/wiki/pages/{slug}``,
@@ -143,6 +145,8 @@ _COST_ESTIMATES: dict[str, float] = {
     "/wiki/qa/promote-batch": 0.00,
     "/wiki/pages/{slug}/aliases": 0.00,
     "/wiki/pages/{slug}/aliases/{alias}": 0.00,
+    "/sources/retire": 0.00,
+    "/sources/restore": 0.00,
 }
 
 # Fallback for any heavy path missing from the table — assume a mid-range cost

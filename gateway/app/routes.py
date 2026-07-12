@@ -2,6 +2,12 @@
 
 Gateway HTTP wiring for ``POST /chat/stream`` and ``POST /upload``.
 
+Source lifecycle S1 (issue #604, ADR-0041) — ``GET /sources/{relpath}/impact``,
+``POST /sources/retire``, ``POST /sources/restore``, ``GET /sources/trash``.
+Delegates entirely to ``markdown_kb.app.source_lifecycle`` (deep module);
+this is a Console/Upload-adjacent system boundary, a Gateway concern per
+ADR-0010, same rationale as ``POST /upload`` and ``GET /read/*``.
+
 Phase 9 Slice 1 — Wiki SSE happy-path tracer bullet (ADR-0009, ADR-0010).
 Phase 9 Slice 2 (issue #119) — Full SSE event contract: status event (liveness
 during the draft+verify gap), terminal error event (post-sources LLM/infra
@@ -80,6 +86,17 @@ from markdown_kb.app.read import list_tree as _list_tree
 from markdown_kb.app.read import read_file as _read_file
 from markdown_kb.app.retrieval import stream_query as _wiki_stream_query
 from markdown_kb.app.schemas import ChatRequest
+from markdown_kb.app.source_lifecycle import InvalidRelpath as _SourceInvalidRelpath
+from markdown_kb.app.source_lifecycle import (
+    RestoreBasenameCollision as _SourceRestoreBasenameCollision,
+)
+from markdown_kb.app.source_lifecycle import RestoreTargetOccupied as _SourceRestoreTargetOccupied
+from markdown_kb.app.source_lifecycle import SourceNotFound as _SourceNotFound
+from markdown_kb.app.source_lifecycle import TrashEntryNotFound as _SourceTrashEntryNotFound
+from markdown_kb.app.source_lifecycle import compute_impact as _compute_impact
+from markdown_kb.app.source_lifecycle import list_trash as _list_trash
+from markdown_kb.app.source_lifecycle import restore as _restore_source
+from markdown_kb.app.source_lifecycle import retire as _retire_source
 from markdown_kb.app.sse import encode_event, events_for_result
 from markdown_kb.app.upload import upload_files as _upload_files
 from pydantic import BaseModel, Field
@@ -703,6 +720,179 @@ def read_index_freshness() -> IndexFreshnessSchema:
         ``IndexFreshnessSchema`` with a single ``stale`` bool.
     """
     return IndexFreshnessSchema(stale=_index_stale())
+
+
+# ---------------------------------------------------------------------------
+# GET /sources/{relpath}/impact, POST /sources/retire, POST /sources/restore,
+# GET /sources/trash — Source lifecycle S1 (issue #604, ADR-0041)
+# ---------------------------------------------------------------------------
+
+
+class ImpactPreviewSchema(BaseModel):
+    """Response body for ``GET /sources/{relpath}/impact`` (also nested in
+    ``RetireResponseSchema``). ``full_orphans`` / ``partial_orphans`` are
+    wiki page slugs."""
+
+    relpath: str
+    full_orphans: list[str]
+    partial_orphans: list[str]
+
+
+class RetireRequest(BaseModel):
+    """Request body for ``POST /sources/retire``."""
+
+    relpath: str
+
+
+class RetireResponseSchema(BaseModel):
+    """Response body for ``POST /sources/retire`` — routes the curator to
+    the resulting C11 findings (ADR-0041 decision 2)."""
+
+    relpath: str
+    timestamp: str
+    impact: ImpactPreviewSchema
+
+
+class RestoreRequest(BaseModel):
+    """Request body for ``POST /sources/restore`` — keyed by the trash
+    entry's ``(timestamp, relpath)`` (ADR-0041 decision 4)."""
+
+    timestamp: str
+    relpath: str
+
+
+class TrashEntrySchema(BaseModel):
+    """One entry in the Source Trash, as returned by ``GET /sources/trash``."""
+
+    timestamp: str
+    relpath: str
+
+
+class TrashListSchema(BaseModel):
+    """Response body for ``GET /sources/trash``."""
+
+    entries: list[TrashEntrySchema]
+
+
+def _impact_schema(preview) -> ImpactPreviewSchema:
+    return ImpactPreviewSchema(
+        relpath=preview.relpath,
+        full_orphans=preview.full_orphans,
+        partial_orphans=preview.partial_orphans,
+    )
+
+
+@router.get("/sources/{relpath:path}/impact", response_model=ImpactPreviewSchema)
+def source_impact(relpath: str) -> ImpactPreviewSchema:
+    """Read-only retire impact preview — the confirmation dialog's data source.
+
+    Delegates to ``markdown_kb.app.source_lifecycle.compute_impact`` (deep
+    module). Never mounted as an admin/read heavy path (see
+    ``middleware.py``): no LLM call, no mutation — mirrors ``GET
+    /read/*`` / ``GET /pages/resolution-map`` staying ungated.
+
+    Args:
+        relpath: Path of the Source relative to ``docs/``, e.g.
+            ``'policy.md'`` or ``'demo-zh/policy.md'``.
+
+    Returns:
+        ``ImpactPreviewSchema`` — the wiki page slugs that would become full
+        orphans (deletable via the existing C11 flow) vs. partial.
+
+    Raises:
+        HTTP 422: ``relpath`` fails the traversal/character safety check.
+        HTTP 404: no Source exists at ``docs/<relpath>``.
+    """
+    try:
+        preview = _compute_impact(relpath)
+    except _SourceInvalidRelpath as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except _SourceNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return _impact_schema(preview)
+
+
+@router.post("/sources/retire", response_model=RetireResponseSchema)
+def source_retire(request: RetireRequest) -> RetireResponseSchema:
+    """Retire a Source: one atomic whole-file move into the Source Trash.
+
+    Confirmed Remediation (ADR-0024) — the curator confirms an irreversible-
+    feeling (but ``restore``-reversible) operation. Delegates to
+    ``markdown_kb.app.source_lifecycle.retire`` (deep module). No reindex:
+    retire never touches ``wiki/`` (ADR-0041 Invariant).
+
+    Exception mapping:
+
+    - ``InvalidRelpath`` -> ``422`` (traversal/character safety check failed)
+    - ``SourceNotFound`` -> ``404`` (no file at ``docs/<relpath>``)
+
+    Returns:
+        ``RetireResponseSchema`` carrying the trash ``timestamp`` and the
+        impact preview computed just before the move — routes the curator
+        to the resulting C11 findings without a second lint run.
+    """
+    try:
+        result = _retire_source(request.relpath)
+    except _SourceInvalidRelpath as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except _SourceNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return RetireResponseSchema(
+        relpath=result.relpath,
+        timestamp=result.timestamp,
+        impact=_impact_schema(result.impact),
+    )
+
+
+@router.post("/sources/restore", status_code=204)
+def source_restore(request: RestoreRequest) -> None:
+    """Restore a trash entry: the atomic inverse of retire.
+
+    Direct class (ADR-0041 decision 4) — no LLM, reversible via a second
+    retire. Delegates to ``markdown_kb.app.source_lifecycle.restore`` (deep
+    module). No page bookkeeping, no reindex (restore never touches
+    ``wiki/``).
+
+    Exception mapping:
+
+    - ``InvalidRelpath``            -> ``422`` (bad ``relpath``/``timestamp``)
+    - ``TrashEntryNotFound``        -> ``404`` (no entry at that timestamp/relpath)
+    - ``RestoreTargetOccupied``     -> ``409`` (a same-name Source exists now)
+    - ``RestoreBasenameCollision``  -> ``409`` (basename exists elsewhere
+      under ``docs/``; restoring would mint an ``ambiguous_source`` state)
+
+    Returns HTTP 204 No Content on success (mirrors ``DELETE /pages/{slug}``).
+    """
+    try:
+        _restore_source(request.timestamp, request.relpath)
+    except _SourceInvalidRelpath as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except _SourceTrashEntryNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except _SourceRestoreTargetOccupied as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except _SourceRestoreBasenameCollision as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/sources/trash", response_model=TrashListSchema)
+def source_trash() -> TrashListSchema:
+    """List every entry in the Source Trash (ADR-0041 decision 8 — the trash
+    tree itself is the audit trail; no separate manifest).
+
+    Read-only, ungated (no LLM, no mutation — same rationale as ``GET
+    /sources/{relpath}/impact``).
+
+    Returns:
+        ``TrashListSchema`` — one entry per retired Source still in the
+        trash, sorted by timestamp then relpath.
+    """
+    entries = _list_trash()
+    return TrashListSchema(
+        entries=[TrashEntrySchema(timestamp=e.timestamp, relpath=e.relpath) for e in entries]
+    )
 
 
 # ---------------------------------------------------------------------------
