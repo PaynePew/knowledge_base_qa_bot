@@ -18,13 +18,8 @@ guards, in this order, for every request:
      so admin/mutating traffic can never spend the read-reserved floor.
      Exception (issue #598 Slice B): an over-cap ``POST /chat/stream?stack=wiki``
      request is NOT 503'd — it is admitted with a ``scope["kb_degraded"]``
-     flag and never charged, because ``markdown_kb.app.retrieval.stream_query``
-     has a no-LLM degraded-serving branch for exactly this stack (see
-     ``_can_serve_degraded``). Every other over-cap READ_PATHS request
-     (``stack=rag``/``stack=hybrid``, ``/wiki/chat``, ``/rag/chat``) has no
-     such branch downstream, so admitting it here would let a real
-     (uncounted) LLM call through past the budget ceiling — those keep the
-     hard 503.
+     flag and never charged (see ``_can_serve_degraded`` for which paths
+     qualify and why).
   3. **Per-IP rate limit** — a fixed-window counter (``KB_RATE_LIMIT_PER_IP``,
      default 30 requests / 5 min per IP; ``0`` disables) over every heavy path,
      read or admin (see ``ratelimit``). Over-limit → 429
