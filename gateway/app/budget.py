@@ -112,7 +112,8 @@ Read-reserved admin ceiling (issue #598 Slice A): the public demo box is
 key-free, so a burst on ADMIN_PATHS (ingest/index/transcribe/lint) could spend
 the WHOLE ``KB_DAILY_USD_CAP`` before any reader ever gets a grounded answer —
 turning an open box into a one-visitor-burst outage for the rest of the UTC
-day. ``KB_READ_RESERVED_USD`` (default $1.00) carves out a floor of the cap
+day. ``KB_READ_RESERVED_USD`` (default $0.60 — recalibrated from $1.00, issue
+#598 scope addendum point 6, follow-up grill) carves out a floor of the cap
 that ADMIN_PATHS cannot spend into: ``DailyBudget.over_admin_cap()`` trips at
 ``cap_usd - read_reserved_usd`` instead of the full ``cap_usd``. READ_PATHS
 are unaffected — ``ProdMiddleware`` keeps gating them on the unchanged
@@ -120,6 +121,14 @@ are unaffected — ``ProdMiddleware`` keeps gating them on the unchanged
 headroom even once admin traffic alone would have exhausted the cap.
 ``read_reserved_usd`` defaults to 0.0 (identical to ``over_cap()``) for any
 ``DailyBudget`` built without it, so existing callers are unaffected.
+
+$0.60 replaces the original $1.00 as a more precisely reasoned floor rather
+than a round number: it is exactly ``KB_RATE_LIMIT_PER_IP``'s default window
+allowance (30 requests / 5 min) times the ``/chat/stream`` per-request
+estimate ($0.02, see the table above) — the reserve guarantees one full
+rate-limit window's worth of read traffic at the standard chat estimate can
+always be served, without over-reserving a third of the whole $3.00 cap away
+from admin traffic the way the old $1.00 did.
 
 Single-worker model (CODING_STANDARD §2.6/§2.7): one in-process ``dict`` is
 the whole store; multi-worker would need a shared store. Within that single
@@ -217,16 +226,18 @@ TRANSCRIBE_PAGE_USD = _read_transcribe_page_cost()
 
 
 def _read_read_reserved() -> float:
-    """Read ``KB_READ_RESERVED_USD`` at construction time (default $1.00).
+    """Read ``KB_READ_RESERVED_USD`` at construction time (default $0.60).
 
     The floor of ``KB_DAILY_USD_CAP`` that ADMIN_PATHS cannot spend into (see
-    the module docstring's "Read-reserved admin ceiling" paragraph, issue #598).
+    the module docstring's "Read-reserved admin ceiling" paragraph, issue
+    #598). Recalibrated from the original $1.00 to $0.60 (scope addendum
+    point 6) — see the module docstring for the reasoning.
     """
-    raw = os.getenv("KB_READ_RESERVED_USD", "1.0")
+    raw = os.getenv("KB_READ_RESERVED_USD", "0.60")
     try:
         return float(raw)
     except ValueError:
-        return 1.0
+        return 0.60
 
 
 # Module-level default, read once at import (restart to apply a new value).

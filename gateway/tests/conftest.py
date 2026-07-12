@@ -105,3 +105,33 @@ def _fresh_per_ip_rate_limiter():
         limit=_rl.RATE_LIMIT_PER_IP, window_sec=_rl.RATE_LIMIT_WINDOW_SEC
     )
     yield
+
+
+@pytest.fixture(autouse=True)
+def _fresh_daily_budget():
+    """Suite-wide isolation for the daily budget singleton (issue #598 Slice B).
+
+    The same "config poisoning" bleed ``_fresh_per_ip_rate_limiter`` above
+    fixes for the rate limiter, here for ``gateway.app.budget``: a test that
+    ``importlib.reload``s it under a monkeypatched ``KB_DAILY_USD_CAP`` (e.g.
+    ``"0.0"``, to force an over-cap 503/degraded path) leaves the reloaded
+    module-level ``budget`` singleton's exhausted cap behind once monkeypatch
+    restores the env — because reload mutates the module object in place, so
+    every other module's ``from . import budget as _budget`` reference (e.g.
+    ``middleware.py``, ``main.py``) sees the poisoned instance too. Breaks
+    any later test file whose fixtures import ``gateway.app.main`` without
+    reloading it themselves (e.g. ``test_chat_stream.py``'s plain ``from
+    gateway.app.main import app``), which would otherwise 503/degrade every
+    ``/chat/stream`` request regardless of that file's own env.
+
+    Reloading re-reads the (now clean) env, rebuilding ``budget`` fresh.
+    Runs BEFORE each test's own fixtures, so a test that deliberately
+    reloads budget/middleware with a monkeypatched env still gets its own
+    tightened cap afterwards.
+    """
+    import importlib
+
+    import gateway.app.budget as _budget_mod
+
+    importlib.reload(_budget_mod)
+    yield

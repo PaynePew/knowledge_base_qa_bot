@@ -46,15 +46,25 @@ orthogonal (it is the UI-resolution target the gateway forwards generically). Th
 shared serializer renders them as-is.
 
 SSE event contract (ADR-0009, extended by Phase 11):
-  status{phase:"rewriting"}  — emitted on turn 2+ BEFORE sources (Phase 11 Slice 4)
+  status{phase:"rewriting"}  — emitted on turn 2+ BEFORE sources (Phase 11 Slice 4);
+                       SKIPPED on a degraded admission (issue #598 Slice B Finding
+                       1) — degraded turn 2+ falls back to passthrough, same as turn 1.
   sources{sources,rewritten_query?} — immediately after retrieval (real latency
-                       win); ``rewritten_query`` present only on turn 2+ (issue
-                       #579 — surfaces what was actually searched for)
-  status{phase:"verifying"}  — liveness between sources and first token; LLM path only
+                       win); ``rewritten_query`` present only on turn 2+ AND not
+                       degraded (issue #579 — surfaces what was actually searched
+                       for; omitted whenever no rewrite happened)
+  status{phase:"verifying"}  — liveness between sources and first token; LLM path
+                       only — never emitted on a degraded admission (issue #598
+                       Slice B Finding 2), since degraded serving never calls the LLM
   token(s)           — verified answer or CANNOT_CONFIRM_PHRASE; one per word
-  done{grounding:{passed,reason},filed,stack,session} — terminal success event
-                       (PRD #116 shape + Phase 11 session field; filed null for
-                       stack=rag)
+                       (a degraded "sections" answer streams the retrieval-only
+                       excerpts + notice text instead, never CANNOT_CONFIRM_PHRASE
+                       — issue #598 Slice B scope addendum point 3)
+  done{grounding:{passed,reason},filed,stack,session,degraded,mode?} — terminal
+                       success event (PRD #116 shape + Phase 11 session field;
+                       filed null for stack=rag). ``mode`` (issue #598 Slice B
+                       addendum) is present only when ``degraded`` is true:
+                       ``"cached-qa"`` or ``"sections"``.
   error{detail,retryable}   — terminal failure when the LLM or rewriter errors
                               AFTER HTTP 200 is committed (sources or rewriting
                               event already sent)
@@ -68,7 +78,7 @@ import uuid
 from collections.abc import Callable, Iterator
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 # Hybrid Retrieval (Stack C) — Phase 13 S4 (issue #314). Additive third stack;
@@ -163,12 +173,24 @@ _STACK_STREAM_FN: dict[str, Callable[[str], Iterator[dict]]] = {
 @router.post("/chat/stream")
 def chat_stream(
     req: ChatRequest,
+    request: Request,
     stack: str = "wiki",
     session: str | None = None,
 ) -> StreamingResponse:
     """Stream a grounded answer as SSE events.
 
     Dispatches to the selected Retrieval Stack via ``_STACK_STREAM_FN``.
+
+    Issue #598 Slice B: ``request.scope["kb_degraded"]`` is set by
+    ``ProdMiddleware`` when this request was admitted past an exhausted
+    daily budget instead of 503'd (only possible for ``stack=wiki`` — see
+    ``middleware.py::_can_serve_degraded``). When set, the wiki dispatch
+    below forwards ``degraded=True`` into ``stream_query`` (a no-LLM
+    serving branch) and the ``done`` event carries an additive
+    ``degraded`` field so the reader can distinguish a real answer from a
+    budget-exhausted one, plus a ``mode`` field (``"cached-qa"`` or
+    ``"sections"`` — scope addendum point 3) naming which no-LLM shape was
+    served.
 
     Phase 11 Slice 1 multi-turn additions:
     - ``session`` query param identifies the conversation session.  Absent on
@@ -178,19 +200,28 @@ def chat_stream(
       rewrite LLM call, preserving Phase 9 sources-first latency win).
     - Turn 2+: ``rewrite_query`` reformulates the raw follow-up inside the
       generator (Phase 11 Slice 4), after emitting ``status:rewriting``.
+    - Turn 2+ degraded (issue #598 Slice B Finding 1): rewrite is SKIPPED —
+      treated exactly like turn 1 passthrough. Degraded mode is a zero-LLM
+      safety net past the exhausted budget cap; an uncounted, unbounded
+      rewrite call would defeat that guarantee, and on exhausted provider
+      quota it would raise and turn a would-be 200 degraded answer into a
+      terminal SSE error. Reduced multi-turn precision is the accepted trade.
     - On ``done``: the turn ``{question: rewritten, answer, stack,
       grounding_reason, ts}`` is appended to the Conversation Store.
     - On ``error`` (before ``done``): nothing is written to the store.
 
     Phase 11 Slice 4 addition:
-    - Turn 2+ emits ``status:{phase:"rewriting"}`` FIRST (before sources),
-      then performs the rewrite, then calls stream_fn.  This moves rewrite_query
-      into the SSE generator so a rewrite error surfaces as a terminal SSE
-      ``error`` event (HTTP 200 already committed once the status event is sent).
+    - Turn 2+ (non-degraded) emits ``status:{phase:"rewriting"}`` FIRST
+      (before sources), then performs the rewrite, then calls stream_fn.
+      This moves rewrite_query into the SSE generator so a rewrite error
+      surfaces as a terminal SSE ``error`` event (HTTP 200 already committed
+      once the status event is sent).
 
     SSE event order (ADR-0009 verify-then-stream, Phase 11 Slice 4 extension):
-      1. [Turn 2+ only] ``status:{phase:"rewriting"}`` — emitted before any
-         retrieval starts, signals that query rewriting is underway.
+      1. [Turn 2+, non-degraded only] ``status:{phase:"rewriting"}`` —
+         emitted before any retrieval starts, signals that query rewriting is
+         underway. Skipped on turn 1 AND on a degraded turn 2+ admission
+         (issue #598 Slice B Finding 1).
       2. ``sources`` — emitted immediately after retrieval, before any LLM call.
          Carries the retrieved sources. For ``stack=wiki``: citation id, heading,
          content snippet, derived_from, plus a resolvable wiki-page ``path``. For
@@ -198,18 +229,30 @@ def chat_stream(
          docs/-relative ``path`` for the clickable citation (#307; present when
          the chunk carries source-path metadata) — but no score, no derived_from.
          This is the genuine latency win — retrieval is ~instant; the user sees
-         grounding context while the LLM drafts (~4-7s). On turn 2+ ALSO carries
-         ``rewritten_query`` (issue #579) — the self-contained query that was
-         actually retrieved against, so the reader can see what the follow-up
-         resolved to; absent on turn 1 (passthrough, nothing new to show).
+         grounding context while the LLM drafts (~4-7s). On turn 2+ non-degraded
+         ALSO carries ``rewritten_query`` (issue #579) — the self-contained query
+         that was actually retrieved against, so the reader can see what the
+         follow-up resolved to; absent on turn 1 AND on a degraded turn 2+
+         admission (both passthrough, nothing new to show).
       3. ``status:{phase:"verifying"}`` — liveness signal emitted after sources,
          before the first token, on the LLM path only (early-exit CC paths skip
-         this).
+         this, and so does any degraded admission — issue #598 Slice B Finding
+         2 — since degraded serving never calls the LLM even when the pre-LLM
+         gate passed).
       4. ``token``(s) — words of the verified answer only (or CANNOT_CONFIRM_PHRASE
-         on any CC path); no unverified draft ever reaches the stream.
+         on any CC path); no unverified draft ever reaches the stream. A degraded
+         "sections" answer (issue #598 Slice B scope addendum point 3) streams
+         retrieval-only excerpts + an honest notice line instead — degraded mode
+         never streams CANNOT_CONFIRM_PHRASE, since it never attempted synthesis
+         and so has no basis to claim the corpus lacks an answer.
       5. ``done`` — grounding outcome (passed, reason), optional filing status,
          and ``session`` id.  ``done.filed`` is always null for ``stack=rag``
-         (RAG never files).
+         (RAG never files). ``done.degraded`` (issue #598 Slice B) is an
+         ADDITIVE bool, always present: true only for a budget-exhausted
+         no-LLM wiki answer. ``done.mode`` (scope addendum point 3) is present
+         only when ``degraded`` is true: ``"cached-qa"`` (a live Filed Answer
+         replayed verbatim) or ``"sections"`` (retrieval-only excerpts). Neither
+         field is a new SSE event type (ADR-0009).
          OR
          ``error`` — terminal failure event when the rewriter or LLM/infra
          errors AFTER HTTP 200 is committed (status:rewriting or sources event
@@ -255,15 +298,21 @@ def chat_stream(
 
     stream_fn = _STACK_STREAM_FN[stack]
 
+    # Issue #598 Slice B: ProdMiddleware sets this scope key only for an
+    # over-cap stack=wiki request (middleware.py::_can_serve_degraded), so
+    # `degraded` is always False for every other stack/path by construction.
+    degraded: bool = bool(request.scope.get("kb_degraded", False))
+
     def _sse_generator():
         """Consume stream_fn() and yield SSE frames.
 
-        Phase 11 Slice 4 event order (turn 2+):
+        Phase 11 Slice 4 event order (turn 2+, non-degraded):
           status:rewriting → [rewrite_query] → sources → status:verifying →
           token(s) → done
 
-        Phase 9 event order (turn 1 / passthrough):
-          sources → status:verifying → token(s) → done
+        Phase 9 event order (turn 1 / passthrough, OR any degraded admission —
+        issue #598 Slice B Findings 1+2):
+          sources → [status:verifying, only when not degraded] → token(s) → done
 
         stream_fn() (for any stack) yields exactly two dicts:
           1. sources_ready partial (before LLM) — emit sources event.
@@ -273,12 +322,16 @@ def chat_stream(
         any LLM call starts (ADR-0009 §"sources-first is real, not post-hoc").
 
         Phase 11 multi-turn additions:
-          - Turn 2+ (history non-empty): emit status:rewriting first, then call
-            rewrite_query inside the generator.  HTTP 200 is committed with the
-            status:rewriting frame, so any rewrite error must surface as a
-            terminal SSE error event (not an unhandled 500).
-          - Turn 1 (empty history): passthrough — no status:rewriting, no
-            rewrite LLM call (preserves Phase 9 sources-first latency win).
+          - Turn 2+ non-degraded (history non-empty, ``degraded`` False): emit
+            status:rewriting first, then call rewrite_query inside the
+            generator.  HTTP 200 is committed with the status:rewriting frame,
+            so any rewrite error must surface as a terminal SSE error event
+            (not an unhandled 500).
+          - Turn 1 (empty history), OR any degraded admission regardless of
+            history (issue #598 Slice B Finding 1): passthrough — no
+            status:rewriting, no rewrite LLM call (preserves Phase 9
+            sources-first latency win; degraded mode stays a zero-LLM safety
+            net even on turn 2+).
           - Dispatch uses ``self_contained_query`` (rewritten or passthrough),
             never ``req.query`` directly — retrieval always searches on the
             self-contained form.
@@ -296,7 +349,18 @@ def chat_stream(
         # Phase 11 Slice 4: turn 2+ emits status:rewriting BEFORE retrieval.
         # Rewrite happens inside the generator so errors surface as SSE error
         # events (HTTP 200 is committed once the first byte is sent).
-        if history:
+        #
+        # Issue #598 Slice B Finding 1 (adversarial verify, HIGH): a degraded
+        # admission must NEVER reach rewrite_query — that LLM call is
+        # uncounted (the middleware's budget charge is skipped for a degraded
+        # admission, see middleware.py) and unbounded past the exhausted
+        # KB_DAILY_USD_CAP, and on an exhausted provider quota it raises,
+        # turning what should be a 200 degraded answer into a terminal SSE
+        # error. So ``degraded`` forces the same passthrough branch as turn 1
+        # — reduced multi-turn precision (the raw follow-up, unresolved
+        # against history) is the accepted trade for degraded mode's zero-LLM
+        # guarantee.
+        if history and not degraded:
             yield encode_event("status", {"phase": "rewriting"})
             try:
                 self_contained_query = rewrite_query(req.query, history=history)
@@ -326,7 +390,9 @@ def chat_stream(
                 )
                 return
         else:
-            # Turn 1: passthrough (no rewrite, no status:rewriting event).
+            # Turn 1 (no history), OR a degraded admission on turn 2+ (issue
+            # #598 Slice B Finding 1): passthrough — no rewrite, no
+            # status:rewriting event, no rewrite LLM call.
             self_contained_query = req.query
 
         # Issue #579: on turn 2+, the Wiki stack additionally needs the raw
@@ -338,8 +404,16 @@ def chat_stream(
         # neither needs the widened call — kept off their call sites entirely
         # (CODING_STANDARD §11: do not widen a call shape every caller must
         # accept when only one caller needs the new argument).
-        if stack == "wiki" and history:
-            gen = stream_fn(self_contained_query, original_question=req.query)
+        # Issue #598 Slice B: ``degraded`` is forwarded the same way — it is
+        # only ever True for stack=="wiki" (middleware only sets the scope
+        # flag for stack=wiki requests), so RAG/Hybrid never see the kwarg.
+        if stack == "wiki":
+            wiki_kwargs: dict = {}
+            if history:
+                wiki_kwargs["original_question"] = req.query
+            if degraded:
+                wiki_kwargs["degraded"] = True
+            gen = stream_fn(self_contained_query, **wiki_kwargs)
         else:
             gen = stream_fn(self_contained_query)
 
@@ -376,16 +450,25 @@ def chat_stream(
         sources_payload: dict = {"sources": source_list}
         # Issue #579: surface the rewritten query on turn 2+ so the reader can
         # see what was actually searched for (the follow-up may drift from
-        # what was literally asked). Omitted on turn 1 — passthrough means
-        # it would be identical to the visible query, nothing new to show.
-        if history:
+        # what was literally asked). Omitted on turn 1, AND on a degraded
+        # turn 2+ (issue #598 Slice B Finding 1) — both are passthrough, so
+        # self_contained_query is identical to the visible query and there is
+        # nothing new to show.
+        if history and not degraded:
             sources_payload["rewritten_query"] = self_contained_query
         yield encode_event("sources", sources_payload)
 
-        # Emit status{phase:"verifying"} on the LLM path only (early_exit=False).
-        # Early-exit CC paths skip the LLM entirely — emitting "verifying" there
-        # would be a lie; the answer is already known from the pre-LLM gate.
-        if not partial.get("early_exit", False):
+        # Emit status{phase:"verifying"} on the LLM path only (early_exit=False
+        # AND not degraded). Early-exit CC paths skip the LLM entirely —
+        # emitting "verifying" there would be a lie; the answer is already
+        # known from the pre-LLM gate. Issue #598 Slice B Finding 2
+        # (adversarial verify, LOW): a degraded admission ALSO never calls the
+        # LLM even when the pre-LLM gate passed (early_exit=False) — BOTH
+        # ``_serve_degraded`` modes (cached-qa replay, sections excerpts) skip
+        # the verifier — so "verifying" would be the same lie there too. No
+        # new SSE event type; just suppress this one on the degraded path
+        # (ADR-0009).
+        if not degraded and not partial.get("early_exit", False):
             yield encode_event("status", {"phase": "verifying"})
 
         # Second yield: full result — emit token(s) + done.
@@ -430,6 +513,18 @@ def chat_stream(
         )
         done_payload: dict = json.loads(done_data_line[len("data: ") :])
         done_payload["session"] = session_id
+        # Issue #598 Slice B: additive field, always present (ADR-0009 — no
+        # new SSE event types); True only for the budget-exhausted no-LLM
+        # wiki path (`degraded` is always False for every other stack/path).
+        done_payload["degraded"] = degraded
+        # Issue #598 Slice B scope addendum point 3: additive, present only
+        # when degraded — "cached-qa" (a live Filed Answer replayed verbatim)
+        # or "sections" (retrieval-only excerpts; see
+        # markdown_kb.app.retrieval._serve_degraded). Absent (not merely
+        # null) on every non-degraded response — no new SSE event type
+        # (ADR-0009).
+        if degraded:
+            done_payload["mode"] = full_result.get("mode")
         yield encode_event("done", done_payload)
 
         # Append turn to the Conversation Store (only reached on normal done —
