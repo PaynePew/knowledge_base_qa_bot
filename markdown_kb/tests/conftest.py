@@ -130,6 +130,31 @@ def _redirect_paths_to_tmp(tmp_path, monkeypatch):
     monkeypatch.setattr(current_indexer, "WIKI_DIR", tmp_path / "wiki")
 
 
+@pytest.fixture(autouse=True)
+def _reset_verifier_llm(monkeypatch):
+    """Reset the grounding verifier's lazy LLM singleton between tests.
+
+    ADR-0042 / issue #572 hoisted ``grounding.verify()``'s per-call
+    ``ChatOpenAI(...)`` construction into a lazy-singleton getter
+    (``get_verifier_llm``, CODING_STANDARD §2.7) — before this, a fresh client
+    was built on every call. Several existing tests (``grounding/test_retry.py``,
+    ``grounding/test_verifier.py``, ``test_reconcile.py``, ``test_collision.py``,
+    ``test_llm_determinism.py``) patch ``app.grounding.ChatOpenAI`` directly and
+    rely on that per-call construction so their patch takes effect. Resetting
+    the cached singleton before every test preserves that isolation without
+    rewriting each patch call site to target the new getter instead (mirrors
+    ``gateway/tests/test_query_rewriting.py``'s ``_reset_rewrite_llm`` for the
+    analogous rewriter singleton).
+
+    Imports ``app.grounding`` fresh inside the fixture (not at module scope) so
+    the patch targets the *current* sys.modules entry — same reload-safety
+    reasoning as ``_redirect_paths_to_tmp`` above.
+    """
+    import app.grounding as current_grounding
+
+    monkeypatch.setattr(current_grounding, "_verifier_llm", None)
+
+
 @pytest.fixture()
 def indexed_corpus(tmp_path):
     """Build the section index from REAL_DOCS into the tmp paths.
