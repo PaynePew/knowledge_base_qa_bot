@@ -72,10 +72,14 @@ from fastapi.responses import StreamingResponse
 from hybrid_kb.app.dense_index import build_index as _hybrid_build_index
 from hybrid_kb.app.query import stream_query as _hybrid_stream_query
 from markdown_kb.app.errors import LLMError
+from markdown_kb.app.indexer import index_stale as _index_stale
+from markdown_kb.app.indexer import indexed_sections_count as _indexed_sections_count
+from markdown_kb.app.indexer import wiki_page_count as _wiki_page_count
 from markdown_kb.app.read import FileNotFound as _ReadFileNotFound
 from markdown_kb.app.read import NotAFile as _ReadNotAFile
 from markdown_kb.app.read import PathRejected as _ReadPathRejected
 from markdown_kb.app.read import TreeEntry as _TreeEntry
+from markdown_kb.app.read import count_tree as _count_tree
 from markdown_kb.app.read import list_tree as _list_tree
 from markdown_kb.app.read import read_file as _read_file
 from markdown_kb.app.retrieval import stream_query as _wiki_stream_query
@@ -613,6 +617,73 @@ def read_file_endpoint(
         ) from exc
 
     return FileContentSchema(relpath=path, content=content)
+
+
+class ArtifactCountsSchema(BaseModel):
+    """Response body for GET /read/counts (issue #559 A1)."""
+
+    raw: int
+    docs: int
+    wiki: int
+    kb: int
+
+
+@router.get("/read/counts", response_model=ArtifactCountsSchema)
+def read_counts() -> ArtifactCountsSchema:
+    """Live file/page counts for the Operator Console's four artifact nodes.
+
+    Cheap directory-listing + persisted-index-size counts (issue #559 A1,
+    the pipeline-semantics-not-wizard-semantics redesign) — NO retrieval
+    computation, NO frontmatter parsing, NO index rebuild:
+
+    - ``raw`` / ``docs``: recursive file counts under the whitelisted
+      ``raw/`` / ``docs/`` roots (``markdown_kb.app.read.count_tree``).
+    - ``wiki``: recursive file count over the curated wiki subdirs only
+      (``entities/``, ``concepts/``, ``qa/`` — wiki root meta files like
+      ``index.md``/``log.md`` are excluded by construction).
+    - ``kb``: the persisted Section Index's ``sections_indexed`` stat (0 if
+      ``.kb/index.json`` does not exist yet).
+
+    Returns:
+        ``ArtifactCountsSchema`` with all four counts. A root that does not
+        exist on disk yet counts as 0 rather than erroring — a fresh
+        pipeline instance has no raw/docs/wiki directories until the first
+        Upload.
+    """
+    return ArtifactCountsSchema(
+        raw=_count_tree("raw"),
+        docs=_count_tree("docs"),
+        wiki=_wiki_page_count(),
+        kb=_indexed_sections_count(),
+    )
+
+
+class IndexFreshnessSchema(BaseModel):
+    """Response body for GET /read/index-freshness (issue #559 A2)."""
+
+    stale: bool
+
+
+@router.get("/read/index-freshness", response_model=IndexFreshnessSchema)
+def read_index_freshness() -> IndexFreshnessSchema:
+    """State-derived fresh/stale signal for the Operator Console's Index node.
+
+    A thin wrapper over ``markdown_kb.app.indexer.index_stale()`` — the
+    CONTEXT.md Section Index staleness semantic (wiki/ changed since the
+    last /index build), derived from filesystem mtimes only. A **separate**
+    endpoint from ``GET /read/counts`` (not an added field on
+    ``ArtifactCountsSchema``) so that endpoint's existing exact-shape
+    contract stays untouched.
+
+    Deliberately state-derived, not click-history-derived: contrast the
+    pre-existing #173 ``indexStale`` Console flag (set on Ingest click,
+    cleared on Index click, drives the separate staleness-guard banner) —
+    this endpoint neither reads nor influences that flag.
+
+    Returns:
+        ``IndexFreshnessSchema`` with a single ``stale`` bool.
+    """
+    return IndexFreshnessSchema(stale=_index_stale())
 
 
 # ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``list_tree``, ``read_file``, ``TreeEntry``.
+"""Deep module per Ousterhout. Public surface: ``list_tree``, ``read_file``, ``count_tree``, ``TreeEntry``.
 
 Resource browser — read-only access to the whitelisted corpus roots.
 
@@ -6,7 +6,9 @@ Exposes ``list_tree(relpath)`` and ``read_file(relpath)`` constrained to a
 whitelist of roots: ``docs/``, ``raw/``, ``wiki/``, ``.trash/`` (ADR-0041,
 issue #604 — read-only pre-restore inspection of a retired Source; see
 ``source_lifecycle.py`` for the write side).  The ``.kb/`` directory is
-explicitly excluded.
+explicitly excluded.  ``count_tree(relpath)`` (issue #559 A1) is a cheap
+recursive file count over the same whitelist, for the Operator Console's
+live artifact-node counts.
 
 Security guarantees (path-traversal defence):
   - ``..`` components and absolute paths are rejected before any I/O.
@@ -23,6 +25,11 @@ Public surface:
     ``read_file(relpath)`` — read and return the UTF-8 text of a file inside
         one of the whitelisted roots.  Returns the raw text as a ``str``.
 
+    ``count_tree(relpath)`` — recursively count files under a whitelisted
+        root or sub-path (e.g. ``'raw'``, ``'docs'``).  Same security rules
+        as list_tree; a root that does not exist on disk yet counts as 0.
+        Returns an ``int``.  No file content is read.
+
     ``TreeEntry`` — named dataclass describing one directory entry.
         ``name``:  basename.
         ``relpath``: the relative path string to pass back to list_tree / read_file.
@@ -36,6 +43,7 @@ Raises:
     ``ReadError`` — OS-level I/O failure.
 
 See GitHub issue #171 (Phase 15 S5) and PRD #168 for design rationale.
+count_tree added by issue #559 A1 (Operator Console artifact-node counts).
 """
 
 from __future__ import annotations
@@ -309,3 +317,60 @@ def read_file(
         return resolved.read_text(encoding="utf-8")
     except OSError as exc:
         raise ReadError(f"Failed to read {relpath!r}: {exc}") from exc
+
+
+def count_tree(
+    relpath: str,
+    *,
+    roots: dict[str, Path] | None = None,
+) -> int:
+    """Recursively count files under a whitelisted root or sub-path.
+
+    A cheap directory-listing count for the Operator Console's live
+    artifact-node counts (issue #559 A1) — no file content is read, no
+    frontmatter is parsed. Same security whitelist and traversal rules as
+    list_tree (root name validated, ``..``/absolute paths and symlink
+    escapes rejected). Hidden entries (any path component starting with
+    ``.``) are excluded, matching list_tree's visibility rule.
+
+    Args:
+        relpath: e.g. ``'raw'`` or ``'docs'`` — same shape as list_tree,
+            minus the empty-string "list the roots" case.
+        roots:   test-only override, same as list_tree.
+
+    Returns:
+        Total file count under the resolved directory (directories
+        themselves are not counted). A root that does not exist on disk yet
+        (a fresh pipeline instance with no raw/ or docs/ directory) counts
+        as 0 rather than raising FileNotFound.
+
+    Raises:
+        PathRejected: path contains ``..``, is absolute, names an
+            unwhitelisted root, or resolves outside the whitelist root.
+        NotAFile: the resolved path is a file, not a directory.
+    """
+    effective_roots = roots if roots is not None else _WHITELIST_ROOTS
+
+    root_name, sub_parts = _parse_relpath(relpath)
+    if not root_name:
+        raise PathRejected(
+            "count_tree requires a path inside a whitelisted root, not the root listing."
+        )
+    if root_name not in effective_roots:
+        raise PathRejected(
+            f"Root {root_name!r} is not in the whitelist. Allowed: {sorted(effective_roots)}"
+        )
+
+    root_dir = effective_roots[root_name]
+    resolved = _resolve_and_check(root_dir, sub_parts)
+
+    if not resolved.exists():
+        return 0
+    if not resolved.is_dir():
+        raise NotAFile(f"Path is a file, not a directory: {relpath!r}")
+
+    return sum(
+        1
+        for p in resolved.rglob("*")
+        if p.is_file() and not any(part.startswith(".") for part in p.relative_to(resolved).parts)
+    )
