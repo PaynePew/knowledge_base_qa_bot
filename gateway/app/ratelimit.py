@@ -80,6 +80,9 @@ class RateLimiter:
         always True, and — bounded-store guarantee — never records anything.
         ``now`` is an injectable ``time.monotonic()``-style float so window
         expiry is deterministic in tests; defaults to the real clock.
+      - ``retry_after_seconds(ip, now=None)`` — seconds until ``ip``'s current
+        window resets (issue #598 scope addendum point 5 — backs the 429
+        response's ``Retry-After`` header). Read-only; never mutates state.
 
     The store is a ``{ip: (window_start, count)}`` dict. Every ``allow()``
     call prunes any OTHER ip whose window has fully expired before deciding
@@ -105,6 +108,27 @@ class RateLimiter:
                 return False
             self._windows[ip] = (window_start, count + 1)
             return True
+
+    def retry_after_seconds(self, ip: str, *, now: float | None = None) -> float:
+        """Seconds remaining until ``ip``'s current fixed window resets (``>= 0``).
+
+        Called by ``ProdMiddleware`` right after ``allow()`` returns False, to
+        populate the 429 response's ``Retry-After`` header (issue #598 scope
+        addendum point 5) — so a client knows how long to back off instead of
+        immediately retrying and tripping the same limit again. Read-only: it
+        does not prune or otherwise mutate ``self._windows``. If ``ip`` has no
+        recorded window (a caller querying without first calling ``allow()``,
+        or a window that was already pruned by another IP's call), the full
+        ``window_sec`` is returned — the safe, conservative answer when the
+        actual reset time is unknown.
+        """
+        moment = now if now is not None else time.monotonic()
+        with self._lock:
+            window = self._windows.get(ip)
+        if window is None:
+            return self.window_sec
+        window_start, _count = window
+        return max(self.window_sec - (moment - window_start), 0.0)
 
     def _prune_expired(self, moment: float) -> None:
         """Drop any window that fully elapsed (``>= window_sec`` old).

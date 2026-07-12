@@ -23,10 +23,16 @@ guards, in this order, for every request:
   3. **Per-IP rate limit** — a fixed-window counter (``KB_RATE_LIMIT_PER_IP``,
      default 30 requests / 5 min per IP; ``0`` disables) over every heavy path,
      read or admin (see ``ratelimit``). Over-limit → 429
-     ``{"detail":"rate limited, please retry later"}`` (issue #598 Slice A).
-     Runs BEFORE the concurrency gate, mirroring the budget guard's
+     ``{"detail":"rate limited, please retry later"}`` (issue #598 Slice A)
+     with a ``Retry-After: <seconds>`` header naming when that IP's window
+     resets (issue #598 scope addendum point 5), rounded UP via
+     ``math.ceil`` so a client never wakes before the window actually
+     clears. Runs BEFORE the concurrency gate, mirroring the budget guard's
      charge-after-admission rationale: a rate-limited request never occupies
-     a semaphore slot or charges the daily budget.
+     a semaphore slot or charges the daily budget. ``ratelimit.client_ip``
+     trusts the RIGHTMOST ``X-Forwarded-For`` hop (scope addendum point 4 —
+     the trusted edge appends it last; the client-controlled first hop is
+     spoofable).
   4. **Concurrency caps** — a read semaphore (``KB_MAX_INFLIGHT``, default 6)
      over the answer paths and an admin semaphore (``KB_MAX_ADMIN``, default 2)
      over the index/mutate paths.  Over-limit → 503.  The read semaphore's
@@ -101,6 +107,7 @@ same rationale that already leaves ``GET /read/*`` and ``GET
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import threading
@@ -332,17 +339,31 @@ def _bearer_token(scope: Scope) -> str | None:
     return None
 
 
-async def _send_json(send: Send, status: int, payload: dict) -> None:
-    """Emit a minimal JSON ASGI response (used for all reject short-circuits)."""
+async def _send_json(
+    send: Send,
+    status: int,
+    payload: dict,
+    *,
+    extra_headers: list[tuple[bytes, bytes]] | None = None,
+) -> None:
+    """Emit a minimal JSON ASGI response (used for all reject short-circuits).
+
+    ``extra_headers`` (issue #598 scope addendum point 5) appends additional
+    response headers after the standard content-type/content-length pair —
+    e.g. the 429 rate-limit response's ``Retry-After``.
+    """
     body = json.dumps(payload).encode("utf-8")
+    headers = [
+        (b"content-type", b"application/json"),
+        (b"content-length", str(len(body)).encode("latin-1")),
+    ]
+    if extra_headers:
+        headers.extend(extra_headers)
     await send(
         {
             "type": "http.response.start",
             "status": status,
-            "headers": [
-                (b"content-type", b"application/json"),
-                (b"content-length", str(len(body)).encode("latin-1")),
-            ],
+            "headers": headers,
         }
     )
     await send({"type": "http.response.body", "body": body})
@@ -421,10 +442,20 @@ class ProdMiddleware:
         #    Slice A). Runs BEFORE the semaphore/charge so a rate-limited
         #    request never consumes budget or an inflight slot (same
         #    charge-after-admission rationale as the budget gate above).
+        #    Scope addendum point 5: the 429 carries a ``Retry-After`` header
+        #    (seconds until this IP's fixed window resets) so a well-behaved
+        #    client backs off instead of immediately retrying into the same
+        #    limit. Rounded UP (never down) so the client never wakes early.
         ip = _ratelimit.client_ip(scope)
         if not rate_limiter.allow(ip):
-            _log_event("rate_limited", f"path={path} ip={ip}")
-            await _send_json(send, 429, {"detail": "rate limited, please retry later"})
+            retry_after = math.ceil(rate_limiter.retry_after_seconds(ip))
+            _log_event("rate_limited", f"path={path} ip={ip} retry_after={retry_after}")
+            await _send_json(
+                send,
+                429,
+                {"detail": "rate limited, please retry later"},
+                extra_headers=[(b"retry-after", str(retry_after).encode("latin-1"))],
+            )
             return
 
         # 4. Concurrency cap — non-blocking acquire; over-limit sheds immediately.
