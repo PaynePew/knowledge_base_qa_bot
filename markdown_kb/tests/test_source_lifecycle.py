@@ -118,6 +118,8 @@ def test_compute_impact_missing_source_raises(lifecycle_env):
         "",
         "D:evil.md",  # Windows drive-relative escape (issue #397 landmine)
         "D:sub/evil.md",
+        "..\\escape.md",  # backslash separator (Windows join landmine) — refused, never one odd basename
+        "sub\\..\\..\\escape.md",
     ],
 )
 def test_compute_impact_unsafe_relpath_raises(lifecycle_env, bad_relpath):
