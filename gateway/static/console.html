@@ -6645,10 +6645,10 @@ var STEP_DEFS = [
    (renderArtifactCounts below). NO state-derived coloring — that is a
    separate, later slice scoped to the Index node's fresh/stale badge only. */
 var ARTIFACT_DEFS = [
-  { id: "raw",  nodeKey: "artifactNodeRaw" },
-  { id: "docs", nodeKey: "artifactNodeDocs" },
-  { id: "wiki", nodeKey: "artifactNodeWiki" },
-  { id: "kb",   nodeKey: "artifactNodeKb" },
+  { id: "raw",  nodeKey: "artifactNodeRaw", inputKey: "inputStateRaw" },
+  { id: "docs", nodeKey: "artifactNodeDocs", inputKey: "inputStateDocs" },
+  { id: "wiki", nodeKey: "artifactNodeWiki", inputKey: "inputStateWiki" },
+  { id: "kb",   nodeKey: "artifactNodeKb", inputKey: "inputStateKb" },
 ];
 
 /* ============================================================
@@ -7767,8 +7767,8 @@ function renderArtifactCounts(counts) {
       lineEl.textContent = "";
       return;
     }
-    var key = "inputState" + step.inputArtifact.charAt(0).toUpperCase() + step.inputArtifact.slice(1);
-    lineEl.textContent = chrome[key].replace("{n}", String(n));
+    var artifact = ARTIFACT_DEFS.filter(function(a) { return a.id === step.inputArtifact; })[0];
+    lineEl.textContent = chrome[artifact.inputKey].replace("{n}", String(n));
   });
 }
 
