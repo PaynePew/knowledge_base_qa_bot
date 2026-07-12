@@ -102,6 +102,14 @@ SYSTEM_PROMPT = (
 # ---------------------------------------------------------------------------
 # LLM singleton (lazy — CODING_STANDARD §2.7 / §10 lazy-singleton)
 # ---------------------------------------------------------------------------
+# Fixed seed for the draft LLM (ADR-0038's C5-judge pattern, extended to the
+# serving chain by ADR-0042 / issue #572, completed here for Stack B by
+# issue #619). Per-module private constant. Best-effort only: OpenAI's seed
+# is not a hard guarantee, but paired with temperature=0 it cuts run-to-run
+# draft rewording that would otherwise flip the same question between a
+# grounded answer and a false Cannot Confirm across calls.
+_RAG_DRAFT_LLM_SEED = 7
+
 _llm: ChatOpenAI | None = None
 
 
@@ -115,6 +123,7 @@ def get_llm() -> ChatOpenAI:
         _llm = ChatOpenAI(
             model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
             temperature=0,
+            seed=_RAG_DRAFT_LLM_SEED,
             request_timeout=20,
             max_retries=1,
         )
