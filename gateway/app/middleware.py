@@ -1,9 +1,9 @@
 """Shallow module per Ousterhout. Public surface: ``ProdMiddleware``,
-``read_sem``, ``admin_sem``, ``read_saturated``, ``is_provider_quota_error``,
-``READ_PATHS``, ``ADMIN_PATHS``.
+``read_sem``, ``admin_sem``, ``rate_limiter``, ``read_saturated``,
+``is_provider_quota_error``, ``READ_PATHS``, ``ADMIN_PATHS``.
 
 Production overload + cost-protection middleware for the demo VPS deploy
-(issue #269).  One ASGI middleware on the Gateway parent app enforces five
+(issue #269).  One ASGI middleware on the Gateway parent app enforces six
 guards, in this order, for every request:
 
   1. **Admin kill-switch** — if ``KB_ADMIN_TOKEN`` is *set*, admin/mutating
@@ -11,13 +11,23 @@ guards, in this order, for every request:
      Unset (the demo default) → admin paths are open so the Console works
      unauthenticated.  Read paths are never token-gated.
   2. **Daily USD budget** — heavy paths are charged a conservative per-endpoint
-     estimate (see ``budget``); once the UTC-day total reaches
-     ``KB_DAILY_USD_CAP`` they get 503 ``{"detail":"daily demo budget reached"}``.
-  3. **Concurrency caps** — a read semaphore (``KB_MAX_INFLIGHT``, default 6)
+     estimate (see ``budget``); once the UTC-day total reaches the relevant
+     ceiling they get 503 ``{"detail":"daily demo budget reached"}``. READ_PATHS
+     gate on the full ``KB_DAILY_USD_CAP``; ADMIN_PATHS gate on the reduced
+     ``KB_DAILY_USD_CAP - KB_READ_RESERVED_USD`` ceiling (issue #598 Slice A),
+     so admin/mutating traffic can never spend the read-reserved floor.
+  3. **Per-IP rate limit** — a fixed-window counter (``KB_RATE_LIMIT_PER_IP``,
+     default 30 requests / 5 min per IP; ``0`` disables) over every heavy path,
+     read or admin (see ``ratelimit``). Over-limit → 429
+     ``{"detail":"rate limited, please retry later"}`` (issue #598 Slice A).
+     Runs BEFORE the concurrency gate, mirroring the budget guard's
+     charge-after-admission rationale: a rate-limited request never occupies
+     a semaphore slot or charges the daily budget.
+  4. **Concurrency caps** — a read semaphore (``KB_MAX_INFLIGHT``, default 6)
      over the answer paths and an admin semaphore (``KB_MAX_ADMIN``, default 2)
      over the index/mutate paths.  Over-limit → 503.  The read semaphore's
      saturation is what ``GET /healthz/shed`` reports (``read_saturated()``).
-  4. **Graceful provider failure** — an OpenAI ``insufficient_quota`` / 429
+  5. **Graceful provider failure** — an OpenAI ``insufficient_quota`` / 429
      bubbling out of a *non-streaming* heavy handler is mapped to a friendly
      503 instead of an unhandled 500 / worker crash (the streaming path already
      renders provider errors as a terminal SSE ``error`` event in
@@ -69,6 +79,7 @@ import openai
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from . import budget as _budget
+from . import ratelimit as _ratelimit
 from .logger import log_event as _log_event
 
 # ---------------------------------------------------------------------------
@@ -174,6 +185,14 @@ def _read_int(name: str, default: int) -> int:
 # BoundedSemaphore catches an accidental over-release (a programming error).
 read_sem = threading.BoundedSemaphore(_read_int("KB_MAX_INFLIGHT", 6))
 admin_sem = threading.BoundedSemaphore(_read_int("KB_MAX_ADMIN", 2))
+
+# Module-level per-IP rate limiter (issue #598 Slice A) — constructed here
+# (not in ``ratelimit.py``) so it is recreated fresh whenever THIS module is
+# reloaded, exactly like ``read_sem`` / ``admin_sem`` above; see
+# ``ratelimit.py``'s trailing comment for why that matters for test isolation.
+rate_limiter = _ratelimit.RateLimiter(
+    limit=_ratelimit.RATE_LIMIT_PER_IP, window_sec=_ratelimit.RATE_LIMIT_WINDOW_SEC
+)
 
 
 def read_saturated() -> bool:
@@ -294,32 +313,52 @@ class ProdMiddleware:
                 await _send_json(send, 401, {"detail": "admin token required"})
                 return
 
-        # 2. Daily USD budget GATE — reject once the UTC-day total has hit the
-        #    cap. The actual charge is deferred until AFTER the concurrency gate
-        #    admits the request (below), so a request that is shed by the
-        #    semaphore — and therefore never reaches the handler / OpenAI — does
-        #    NOT consume budget. Charging here instead would let a burst of
-        #    shed traffic drain the $/day ceiling on zero real spend and 503 all
-        #    heavy paths for the rest of the UTC day.
-        if _budget.budget.over_cap():
-            _log_event("budget_block", f"path={path} cap={_budget.budget.cap_usd}")
+        # 2. Daily USD budget GATE — reject once the relevant ceiling has been
+        #    hit. ADMIN_PATHS gate on the reduced over_admin_cap() ceiling
+        #    (cap - KB_READ_RESERVED_USD, issue #598); READ_PATHS keep the
+        #    unchanged over_cap() (full cap). The actual charge is deferred
+        #    until AFTER the concurrency gate admits the request (below), so a
+        #    request that is shed by the semaphore — and therefore never
+        #    reaches the handler / OpenAI — does NOT consume budget. Charging
+        #    here instead would let a burst of shed traffic drain the $/day
+        #    ceiling on zero real spend and 503 all heavy paths for the rest
+        #    of the UTC day.
+        budget_exhausted = (
+            _budget.budget.over_admin_cap() if is_admin else _budget.budget.over_cap()
+        )
+        if budget_exhausted:
+            _log_event(
+                "budget_block",
+                f"path={path} cap={_budget.budget.cap_usd} read_reserved={_budget.budget.read_reserved_usd}",
+            )
             await _send_json(send, 503, {"detail": "daily demo budget reached"})
             return
 
-        # 3. Concurrency cap — non-blocking acquire; over-limit sheds immediately.
+        # 3. Per-IP rate limit — heavy paths only (read AND admin, issue #598
+        #    Slice A). Runs BEFORE the semaphore/charge so a rate-limited
+        #    request never consumes budget or an inflight slot (same
+        #    charge-after-admission rationale as the budget gate above).
+        ip = _ratelimit.client_ip(scope)
+        if not rate_limiter.allow(ip):
+            _log_event("rate_limited", f"path={path} ip={ip}")
+            await _send_json(send, 429, {"detail": "rate limited, please retry later"})
+            return
+
+        # 4. Concurrency cap — non-blocking acquire; over-limit sheds immediately.
         sem = read_sem if is_read else admin_sem
         if not sem.acquire(blocking=False):
             _log_event("overload_shed", f"path={path} kind={'read' if is_read else 'admin'}")
             await _send_json(send, 503, {"detail": "server busy, please retry"})
             return
 
-        # Admitted past both gates → only now charge the conservative estimate.
+        # Admitted past every gate → only now charge the conservative estimate.
         # Only requests that actually proceed to the handler (and may call
-        # OpenAI) consume budget; over-cap and shed rejections never do.
+        # OpenAI) consume budget; over-cap, rate-limited, and shed rejections
+        # never do.
         _budget.budget.charge(path)
 
         try:
-            # 4. Graceful provider failure for NON-streaming heavy handlers.
+            # 5. Graceful provider failure for NON-streaming heavy handlers.
             #    The streaming /chat/stream path commits HTTP 200 before any LLM
             #    call and renders provider errors as a terminal SSE error event
             #    (gateway/app/routes.py), so we never wrap it here — an exception

@@ -1,5 +1,5 @@
 """Shallow module per Ousterhout. Public surface: ``RateLimiter``,
-``rate_limiter``, ``client_ip``, ``RATE_LIMIT_PER_IP``, ``RATE_LIMIT_WINDOW_SEC``.
+``client_ip``, ``RATE_LIMIT_PER_IP``, ``RATE_LIMIT_WINDOW_SEC``.
 
 Per-IP fixed-window rate limiter for the demo VPS deploy's heavy paths (issue
 #598 Slice A / Q3). The public demo box is key-free, so a single client
@@ -132,6 +132,9 @@ def client_ip(scope: Scope) -> str:
     return "unknown"
 
 
-# Module-level singleton — the one counter the middleware shares across
-# requests (single-worker model; CODING_STANDARD §2.7).
-rate_limiter = RateLimiter(limit=RATE_LIMIT_PER_IP, window_sec=RATE_LIMIT_WINDOW_SEC)
+# No module-level ``RateLimiter`` singleton here (unlike ``budget.py``'s
+# ``budget``): the live instance is constructed in ``middleware.py`` next to
+# ``read_sem`` / ``admin_sem`` instead, so reloading THAT module — the
+# pattern every existing ``ProdMiddleware`` test's ``_fresh_app()`` helper
+# already uses for the semaphores — also resets the rate-limit window,
+# without requiring an edit to any pre-existing test file (issue #598).

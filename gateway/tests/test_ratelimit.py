@@ -13,8 +13,6 @@ from __future__ import annotations
 
 import importlib
 
-import pytest
-
 
 def _reload():
     import gateway.app.ratelimit as ratelimit_mod
@@ -106,13 +104,6 @@ def test_expired_windows_are_pruned_bounding_the_store():
     assert "1.2.3.4" in rl._windows
     rl.allow("5.6.7.8", now=300.0)  # a full window later — 1.2.3.4's entry has expired
     assert "1.2.3.4" not in rl._windows
-
-
-def test_module_singleton_uses_the_five_minute_window(monkeypatch):
-    monkeypatch.delenv("KB_RATE_LIMIT_PER_IP", raising=False)
-    ratelimit_mod = _reload()
-    assert ratelimit_mod.rate_limiter.limit == ratelimit_mod.RATE_LIMIT_PER_IP
-    assert ratelimit_mod.rate_limiter.window_sec == pytest.approx(300.0)
 
 
 # ---------------------------------------------------------------------------
