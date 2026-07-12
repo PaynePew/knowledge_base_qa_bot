@@ -270,8 +270,9 @@
      Console reads as pipeline semantics (data dependency), not wizard
      semantics (task order): [Upload] -> raw/ -> [Import] -> docs/ ->
      [Ingest] -> wiki/ -> [Index] -> .kb -> [Lint]. Deliberately flat/neutral
-     styling — NO state-derived coloring here (that is a separate slice,
-     scoped to the Index node's fresh/stale badge only). */
+     styling for raw/docs/wiki. The kb node alone carries a state-derived
+     fresh/stale badge (issue #559 A2, .artifact-freshness below) — see
+     renderIndexFreshness. */
   .artifact-pill {
     display: flex;
     align-items: center;
@@ -288,6 +289,19 @@
   }
   .artifact-pill .artifact-name { color: var(--ink-3); }
   .artifact-pill .artifact-count { color: var(--ink-2); font-weight: 600; }
+
+  /* Index node fresh/stale badge (issue #559 A2) — the ONLY state-derived
+     coloring in the step track. Driven by GET /read/index-freshness ->
+     markdown_kb.app.indexer.index_stale() (CONTEXT.md Section Index
+     staleness: wiki/ changed since the last /index build), NOT click
+     history. Empty (before the fetch resolves) collapses via :empty,
+     mirroring .step-input-state below. Reuses the --pass/--warn tokens
+     already used by the Lint result badges (.badge-ok/.badge-warn above)
+     rather than inventing new colors. */
+  .artifact-freshness { font-weight: 600; }
+  .artifact-freshness:empty { display: none; }
+  .artifact-freshness.state-fresh { color: var(--pass); }
+  .artifact-freshness.state-stale { color: var(--warn); }
 
   /* Operation card input-state line (issue #559 A1) — informational only,
      "inform, never gate" (frozen design): shows the live count of the
@@ -3269,8 +3283,8 @@ var LINT_CHROME = {
     /* issue #559 A1: artifact nodes interleaved into the step track, each
        showing a live file/page count fetched from GET /read/counts — the
        Console reads as pipeline (data-dependency) semantics rather than a
-       wizard's enforced task order. NO state-derived coloring here (that
-       is a separate, later slice scoped to the Index node only). */
+       wizard's enforced task order. Only the kb node also carries a
+       state-derived fresh/stale badge (issue #559 A2, keys below). */
     artifactNodeRaw:  "raw/",
     artifactNodeDocs: "docs/",
     artifactNodeWiki: "wiki/",
@@ -3282,6 +3296,11 @@ var LINT_CHROME = {
     inputStateDocs: "Input: docs/ currently has {n} Source(s)",
     inputStateWiki: "Input: wiki/ currently has {n} page(s)",
     inputStateKb:   "Input: .kb currently has {n} indexed Section(s)",
+    /* issue #559 A2: Index node fresh/stale badge — state-derived from
+       GET /read/index-freshness (CONTEXT.md Section Index staleness: wiki/
+       changed since the last /index build), never from click history. */
+    indexFreshBadge: "fresh",
+    indexStaleBadge: "stale — re-run Index",
 
     /* issue #498: Upload drop zone + Upload result card */
     uploadChooseFiles:  "Choose files",
@@ -3599,6 +3618,8 @@ var LINT_CHROME = {
     inputStateDocs: "輸入:docs/ 現有 {n} 個 Source",
     inputStateWiki: "輸入:wiki/ 現有 {n} 個頁面",
     inputStateKb:   "輸入:.kb 已索引 {n} 個 Section",
+    indexFreshBadge: "已同步",
+    indexStaleBadge: "已過時 — 請重新執行索引",
 
     uploadChooseFiles:  "選擇檔案",
     uploadDragDrop:      "拖放檔案到這裡",
@@ -4386,6 +4407,10 @@ function applyConsoleLang() {
      before the boot fetch resolves (lastArtifactCounts is still null; the
      elements just stay at their initial "…" / empty state). */
   renderArtifactCounts(lastArtifactCounts);
+  /* issue #559 A2: re-render the Index node's fresh/stale badge text in the
+     new language too, from the already-fetched lastIndexFreshness — mirrors
+     the lastArtifactCounts re-render immediately above. */
+  renderIndexFreshness(lastIndexFreshness);
   /* issue #558: re-render the Reader Feedback result in the new language too,
      from the already-fetched lastFeedbackData — no re-fetch needed. A no-op
      before the operator's first "Load feedback" click (lastFeedbackData is
@@ -6529,6 +6554,7 @@ var STEP_DEFS = [
         if (b === false) {
           markIngestDone();
           refreshArtifactCounts(); /* issue #559 A1: Ingest writes wiki/ pages */
+          refreshIndexFreshness(); /* issue #559 A2: Ingest can make the index stale */
         }
       };
       runIngestBatches(lastImportedDocFilenames, resultEl, onIngestStepDone);
@@ -6556,6 +6582,7 @@ var STEP_DEFS = [
           setStepBusy(false);
           markIndexDone(); /* staleness guard: clear stale signal after Index run */
           refreshArtifactCounts(); /* issue #559 A1: Index rebuilds .kb — keep the live count fresh */
+          refreshIndexFreshness(); /* issue #559 A2: Index rebuild resolves the stale badge */
         });
     },
   },
@@ -6642,8 +6669,10 @@ var STEP_DEFS = [
    ARTIFACT_DEFS[i] sits between STEP_DEFS[i] and STEP_DEFS[i+1]:
      [Upload] -> raw/ -> [Import] -> docs/ -> [Ingest] -> wiki/ -> [Index] -> .kb -> [Lint]
    Each node shows a live file/page count fetched from GET /read/counts
-   (renderArtifactCounts below). NO state-derived coloring — that is a
-   separate, later slice scoped to the Index node's fresh/stale badge only. */
+   (renderArtifactCounts below). The kb node additionally carries a
+   state-derived fresh/stale badge (issue #559 A2 — renderIndexFreshness /
+   refreshIndexFreshness, further down this file); every other node stays
+   flat/neutral per the frozen design. */
 var ARTIFACT_DEFS = [
   { id: "raw",  nodeKey: "artifactNodeRaw", inputKey: "inputStateRaw" },
   { id: "docs", nodeKey: "artifactNodeDocs", inputKey: "inputStateDocs" },
@@ -6661,12 +6690,18 @@ function buildPipeline(rootEl) {
     if (i > 0) {
       var artifact = ARTIFACT_DEFS[i - 1];
       trackItems.push(el("span", { class: "step-arrow", text: "→" }));
-      trackItems.push(
-        el("span", { class: "artifact-pill", id: "artifact-" + artifact.id },
-          bindText(el("span", { class: "artifact-name" }), artifact.nodeKey),
-          el("span", { class: "artifact-count", id: "artifact-count-" + artifact.id })
-        )
+      var artifactPill = el("span", { class: "artifact-pill", id: "artifact-" + artifact.id },
+        bindText(el("span", { class: "artifact-name" }), artifact.nodeKey),
+        el("span", { class: "artifact-count", id: "artifact-count-" + artifact.id })
       );
+      /* issue #559 A2: the kb node alone gets a fresh/stale badge child —
+         filled in by renderIndexFreshness, never by this function (kept
+         classList-free per the A1 contract in
+         test_ui_console_artifact_nodes.py). */
+      if (artifact.id === "kb") {
+        artifactPill.appendChild(el("span", { class: "artifact-freshness", id: "artifact-freshness-kb" }));
+      }
+      trackItems.push(artifactPill);
       trackItems.push(el("span", { class: "step-arrow", text: "→" }));
     }
     trackItems.push(
@@ -7793,6 +7828,60 @@ function refreshArtifactCounts() {
     });
 }
 
+/* Index node fresh/stale badge (issue #559 A2). ``lastIndexFreshness`` holds
+   the most recent GET /read/index-freshness response ({stale: bool} — or
+   ``false`` if that fetch failed); ``null`` means it has not resolved yet.
+   Kept as a SEPARATE fetch/render pair from refreshArtifactCounts /
+   renderArtifactCounts (rather than folded into either) so those functions
+   keep their A1 contract — renderArtifactCounts stays textContent-only,
+   never toggles a class (test_ui_console_artifact_nodes.py asserts this). */
+var lastIndexFreshness = null;
+
+/* The only function in this file allowed to toggle a state class on an
+   artifact node — scoped to the kb node's #artifact-freshness-kb element.
+   State-derived (from the fetched {stale: bool}), never click-history-
+   derived: this function does not read or write the pre-existing #173
+   ``indexStale`` flag (that flag drives the separate staleness-guard
+   banner and is untouched by this slice). */
+function renderIndexFreshness(freshness) {
+  var badgeEl = document.getElementById("artifact-freshness-kb");
+  if (!badgeEl) return;
+  var chrome = LINT_CHROME[consoleLang];
+  badgeEl.classList.remove("state-fresh", "state-stale");
+  if (freshness === null || freshness === false || typeof freshness.stale !== "boolean") {
+    badgeEl.textContent = ""; /* collapses via CSS :empty — no flash of a default color */
+    return;
+  }
+  if (freshness.stale) {
+    badgeEl.classList.add("state-stale");
+    badgeEl.textContent = chrome.indexStaleBadge;
+  } else {
+    badgeEl.classList.add("state-fresh");
+    badgeEl.textContent = chrome.indexFreshBadge;
+  }
+}
+
+/* Fetches the read-only GET /read/index-freshness probe. Called once after
+   buildPipeline at boot, and again after Ingest/Index complete — those are
+   the only two operations that can flip the signal (Ingest writes wiki/,
+   Index rebuilds .kb); Upload/Import never touch either, so they do not
+   call this (contrast refreshArtifactCounts, called after all four). */
+function refreshIndexFreshness() {
+  fetch("/read/index-freshness")
+    .then(function(resp) {
+      if (!resp.ok) throw new Error("bad status " + resp.status);
+      return resp.json();
+    })
+    .then(function(data) {
+      lastIndexFreshness = data;
+      renderIndexFreshness(lastIndexFreshness);
+    })
+    .catch(function() {
+      lastIndexFreshness = false;
+      renderIndexFreshness(lastIndexFreshness);
+    });
+}
+
 function renderBudgetUsage(snapshot) {
   var textEl = document.getElementById("budget-usage-text");
   if (!textEl) return;
@@ -7848,6 +7937,7 @@ function renderBudgetUsage(snapshot) {
 
 buildPipeline(document.getElementById("pipeline-root"));
 refreshArtifactCounts(); /* issue #559 A1: after buildPipeline so the artifact-pill / input-state elements already exist */
+refreshIndexFreshness(); /* issue #559 A2: after buildPipeline so #artifact-freshness-kb already exists */
 
 /* zh/en Console header language toggle (issue #365) — wired after
    buildPipeline so lintResultEl is already set. Persists the choice to
