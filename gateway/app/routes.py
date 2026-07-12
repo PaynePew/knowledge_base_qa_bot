@@ -57,9 +57,14 @@ SSE event contract (ADR-0009, extended by Phase 11):
                        only — never emitted on a degraded admission (issue #598
                        Slice B Finding 2), since degraded serving never calls the LLM
   token(s)           — verified answer or CANNOT_CONFIRM_PHRASE; one per word
-  done{grounding:{passed,reason},filed,stack,session} — terminal success event
-                       (PRD #116 shape + Phase 11 session field; filed null for
-                       stack=rag)
+                       (a degraded "sections" answer streams the retrieval-only
+                       excerpts + notice text instead, never CANNOT_CONFIRM_PHRASE
+                       — issue #598 Slice B scope addendum point 3)
+  done{grounding:{passed,reason},filed,stack,session,degraded,mode?} — terminal
+                       success event (PRD #116 shape + Phase 11 session field;
+                       filed null for stack=rag). ``mode`` (issue #598 Slice B
+                       addendum) is present only when ``degraded`` is true:
+                       ``"cached-qa"`` or ``"sections"``.
   error{detail,retryable}   — terminal failure when the LLM or rewriter errors
                               AFTER HTTP 200 is committed (sources or rewriting
                               event already sent)
@@ -183,7 +188,9 @@ def chat_stream(
     below forwards ``degraded=True`` into ``stream_query`` (a no-LLM
     serving branch) and the ``done`` event carries an additive
     ``degraded`` field so the reader can distinguish a real answer from a
-    budget-exhausted one.
+    budget-exhausted one, plus a ``mode`` field (``"cached-qa"`` or
+    ``"sections"`` — scope addendum point 3) naming which no-LLM shape was
+    served.
 
     Phase 11 Slice 1 multi-turn additions:
     - ``session`` query param identifies the conversation session.  Absent on
@@ -233,12 +240,19 @@ def chat_stream(
          2 — since degraded serving never calls the LLM even when the pre-LLM
          gate passed).
       4. ``token``(s) — words of the verified answer only (or CANNOT_CONFIRM_PHRASE
-         on any CC path); no unverified draft ever reaches the stream.
+         on any CC path); no unverified draft ever reaches the stream. A degraded
+         "sections" answer (issue #598 Slice B scope addendum point 3) streams
+         retrieval-only excerpts + an honest notice line instead — degraded mode
+         never streams CANNOT_CONFIRM_PHRASE, since it never attempted synthesis
+         and so has no basis to claim the corpus lacks an answer.
       5. ``done`` — grounding outcome (passed, reason), optional filing status,
          and ``session`` id.  ``done.filed`` is always null for ``stack=rag``
          (RAG never files). ``done.degraded`` (issue #598 Slice B) is an
          ADDITIVE bool, always present: true only for a budget-exhausted
-         no-LLM wiki answer (never a new SSE event type — ADR-0009).
+         no-LLM wiki answer. ``done.mode`` (scope addendum point 3) is present
+         only when ``degraded`` is true: ``"cached-qa"`` (a live Filed Answer
+         replayed verbatim) or ``"sections"`` (retrieval-only excerpts). Neither
+         field is a new SSE event type (ADR-0009).
          OR
          ``error`` — terminal failure event when the rewriter or LLM/infra
          errors AFTER HTTP 200 is committed (status:rewriting or sources event
@@ -449,11 +463,11 @@ def chat_stream(
         # emitting "verifying" there would be a lie; the answer is already
         # known from the pre-LLM gate. Issue #598 Slice B Finding 2
         # (adversarial verify, LOW): a degraded admission ALSO never calls the
-        # LLM even when the pre-LLM gate passed (early_exit=False) — the
-        # cached-QA replay and the non-qa-hit Cannot Confirm branches inside
-        # ``_serve_degraded`` both skip the verifier — so "verifying" would be
-        # the same lie there too. No new SSE event type; just suppress this
-        # one on the degraded path (ADR-0009).
+        # LLM even when the pre-LLM gate passed (early_exit=False) — BOTH
+        # ``_serve_degraded`` modes (cached-qa replay, sections excerpts) skip
+        # the verifier — so "verifying" would be the same lie there too. No
+        # new SSE event type; just suppress this one on the degraded path
+        # (ADR-0009).
         if not degraded and not partial.get("early_exit", False):
             yield encode_event("status", {"phase": "verifying"})
 
@@ -503,6 +517,14 @@ def chat_stream(
         # new SSE event types); True only for the budget-exhausted no-LLM
         # wiki path (`degraded` is always False for every other stack/path).
         done_payload["degraded"] = degraded
+        # Issue #598 Slice B scope addendum point 3: additive, present only
+        # when degraded — "cached-qa" (a live Filed Answer replayed verbatim)
+        # or "sections" (retrieval-only excerpts; see
+        # markdown_kb.app.retrieval._serve_degraded). Absent (not merely
+        # null) on every non-degraded response — no new SSE event type
+        # (ADR-0009).
+        if degraded:
+            done_payload["mode"] = full_result.get("mode")
         yield encode_event("done", done_payload)
 
         # Append turn to the Conversation Store (only reached on normal done —

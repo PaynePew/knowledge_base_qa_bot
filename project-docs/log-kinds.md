@@ -22,7 +22,7 @@ Authorized by [`prd.md`](prd.md) (Phase 1).
 | `chat_fallback` | Pre-LLM Cannot Confirm gate fires | `"<truncated query>" reason=<not_indexed\|below_threshold> [top_score=X] [top_section=<id>]` |
 | `chat_grounding_fallback` | Post-LLM verifier returned not-passed; reply replaced with Cannot Confirm | `"<truncated query>" reason=<outcome.reason> cited=<comma_separated_section_ids>` |
 | `chat_error` | OpenAI exception during `/chat`; mapped per [`CODING_STANDARD.md`](CODING_STANDARD.md) § 4.2 | `"<truncated query>" kind=<openai_transient\|openai_auth\|openai_api> exc=<ExcClass>` |
-| `chat_degraded` | `stream_query(..., degraded=True)` served a budget-exhausted request with no LLM call (issue #598 Slice B, `ProdMiddleware` admitted the request past an exhausted `KB_DAILY_USD_CAP` instead of 503ing) | `"<truncated query>" mode=cached_qa slug=<qa Section id>` (a live `wiki/qa/` page ranked top and cleared the gate threshold — its body is replayed verbatim) or `"<truncated query>" mode=cannot_confirm` (no qualifying live QA hit — the canonical Cannot Confirm sentinel is returned) |
+| `chat_degraded` | `stream_query(..., degraded=True)` served a budget-exhausted request with no LLM call (issue #598 Slice B, `ProdMiddleware` admitted the request past an exhausted `KB_DAILY_USD_CAP` instead of 503ing) | `"<truncated query>" mode=cached_qa slug=<qa Section id>` (a live `wiki/qa/` page ranked top and cleared the gate threshold — its body is replayed verbatim) or `"<truncated query>" mode=sections count=<N>` (no qualifying live QA hit — the top `N` retrieved Sections' own text excerpts are returned beneath an honest notice line instead of the Cannot Confirm sentinel; `N` may be 0 on index-missing, in which case the answer is the notice line alone — scope addendum point 3, adversarial-verify follow-up grill) |
 
 ### `chat_error` `kind=` sub-tags
 
@@ -376,7 +376,7 @@ shape that is admitted instead of rejected — `POST /chat/stream?stack=wiki`
 from "degraded-admitted" even though neither charges the daily budget. The
 per-file `chat_degraded` kind (see the `/chat` route table above) is the
 companion event the wiki stack itself emits once it decides HOW it served
-the degraded answer (cached QA vs Cannot Confirm).
+the degraded answer (cached QA vs retrieval-only Section excerpts).
 
 The `feedback` kind is gateway-specific, authorized by GitHub issue #558
 (Reader Feedback). Emitted by `gateway/app/routes.py::submit_feedback` on

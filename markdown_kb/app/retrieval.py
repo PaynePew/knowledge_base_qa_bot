@@ -104,6 +104,15 @@ _DOMINANT_SCRIPT_HIGH = 0.60
 CANNOT_CONFIRM_PHRASE = "I cannot confirm from the knowledge base."
 NOT_INDEXED_MESSAGE = "The knowledge base has not been indexed yet. Call POST /ingest to populate the wiki, then POST /index."
 
+# Issue #598 Slice B scope addendum point 3 (adversarial-verify follow-up
+# grill): the honest notice shown above the top Sections' raw excerpts on the
+# degraded "sections" miss path (see ``_serve_degraded``).
+# CANNOT_CONFIRM_PHRASE is deliberately NOT reused there -- that sentinel
+# means "the corpus cannot support an answer", which is false in a
+# budget-exhausted admission; the corpus may well support one, the server
+# just is not spending to synthesize it.
+_DEGRADED_SECTIONS_NOTICE = "Daily synthesis budget exhausted; showing knowledge-base source text."
+
 # Fixed seed for the drafter + retry-drafter LLMs (ADR-0038's C5-judge pattern,
 # extended to the serving chain by ADR-0042 / issue #572). Per-module private
 # constant. Best-effort only: OpenAI's seed is not a hard guarantee, but paired
@@ -522,15 +531,32 @@ def _serve_degraded(question: str, gate: dict) -> dict:
     ``stream_query`` already computed for the sources-ready partial (no
     second BM25 search).
 
-    A live ``wiki/qa/`` page (a Filed Answer — already grounded when it was
-    originally filed and promoted, ADR-0020) ranked top and cleared the
-    normal gate threshold serves its own body verbatim as the answer,
-    citations narrowed to that one page. Any other outcome (no ranked hit,
-    below threshold, index missing, or a non-qa top hit) returns Cannot
-    Confirm. Degraded mode never serves a non-qa Section's raw text as if it
-    were a fresh Grounded Answer -- that would let an unverified claim
-    escape without the LLM+verifier chain (ADR-0001); only an
-    already-grounded Filed Answer is safe to replay with no verifier call.
+    Two modes (issue #598 Slice B scope addendum point 3 — adversarial-verify
+    follow-up grill), both additively tagged via the returned ``mode`` key
+    (forwarded by the Gateway into ``done.mode``; no new SSE event type,
+    ADR-0009):
+
+    - ``mode: "cached-qa"`` — a live ``wiki/qa/`` page (a Filed Answer —
+      already grounded when it was originally filed and promoted, ADR-0020)
+      ranked top and cleared the normal gate threshold. Its body serves
+      verbatim, citations narrowed to that one page. Degraded mode never
+      serves a non-qa Section's raw text as if it were a fresh Grounded
+      Answer -- that would let an unverified claim escape without the
+      LLM+verifier chain (ADR-0001); only an already-grounded Filed Answer is
+      safe to replay with no verifier call.
+    - ``mode: "sections"`` — every other outcome (no ranked hit, below
+      threshold, index missing, or a non-qa top hit). Returns the top
+      Sections' own raw text excerpts (the same ``sources`` a normal answer
+      would have cited) beneath an honest notice line, NEVER the
+      ``CANNOT_CONFIRM_PHRASE`` sentinel -- that phrase specifically claims
+      "the corpus cannot support an answer", which degraded mode has no basis
+      to assert (it never attempted synthesis). ``sources`` may be empty
+      (index-missing), in which case the answer is the notice line alone.
+
+    ``grounding_outcome.reason`` is unchanged either way (``degraded_cached_qa``
+    / ``degraded_budget_exhausted``) — both are already excluded from
+    ``grounding.CONTENT_FAILURE_REASONS`` (neither is a content failure: the
+    corpus may well support an answer, the server just chose not to spend).
     """
     truncated = question[:60].replace('"', "'")
     ranked = gate.get("ranked") or []
@@ -543,13 +569,27 @@ def _serve_degraded(question: str, gate: dict) -> dict:
                 "answer": top_sec.content.strip(),
                 "sources": [qa_source],
                 "grounding_outcome": GroundingOutcome(passed=True, reason="degraded_cached_qa"),
+                "mode": "cached-qa",
             }
 
-    log_event("chat_degraded", f'"{truncated}" mode=cannot_confirm')
+    # No qualifying live QA hit -- retrieval-only excerpts, never the Cannot
+    # Confirm sentinel (see docstring). ``sources`` is whatever
+    # ``_retrieve_and_gate`` already ranked (possibly empty on index_missing;
+    # possibly below-threshold; possibly a non-qa hit that cleared the gate).
+    sources = gate["sources"]
+    if sources:
+        excerpts = "\n\n".join(
+            f"[Source: {s['source']}]\nHeading: {s['heading']}\n{s['content']}" for s in sources
+        )
+        answer = f"{_DEGRADED_SECTIONS_NOTICE}\n\n{excerpts}"
+    else:
+        answer = _DEGRADED_SECTIONS_NOTICE
+    log_event("chat_degraded", f'"{truncated}" mode=sections count={len(sources)}')
     return {
-        "answer": CANNOT_CONFIRM_PHRASE,
-        "sources": gate["sources"],
+        "answer": answer,
+        "sources": sources,
         "grounding_outcome": GroundingOutcome(passed=False, reason="degraded_budget_exhausted"),
+        "mode": "sections",
     }
 
 
