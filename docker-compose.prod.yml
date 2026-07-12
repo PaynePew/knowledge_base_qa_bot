@@ -60,6 +60,13 @@ services:
       # slice's scope (implement agents don't touch workflows); an ops step
       # for the human.
       KB_ADMIN_TOKEN: ${KB_ADMIN_TOKEN:-}
+      # Per-IP heavy-path rate limit (issue #598 slice A): the code default of
+      # 30 requests per rolling 5 min protects against scripted abuse but sits
+      # within reach of a single human driving a brisk live demo from one IP
+      # (16 starter chips + follow-ups + console ops). 120/5min keeps the
+      # abuse ceiling while never touching interactive use. Host env can
+      # still override: KB_RATE_LIMIT_PER_IP=<n> (0 disables).
+      KB_RATE_LIMIT_PER_IP: ${KB_RATE_LIMIT_PER_IP:-120}
     networks:
       - default
       - edge
