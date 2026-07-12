@@ -16,14 +16,19 @@ window, and the window resets wholesale once ``window_sec`` has elapsed since
 it started — this is the same "reserve-before-spend accumulator" shape
 ``gateway.app.budget.DailyBudget`` uses, just keyed by IP instead of UTC day.
 
-IP-spoofing caveat: ``client_ip`` trusts the FIRST ``X-Forwarded-For`` hop
-verbatim. On a real multi-hop edge a client can forge this header to evade
-per-IP limiting (the trusted-edge case is the reverse — trust the RIGHTMOST
-hop the edge itself appended). This project's demo deploy sits directly
-behind one shared, first-party edge with no untrusted intermediary, so the
-naive first-hop read is an accepted single-tenant posture, not a general
-defense — do not reuse this helper for a multi-tenant or public-internet-facing
-proxy chain without revisiting this trust model.
+IP-spoofing hardening (issue #598 scope addendum point 4 — adversarial-verify
+follow-up grill): ``client_ip`` trusts the RIGHTMOST ``X-Forwarded-For`` hop.
+A trusted edge appends the real client IP as the LAST entry in the chain (any
+hops a client itself supplies are forwarded AHEAD of it, never after) — the
+previous first-hop read was directly client-spoofable: a client could set an
+arbitrary ``X-Forwarded-For: <anything>, ...`` header and rotate that forged
+first hop to evade per-IP rate limiting entirely (bypass, not merely a
+theoretical caveat). This project's demo deploy sits directly behind one
+shared, first-party edge that appends (not merely forwards) the peer address
+it itself observed, so the rightmost-hop read is trustworthy for THIS
+deployment's proxy topology — do not reuse this helper for a multi-hop chain
+where an untrusted intermediary sits between the edge and this app without
+revisiting which hop is actually trustworthy there.
 
 Single-worker model (CODING_STANDARD §2.6/§2.7): one in-process ``dict`` is
 the whole store, mirroring ``DailyBudget``'s. ``allow()`` holds ``self._lock``
@@ -116,16 +121,18 @@ class RateLimiter:
 def client_ip(scope: Scope) -> str:
     """Return the request's client IP per issue #598's trust model.
 
-    First ``X-Forwarded-For`` hop when present (the shared edge always sets
-    it — see the module docstring's spoofing caveat), else the ASGI
+    Rightmost ``X-Forwarded-For`` hop when present (the shared edge always
+    appends it last — see the module docstring's "IP-spoofing hardening"
+    paragraph, issue #598 scope addendum point 4), else the ASGI
     ``scope["client"]`` peer address, else ``"unknown"``.
     """
     for key, value in scope.get("headers", []):
         if key == b"x-forwarded-for":
             text = value.decode("latin-1")
-            first = text.split(",")[0].strip()
-            if first:
-                return first
+            hops = [hop.strip() for hop in text.split(",")]
+            last = hops[-1] if hops else ""
+            if last:
+                return last
     client = scope.get("client")
     if client:
         return client[0]

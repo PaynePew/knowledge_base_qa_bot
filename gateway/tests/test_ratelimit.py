@@ -107,23 +107,47 @@ def test_expired_windows_are_pruned_bounding_the_store():
 
 
 # ---------------------------------------------------------------------------
-# client_ip — X-Forwarded-For first hop, else scope["client"]
+# client_ip — X-Forwarded-For RIGHTMOST hop (issue #598 scope addendum point
+# 4), else scope["client"]
 # ---------------------------------------------------------------------------
 
 
-def test_client_ip_uses_first_x_forwarded_for_hop():
+def test_client_ip_uses_rightmost_x_forwarded_for_hop():
     ratelimit_mod = _reload()
     scope = {
         "headers": [(b"x-forwarded-for", b"9.9.9.9, 10.0.0.1, 10.0.0.2")],
         "client": ("127.0.0.1", 12345),
     }
-    assert ratelimit_mod.client_ip(scope) == "9.9.9.9"
+    assert ratelimit_mod.client_ip(scope) == "10.0.0.2"
 
 
-def test_client_ip_strips_whitespace_around_first_hop():
+def test_client_ip_strips_whitespace_around_rightmost_hop():
     ratelimit_mod = _reload()
-    scope = {"headers": [(b"x-forwarded-for", b"  9.9.9.9  , 10.0.0.1")], "client": None}
+    scope = {"headers": [(b"x-forwarded-for", b"9.9.9.9,  10.0.0.1  ")], "client": None}
+    assert ratelimit_mod.client_ip(scope) == "10.0.0.1"
+
+
+def test_client_ip_single_hop_is_both_leftmost_and_rightmost():
+    ratelimit_mod = _reload()
+    scope = {"headers": [(b"x-forwarded-for", b"9.9.9.9")], "client": None}
     assert ratelimit_mod.client_ip(scope) == "9.9.9.9"
+
+
+def test_client_ip_rightmost_hop_cannot_be_spoofed_by_a_forged_leading_hop():
+    """Security property (issue #598 scope addendum point 4): a client that
+    sets its OWN X-Forwarded-For header can only prepend forged hops ahead of
+    whatever the trusted edge appends -- the edge-appended rightmost hop is
+    what must be trusted, never the client-controlled first one."""
+    ratelimit_mod = _reload()
+    forged_first_hop = "6.6.6.6"  # attacker-controlled, spoofed to evade the limiter
+    edge_appended_real_client = "9.9.9.9"  # appended by the trusted edge, last
+    scope = {
+        "headers": [
+            (b"x-forwarded-for", f"{forged_first_hop}, {edge_appended_real_client}".encode())
+        ],
+        "client": None,
+    }
+    assert ratelimit_mod.client_ip(scope) == edge_appended_real_client
 
 
 def test_client_ip_falls_back_to_scope_client_when_header_absent():
