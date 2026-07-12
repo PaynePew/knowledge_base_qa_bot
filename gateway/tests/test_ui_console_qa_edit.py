@@ -73,7 +73,7 @@ def test_edit_endpoint_is_put_not_post_and_matches_route():
     body = _build_draft_card_body()
     save_fn = re.search(r"saveBtn\.addEventListener\(\"click\".*?\n  \}\);", body, re.DOTALL)
     assert save_fn is not None
-    save_url_line = re.search(r'fetch\("/wiki/qa/"[^\n]*', save_fn.group(0))
+    save_url_line = re.search(r'adminFetch\("/wiki/qa/"[^\n]*', save_fn.group(0))
     assert save_url_line is not None
     assert "/promote" not in save_url_line.group(0)
 

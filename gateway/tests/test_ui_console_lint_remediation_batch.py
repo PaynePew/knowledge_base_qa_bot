@@ -281,7 +281,7 @@ def test_batch_keeps_in_flight_flag_armed_until_relint_resolves():
     appear only inside the re-lint .then()/.catch(), i.e. after the fetch."""
     text = _console_text()
     fn = _extract_function(text, "finishBatchRemediation")
-    fetch_pos = fn.index('fetch("/wiki/lint?include_c5=false"')
+    fetch_pos = fn.index('adminFetch("/wiki/lint?include_c5=false"')
     first_clear = fn.index("remediationInFlight = false")
     assert first_clear > fetch_pos, (
         "remediationInFlight is cleared before the re-lint fetch — the unload "

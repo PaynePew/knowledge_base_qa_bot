@@ -62,12 +62,17 @@ def _import_step_run_body() -> str:
 
 def test_import_step_submits_the_async_job_not_the_sync_endpoint():
     body = _import_step_run_body()
-    assert 'fetch("/wiki/import/jobs", { method: "POST" })' in body, (
-        "the Import step must submit the async job (issue #497)"
+    assert 'adminFetch("/wiki/import/jobs", { method: "POST" })' in body, (
+        "the Import step must submit the async job (issue #497) through the "
+        "admin-token wrapper (issue #583)"
     )
     assert 'fetch("/wiki/import", { method: "POST" })' not in body, (
         "the synchronous /wiki/import call is exactly the request the edge "
         "502s on a real scan — the step must not use it (issue #497)"
+    )
+    assert 'adminFetch("/wiki/import", { method: "POST" })' not in body, (
+        "the synchronous /wiki/import call must not sneak back in via the "
+        "admin-token wrapper either (issues #497/#583)"
     )
 
 

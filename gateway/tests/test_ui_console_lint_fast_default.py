@@ -94,9 +94,10 @@ def _extract_lint_step_deep_audit_body(text: str) -> str:
 
 def test_lint_step_run_posts_include_c5_false():
     body = _extract_lint_step_run_body(_console_text())
-    assert 'fetch("/wiki/lint?include_c5=false", { method: "POST" })' in body, (
+    assert 'adminFetch("/wiki/lint?include_c5=false", { method: "POST" })' in body, (
         "the pipeline Lint step's Run button must call POST /wiki/lint with "
-        "include_c5=false (issue #441 AC 'zero LLM calls')"
+        "include_c5=false (issue #441 AC 'zero LLM calls') through the "
+        "admin-token wrapper (issue #583)"
     )
 
 
@@ -108,6 +109,10 @@ def test_lint_step_no_longer_posts_bare_wiki_lint():
     assert 'fetch("/wiki/lint", { method: "POST" })' not in body, (
         "the Lint step's Run must not fetch the bare /wiki/lint endpoint"
     )
+    assert 'adminFetch("/wiki/lint", { method: "POST" })' not in body, (
+        "the bare /wiki/lint call must not sneak back in via the admin-token "
+        "wrapper either (issues #441/#583)"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -117,9 +122,10 @@ def test_lint_step_no_longer_posts_bare_wiki_lint():
 
 def test_lint_step_defines_deep_audit_posting_include_c5_true():
     body = _extract_lint_step_deep_audit_body(_console_text())
-    assert 'fetch("/wiki/lint?include_c5=true", { method: "POST" })' in body, (
+    assert 'adminFetch("/wiki/lint?include_c5=true", { method: "POST" })' in body, (
         "Deep audit must call POST /wiki/lint with include_c5=true (issue #441 "
-        "AC 'runs the contradiction audit on demand')"
+        "AC 'runs the contradiction audit on demand') through the admin-token "
+        "wrapper (issue #583)"
     )
 
 

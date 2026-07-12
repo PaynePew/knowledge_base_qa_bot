@@ -45,17 +45,23 @@ Per-endpoint estimate table (USD per request, deliberately generous):
     | /wiki/pages/{slug}/aliases/{alias} (DELETE) | 0.00 | Direct-tier remove-alias: no LLM call — one frontmatter field write, no reindex (ADR-0030 extension, issue #491) |
     | /sources/retire  | 0.00     | Confirmed retire: no LLM call — one atomic Source-file move, no reindex (ADR-0041, issue #604) |
     | /sources/restore | 0.00     | Direct restore: no LLM call — one atomic Source-file move, no reindex (ADR-0041, issue #604) |
+    | /wiki/qa/{slug}/promote | 0.00 | Single-item promote: no LLM call — one status flip + one BM25 reindex (issue #583 audit) |
+    | /wiki/qa/{slug}/demote  | 0.00 | Single-item demote: no LLM call — one status flip + one BM25 reindex (ADR-0037, issue #583 audit) |
+    | /wiki/qa/{slug} (DELETE / PUT) | 0.00 | Discard / edit a draft: no LLM call — edit's grounding re-check is LLM-free (ADR-0026 decision 2; issue #583 audit) |
     | /sources/rename  | 0.00     | Direct rename: no LLM call — one atomic Source-file move + mechanical citation re-point + one BM25 reindex (ADR-0041 decision 5, issue #605) |
     | (default heavy)  | 0.10     | unknown heavy path → assume a mid-range cost    |
 
 The ``/wiki/qa/{slug}/refile``, ``/wiki/pages/{slug}``,
-``/wiki/pages/{slug}/aliases``, and ``/wiki/pages/{slug}/aliases/{alias}``
-keys are the middleware's ``QA_REFILE_TEMPLATE`` / ``PAGES_DELETE_TEMPLATE``
-/ ``ALIAS_ASSIGN_TEMPLATE`` / ``ALIAS_REMOVE_TEMPLATE`` — concrete per-slug
-(and per-alias) paths are canonicalised to them before ``charge()`` is
-called, so the table stays exact-match (ADR-0026 decision 1, issue #380;
-ADR-0025, issue #381; ADR-0030 decision 3, issue #409; ADR-0030 extension,
-issue #491). ``/wiki/qa/promote-batch``
+``/wiki/pages/{slug}/aliases``, ``/wiki/pages/{slug}/aliases/{alias}``,
+``/wiki/qa/{slug}/promote``, ``/wiki/qa/{slug}/demote``, and
+``/wiki/qa/{slug}`` keys are the middleware's ``QA_REFILE_TEMPLATE`` /
+``PAGES_DELETE_TEMPLATE`` / ``ALIAS_ASSIGN_TEMPLATE`` /
+``ALIAS_REMOVE_TEMPLATE`` / ``QA_PROMOTE_TEMPLATE`` / ``QA_DEMOTE_TEMPLATE``
+/ ``QA_ITEM_TEMPLATE`` — concrete per-slug (and per-alias) paths are
+canonicalised to them before ``charge()`` is called, so the table stays
+exact-match (ADR-0026 decision 1, issue #380; ADR-0025, issue #381;
+ADR-0030 decision 3, issue #409; ADR-0030 extension, issue #491; issue #583
+audit). ``/wiki/qa/promote-batch``
 is not parameterized (no slug in the path) so it needs no canonicalisation —
 it is charged directly, mirroring the delete path's explicit $0.00 entry
 (not left to the default-heavy fallback) so its zero LLM cost is documented
@@ -162,7 +168,10 @@ _COST_ESTIMATES: dict[str, float] = {
     "/wiki/pages/{slug}/aliases/{alias}": 0.00,
     "/sources/retire": 0.00,
     "/sources/restore": 0.00,
-    "/sources/rename": 0.00,
+    "/wiki/qa/{slug}/promote": 0.00,  # issue #583 audit — no LLM call, see docstring
+    "/wiki/qa/{slug}/demote": 0.00,  # issue #583 audit — no LLM call, see docstring
+    "/wiki/qa/{slug}": 0.00,  # issue #583 audit — DELETE/PUT, no LLM call, see docstring
+    "/sources/rename": 0.00,  # ADR-0041 decision 5, issue #605 — no LLM call, see docstring
 }
 
 # Fallback for any heavy path missing from the table — assume a mid-range cost

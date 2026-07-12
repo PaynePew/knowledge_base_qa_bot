@@ -200,6 +200,28 @@
     border-color: var(--ink-3);
   }
 
+  /* Admin token toggle (issue #583) — a plain outline icon button, same
+     shape as .mast-reader/.mast-hamburger. Deliberately NOT margin-left:auto
+     (only .mast-lang-toggle owns that, see its comment above); sits flush
+     after .mast-reader in source order. .token-set marks the icon when a
+     token is currently stored, WITHOUT ever rendering the token itself. */
+  .mast-admin-toggle {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: var(--fs-xs);
+    line-height: 1;
+    color: var(--ink-3);
+    background: none;
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 5px 10px;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .mast-admin-toggle:hover,
+  .mast-admin-toggle.token-set {
+    color: var(--ink);
+    border-color: var(--ink-3);
+  }
+
   /* ── Pipeline stepper ────────────────────────────────────── */
   .pipeline {
     margin-top: 32px;
@@ -2029,6 +2051,70 @@
   }
   .demo-reset-banner .demo-reset-text { flex: 1; }
   .demo-reset-banner strong { font-weight: 600; }
+
+  /* ── Admin token panel (issue #583) ──────────────────── */
+  /* Toggled by .mast-admin-toggle; hidden by default and on 401 auto-opened
+     (showAdminTokenRequired). The token value itself is NEVER rendered as
+     text anywhere here (§12.4 — no echo): the input always starts empty,
+     even when a token is already stored, and the status line only ever
+     carries a fixed human-readable message, never the token string. */
+  .admin-token-panel {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: var(--rule-2);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    margin-top: 20px;
+    margin-bottom: 4px;
+    font-size: var(--fs-xs);
+  }
+  .admin-token-panel[hidden] { display: none; }
+  .admin-token-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: var(--fs-2xs);
+    letter-spacing: .04em;
+    color: var(--ink-3);
+  }
+  .admin-token-input {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: var(--fs-xs);
+    padding: 5px 8px;
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    flex: 1 1 220px;
+    min-width: 180px;
+    background: var(--surface);
+    color: var(--ink);
+  }
+  .admin-token-save-btn,
+  .admin-token-clear-btn {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: var(--fs-2xs);
+    padding: 5px 10px;
+    border-radius: 4px;
+    transition: opacity .15s ease, color .15s ease, border-color .15s ease;
+  }
+  .admin-token-save-btn {
+    background: var(--accent);
+    color: var(--surface);
+    border: 1px solid var(--accent);
+  }
+  .admin-token-save-btn:hover { opacity: .82; }
+  .admin-token-clear-btn {
+    background: none;
+    color: var(--ink-3);
+    border: 1px solid var(--rule);
+  }
+  .admin-token-clear-btn:hover { color: var(--ink); border-color: var(--ink-3); }
+  .admin-token-status {
+    flex-basis: 100%;
+    color: var(--ink-3);
+  }
+  .admin-token-status.is-error { color: var(--fail); }
+  .admin-token-status.is-ok { color: var(--pass); }
 </style>
 </head>
 <body>
@@ -2045,12 +2131,34 @@
            fallback (default language is English). -->
       <button id="lang-toggle" class="mast-lang-toggle" type="button" aria-label="Toggle console language">中文</button>
       <a class="mast-reader" href="/">reader</a>
+      <!-- Admin token affordance (issue #583) — toggles #admin-token-panel.
+           KB_ADMIN_TOKEN gates every ADMIN_PATHS-classified mutating
+           endpoint (gateway/app/middleware.py); this stores the operator's
+           bearer token in localStorage so adminFetch() (below) can attach
+           it. token-set is applied by JS once a token is stored — never
+           renders the token itself. -->
+      <button id="admin-token-toggle" class="mast-admin-toggle" type="button"
+              aria-label="Admin token settings" aria-expanded="false"
+              aria-controls="admin-token-panel">&#128274;</button>
       <!-- Opens the Resource Browser as a drawer on small screens; hidden on
            desktop where the browser is a permanent right-hand rail. -->
       <button id="rail-toggle" class="mast-hamburger" type="button"
               aria-label="Open resource browser" aria-expanded="false"
               aria-controls="console-rail">&#9776;</button>
     </header>
+
+    <!-- Admin token panel (issue #583) — hidden until the lock icon is
+         clicked, or auto-opened by adminFetch() on a 401. The input never
+         pre-fills from the stored token (§12.4 — no echo). -->
+    <div id="admin-token-panel" class="admin-token-panel" hidden>
+      <label for="admin-token-input" class="admin-token-label">Admin token</label>
+      <input id="admin-token-input" class="admin-token-input" type="password"
+             autocomplete="off" spellcheck="false"
+             placeholder="Bearer token for admin endpoints">
+      <button id="admin-token-save" class="admin-token-save-btn" type="button">Save</button>
+      <button id="admin-token-clear" class="admin-token-clear-btn" type="button">Clear</button>
+      <span id="admin-token-status" class="admin-token-status" role="status" aria-live="polite"></span>
+    </div>
 
     <!-- Demo environment reset banner (ADR-0021) — always visible, static HTML, no JS toggle.
          Changes made here are real (the endpoints are live) but ephemeral: the console
@@ -2174,6 +2282,84 @@ function el(tag, props) {
     n.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
   }
   return n;
+}
+
+/* ============================================================
+   Admin token gate (issue #583). KB_ADMIN_TOKEN, when set, requires
+   `Authorization: Bearer <token>` on every ADMIN_PATHS-classified mutating
+   endpoint (gateway/app/middleware.py); when unset (the demo default) the
+   server accepts every admin request unauthenticated, same as before this
+   feature existed. adminFetch() wraps fetch() for exactly those endpoints:
+   attaches the header when a token is stored, and on a 401 response opens
+   the token panel with a clear message instead of letting the caller's
+   .then() silently render an empty/failed result. Read paths (/wiki/chat,
+   /chat/stream, /rag/chat) and unclassified paths (/read/*, /healthz*,
+   /feedback) are never admin-gated server-side — they keep using plain
+   fetch(), not this wrapper.
+
+   The token itself is a bearer credential the operator chose to store in
+   THIS browser; it is never rendered into DOM text or logs (§12.4 — no
+   echo), and the input never pre-fills from the stored value. */
+var ADMIN_TOKEN_STORAGE_KEY = "kb-admin-token";
+var _adminTokenMemory = ""; /* in-session fallback if localStorage is unavailable */
+
+function getAdminToken() {
+  try {
+    var stored = localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY);
+    if (stored) return stored;
+  } catch (e) { /* private-mode / disabled storage */ }
+  return _adminTokenMemory;
+}
+
+function setAdminToken(token) {
+  _adminTokenMemory = token || "";
+  try {
+    if (token) localStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, token);
+    else localStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
+  } catch (e) { /* private-mode / disabled storage — token still applies
+                    for this session via _adminTokenMemory */ }
+}
+
+/* Reflects whether a token is currently stored onto the masthead icon —
+   a boolean state only, never the token value. */
+function refreshAdminTokenIndicator() {
+  var btn = document.getElementById("admin-token-toggle");
+  if (btn) btn.classList.toggle("token-set", !!getAdminToken());
+}
+
+function showAdminTokenPanel(message, isError) {
+  var panel = document.getElementById("admin-token-panel");
+  var status = document.getElementById("admin-token-status");
+  var input = document.getElementById("admin-token-input");
+  var toggle = document.getElementById("admin-token-toggle");
+  if (panel) panel.hidden = false;
+  if (toggle) toggle.setAttribute("aria-expanded", "true");
+  if (status) {
+    status.textContent = message || "";
+    status.className = "admin-token-status" + (isError ? " is-error" : message ? " is-ok" : "");
+  }
+  if (input) input.focus();
+}
+
+/* Called on every ADMIN_PATHS response — 401 means "no/invalid token", the
+   ONE case that needs an explicit, non-silent surface (no swallowed error). */
+function showAdminTokenRequired() {
+  showAdminTokenPanel("Admin token required or invalid — enter it below.", true);
+}
+
+/* Wraps fetch() for ADMIN_PATHS-classified mutating endpoints only. */
+function adminFetch(url, opts) {
+  var token = getAdminToken();
+  var finalOpts = opts ? Object.assign({}, opts) : {};
+  if (token) {
+    var headers = Object.assign({}, finalOpts.headers || {});
+    headers["Authorization"] = "Bearer " + token;
+    finalOpts.headers = headers;
+  }
+  return fetch(url, finalOpts).then(function (resp) {
+    if (resp.status === 401) showAdminTokenRequired();
+    return resp;
+  });
 }
 
 /* ============================================================
@@ -2541,7 +2727,7 @@ function openTranscribeConfirm(source, pageCount, maxPages, triggerBtn, onSucces
       cancelBtn.textContent = chrome.transcribeClose;
     }
 
-    fetch("/wiki/transcribe/batch", {
+    adminFetch("/wiki/transcribe/batch", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sources: [source] }),
@@ -2903,7 +3089,7 @@ function runIngestBatches(sourceNames, resultEl, setStepBusy) {
     };
     if (body) fetchOpts.body = body;
 
-    fetch("/wiki/ingest", fetchOpts)
+    adminFetch("/wiki/ingest", fetchOpts)
       .then(function(resp) {
         if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
         return resp.json();
@@ -4308,7 +4494,7 @@ function runC5FixSourceBatch(files, btn, statusMsgEl) {
     var formData = new FormData();
     formData.append("files", entry.file, entry.file.name);
     formData.append("overwrite_relpath", entry.target.sourcePath);
-    return fetch("/upload", { method: "POST", body: formData })
+    return adminFetch("/upload", { method: "POST", body: formData })
       .then(function(resp) {
         if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
         return resp.json();
@@ -4320,7 +4506,7 @@ function runC5FixSourceBatch(files, btn, statusMsgEl) {
   }, Promise.resolve())
     .then(function() {
       // ONE force re-ingest over exactly the matched filenames (§12.8).
-      return fetch("/wiki/ingest", {
+      return adminFetch("/wiki/ingest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -4335,7 +4521,7 @@ function runC5FixSourceBatch(files, btn, statusMsgEl) {
     })
     .then(function() {
       // ONE deep-audit re-judges every C5 pair, including the just-fixed one.
-      return fetch("/wiki/lint?include_c5=true", { method: "POST" });
+      return adminFetch("/wiki/lint?include_c5=true", { method: "POST" });
     })
     .then(function(resp) {
       if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
@@ -4452,7 +4638,7 @@ window.addEventListener("beforeunload", function(e) {
 function ingestRemediationRequest(source, force) {
   var payload = { source: source };
   if (force) payload.force = true;
-  return fetch("/wiki/ingest", {
+  return adminFetch("/wiki/ingest", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -4476,7 +4662,7 @@ function ingestRemediationRequest(source, force) {
 }
 
 function discardRemediationRequest(slug) {
-  return fetch("/wiki/qa/" + encodeURIComponent(slug), { method: "DELETE" })
+  return adminFetch("/wiki/qa/" + encodeURIComponent(slug), { method: "DELETE" })
     .then(function(resp) {
       if (resp.status === 409) {
         throw new Error("Cannot discard: page is live (status=live). Use Re-ingest to refresh it instead.");
@@ -4496,7 +4682,7 @@ function discardRemediationRequest(slug) {
    err-status rendering (§12.5) — this wrapper never re-derives eligibility
    itself. */
 function assignAliasRequest(pageSlug, alias) {
-  return fetch("/wiki/pages/" + encodeURIComponent(pageSlug) + "/aliases", {
+  return adminFetch("/wiki/pages/" + encodeURIComponent(pageSlug) + "/aliases", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ alias: alias }),
@@ -4515,7 +4701,7 @@ function assignAliasRequest(pageSlug, alias) {
    existing err-status rendering (§12.5) — this wrapper never re-derives
    eligibility itself. */
 function removeAliasRequest(pageSlug, alias) {
-  return fetch(
+  return adminFetch(
     "/wiki/pages/" + encodeURIComponent(pageSlug) + "/aliases/" + encodeURIComponent(alias),
     { method: "DELETE" }
   ).then(function(resp) {
@@ -4585,7 +4771,7 @@ function chatVerifyRequest(queryText) {
    holds (stale report, restored Source, or a partial orphan) — rendered
    honestly, never silently retried. */
 function deleteOrphanRequest(slug) {
-  return fetch("/wiki/pages/" + encodeURIComponent(slug), { method: "DELETE" })
+  return adminFetch("/wiki/pages/" + encodeURIComponent(slug), { method: "DELETE" })
     .then(function(resp) {
       if (resp.status === 409) {
         return resp.text().then(function(t) {
@@ -4607,7 +4793,7 @@ function deleteOrphanRequest(slug) {
 function batchIngestRemediationRequest(sources, force) {
   var payload = { sources: sources };
   if (force) payload.force = true;
-  return fetch("/wiki/ingest", {
+  return adminFetch("/wiki/ingest", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -4681,7 +4867,7 @@ function finishBatchRemediation(summaryText, resultEl, siblingButtons) {
   // stays armed for the whole batch loop, including the re-lint window (issue
   // #364 verify finding: clearing it before the fetch left a request in flight
   // with the unload guard already disabled).
-  fetch("/wiki/lint?include_c5=false", { method: "POST" })
+  adminFetch("/wiki/lint?include_c5=false", { method: "POST" })
     .then(function(resp) {
       if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
       return resp.json();
@@ -4724,7 +4910,7 @@ function runLintRemediation(requestPromise, btn, statusMsgEl, resultEl, siblingB
 
   requestPromise
     .then(function() {
-      return fetch("/wiki/lint?include_c5=false", { method: "POST" });
+      return adminFetch("/wiki/lint?include_c5=false", { method: "POST" });
     })
     .then(function(resp) {
       if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
@@ -5607,7 +5793,7 @@ function openDeleteOrphanConfirm(slug, resultEl, siblingButtons) {
 
     deleteOrphanRequest(slug)
       .then(function() {
-        return fetch("/wiki/lint?include_c5=false", { method: "POST" });
+        return adminFetch("/wiki/lint?include_c5=false", { method: "POST" });
       })
       .then(function(resp) {
         if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
@@ -5663,7 +5849,7 @@ function openReconcileModal(pageA, pageB, resultEl, siblingButtons, finding) {
   function closeModal() { overlay.remove(); }
   overlay.addEventListener("click", function(e) { if (e.target === overlay) closeModal(); });
 
-  fetch("/wiki/pages/reconcile", {
+  adminFetch("/wiki/pages/reconcile", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ page_a: pageA, page_b: pageB }),
@@ -5825,7 +6011,7 @@ function renderReconcilePreview(modal, data, resultEl, closeModal, siblingButton
       document.createTextNode(LINT_CHROME[consoleLang].reconcileWorking));
     statusMsgEl.className = "card-status-msg";
 
-    fetch("/wiki/pages/reconcile/apply", {
+    adminFetch("/wiki/pages/reconcile/apply", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -5862,7 +6048,7 @@ function renderReconcilePreview(modal, data, resultEl, closeModal, siblingButton
         return resp.json();
       })
       .then(function() {
-        return fetch("/wiki/lint?include_c5=false", { method: "POST" });
+        return adminFetch("/wiki/lint?include_c5=false", { method: "POST" });
       })
       .then(function(resp) {
         if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
@@ -5986,7 +6172,7 @@ function openCollisionModal(mode, baseSlug, groupSlugs, resultEl, siblingButtons
     ? { base_slug: baseSlug, variant_slugs: groupSlugs }
     : { slugs: groupSlugs };
 
-  fetch(genPath, {
+  adminFetch(genPath, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(genBody),
@@ -6016,7 +6202,7 @@ function openCollisionModal(mode, baseSlug, groupSlugs, resultEl, siblingButtons
    remediation uses (issue #363/#376 convention), so the fixed C4 group
    drops out of the re-rendered Coherence section. */
 function _finishCollisionApply(resultEl, closeModal) {
-  return fetch("/wiki/lint?include_c5=false", { method: "POST" })
+  return adminFetch("/wiki/lint?include_c5=false", { method: "POST" })
     .then(function(resp) {
       if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
       return resp.json();
@@ -6073,7 +6259,7 @@ function renderCollisionMergePreview(modal, data, resultEl, closeModal, siblingB
       document.createTextNode(LINT_CHROME[consoleLang].collisionWorking));
     statusMsgEl.className = "card-status-msg";
 
-    fetch("/wiki/pages/collision/merge/apply", {
+    adminFetch("/wiki/pages/collision/merge/apply", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -6206,7 +6392,7 @@ function renderCollisionDifferentiatePreview(modal, data, resultEl, closeModal, 
     var content = {};
     data.slugs.forEach(function(slug) { content[slug] = textareas[slug].value; });
 
-    fetch("/wiki/pages/collision/differentiate/apply", {
+    adminFetch("/wiki/pages/collision/differentiate/apply", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ slugs: data.slugs, content: content, hashes: data.hashes }),
@@ -6390,7 +6576,7 @@ function buildUploadBody(resultEl) {
       formData.append("files", files[i], files[i].name);
     }
 
-    fetch("/upload", { method: "POST", body: formData })
+    adminFetch("/upload", { method: "POST", body: formData })
       .then(function(resp) {
         if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
         return resp.json();
@@ -6507,7 +6693,7 @@ var STEP_DEFS = [
         setStepBusy(false);
       }
 
-      fetch("/wiki/import/jobs", { method: "POST" })
+      adminFetch("/wiki/import/jobs", { method: "POST" })
         .then(function(resp) {
           if (!resp.ok) return resp.text().then(function(t) { throw httpError(resp, t); });
           return resp.json();
@@ -6571,7 +6757,7 @@ var STEP_DEFS = [
       setStepBusy(true);
       resultEl.replaceChildren(makeBusyCard(LINT_CHROME[consoleLang].genRebuildingIndex));
 
-      fetch("/wiki/index", { method: "POST" })
+      adminFetch("/wiki/index", { method: "POST" })
         .then(function(resp) {
           if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
           return resp.json();
@@ -6607,7 +6793,7 @@ var STEP_DEFS = [
       setStepBusy(true);
       resultEl.replaceChildren(makeBusyCard(LINT_CHROME[consoleLang].genRunningLint));
 
-      fetch("/wiki/lint?include_c5=false", { method: "POST" })
+      adminFetch("/wiki/lint?include_c5=false", { method: "POST" })
         .then(function(resp) {
           if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
           return resp.json();
@@ -6636,7 +6822,7 @@ var STEP_DEFS = [
       setStepBusy(true);
       resultEl.replaceChildren(makeBusyCard(LINT_CHROME[consoleLang].genRunningDeepAudit));
 
-      fetch("/wiki/lint?include_c5=true", { method: "POST" })
+      adminFetch("/wiki/lint?include_c5=true", { method: "POST" })
         .then(function(resp) {
           if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
           return resp.json();
@@ -7010,7 +7196,7 @@ function renderCurationQueue(rootEl, lintData) {
    so all three go through one fetch+render path. Rejects (network error
    or non-2xx) so each caller can decide its own fallback UI. */
 function refreshCurationQueueFast() {
-  return fetch("/wiki/lint?include_c5=false", { method: "POST" })
+  return adminFetch("/wiki/lint?include_c5=false", { method: "POST" })
     .then(function(resp) {
       if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
       return resp.json();
@@ -7095,7 +7281,7 @@ function promoteAllAction(slugs) {
     );
     statusMsgEl.className = "card-status-msg";
 
-    fetch("/wiki/qa/promote-batch", {
+    adminFetch("/wiki/qa/promote-batch", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ slugs: slugs })
@@ -7219,7 +7405,7 @@ function buildDraftCard(f) {
     statusMsgEl.textContent = chrome.draftPromoting;
     statusMsgEl.className = "card-status-msg";
 
-    fetch("/wiki/qa/" + encodeURIComponent(slug) + "/promote", { method: "POST" })
+    adminFetch("/wiki/qa/" + encodeURIComponent(slug) + "/promote", { method: "POST" })
       .then(function(resp) {
         /* Stale card (issue #442): the demo environment already wiped this
            draft (periodic reset, or acted on from another tab). Self-heal
@@ -7378,7 +7564,7 @@ function buildDraftCard(f) {
     statusMsgEl.textContent = chrome.editSaving;
     statusMsgEl.className = "card-status-msg";
 
-    fetch("/wiki/qa/" + encodeURIComponent(slug), {
+    adminFetch("/wiki/qa/" + encodeURIComponent(slug), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question: questionInput.value, body: bodyTextarea.value })
@@ -7543,7 +7729,7 @@ function buildRefileFlagCard(slug, subtitle) {
     statusMsgEl.textContent = chrome.refileCardRefiling;
     statusMsgEl.className = "card-status-msg";
 
-    fetch("/wiki/qa/" + encodeURIComponent(slug) + "/refile", { method: "POST" })
+    adminFetch("/wiki/qa/" + encodeURIComponent(slug) + "/refile", { method: "POST" })
       .then(function(resp) {
         return resp.json().then(function(data) { return { ok: resp.ok, status: resp.status, data: data }; });
       })
@@ -7638,7 +7824,7 @@ function buildDemoteFlagCard(slug, subtitle) {
     statusMsgEl.textContent = chrome.demoteCardDemoting;
     statusMsgEl.className = "card-status-msg";
 
-    fetch("/wiki/qa/" + encodeURIComponent(slug) + "/demote", { method: "POST" })
+    adminFetch("/wiki/qa/" + encodeURIComponent(slug) + "/demote", { method: "POST" })
       .then(function(resp) {
         /* Stale card (mirrors doDiscard/promoteBtn issue #442 self-heal):
            the demo environment already wiped this page (periodic reset, or
@@ -7693,7 +7879,7 @@ function buildDemoteFlagCard(slug, subtitle) {
    On 404 → stale card (issue #442): self-heal instead of a raw error.
    statusMsgEl / setActionBusy may be null in the flag-card path.    */
 function doDiscard(slug, cardEl, statusMsgEl, setActionBusy) {
-  fetch("/wiki/qa/" + encodeURIComponent(slug), { method: "DELETE" })
+  adminFetch("/wiki/qa/" + encodeURIComponent(slug), { method: "DELETE" })
     .then(function(resp) {
       if (resp.status === 409) {
         /* Server refused — this page is live (ADR-0012 §12.5 server decides).
@@ -7935,6 +8121,42 @@ function renderBudgetUsage(snapshot) {
   if (staleMsgEl) bindText(staleMsgEl, "bannerStaleText");
 })();
 
+/* Admin token panel wiring (issue #583) — these elements are in the
+   server-rendered HTML above the <script> tag, safe to grab immediately. */
+(function initAdminTokenPanel() {
+  refreshAdminTokenIndicator();
+  var toggleBtn = document.getElementById("admin-token-toggle");
+  var panel = document.getElementById("admin-token-panel");
+  var input = document.getElementById("admin-token-input");
+  var saveBtn = document.getElementById("admin-token-save");
+  var clearBtn = document.getElementById("admin-token-clear");
+  if (toggleBtn && panel) {
+    toggleBtn.addEventListener("click", function () {
+      var willShow = panel.hidden;
+      panel.hidden = !willShow;
+      toggleBtn.setAttribute("aria-expanded", String(willShow));
+      if (willShow && input) input.focus();
+    });
+  }
+  if (saveBtn && input) {
+    saveBtn.addEventListener("click", function () {
+      var value = input.value.trim();
+      setAdminToken(value);
+      input.value = ""; /* never leave the token sitting in the field (§12.4 — no echo) */
+      refreshAdminTokenIndicator();
+      showAdminTokenPanel(value ? "Admin token saved." : "Admin token cleared.", false);
+    });
+  }
+  if (clearBtn && input) {
+    clearBtn.addEventListener("click", function () {
+      setAdminToken("");
+      input.value = "";
+      refreshAdminTokenIndicator();
+      showAdminTokenPanel("Admin token cleared.", false);
+    });
+  }
+})();
+
 buildPipeline(document.getElementById("pipeline-root"));
 refreshArtifactCounts(); /* issue #559 A1: after buildPipeline so the artifact-pill / input-state elements already exist */
 refreshIndexFreshness(); /* issue #559 A2: after buildPipeline so #artifact-freshness-kb already exists */
@@ -8003,7 +8225,7 @@ function buildRagTrack(rootEl) {
       setRagBusy(true);
       ragResultEl.replaceChildren(makeBusyCard(chrome.genRebuildingRag));
 
-      fetch("/rag/index", { method: "POST" })
+      adminFetch("/rag/index", { method: "POST" })
         .then(function(resp) {
           if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
           return resp.json();
@@ -8092,7 +8314,7 @@ function buildHybridTrack(rootEl) {
       setHybridBusy(true);
       hybridResultEl.replaceChildren(makeBusyCard(chrome.genRebuildingHybrid));
 
-      fetch("/hybrid/index", { method: "POST" })
+      adminFetch("/hybrid/index", { method: "POST" })
         .then(function(resp) {
           if (!resp.ok) return resp.text().then(function(t) { throw new Error("HTTP " + resp.status + ": " + t); });
           return resp.json();

@@ -135,6 +135,7 @@ def test_transcribe_action_never_calls_the_sync_transcribe_endpoint_directly():
     text = _console_text()
     body = _function_body(text, "transcribeAction")
     assert 'fetch("/wiki/transcribe"' not in body
+    assert 'adminFetch("/wiki/transcribe"' not in body
 
 
 # ---------------------------------------------------------------------------
@@ -154,7 +155,7 @@ def test_confirm_dialog_submits_the_async_batch_job_not_the_sync_endpoint():
     synchronous POST /wiki/transcribe has no progress signal at all."""
     text = _console_text()
     body = _function_body(text, "openTranscribeConfirm")
-    assert 'fetch("/wiki/transcribe/batch"' in body
+    assert 'adminFetch("/wiki/transcribe/batch"' in body
     assert "JSON.stringify({ sources: [source] })" in body
 
 
