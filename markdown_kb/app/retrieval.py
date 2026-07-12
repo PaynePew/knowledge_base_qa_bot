@@ -186,10 +186,22 @@ def query(question: str, exclude_qa: bool = False) -> dict:
     return result
 
 
-def stream_query(question: str) -> Iterator[dict]:
+def stream_query(question: str, original_question: str | None = None) -> Iterator[dict]:
     """Generator that yields two dicts for use by the SSE streaming endpoint.
 
     Phase 9 — ADR-0009 (verify-then-stream / sources-first).
+
+    Issue #579 (multi-turn rewrite drift): ``question`` is always the query
+    actually used for retrieval — the Gateway's rewritten, self-contained
+    follow-up on turn 2+, or the raw query on turn 1 passthrough. It drives
+    BM25 search, the LLM prompt, and the chat log exactly as before.
+    ``original_question`` is the caller's literal ask, forwarded ONLY for
+    filing (``dispatch_filing``'s ``query`` arg — slug + the ``question``
+    frontmatter field); it defaults to ``question`` when omitted (every
+    caller except the Gateway's turn-2+ wiki dispatch, where the two
+    diverge). ``question`` itself is passed through unchanged as
+    ``retrieval_query`` so the filed page's audit metadata always reflects
+    what actually retrieved it.
 
     Yields:
         1. A *partial* result dict immediately after retrieval (before any
@@ -254,7 +266,16 @@ def stream_query(question: str) -> Iterator[dict]:
     # Import is deferred to avoid a circular import with qa.py.
     from . import qa as _qa_module  # noqa: PLC0415
 
-    filed = _qa_module.dispatch_filing(question, result)
+    # Issue #579: file under the caller's literal ask (original_question),
+    # never the rewrite; ``question`` — the string actually used for
+    # retrieval above — becomes the frontmatter audit field instead.
+    # original_question defaults to question when the caller has no rewrite
+    # to distinguish (turn 1 / non-Gateway callers).
+    filed = _qa_module.dispatch_filing(
+        original_question if original_question is not None else question,
+        result,
+        retrieval_query=question,
+    )
     # Attach filing outcome to result so events_for_result() picks it up.
     result = {**result, "filed": filed}
 
