@@ -28,7 +28,7 @@ module only wires guards around them (CODING_STANDARD §2.3).  Single-worker
 model: the semaphores and budget are plain in-process objects (§2.6/§2.7).
 
 Path matching uses the **full mounted path** with any trailing slash stripped
-(``/wiki/chat/`` == ``/wiki/chat``).  Four parameterized heavy paths are
+(``/wiki/chat/`` == ``/wiki/chat``).  Seven parameterized heavy paths are
 canonicalised before classification and charging — an exact-match set
 cannot see a per-slug concrete path, and an unclassified path bypasses ALL
 guards (the #376 bug class): ``POST /wiki/qa/{slug}/refile`` (ADR-0026
@@ -45,6 +45,19 @@ budget estimate. ``POST /wiki/qa/promote-batch``
 slug — but is classified as ``ADMIN_PATHS`` for the same reason as the
 delete path: no LLM call, but a batch of live-corpus mutations plus a BM25
 reindex is exactly the kind of write the admin gate exists for.
+
+Issue #583's coverage audit (a dynamic test asserting every mounted mutating
+route is classified — see ``gateway/tests/test_admin_path_coverage.py``)
+caught three more mounted-but-unclassified single-item QA routes, the same
+"#376 bug class" repeated: ``POST /wiki/qa/{slug}/promote`` (Phase 6 Slice
+6-4) and ``POST /wiki/qa/{slug}/demote`` (ADR-0037, issue #535) canonicalise
+via ``QA_PROMOTE_TEMPLATE`` / ``QA_DEMOTE_TEMPLATE`` — no LLM call, but each
+flips a Filed Answer's lifecycle status and triggers a full BM25 reindex.
+``DELETE /wiki/qa/{slug}`` (ADR-0012) and ``PUT /wiki/qa/{slug}`` (ADR-0026
+decision 2) share one path with two mutating verbs and canonicalise via the
+single ``QA_ITEM_TEMPLATE`` (excludes the literal ``promote-batch`` segment
+so it can never be swallowed by this template, mirroring
+``PAGES_DELETE_TEMPLATE``'s own ``reconcile`` exclusion below).
 
 ``GET /wiki/transcribe/jobs/{job_id}`` and ``GET /wiki/transcribe/page-count``
 (issue #447) are deliberately left OUT of both sets — each is a read-only,
@@ -103,6 +116,29 @@ READ_PATHS: frozenset[str] = frozenset(
 QA_REFILE_TEMPLATE = "/wiki/qa/{slug}/refile"
 _QA_REFILE_RE = re.compile(r"^/wiki/qa/[^/]+/refile$")
 
+# Canonical billing/classification key for the single-item Promote path
+# (Phase 6 Slice 6-4). Found unclassified by the issue #583 coverage audit —
+# no LLM call, but flips a Filed Answer draft -> live and triggers a full
+# BM25 reindex (the #376 bug class again).
+QA_PROMOTE_TEMPLATE = "/wiki/qa/{slug}/promote"
+_QA_PROMOTE_RE = re.compile(r"^/wiki/qa/[^/]+/promote$")
+
+# Canonical billing/classification key for the single-item Demote path
+# (ADR-0037, issue #535) — the reversible inverse of Promote. Same #583
+# audit gap: no LLM call, but a live -> draft lifecycle flip plus reindex.
+QA_DEMOTE_TEMPLATE = "/wiki/qa/{slug}/demote"
+_QA_DEMOTE_RE = re.compile(r"^/wiki/qa/[^/]+/demote$")
+
+# Canonical billing/classification key for the single-QA-item path — covers
+# BOTH ``DELETE /wiki/qa/{slug}`` (discard an inert draft, ADR-0012) and
+# ``PUT /wiki/qa/{slug}`` (edit a draft in place, ADR-0026 decision 2): one
+# path, two mutating verbs, same #583 audit gap. Excludes "promote-batch" so
+# the already-classified literal ``/wiki/qa/promote-batch`` route (no slug
+# segment) is never swallowed by this template, mirroring
+# PAGES_DELETE_TEMPLATE's own "reconcile" exclusion below.
+QA_ITEM_TEMPLATE = "/wiki/qa/{slug}"
+_QA_ITEM_RE = re.compile(r"^/wiki/qa/(?!promote-batch$)[^/]+$")
+
 # Canonical billing/classification key for the C11 orphan-delete path (ADR-0025,
 # issue #381). Excludes the "reconcile" literal segment so it never collapses
 # ``/wiki/pages/reconcile`` (a distinct, already-classified path) onto this
@@ -138,6 +174,9 @@ _ALIAS_REMOVE_RE = re.compile(r"^/wiki/pages/(?!reconcile$|collision$)[^/]+/alia
 ADMIN_PATHS: frozenset[str] = frozenset(
     {
         QA_REFILE_TEMPLATE,  # ADR-0026 decision 1: chained re-file — LLM re-synthesis + grounding + demote (issue #380)
+        QA_PROMOTE_TEMPLATE,  # Phase 6 Slice 6-4: draft -> live status flip + reindex, no LLM (issue #583 audit)
+        QA_DEMOTE_TEMPLATE,  # ADR-0037: live -> draft status flip + reindex, no LLM (issue #535; issue #583 audit)
+        QA_ITEM_TEMPLATE,  # ADR-0012 delete / ADR-0026 decision 2 edit: draft-only mutation, no LLM (issue #583 audit)
         "/rag/index",
         "/wiki/index",
         "/wiki/ingest",
@@ -237,12 +276,18 @@ def _canonical_path(raw_path: str) -> str:
     path = _normalise_path(raw_path)
     if _QA_REFILE_RE.fullmatch(path):
         return QA_REFILE_TEMPLATE
+    if _QA_PROMOTE_RE.fullmatch(path):
+        return QA_PROMOTE_TEMPLATE
+    if _QA_DEMOTE_RE.fullmatch(path):
+        return QA_DEMOTE_TEMPLATE
     if _ALIAS_REMOVE_RE.fullmatch(path):
         return ALIAS_REMOVE_TEMPLATE
     if _ALIAS_ASSIGN_RE.fullmatch(path):
         return ALIAS_ASSIGN_TEMPLATE
     if _PAGES_DELETE_RE.fullmatch(path):
         return PAGES_DELETE_TEMPLATE
+    if _QA_ITEM_RE.fullmatch(path):
+        return QA_ITEM_TEMPLATE
     return path
 
 
