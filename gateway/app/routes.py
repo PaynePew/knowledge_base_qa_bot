@@ -66,6 +66,7 @@ from fastapi.responses import StreamingResponse
 from hybrid_kb.app.dense_index import build_index as _hybrid_build_index
 from hybrid_kb.app.query import stream_query as _hybrid_stream_query
 from markdown_kb.app.errors import LLMError
+from markdown_kb.app.indexer import index_stale as _index_stale
 from markdown_kb.app.indexer import indexed_sections_count as _indexed_sections_count
 from markdown_kb.app.indexer import wiki_page_count as _wiki_page_count
 from markdown_kb.app.read import FileNotFound as _ReadFileNotFound
@@ -638,6 +639,34 @@ def read_counts() -> ArtifactCountsSchema:
         wiki=_wiki_page_count(),
         kb=_indexed_sections_count(),
     )
+
+
+class IndexFreshnessSchema(BaseModel):
+    """Response body for GET /read/index-freshness (issue #559 A2)."""
+
+    stale: bool
+
+
+@router.get("/read/index-freshness", response_model=IndexFreshnessSchema)
+def read_index_freshness() -> IndexFreshnessSchema:
+    """State-derived fresh/stale signal for the Operator Console's Index node.
+
+    A thin wrapper over ``markdown_kb.app.indexer.index_stale()`` — the
+    CONTEXT.md Section Index staleness semantic (wiki/ changed since the
+    last /index build), derived from filesystem mtimes only. A **separate**
+    endpoint from ``GET /read/counts`` (not an added field on
+    ``ArtifactCountsSchema``) so that endpoint's existing exact-shape
+    contract stays untouched.
+
+    Deliberately state-derived, not click-history-derived: contrast the
+    pre-existing #173 ``indexStale`` Console flag (set on Ingest click,
+    cleared on Index click, drives the separate staleness-guard banner) —
+    this endpoint neither reads nor influences that flag.
+
+    Returns:
+        ``IndexFreshnessSchema`` with a single ``stale`` bool.
+    """
+    return IndexFreshnessSchema(stale=_index_stale())
 
 
 # ---------------------------------------------------------------------------
