@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 import threading
 from collections import Counter
@@ -67,6 +68,24 @@ STOP_WORDS = {
 # Thread-safety: callers hold _index_lock when swapping the sections list.
 _index_lock = threading.Lock()
 
+# Issue #578: rule 2a (#570) joins a qa page's frontmatter ``question:`` tokens
+# into its BM25 tokens so a filed answer is retrievable by its own question. At
+# scale that creates a NEW collision: two qa pages sharing only a generic
+# interrogative (CJK "你們"/"哪些", English "how"/"what" survives the ASCII
+# STOP_WORDS filter for CJK bigrams, which are never stopword-filtered) can
+# out-rank the Section that actually carries the fact. QA_QUESTION_TOKEN_WEIGHT
+# scales a qa Section's term-frequency contribution from question-only token
+# occurrences (never from body occurrences) so body content stays the stronger
+# retrieval signal without losing rule 2a's own-question retrievability
+# (weight 0 would undo #570; weight 1 is the pre-#578 behaviour). Calibrated
+# against eval/qa_field_weight/calibrate.py, not hand-picked (CODING_STANDARD
+# §4.3 / #253 precedent). Override with KB_QA_QUESTION_TOKEN_WEIGHT env var
+# (import-time, like KB_SCORE_THRESHOLD).
+_QA_QUESTION_TOKEN_WEIGHT_DEFAULT = 0.3
+QA_QUESTION_TOKEN_WEIGHT = float(
+    os.getenv("KB_QA_QUESTION_TOKEN_WEIGHT", str(_QA_QUESTION_TOKEN_WEIGHT_DEFAULT))
+)
+
 # Module-level snapshot of the last wiki index outcome from build_index().
 # Populated by build_index() after calling write_wiki_index(). The route layer
 # reads this instead of a return-value extension so existing test signatures
@@ -89,6 +108,12 @@ class Section:
     content: str
     tokens: list[str]
     metadata: dict = field(default_factory=dict)  # YAML frontmatter (future use)
+    # Issue #578: the subset of ``tokens`` contributed by rule 2a (a qa page's
+    # frontmatter ``question:``), so ``bm25_score`` can downweight matches that
+    # come ONLY from the injected question rather than from real body content.
+    # Empty for every non-qa Section and for a qa Section with no question —
+    # those score exactly as before this field existed.
+    question_tokens: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -431,7 +456,11 @@ def parse_markdown(path: Path, source_id: str | None = None) -> list[Section]:
         qa page can never be retrieved BY its own question (the heading
         falls back to the rule-7 slug, one hyphenated blob for English).
         Retrieval-only: heading, id, and content are untouched; all other
-        frontmatter keys stay untokenized.
+        frontmatter keys stay untokenized. The question tokens are also
+        recorded on ``Section.question_tokens`` (issue #578) so
+        ``bm25_score`` can downweight matches that come only from the
+        injected question, not from body content — see
+        ``QA_QUESTION_TOKEN_WEIGHT``.
     3.  Scan the remaining body line by line, maintaining `in_fence: bool`.
         Toggle `in_fence` whenever a line starts with three backticks. While
         `in_fence` is true, treat every line as content — do NOT match
@@ -543,6 +572,7 @@ def parse_markdown(path: Path, source_id: str | None = None) -> list[Section]:
         if question_tokens:
             for section in page_sections:
                 section.tokens = question_tokens + section.tokens
+                section.question_tokens = question_tokens
 
     return page_sections
 
@@ -965,6 +995,10 @@ def load_index_json(index_path: Path | None = None) -> tuple[int, int]:
                 content=item["content"],
                 tokens=item["tokens"],
                 metadata=item.get("metadata", {}),
+                # Issue #578: absent on any index.json baked before this field
+                # existed — an empty list reproduces the pre-#578 score for
+                # every Section in that seed (see QA_QUESTION_TOKEN_WEIGHT).
+                question_tokens=item.get("question_tokens", []),
             )
             for item in payload.get("sections", [])
         ]
@@ -1126,22 +1160,41 @@ def bm25_score(
     section: Section,
     k1: float = 1.5,
     b: float = 0.75,
+    qa_question_weight: float = QA_QUESTION_TOKEN_WEIGHT,
 ) -> float:
-    """Score one section for the query using BM25."""
+    """Score one section for the query using BM25.
+
+    Issue #578: for a qa Section, ``section.question_tokens`` (rule 2a,
+    #570) is a SUBSET of ``section.tokens`` — the term frequency used for
+    scoring is therefore an effective (weighted) count: a token occurrence
+    that came only from the injected question counts as
+    ``qa_question_weight`` instead of 1, while every occurrence in the real
+    body content still counts fully. ``token_counts - question_counts`` is
+    exact (not clamped) because ``section.tokens`` is always the
+    concatenation ``question_tokens + <original body tokens>`` (rule 2a),
+    so Counter subtraction recovers the original per-token body counts.
+    Doc length / ``norm`` and doc-frequency/idf are unaffected — this only
+    changes how a matched token's own frequency contributes to the score.
+    For every non-qa Section ``question_tokens`` is empty, so
+    ``question_counts`` is empty and this is a no-op: byte-identical to the
+    pre-#578 score.
+    """
     if not sections:
         return 0.0
     n = len(sections)
     score = 0.0
     token_counts = Counter(section.tokens)
+    question_counts = Counter(section.question_tokens)
     doc_len = len(section.tokens)
     norm = 1 - b + b * (doc_len / avg_doc_len) if avg_doc_len > 0 else 1.0
     for tok in query_tokens:
-        tf = token_counts.get(tok, 0)
-        if tf == 0:
+        body_tf = token_counts.get(tok, 0) - question_counts.get(tok, 0)
+        weighted_tf = body_tf + qa_question_weight * question_counts.get(tok, 0)
+        if weighted_tf <= 0:
             continue
         df = doc_freq.get(tok, 0)
         idf = math.log((n - df + 0.5) / (df + 0.5) + 1)
-        score += idf * (tf * (k1 + 1)) / (tf + k1 * norm)
+        score += idf * (weighted_tf * (k1 + 1)) / (weighted_tf + k1 * norm)
     # Small heading path boost
     heading_tokens = set(tokenize(" ".join(section.heading_path)))
     boost = sum(0.5 for tok in query_tokens if tok in heading_tokens)
@@ -1164,7 +1217,12 @@ def _section_lang(section: Section) -> str:
     return detect_lang(section.content)
 
 
-def search(query: str, k: int = 3, exclude_qa: bool = False) -> list[tuple[Section, float]]:
+def search(
+    query: str,
+    k: int = 3,
+    exclude_qa: bool = False,
+    qa_question_weight: float = QA_QUESTION_TOKEN_WEIGHT,
+) -> list[tuple[Section, float]]:
     """Return the top-``k`` BM25 Sections in the QUERY's language.
 
     Language-filtered retrieval (#287, PRD #284): a Chinese query is scored only
@@ -1188,11 +1246,18 @@ def search(query: str, k: int = 3, exclude_qa: bool = False) -> list[tuple[Secti
     call so a stale Filed Answer being re-derived can never retrieve — and
     re-cite — itself; answers must re-derive from entities/concepts. Default
     ``False`` preserves every existing caller's behaviour unchanged.
+
+    ``qa_question_weight`` (issue #578) is forwarded to ``bm25_score`` for
+    every candidate Section. It defaults to the calibrated module constant
+    ``QA_QUESTION_TOKEN_WEIGHT``, so every existing caller is unaffected;
+    the parameter exists so calibration tooling
+    (``eval/qa_field_weight/calibrate.py``) can sweep candidate weights
+    against one already-built index without rebuilding it per weight.
     """
     query_lang = detect_lang(query)
     query_tokens = tokenize(query)
     ranked = [
-        (section, bm25_score(query_tokens, section))
+        (section, bm25_score(query_tokens, section, qa_question_weight=qa_question_weight))
         for section in sections
         if _section_lang(section) == query_lang
         and not (exclude_qa and (section.metadata or {}).get("type") == "qa")

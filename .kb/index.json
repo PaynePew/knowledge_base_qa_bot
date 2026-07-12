@@ -101,7 +101,8 @@
         "type": "entity",
         "updated": "2026-07-05T08:39:23Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "關於acme商店#關於acme商店",
@@ -266,7 +267,8 @@
         "type": "entity",
         "updated": "2026-07-05T09:44:25Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "account-deletion#account-deletion",
@@ -334,7 +336,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:50:10Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "account-management-security#account-management-security",
@@ -397,7 +400,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:50:10Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "cancelling-an-order#cancelling-an-order",
@@ -459,7 +463,8 @@
         "type": "concept",
         "updated": "2026-07-05T08:52:44Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "cancelling#cancelling",
@@ -527,7 +532,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:09:35Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "cash-on-delivery#cash-on-delivery",
@@ -590,7 +596,8 @@
         "type": "concept",
         "updated": "2026-07-05T11:02:08Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "channels#channels",
@@ -664,7 +671,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:12:32Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "conditions#conditions",
@@ -736,7 +744,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:40:17Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "contact-support#contact-support",
@@ -800,7 +809,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:12:32Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "convenience-store-payment-codes#convenience-store-payment-codes",
@@ -870,7 +880,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:53:20Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "convenience-store-pickup#convenience-store-pickup",
@@ -942,7 +953,8 @@
         "type": "concept",
         "updated": "2026-07-05T11:02:08Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "credit-card-installments#credit-card-installments",
@@ -1022,7 +1034,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:53:20Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "credit-cards#credit-cards",
@@ -1084,7 +1097,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:53:20Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "damaged-items#damaged-items",
@@ -1149,7 +1163,8 @@
         "type": "concept",
         "updated": "2026-07-05T08:43:56Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "delivery-times#delivery-times",
@@ -1218,7 +1233,8 @@
         "type": "concept",
         "updated": "2026-07-05T08:47:48Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "denominations-delivery#denominations-delivery",
@@ -1279,7 +1295,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:31:25Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "destinations#destinations",
@@ -1342,7 +1359,8 @@
         "type": "concept",
         "updated": "2026-07-05T08:47:48Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "difference-from-regular-returns#difference-from-regular-returns",
@@ -1414,7 +1432,8 @@
         "type": "concept",
         "updated": "2026-07-05T08:43:56Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "dispatch-time#dispatch-time",
@@ -1476,7 +1495,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:37:28Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "duties-taxes#duties-taxes",
@@ -1534,7 +1554,8 @@
         "type": "concept",
         "updated": "2026-07-05T08:47:48Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "earning-points#earning-points",
@@ -1610,7 +1631,8 @@
         "type": "concept",
         "updated": "2026-07-05T08:50:16Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "eligible-items-cycles#eligible-items-cycles",
@@ -1674,7 +1696,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:09:35Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "excluded-items#excluded-items",
@@ -1744,7 +1767,8 @@
         "type": "concept",
         "updated": "2026-07-05T08:47:48Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "exclusions#exclusions",
@@ -1797,7 +1821,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:33:08Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "expiry#expiry",
@@ -1859,7 +1884,8 @@
         "type": "concept",
         "updated": "2026-07-05T08:50:16Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "express-home-delivery#express-home-delivery",
@@ -1944,7 +1970,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:37:28Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "fee#fee",
@@ -2002,7 +2029,8 @@
         "type": "concept",
         "updated": "2026-07-05T11:02:08Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "fees#fees",
@@ -2067,7 +2095,8 @@
         "type": "concept",
         "updated": "2026-07-05T08:47:48Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "filing-a-claim#filing-a-claim",
@@ -2135,7 +2164,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:34:21Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "flash-sale-shopping-notes#flash-sale-shopping-notes",
@@ -2226,7 +2256,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:48:21Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "gift-card-restrictions#gift-card-restrictions",
@@ -2300,7 +2331,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:31:25Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "gift-cards-and-reward-points#gift-cards-and-reward-points",
@@ -2361,7 +2393,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:31:25Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "gift-cards#gift-cards",
@@ -2423,7 +2456,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:31:25Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "hold-period#hold-period",
@@ -2497,7 +2531,8 @@
         "type": "concept",
         "updated": "2026-07-05T11:05:13Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "how-to-use#how-to-use",
@@ -2552,7 +2587,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:33:08Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "international-shipping#international-shipping",
@@ -2625,7 +2661,8 @@
         "type": "concept",
         "updated": "2026-07-05T08:47:48Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "item-restrictions#item-restrictions",
@@ -2691,7 +2728,8 @@
         "type": "concept",
         "updated": "2026-07-05T11:02:08Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "items-not-eligible-for-refund#items-not-eligible-for-refund",
@@ -2773,7 +2811,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:40:17Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "locations#locations",
@@ -2832,7 +2871,8 @@
         "type": "concept",
         "updated": "2026-07-05T11:05:13Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "login-protection#login-protection",
@@ -2899,7 +2939,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:50:10Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "member-day-perks-2#member-day-perks",
@@ -2963,7 +3004,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:51:14Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "member-day-perks#member-day-perks",
@@ -3038,7 +3080,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:51:14Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "membership-reward-points#membership-reward-points",
@@ -3102,7 +3145,8 @@
         "type": "concept",
         "updated": "2026-07-05T08:50:16Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "membership-tiers#membership-tiers",
@@ -3203,7 +3247,8 @@
         "type": "concept",
         "updated": "2026-07-05T08:50:16Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "mobile-payments#mobile-payments",
@@ -3260,7 +3305,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:53:20Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "modifying-an-order#modifying-an-order",
@@ -3341,7 +3387,8 @@
         "type": "concept",
         "updated": "2026-07-05T08:52:44Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "not-accepted#not-accepted",
@@ -3404,7 +3451,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:53:20Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "order-history-invoices#order-history-invoices",
@@ -3469,7 +3517,8 @@
         "type": "concept",
         "updated": "2026-07-05T08:52:44Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "order-management#order-management",
@@ -3533,7 +3582,8 @@
         "type": "concept",
         "updated": "2026-07-05T08:52:44Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "password-rules#password-rules",
@@ -3600,7 +3650,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:50:10Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "pausing#pausing",
@@ -3672,7 +3723,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:09:35Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "payment-methods#payment-methods",
@@ -3737,7 +3789,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:53:20Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "pickup-flow-deadline#pickup-flow-deadline",
@@ -3816,7 +3869,8 @@
         "type": "concept",
         "updated": "2026-07-05T11:02:08Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "process#process",
@@ -3890,7 +3944,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:40:17Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "product-warranty#product-warranty",
@@ -3955,7 +4010,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:34:21Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "promo-code-expiry#promo-code-expiry",
@@ -4018,7 +4074,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:33:08Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "promo-codes#promo-codes",
@@ -4081,7 +4138,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:33:08Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "reactivating#reactivating",
@@ -4142,7 +4200,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:09:35Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "redeeming-points#redeeming-points",
@@ -4205,7 +4264,8 @@
         "type": "concept",
         "updated": "2026-07-05T08:50:16Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "referrals#referrals",
@@ -4273,7 +4333,8 @@
         "type": "concept",
         "updated": "2026-07-05T08:50:16Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "refund-window#refund-window",
@@ -4341,7 +4402,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:40:17Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "refunds-returns#refunds-returns",
@@ -4416,7 +4478,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:40:17Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "registration#registration",
@@ -4476,7 +4539,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:50:10Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "replacement-timing#replacement-timing",
@@ -4538,7 +4602,8 @@
         "type": "concept",
         "updated": "2026-07-05T08:43:56Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "reporting-deadline-method#reporting-deadline-method",
@@ -4605,7 +4670,8 @@
         "type": "concept",
         "updated": "2026-07-05T08:43:56Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "resolution-options#resolution-options",
@@ -4677,7 +4743,8 @@
         "type": "concept",
         "updated": "2026-07-05T08:43:56Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "response-time#response-time",
@@ -4748,7 +4815,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:12:32Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "restrictions#restrictions",
@@ -4812,7 +4880,8 @@
         "type": "concept",
         "updated": "2026-07-05T08:50:16Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "return-deadline-reminder#return-deadline-reminder",
@@ -4911,7 +4980,8 @@
         "type": "concept",
         "updated": "2026-07-05T11:07:23Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "return-shipping#return-shipping",
@@ -4986,7 +5056,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:40:17Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "rules#rules",
@@ -5053,7 +5124,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:33:08Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "service-hours#service-hours",
@@ -5128,7 +5200,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:12:32Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "shipping-delivery#shipping-delivery",
@@ -5181,7 +5254,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:37:28Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "standard-home-delivery#standard-home-delivery",
@@ -5257,7 +5331,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:37:28Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "store-locations-and-pickup-service#store-locations-and-pickup-service",
@@ -5334,7 +5409,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:49:12Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "store-pickup#store-pickup",
@@ -5405,7 +5481,8 @@
         "type": "concept",
         "updated": "2026-07-05T11:05:13Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "subscription-benefits#subscription-benefits",
@@ -5472,7 +5549,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:09:35Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "subscription-orders#subscription-orders",
@@ -5543,7 +5621,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:09:35Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "timing#timing",
@@ -5613,7 +5692,8 @@
         "type": "concept",
         "updated": "2026-07-05T11:05:13Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "tracking#tracking",
@@ -5675,7 +5755,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:37:28Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "two-step-verification#two-step-verification",
@@ -5747,7 +5828,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:50:10Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "validity#validity",
@@ -5805,7 +5887,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:31:25Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "warranty-exclusions#warranty-exclusions",
@@ -5879,7 +5962,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:34:21Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "warranty-periods#warranty-periods",
@@ -5943,7 +6027,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:34:21Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "what-to-bring#what-to-bring",
@@ -6010,7 +6095,8 @@
         "type": "concept",
         "updated": "2026-07-05T11:05:13Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "不保固範圍#不保固範圍",
@@ -6127,7 +6213,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:18:02Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "不支援的付款方式#不支援的付款方式",
@@ -6216,7 +6303,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:08:46Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "不適用範圍#不適用範圍",
@@ -6311,7 +6399,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:22:45Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "不適用退款的情況#不適用退款的情況",
@@ -6438,7 +6527,8 @@
         "type": "concept",
         "updated": "2026-07-09T09:52:38Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "付款方式#付款方式",
@@ -6538,7 +6628,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:08:46Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "使用效期#使用效期",
@@ -6622,7 +6713,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:28:47Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "使用方式#使用方式",
@@ -6719,7 +6811,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:22:45Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "使用規則#使用規則",
@@ -6804,7 +6897,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:22:45Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "使用限制#使用限制",
@@ -6903,7 +6997,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:28:47Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "促銷代碼#促銷代碼",
@@ -6991,7 +7086,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:22:45Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "保固期限#保固期限",
@@ -7083,7 +7179,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:18:02Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "保固申請#保固申請",
@@ -7184,7 +7281,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:18:02Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "保留期限#保留期限",
@@ -7301,7 +7399,8 @@
         "type": "concept",
         "updated": "2026-07-05T11:13:35Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "信用卡#信用卡",
@@ -7379,7 +7478,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:08:46Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "信用卡分期#信用卡分期",
@@ -7462,7 +7562,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:08:46Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "修改訂單#修改訂單",
@@ -7569,7 +7670,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:00:47Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "兩步驟驗證#兩步驟驗證",
@@ -7672,7 +7774,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:22:12Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "出貨時間#出貨時間",
@@ -7757,7 +7860,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:41:15Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "到貨時效#到貨時效",
@@ -7847,7 +7951,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:15:40Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "取件流程與期限#取件流程與期限",
@@ -7973,7 +8078,8 @@
         "type": "concept",
         "updated": "2026-07-05T11:09:48Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "取消訂單#取消訂單",
@@ -8057,7 +8163,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:00:47Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "取消訂閱#取消訂閱",
@@ -8150,7 +8257,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:02:14Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "取貨時效#取貨時效",
@@ -8252,7 +8360,8 @@
         "type": "concept",
         "updated": "2026-07-05T11:13:35Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "取貨需知#取貨需知",
@@ -8336,7 +8445,8 @@
         "type": "concept",
         "updated": "2026-07-05T11:13:35Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "商品保固#商品保固",
@@ -8427,7 +8537,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:18:02Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "商品限制#商品限制",
@@ -8516,7 +8627,8 @@
         "type": "concept",
         "updated": "2026-07-05T11:09:48Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "回報期限與方式#回報期限與方式",
@@ -8619,7 +8731,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:24:20Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "回覆時效#回覆時效",
@@ -8730,7 +8843,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:14:06Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "國際配送#國際配送",
@@ -8843,7 +8957,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:15:40Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "客服管道#客服管道",
@@ -8942,7 +9057,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:14:06Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "密碼規則#密碼規則",
@@ -9029,7 +9145,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:22:12Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "帳號刪除#帳號刪除",
@@ -9130,7 +9247,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:22:12Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "帳號管理與安全#帳號管理與安全",
@@ -9233,7 +9351,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:22:12Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "快速到貨#快速到貨",
@@ -9346,7 +9465,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:41:15Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "快閃特賣購物須知#快閃特賣購物須知",
@@ -9484,7 +9604,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:47:40Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "排除品項#排除品項",
@@ -9569,7 +9690,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:15:40Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "推薦好友#推薦好友",
@@ -9666,7 +9788,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:26:24Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "換貨時效#換貨時效",
@@ -9744,7 +9867,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:24:20Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "損壞商品#損壞商品",
@@ -9842,7 +9966,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:24:20Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "搭配貨到付款#搭配貨到付款",
@@ -9927,7 +10052,8 @@
         "type": "concept",
         "updated": "2026-07-05T11:09:48Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "暫停訂閱#暫停訂閱",
@@ -10010,7 +10136,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:02:14Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "會員日優惠-2#會員日優惠",
@@ -10103,7 +10230,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:50:36Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "會員日優惠#會員日優惠",
@@ -10192,7 +10320,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:50:36Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "會員等級#會員等級",
@@ -10358,7 +10487,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:26:24Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "會員與紅利點數#會員與紅利點數",
@@ -10456,7 +10586,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:26:24Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "服務時間#服務時間",
@@ -10551,7 +10682,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:14:06Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "標準配送#標準配送",
@@ -10654,7 +10786,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:41:15Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "登入保護#登入保護",
@@ -10741,7 +10874,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:22:12Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "禮物卡#禮物卡",
@@ -10842,7 +10976,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:28:47Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "聯絡客服#聯絡客服",
@@ -10932,7 +11067,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:14:06Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "自取地點#自取地點",
@@ -11017,7 +11153,8 @@
         "type": "concept",
         "updated": "2026-07-05T11:13:35Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "與一般退貨的差異#與一般退貨的差異",
@@ -11117,7 +11254,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:24:20Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "與紅利點數的關係#與紅利點數的關係",
@@ -11210,7 +11348,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:28:47Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "處理選項#處理選項",
@@ -11313,7 +11452,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:24:20Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "行動支付#行動支付",
@@ -11379,7 +11519,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:08:46Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "訂單查詢與發票#訂單查詢與發票",
@@ -11458,7 +11599,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:00:47Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "訂單管理#訂單管理",
@@ -11557,7 +11699,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:00:47Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "訂閱優惠#訂閱優惠",
@@ -11632,7 +11775,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:02:14Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "訂閱訂單#訂閱訂單",
@@ -11764,7 +11908,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:02:14Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "註冊方式#註冊方式",
@@ -11842,7 +11987,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:22:12Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "貨到付款#貨到付款",
@@ -11959,7 +12105,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:08:46Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "超商代碼繳費#超商代碼繳費",
@@ -12044,7 +12191,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:08:46Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "超商取貨#超商取貨",
@@ -12131,7 +12279,8 @@
         "type": "concept",
         "updated": "2026-07-05T11:09:48Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "超商取貨運費#超商取貨運費",
@@ -12211,7 +12360,8 @@
         "type": "concept",
         "updated": "2026-07-05T11:09:48Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "退款條件#退款條件",
@@ -12322,7 +12472,8 @@
         "type": "concept",
         "updated": "2026-07-09T09:51:18Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "退款流程#退款流程",
@@ -12429,7 +12580,8 @@
         "type": "concept",
         "updated": "2026-07-09T09:51:37Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "退款申請窗口#退款申請窗口",
@@ -12518,7 +12670,8 @@
         "type": "concept",
         "updated": "2026-07-09T09:50:52Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "退貨期限提醒#退貨期限提醒",
@@ -12640,7 +12793,8 @@
         "type": "concept",
         "updated": "2026-07-05T11:06:58Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "退貨運費#退貨運費",
@@ -12743,7 +12897,8 @@
         "type": "concept",
         "updated": "2026-07-09T09:52:02Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "逾期與補發#逾期與補發",
@@ -12820,7 +12975,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:22:45Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "運費#運費",
@@ -12910,7 +13066,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:15:40Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "運送與配送#運送與配送",
@@ -12982,7 +13139,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:41:15Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "適用品項與週期#適用品項與週期",
@@ -13059,7 +13217,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:02:14Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "配送地區#配送地區",
@@ -13137,7 +13296,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:15:40Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "配送查詢#配送查詢",
@@ -13224,7 +13384,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:41:15Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "重新啟用#重新啟用",
@@ -13302,7 +13463,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:02:14Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "門市據點與自取服務#門市據點與自取服務",
@@ -13420,7 +13582,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:48:48Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "門市自取#門市自取",
@@ -13537,7 +13700,8 @@
         "type": "concept",
         "updated": "2026-07-05T11:13:35Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "關稅與稅費#關稅與稅費",
@@ -13621,7 +13785,8 @@
         "type": "concept",
         "updated": "2026-07-05T10:15:40Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "面額與交付#面額與交付",
@@ -13707,7 +13872,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:28:47Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "點數折抵#點數折抵",
@@ -13798,7 +13964,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:26:24Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "點數效期#點數效期",
@@ -13871,7 +14038,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:26:24Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "點數累積#點數累積",
@@ -13965,7 +14133,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:26:24Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "點數限制#點數限制",
@@ -14080,7 +14249,8 @@
         "type": "concept",
         "updated": "2026-07-05T09:26:24Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": []
     },
     {
       "id": "how-long-do-refunds-take-for-a-request-t-6d6071",
@@ -14144,7 +14314,20 @@
         "type": "qa",
         "updated": "2026-07-11T06:23:08Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": [
+        "long",
+        "refunds",
+        "take",
+        "request",
+        "be",
+        "reviewed",
+        "money",
+        "reach",
+        "original",
+        "payment",
+        "method"
+      ]
     },
     {
       "id": "qa-count-zero-zh-006#intro",
@@ -14190,7 +14373,17 @@
         "count": 0,
         "open_questions": [],
         "lang": "en"
-      }
+      },
+      "question_tokens": [
+        "退款",
+        "款要",
+        "要多",
+        "多久",
+        "久才",
+        "才會",
+        "會入",
+        "入帳"
+      ]
     },
     {
       "id": "qa-count-zero-zh-006#退款要多久才會入帳",
@@ -14256,7 +14449,17 @@
         "count": 0,
         "open_questions": [],
         "lang": "zh"
-      }
+      },
+      "question_tokens": [
+        "退款",
+        "款要",
+        "要多",
+        "多久",
+        "久才",
+        "才會",
+        "會入",
+        "入帳"
+      ]
     },
     {
       "id": "qa-store-pickup-zh-003#intro",
@@ -14303,7 +14506,16 @@
         "count": 4,
         "open_questions": [],
         "lang": "en"
-      }
+      },
+      "question_tokens": [
+        "門市",
+        "市自",
+        "自取",
+        "取要",
+        "要帶",
+        "帶什",
+        "什麼"
+      ]
     },
     {
       "id": "qa-store-pickup-zh-003#門市自取要帶什麼",
@@ -14369,7 +14581,16 @@
         "count": 4,
         "open_questions": [],
         "lang": "zh"
-      }
+      },
+      "question_tokens": [
+        "門市",
+        "市自",
+        "自取",
+        "取要",
+        "要帶",
+        "帶什",
+        "什麼"
+      ]
     },
     {
       "id": "qa-store-services-en-004#intro",
@@ -14413,7 +14634,13 @@
         "count": 2,
         "open_questions": [],
         "lang": "en"
-      }
+      },
+      "question_tokens": [
+        "stores",
+        "offer",
+        "store",
+        "pickup"
+      ]
     },
     {
       "id": "qa-store-services-en-004#which-stores-offer-in-store-pickup",
@@ -14463,7 +14690,13 @@
         "count": 2,
         "open_questions": [],
         "lang": "en"
-      }
+      },
+      "question_tokens": [
+        "stores",
+        "offer",
+        "store",
+        "pickup"
+      ]
     },
     {
       "id": "what-payment-methods-are-accepted-for-pa-fdc2ef",
@@ -14584,7 +14817,13 @@
         "type": "qa",
         "updated": "2026-07-11T07:50:00Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": [
+        "payment",
+        "methods",
+        "accepted",
+        "payments"
+      ]
     },
     {
       "id": "which-countries-does-acme-shop-ship-to-f70fda",
@@ -14633,7 +14872,13 @@
         "type": "qa",
         "updated": "2026-07-11T06:23:13Z",
         "lang": "en"
-      }
+      },
+      "question_tokens": [
+        "countries",
+        "acme",
+        "shop",
+        "ship"
+      ]
     },
     {
       "id": "你們接受哪些付款方式-fb0f2e",
@@ -14752,7 +14997,18 @@
         "type": "qa",
         "updated": "2026-07-11T06:34:00Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": [
+        "你們",
+        "們接",
+        "接受",
+        "受哪",
+        "哪些",
+        "些付",
+        "付款",
+        "款方",
+        "方式"
+      ]
     },
     {
       "id": "退款要幾天才會退到帳戶-d343c3",
@@ -14832,7 +15088,19 @@
         "type": "qa",
         "updated": "2026-07-11T06:33:43Z",
         "lang": "zh"
-      }
+      },
+      "question_tokens": [
+        "退款",
+        "款要",
+        "要幾",
+        "幾天",
+        "天才",
+        "才會",
+        "會退",
+        "退到",
+        "到帳",
+        "帳戶"
+      ]
     }
   ],
   "stats": {
