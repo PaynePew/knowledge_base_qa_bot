@@ -351,7 +351,14 @@ GitHub issue #269 (deploy S1 — Gateway production middleware). They are emitte
 by `gateway/app/middleware.py::ProdMiddleware` when a heavy request is rejected
 by one of the demo guards (daily USD budget, per-IP rate limit, concurrency
 cap, provider quota), so the `gateway/log.md` carries an operator-facing audit
-of every shed.
+of every shed. Issue #599 (SSE slow-client capacity) widens `overload_shed`'s
+`kind=` values from `<read|admin>` to `<read|admin|sse>`: the SSE-specific
+concurrent cap (`KB_SSE_MAX_CONCURRENT`, `gateway/app/sse_capacity.py`) is a
+dedicated, tighter pool checked in addition to the read semaphore for
+`/chat/stream` only, and reuses this same kind rather than a new one (same
+event — a concurrency cap rejecting a request — just a third pool). Issue #599
+also adds `sse_idle_timeout` (see below), a distinct kind because it fires
+well AFTER admission, mid-stream, not at the concurrency gate.
 
 The `rate_limited` kind is gateway-specific, authorized by GitHub issue #598
 Slice A (read-reserved budget + per-IP rate limit). Emitted by the same
@@ -372,10 +379,11 @@ lives in `.kb/feedback.jsonl`, itself gitignored/ephemeral).
 |---|---|---|
 | `chat_rewrite` | Turn 2+ query rewriting succeeded inside `_sse_generator`; emitted right after `rewrite_query()` returns | `session=<uuid> raw="<60-char-bounded raw follow-up>" rewritten="<60-char-bounded self-contained query>"` |
 | `budget_block` | A heavy request is rejected because the UTC-day cost estimate has reached the relevant ceiling (full cap for reads, `cap - KB_READ_RESERVED_USD` for admin, issue #598) | `path=<mounted-path> cap=<usd> read_reserved=<usd>` |
-| `overload_shed` | A heavy request is rejected because its semaphore (read or admin) is fully held | `path=<mounted-path> kind=<read\|admin>` |
+| `overload_shed` | A heavy request is rejected because its semaphore is fully held | `path=<mounted-path> kind=<read\|admin\|sse>` — `sse` (issue #599) is the dedicated `/chat/stream` concurrent-SSE pool (`KB_SSE_MAX_CONCURRENT`), checked in addition to `read` |
 | `rate_limited` | A heavy request (read or admin) is rejected because its client IP has hit `KB_RATE_LIMIT_PER_IP` for the current 5-minute window | `path=<mounted-path> ip=<client-ip>` |
 | `provider_quota_503` | A non-streaming heavy request raised an OpenAI `insufficient_quota` / 429, mapped to a friendly 503 | `path=<mounted-path> exc=<ExceptionClassName>` |
 | `feedback` | `POST /feedback` accepted a valid Reader Feedback record | `answer_id=<uuid> reaction=<up\|down> stack=<wiki\|rag\|hybrid> grounding=<reason> has_comment=<bool>` |
+| `sse_idle_timeout` | An open `/chat/stream` connection is closed server-side because a `send()` to the client made zero read progress for `KB_SSE_IDLE_TIMEOUT_SEC` (issue #599, `gateway/app/sse_capacity.py::run_with_heartbeat`) | `idle_timeout_sec=<seconds> path=/chat/stream` |
 
 `raw` and `rewritten` are truncated to 60 chars and have inner `"` replaced
 with `'` (per CODING_STANDARD §5.3 bounded-summary idiom).
