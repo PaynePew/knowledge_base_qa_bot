@@ -104,6 +104,13 @@ _DOMINANT_SCRIPT_HIGH = 0.60
 CANNOT_CONFIRM_PHRASE = "I cannot confirm from the knowledge base."
 NOT_INDEXED_MESSAGE = "The knowledge base has not been indexed yet. Call POST /ingest to populate the wiki, then POST /index."
 
+# Fixed seed for the drafter + retry-drafter LLMs (ADR-0038's C5-judge pattern,
+# extended to the serving chain by ADR-0042 / issue #572). Per-module private
+# constant. Best-effort only: OpenAI's seed is not a hard guarantee, but paired
+# with temperature=0 it cuts run-to-run draft rewording that would otherwise
+# hand the verifier a legitimately different claim set on re-ask.
+_ANSWER_CHAIN_LLM_SEED = 7
+
 _llm = None
 # Separate singleton for temperature=0 grounding retries.
 # Tests monkeypatch both _llm and _retry_llm (or get_llm / get_retry_llm).
@@ -120,6 +127,7 @@ def get_llm():
         _llm = ChatOpenAI(
             model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
             temperature=0,
+            seed=_ANSWER_CHAIN_LLM_SEED,
             timeout=20,
             max_retries=1,
         )
@@ -133,6 +141,7 @@ def get_retry_llm():
         _retry_llm = ChatOpenAI(
             model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
             temperature=0,
+            seed=_ANSWER_CHAIN_LLM_SEED,
             timeout=20,
             max_retries=1,
         )

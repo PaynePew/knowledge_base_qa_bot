@@ -147,6 +147,20 @@ def _make_fake_grounding_llm(result: GroundingResult) -> MagicMock:
     return fake_llm
 
 
+def _force_verifier_llm_rebuild() -> None:
+    """Force ``grounding.get_verifier_llm()`` to rebuild on its next call.
+
+    ADR-0042 / issue #572 hoisted the verifier's ``ChatOpenAI`` construction
+    into a lazy singleton. A test that patches ``app.grounding.ChatOpenAI`` a
+    SECOND time within one test body (e.g. generate under ``_PASS_RESULT``,
+    then apply under ``_FAIL_RESULT``) needs this between the two patch
+    blocks — otherwise the first call's cached client leaks into the second.
+    """
+    import app.grounding as grounding_module
+
+    grounding_module._verifier_llm = None
+
+
 _PASS_RESULT = GroundingResult(
     reasoning="All claims trace to the cited Refund Policy section.",
     claims=[
@@ -575,6 +589,7 @@ def test_apply_422_on_grounding_failure_lists_unsupported_claims(
     before_a = path_a.read_text(encoding="utf-8")
     before_b = path_b.read_text(encoding="utf-8")
 
+    _force_verifier_llm_rebuild()
     fake_grounding_llm = _make_fake_grounding_llm(_FAIL_RESULT)
     with patch("app.grounding.ChatOpenAI", return_value=fake_grounding_llm):
         resp = reconcile_client.post(
