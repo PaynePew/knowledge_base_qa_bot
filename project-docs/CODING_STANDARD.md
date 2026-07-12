@@ -2,7 +2,7 @@
 
 How code is shaped in this repo, what conventions hold across modules, what design patterns are in play, and what tooling enforces them. This file is **not the spec** — that lives in `project-docs/prd.md` and `project-docs/adr/*.md` / `CONTEXT.md`. This file is the **consistency layer** that keeps the spec implementable across slices without drifting.
 
-> **Freshness**: last reconciled through **ADR-0040** (2026-07-11). If `project-docs/adr/` holds a newer Accepted ADR than this stamp, this file is stale — reconcile per §0.3.
+> **Freshness**: last reconciled through **ADR-0041** (2026-07-12). If `project-docs/adr/` holds a newer Accepted ADR than this stamp, this file is stale — reconcile per §0.3.
 
 ## 0. Reading order
 
@@ -492,6 +492,7 @@ For quick recognition during code review. Code-site anchors for each pattern liv
 | **Adapter** | LangChain client wraps the OpenAI SDK. Provides timeout/retry plumbing; isolated to the LLM-call wrapper module so the rest of the codebase never sees LangChain types. |
 | **Structured-output adapter via `with_structured_output`** | ADR-0005 pre-blessed component pattern. LLM bound to a Pydantic schema; schema is never exposed outside the owning module. Both classification and synthesis calls use this pattern so LLM output is always validated at the boundary. |
 | **Soft-demote / tombstone** | A defective or stale `status: live` record demotes in place to `draft` (content preserved, reversible, logged) rather than hard-delete; the curator edits / re-promotes or discards it. `qa.demote` is the canonical primitive (ADR-0035 / ADR-0037). |
+| **Trash-move (Source layer)** | A retired Source leaves the corpus by one atomic whole-file move into a timestamped trash tree *outside* the scanned corpus root (bytes untouched; restore = the inverse move), never by hard-delete or an in-file status marker. Complements soft-demote: demote is the wiki-layer posture (derived, regenerable records), trash-move is the Source-layer posture (canonical bytes nothing can regenerate). The source-lifecycle module is the canonical site (ADR-0041). |
 
 Notable patterns **rejected** (do not introduce):
 

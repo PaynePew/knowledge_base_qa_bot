@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``parse_markdown``, ``parse_markdown_body``, ``split_frontmatter``, ``count_uncarried_chars``, ``build_index``, ``load_index_json``, ``search``, ``slugify``, ``Section`` (dataclass), plus the module-level ``sections`` list (read by ``retrieval.py``).
+"""Deep module per Ousterhout. Public surface: ``parse_markdown``, ``parse_markdown_body``, ``split_frontmatter``, ``count_uncarried_chars``, ``build_index``, ``load_index_json``, ``search``, ``slugify``, ``wiki_page_count``, ``indexed_sections_count``, ``Section`` (dataclass), plus the module-level ``sections`` list (read by ``retrieval.py``).
 
 Markdown Section Index builder.
 
@@ -1010,6 +1010,61 @@ def load_index_json(index_path: Path | None = None) -> tuple[int, int]:
     )
 
     return files_indexed, len(sections)
+
+
+def wiki_page_count() -> int:
+    """Recursively count files under the curated wiki subdirs (entities/concepts/qa).
+
+    A cheap directory-listing count for the Operator Console's live
+    artifact-node counts (issue #559 A1) — no frontmatter is read, no
+    ``_passes_index_filter`` status gating is applied, so this is NOT the
+    retrieval corpus size (a quarantined or draft page still counts). Meta
+    files at the wiki root (index.md, log.md, hot.md, lint-report.md,
+    README.md) are excluded by construction — only the three subdirectories
+    are scanned. A missing subdirectory counts as 0.
+
+    Re-reads ``WIKI_DIR`` at call time (rather than the import-time
+    ``SOURCE_DIRS`` snapshot) so test monkeypatches of ``WIKI_DIR`` take
+    effect, mirroring ``build_index``'s ``docs_dir`` override.
+    """
+    total = 0
+    for name in ("entities", "concepts", "qa"):
+        sub_dir = WIKI_DIR / name
+        if not sub_dir.exists():
+            continue
+        total += sum(
+            1
+            for p in sub_dir.rglob("*")
+            if p.is_file()
+            and not any(part.startswith(".") for part in p.relative_to(sub_dir).parts)
+        )
+    return total
+
+
+def indexed_sections_count(index_path: Path | None = None) -> int:
+    """Return the persisted Section Index's ``sections_indexed`` stat.
+
+    A pure read of ``.kb/index.json``'s ``stats.sections_indexed`` field for
+    the Operator Console's live artifact-node counts (issue #559 A1) — unlike
+    ``load_index_json``, this does NOT mutate the in-memory ``sections`` list
+    and does NOT emit a log entry; it never triggers an index rebuild.
+
+    Returns:
+        The persisted section count, or 0 if the index file does not exist.
+
+    Raises:
+        json.JSONDecodeError: the index file exists but is corrupt (fail
+            fast, mirroring ``load_index_json``'s contract).
+    """
+    if index_path is None:
+        index_path = INDEX_PATH
+
+    if not index_path.exists():
+        return 0
+
+    raw = index_path.read_text(encoding="utf-8")
+    payload = json.loads(raw)
+    return int(payload.get("stats", {}).get("sections_indexed", 0))
 
 
 def build_index(docs_dir: Path = DOCS_DIR) -> tuple[int, int]:

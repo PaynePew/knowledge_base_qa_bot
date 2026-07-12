@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``compute_slug``, ``normalize_question``, ``maybe_file_answer``, ``dispatch_filing``, ``promote``, ``promote_batch``, ``delete``, ``edit``, ``refile``, ``demote``, ``QaPageNotFound``, ``QaPageCorrupt``, ``QaPageLive``, ``QaEditRejected``, ``QaRefileRejected``, ``RefiledAnswer``.
+"""Deep module per Ousterhout. Public surface: ``compute_slug``, ``normalize_question``, ``maybe_file_answer``, ``dispatch_filing``, ``flush_pending_counts``, ``promote``, ``promote_batch``, ``delete``, ``edit``, ``refile``, ``demote``, ``QaPageNotFound``, ``QaPageCorrupt``, ``QaPageLive``, ``QaEditRejected``, ``QaRefileRejected``, ``RefiledAnswer``.
 
 Phase 6 Slice 6-2 — Answer Filing for ``POST /chat``.
 Phase 6 Slice 6-4 — curator-driven ``promote(slug)`` flips ``status: draft -> live``.
@@ -91,14 +91,33 @@ broadens the gate to "the top-ranked cited source is a ``wiki/qa/`` page"
 original all-qa case and additionally catches this one; it emits the new
 ``qa_filing_skip`` kind so the skip is observable. Deliberately
 conservative: a QA page cited only *below* position 0 does not gate.
+
+issue #581 (count write-amplification, scope decision 2026-07-12) — a
+touch's ``count`` bump no longer rewrites the whole page on every re-ask.
+The delta accumulates in the module-level ``_pending_counts`` map (guarded
+by ``_filing_lock``, same as everything else here) and is only persisted
+when the page's batching window (``KB_QA_COUNT_FLUSH_SEC``, default 300s)
+has elapsed, OR sooner via ``flush_pending_counts(force=True)`` (called by
+``main.py``'s lifespan shutdown hook so a clean process exit never drops a
+buffered count). ``KB_QA_COUNT_FLUSH_SEC<=0`` disables batching outright —
+every touch flushes immediately, matching pre-#581 behaviour. The
+``FiledStatus.count`` a caller sees is always the true, up-to-the-request
+value (on-disk count + accumulated delta) regardless of whether the disk
+write has actually happened yet — only a *direct read of the raw file* can
+observe staleness. Explicitly out of scope (see the issue): draft TTL /
+auto-discard and normalize-and-dedup at filing time are deferred to
+follow-on slices; the always-200 filing contract and the single
+``_filing_lock`` critical section are unchanged.
 """
 
 from __future__ import annotations
 
 import datetime
 import hashlib
+import os
 import re
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -141,17 +160,179 @@ SENTINEL_COMMENT = (
 # Single module-level lock covers the ENTIRE filing decision:
 #   1. read existing frontmatter (if any)
 #   2. decide create vs touch
-#   3. atomic write
+#   3. atomic write (create path; touch path when its batching window has
+#      elapsed — see "Count-write batching" below)
 #   4. emit qa_reflect
 # Holding the lock through reflect emission guarantees that mutation and log
-# entry are inseparable — there is no window in which a write happened but the
-# log entry has not yet appeared.
+# entry are inseparable for the create path and for a touch that actually
+# flushes — there is no window in which a write happened but the log entry
+# has not yet appeared. issue #581: a touch inside its batching window emits
+# qa_reflect (the real-time audit signal) but defers the disk write itself
+# to a later flush_pending_counts() call, still under this same lock.
 #
 # Demo / single-worker uvicorn scope only. Multi-worker production requires
 # upgrading to a cross-process file lock (e.g. ``filelock`` library) — the
 # change is fully contained in this module per PRD #78 §"Filing trigger
 # placement" (Q7).
 _filing_lock = threading.Lock()
+
+
+# ---------------------------------------------------------------------------
+# Count-write batching (issue #581 — eliminate per-touch full-page rewrites)
+# ---------------------------------------------------------------------------
+
+_KB_QA_COUNT_FLUSH_SEC_DEFAULT = 300.0
+
+
+def _count_flush_interval_sec() -> float:
+    """Read ``KB_QA_COUNT_FLUSH_SEC`` fresh on every call.
+
+    Not cached at import time (unlike most other ``KB_*`` knobs in this
+    codebase) so tests can ``monkeypatch.setenv`` per-case without needing a
+    module reload. ``<= 0`` disables batching outright: every touch flushes
+    immediately, reproducing the pre-#581 synchronous-write behaviour.
+    """
+    return float(os.getenv("KB_QA_COUNT_FLUSH_SEC", str(_KB_QA_COUNT_FLUSH_SEC_DEFAULT)))
+
+
+class _PendingCount:
+    """One ``wiki/qa/<slug>.md`` touch stream's unflushed count delta.
+
+    Every read/mutation happens inside a ``with _filing_lock:`` block — no
+    separate lock is needed. Keyed by absolute path (not slug) in
+    ``_pending_counts`` below, so per-test ``tmp_path`` isolation also
+    isolates batching state; two tests reusing the same question text never
+    leak a pending delta into each other's file.
+    """
+
+    __slots__ = ("slug", "delta", "due_at")
+
+    def __init__(self, slug: str, delta: int, due_at: float) -> None:
+        self.slug = slug
+        self.delta = delta
+        self.due_at = due_at
+
+
+_pending_counts: dict[Path, _PendingCount] = {}
+
+# Lazily-started background thread that periodically calls
+# flush_pending_counts() so a page that stops being re-asked mid-window still
+# gets its buffered count persisted within one interval, without needing
+# another touch to trigger it. A daemon thread never blocks process exit on
+# its own; main.py's lifespan shutdown hook (flush_pending_counts(force=True))
+# is the authoritative "flush everything before exit" path.
+_flush_thread: threading.Thread | None = None
+_flush_thread_lock = threading.Lock()
+_flush_stop_event = threading.Event()
+
+
+def _ensure_flush_thread_started() -> None:
+    """Start the periodic flush loop once, lazily, on the first buffered touch.
+
+    Idempotent and thread-safe. A process that never files a re-ask never
+    spins up a thread it doesn't need.
+    """
+    global _flush_thread
+    with _flush_thread_lock:
+        if _flush_thread is not None and _flush_thread.is_alive():
+            return
+        _flush_stop_event.clear()
+        _flush_thread = threading.Thread(target=_flush_loop, name="qa-count-flush", daemon=True)
+        _flush_thread.start()
+
+
+def _flush_loop() -> None:
+    """Background loop: wake up periodically and persist anything past due.
+
+    Wakes at most every 5s (even when the configured interval is longer) so
+    the loop notices a shortened ``KB_QA_COUNT_FLUSH_SEC`` promptly and so
+    ``_flush_stop_event`` interrupts the wait quickly rather than blocking
+    for the full interval.
+    """
+    while not _flush_stop_event.is_set():
+        interval = _count_flush_interval_sec()
+        wait = min(interval, 5.0) if interval > 0 else 1.0
+        if _flush_stop_event.wait(wait):
+            return
+        flush_pending_counts()
+
+
+def flush_pending_counts(force: bool = False) -> int:
+    """Persist every buffered count delta whose batching window has elapsed.
+
+    ``force=True`` ignores the window and flushes everything unconditionally
+    — used by ``main.py``'s app-shutdown hook (issue #581 scope: "...或程序
+    關閉時 flush 一次到檔") so a clean shutdown never loses a buffered count.
+    The periodic background thread calls this with ``force=False``.
+
+    Returns the number of slugs actually written to disk.
+    """
+    now = time.monotonic()
+    flushed = 0
+    with _filing_lock:
+        due_paths = [
+            path
+            for path, pending in _pending_counts.items()
+            if pending.delta > 0 and (force or now >= pending.due_at)
+        ]
+        for path in due_paths:
+            if _flush_one_pending_locked(path):
+                flushed += 1
+    return flushed
+
+
+def _flush_one_pending_locked(path: Path) -> bool:
+    """Write one slug's buffered count delta to disk. Caller holds ``_filing_lock``.
+
+    Re-reads frontmatter fresh from disk (never trusts cached state) so a
+    promote/edit/demote/refile that ran on this slug since the delta was
+    buffered is never clobbered — only ``count``/``updated`` change here,
+    the same field set a touch write itself would change. If the page
+    vanished or its status became invalid in the meantime, the pending
+    delta is dropped (best-effort — mirrors ``_resolve_cited_sections``'s
+    tolerance of a since-vanished target); a future touch's own
+    orphan-status defence would catch the same page if it re-appears.
+    """
+    pending = _pending_counts.get(path)
+    if pending is None:
+        return False
+
+    existing = _read_existing_frontmatter(path)
+    if existing is None:
+        del _pending_counts[path]
+        return False
+
+    existing_status = existing.get("status")
+    if existing_status not in {"draft", "live"}:
+        del _pending_counts[path]
+        return False
+
+    try:
+        disk_count = int(existing.get("count", 1))
+    except (TypeError, ValueError):
+        disk_count = 1
+
+    try:
+        fm = WikiPageFrontmatter(
+            id=existing.get("id", pending.slug),
+            type="qa",
+            created=existing.get("created", _utc_now_iso()),
+            updated=_utc_now_iso(),
+            sources=[str(s) for s in existing.get("sources", [])],
+            status=existing_status,
+            open_questions=existing.get("open_questions") or [],
+            question=existing.get("question"),
+            count=disk_count + pending.delta,
+        )
+    except Exception:  # noqa: BLE001 — defensive, mirrors maybe_file_answer's touch path
+        del _pending_counts[path]
+        return False
+
+    if not _write_qa_page_or_log_error(path, fm, pending.slug):
+        return False  # keep pending — retry on the next flush
+
+    del _pending_counts[path]
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -306,6 +487,31 @@ def _atomic_write(path: Path, content: str) -> None:
     the fail-soft ``OSError`` handling in ``maybe_file_answer``.
     """
     write_text_atomic(path, content)
+
+
+def _write_qa_page_or_log_error(path: Path, fm: WikiPageFrontmatter, slug_for_log: str) -> bool:
+    """Render ``fm`` + the page's existing body and atomically write it.
+
+    Shared by the touch path's immediate-flush branch and
+    ``_flush_one_pending_locked`` (issue #581) — the second use site is what
+    earns this its own function, mirroring ``_flip_draft_to_live``'s role for
+    ``promote``/``promote_batch``. Returns ``True`` on success; on ``OSError``
+    logs ``qa_filing_error reason=io_error`` and returns ``False`` — the
+    caller decides what a failed write means for its own return contract
+    (``maybe_file_answer`` returns ``None``; a flush just keeps the delta
+    pending for the next attempt).
+    """
+    body = _read_existing_body(path)
+    content = _render_qa_page(fm, body)
+    try:
+        _atomic_write(path, content)
+    except OSError as exc:
+        log_event(
+            "qa_filing_error",
+            f"slug={slug_for_log} reason=io_error exc={type(exc).__name__}: {exc}",
+        )
+        return False
+    return True
 
 
 def _read_existing_frontmatter(path: Path) -> dict | None:
@@ -466,14 +672,30 @@ def maybe_file_answer(
         # Re-read existing data; preserve created + body
         existing_count_raw = existing.get("count", 1)
         try:
-            existing_count = int(existing_count_raw)
+            disk_count = int(existing_count_raw)
         except (TypeError, ValueError):
-            existing_count = 1
-        new_count = existing_count + 1
+            disk_count = 1
         existing_sources = [str(s) for s in existing.get("sources", [])]
         existing_question = existing.get("question") or query
         existing_created = existing.get("created", now)
         existing_open_questions = existing.get("open_questions") or []
+
+        # issue #581 — count write batching. ``disk_count`` above may already
+        # be stale (a prior touch in this same window buffered its delta
+        # without writing); ``pending.delta`` tracks every increment since
+        # the last actual flush, so ``disk_count + pending.delta`` is always
+        # the true logical count regardless of how many touches have piled
+        # up unflushed.
+        pending = _pending_counts.get(path)
+        interval = _count_flush_interval_sec()
+        monotonic_now = time.monotonic()
+        if pending is None:
+            due_at = monotonic_now if interval <= 0 else monotonic_now + interval
+            pending = _PendingCount(slug=slug, delta=0, due_at=due_at)
+            _pending_counts[path] = pending
+        pending.delta += 1
+        true_count = disk_count + pending.delta
+
         # Reuse existing status verbatim — touch must not flip draft→live or vice versa.
         try:
             fm = WikiPageFrontmatter(
@@ -485,7 +707,7 @@ def maybe_file_answer(
                 status=existing_status,  # validated above to be draft|live
                 open_questions=existing_open_questions,
                 question=existing_question,
-                count=new_count,
+                count=true_count,
             )
         except Exception as exc:  # noqa: BLE001 — defensive
             # Existing file's frontmatter dict didn't validate against our schema
@@ -497,29 +719,31 @@ def maybe_file_answer(
                 "qa_filing_error",
                 f"slug={slug} reason=frontmatter_read_error exc={type(exc).__name__}: {exc}",
             )
+            _pending_counts.pop(path, None)
             return None
 
-        body = _read_existing_body(path)
-        content = _render_qa_page(fm, body)
-        try:
-            _atomic_write(path, content)
-        except OSError as exc:
-            log_event(
-                "qa_filing_error",
-                f"slug={slug} reason=io_error exc={type(exc).__name__}: {exc}",
-            )
-            return None
+        if monotonic_now >= pending.due_at:
+            # Batching window elapsed (or KB_QA_COUNT_FLUSH_SEC<=0 disables
+            # batching outright) — persist immediately, same as pre-#581.
+            if not _write_qa_page_or_log_error(path, fm, slug):
+                return None
+            _pending_counts.pop(path, None)
+        else:
+            # Still inside the batching window — buffer in memory only; the
+            # periodic thread or the shutdown hook (flush_pending_counts)
+            # catches this up later (issue #581 write-amplification fix).
+            _ensure_flush_thread_started()
 
         cited_delta = _compute_cited_delta(cited_ids, existing_sources)
         log_event(
             "qa_reflect",
-            f"slug={slug} op=touched cited_delta={cited_delta} count={new_count}",
+            f"slug={slug} op=touched cited_delta={cited_delta} count={true_count}",
         )
         return FiledStatus(
             slug=slug,
             status=existing_status,
             op="touched",
-            count=new_count,
+            count=true_count,
         )
 
 
