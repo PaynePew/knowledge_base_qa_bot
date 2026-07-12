@@ -34,6 +34,7 @@ import app.pages as pages_module
 import app.read as read_module
 import app.source_lifecycle as sl
 import app.upload as upload_module
+import app.wiki_writer as wiki_writer_module
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -356,6 +357,242 @@ def test_restore_refuses_on_basename_collision_elsewhere(lifecycle_env):
         )
     assert not (lifecycle_env["docs"] / "policy.md").exists()
     assert (lifecycle_env["trash"] / result.timestamp / "docs" / "policy.md").exists()
+
+
+# ---------------------------------------------------------------------------
+# rename (issue #605, S2, ADR-0041 decision 5)
+# ---------------------------------------------------------------------------
+
+
+def test_rename_moves_file_same_directory(lifecycle_env):
+    result = sl.rename(
+        "policy.md",
+        "policy_v2.md",
+        docs_dir=lifecycle_env["docs"],
+        wiki_dir=lifecycle_env["wiki"],
+    )
+
+    assert result.old_relpath == "policy.md"
+    assert result.new_relpath == "policy_v2.md"
+    assert not (lifecycle_env["docs"] / "policy.md").exists()
+    assert (lifecycle_env["docs"] / "policy_v2.md").exists()
+    assert (
+        (lifecycle_env["docs"] / "policy_v2.md").read_text(encoding="utf-8").startswith("# Policy")
+    )
+
+
+def test_rename_nested_relpath_stays_in_same_directory(tmp_path):
+    docs = tmp_path / "docs"
+    wiki = tmp_path / "wiki" / "concepts"
+    (docs / "demo-zh").mkdir(parents=True)
+    wiki.mkdir(parents=True)
+    (docs / "demo-zh" / "policy.md").write_text("# 政策\n", encoding="utf-8")
+
+    result = sl.rename(
+        "demo-zh/policy.md", "policy_v2.md", docs_dir=docs, wiki_dir=tmp_path / "wiki"
+    )
+
+    assert result.new_relpath == "demo-zh/policy_v2.md"
+    assert (docs / "demo-zh" / "policy_v2.md").exists()
+    assert not (docs / "demo-zh" / "policy.md").exists()
+
+
+def test_rename_repoints_citations_across_pages_incl_partial(lifecycle_env):
+    """Re-point across multiple derived pages incl. a partial-citing page (§6)."""
+    result = sl.rename(
+        "policy.md",
+        "policy_v2.md",
+        docs_dir=lifecycle_env["docs"],
+        wiki_dir=lifecycle_env["wiki"],
+    )
+
+    assert result.repointed_pages == ["full-orphan-candidate", "partial-orphan-candidate"]
+
+    full = (lifecycle_env["wiki"] / "concepts" / "full-orphan-candidate.md").read_text(
+        encoding="utf-8"
+    )
+    partial = (lifecycle_env["wiki"] / "concepts" / "partial-orphan-candidate.md").read_text(
+        encoding="utf-8"
+    )
+    unrelated = (lifecycle_env["wiki"] / "concepts" / "unrelated.md").read_text(encoding="utf-8")
+
+    assert "policy_v2.md#refunds" in full
+    assert "policy.md#refunds" not in full
+    # partial-orphan-candidate cites BOTH policy.md and other.md — only the
+    # policy.md citation is rewritten; other.md is untouched.
+    assert "policy_v2.md#refunds" in partial
+    assert "other.md#s" in partial
+    # unrelated cites only other.md — must never be touched.
+    assert "policy" not in unrelated
+
+
+def test_rename_round_trip_restores_original_state(lifecycle_env):
+    sl.rename(
+        "policy.md", "policy_v2.md", docs_dir=lifecycle_env["docs"], wiki_dir=lifecycle_env["wiki"]
+    )
+    sl.rename(
+        "policy_v2.md", "policy.md", docs_dir=lifecycle_env["docs"], wiki_dir=lifecycle_env["wiki"]
+    )
+
+    assert (lifecycle_env["docs"] / "policy.md").exists()
+    assert not (lifecycle_env["docs"] / "policy_v2.md").exists()
+
+    restored_full = (lifecycle_env["wiki"] / "concepts" / "full-orphan-candidate.md").read_text(
+        encoding="utf-8"
+    )
+    restored_partial = (
+        lifecycle_env["wiki"] / "concepts" / "partial-orphan-candidate.md"
+    ).read_text(encoding="utf-8")
+    assert "policy.md#refunds" in restored_full
+    assert "policy_v2" not in restored_full
+    assert "policy.md#refunds" in restored_partial
+    assert "other.md#s" in restored_partial
+    assert "policy_v2" not in restored_partial
+
+
+def test_rename_rekeys_source_hashes(tmp_path):
+    docs = tmp_path / "docs"
+    wiki = tmp_path / "wiki" / "concepts"
+    docs.mkdir(parents=True)
+    wiki.mkdir(parents=True)
+    (docs / "policy.md").write_text("# Policy\n", encoding="utf-8")
+
+    page = wiki / "hashed-page.md"
+    page.write_text(
+        "---\n"
+        "id: hashed-page\n"
+        "type: concept\n"
+        "created: '2026-07-12T00:00:00Z'\n"
+        "updated: '2026-07-12T00:00:00Z'\n"
+        "sources:\n"
+        "  - policy.md#refunds\n"
+        "status: live\n"
+        "open_questions: []\n"
+        "source_hashes:\n"
+        "  policy.md: abc123\n"
+        "---\n\n"
+        "# hashed-page\n\nSome content.\n",
+        encoding="utf-8",
+    )
+
+    sl.rename("policy.md", "policy_v2.md", docs_dir=docs, wiki_dir=tmp_path / "wiki")
+
+    fm = wiki_writer_module.read_existing_frontmatter(page)
+    assert fm["source_hashes"] == {"policy_v2.md": "abc123"}
+    assert fm["sources"] == ["policy_v2.md#refunds"]
+
+
+def test_rename_page_own_slug_unaffected_no_new_machinery(lifecycle_env):
+    """ADR-0041 Consequences: a heading-less Source's fallback Section id
+    derives from the OLD filename; after a governed rename the page's own
+    slug/filename is untouched — only its ``sources`` citation is re-pointed
+    (documented behavior, no new machinery)."""
+    fallback_slug_page = lifecycle_env["wiki"] / "concepts" / "policy.md"
+    fallback_slug_page.write_text(_page_text("policy", ["policy.md#refunds"]), encoding="utf-8")
+
+    sl.rename(
+        "policy.md", "policy_v2.md", docs_dir=lifecycle_env["docs"], wiki_dir=lifecycle_env["wiki"]
+    )
+
+    assert fallback_slug_page.exists()
+    assert "policy_v2.md#refunds" in fallback_slug_page.read_text(encoding="utf-8")
+
+
+def test_rename_logs_source_renamed(lifecycle_env, monkeypatch):
+    log_path = lifecycle_env["tmp_path"] / "log.md"
+    import app.logger as logger_module
+
+    monkeypatch.setattr(logger_module, "LOG_PATH", log_path)
+
+    sl.rename(
+        "policy.md", "policy_v2.md", docs_dir=lifecycle_env["docs"], wiki_dir=lifecycle_env["wiki"]
+    )
+
+    log_text = log_path.read_text(encoding="utf-8")
+    assert "source_renamed" in log_text
+    assert "old_relpath=policy.md" in log_text
+    assert "new_relpath=policy_v2.md" in log_text
+    assert "repointed_pages=2" in log_text
+
+
+def test_rename_missing_source_raises(lifecycle_env):
+    with pytest.raises(sl.SourceNotFound):
+        sl.rename(
+            "ghost.md", "ghost2.md", docs_dir=lifecycle_env["docs"], wiki_dir=lifecycle_env["wiki"]
+        )
+
+
+def test_rename_unsafe_relpath_raises(lifecycle_env):
+    with pytest.raises(sl.InvalidRelpath):
+        sl.rename(
+            "../escape.md",
+            "policy_v2.md",
+            docs_dir=lifecycle_env["docs"],
+            wiki_dir=lifecycle_env["wiki"],
+        )
+
+
+@pytest.mark.parametrize(
+    "bad_new_basename",
+    [
+        "sub/escape.md",
+        "..",
+        "with#hash.md",
+        "",
+    ],
+)
+def test_rename_unsafe_new_basename_variants_raise(lifecycle_env, bad_new_basename):
+    with pytest.raises(sl.InvalidRelpath):
+        sl.rename(
+            "policy.md",
+            bad_new_basename,
+            docs_dir=lifecycle_env["docs"],
+            wiki_dir=lifecycle_env["wiki"],
+        )
+    assert (lifecycle_env["docs"] / "policy.md").exists()
+
+
+def test_rename_refuses_when_new_basename_equals_current(lifecycle_env):
+    with pytest.raises(sl.InvalidRelpath):
+        sl.rename(
+            "policy.md",
+            "policy.md",
+            docs_dir=lifecycle_env["docs"],
+            wiki_dir=lifecycle_env["wiki"],
+        )
+
+
+def test_rename_refuses_when_new_basename_collides_elsewhere(lifecycle_env):
+    """Guard (ADR-0041 decision 5): new_basename already exists ANYWHERE under docs/."""
+    with pytest.raises(sl.RenameBasenameCollision):
+        sl.rename(
+            "policy.md",
+            "other.md",
+            docs_dir=lifecycle_env["docs"],
+            wiki_dir=lifecycle_env["wiki"],
+        )
+    assert (lifecycle_env["docs"] / "policy.md").exists()
+    assert (lifecycle_env["docs"] / "other.md").exists()
+
+
+def test_rename_refuses_when_origin_basename_ambiguous(lifecycle_env):
+    """Guard (ADR-0041 decision 5): the OLD basename matches 2+ files under
+    docs/ — an anomalous pre-existing state; refused rather than guess which
+    file the citation re-point should touch."""
+    (lifecycle_env["docs"] / "elsewhere").mkdir()
+    (lifecycle_env["docs"] / "elsewhere" / "policy.md").write_text(
+        "# Elsewhere Policy\n", encoding="utf-8"
+    )
+
+    with pytest.raises(sl.SourceOriginAmbiguous):
+        sl.rename(
+            "policy.md",
+            "policy_v2.md",
+            docs_dir=lifecycle_env["docs"],
+            wiki_dir=lifecycle_env["wiki"],
+        )
+    assert (lifecycle_env["docs"] / "policy.md").exists()
+    assert not (lifecycle_env["docs"] / "policy_v2.md").exists()
 
 
 # ---------------------------------------------------------------------------

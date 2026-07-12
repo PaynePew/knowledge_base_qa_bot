@@ -1,11 +1,15 @@
-"""Gateway endpoint tests for the Source lifecycle S1 surface (issue #604,
-ADR-0041): ``GET /sources/{relpath}/impact``, ``POST /sources/retire``,
-``POST /sources/restore``, ``GET /sources/trash``.
+"""Gateway endpoint tests for the Source lifecycle S1/S2 surface (issues
+#604/#605, ADR-0041): ``GET /sources/{relpath}/impact``, ``POST
+/sources/retire``, ``POST /sources/restore``, ``POST /sources/rename``,
+``GET /sources/trash``.
 
 Tests use Starlette TestClient (in-process) with ``markdown_kb.app.
 source_lifecycle``'s module-level ``DOCS_DIR`` / ``WIKI_DIR`` / ``TRASH_DIR``
 redirected to tmp dirs, so no real docs/ / wiki/ / .trash/ is touched and no
 OPENAI_API_KEY is needed. Hermetic pattern mirrors ``test_read_endpoints.py``.
+The rename reindex tests additionally redirect ``markdown_kb.app.indexer``'s
+``WIKI_DIR`` / ``SOURCE_DIRS`` / ``INDEX_PATH`` (see ``rename_reindex_env``)
+so the route's real, unmocked ``build_index()`` call scans the tmp wiki/ too.
 """
 
 from __future__ import annotations
@@ -184,6 +188,141 @@ def test_restore_refuses_on_basename_collision_409(sources_env):
 
     resp = sources_env["client"].post(
         "/sources/restore", json={"timestamp": timestamp, "relpath": "policy.md"}
+    )
+    assert resp.status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# POST /sources/rename (issue #605, S2, ADR-0041 decision 5)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def rename_reindex_env(sources_env):
+    """Layers ``markdown_kb.app.indexer``'s reindex roots onto ``sources_env``
+    so a real (unmocked) ``build_index()`` call — as the route triggers on a
+    successful rename — scans the SAME tmp wiki/ dir the rename re-pointed,
+    instead of the real repo's SOURCE_DIRS (CODING_STANDARD: never mock a
+    deep-module entry point). Mirrors the established fixture pattern in
+    ``test_lifespan_cold_start.py::persisted_wiki_index_fresh_process``
+    (``SOURCE_DIRS`` is a plain module global read fresh inside
+    ``build_index()``, so monkeypatching it here — unlike ``DOCS_DIR``, which
+    is a bound default-argument value — takes effect).
+    """
+    import markdown_kb.app.indexer as indexer_module
+
+    wiki = sources_env["wiki"]
+    (wiki / "entities").mkdir(exist_ok=True)
+    (wiki / "qa").mkdir(exist_ok=True)
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(indexer_module, "WIKI_DIR", wiki)
+    monkeypatch.setattr(
+        indexer_module,
+        "SOURCE_DIRS",
+        [wiki / "entities", wiki / "concepts", wiki / "qa"],
+    )
+    monkeypatch.setattr(
+        indexer_module, "INDEX_PATH", sources_env["trash"].parent / ".kb" / "index.json"
+    )
+
+    yield sources_env
+
+    monkeypatch.undo()
+
+
+def test_rename_moves_file_and_repoints_citations(rename_reindex_env):
+    client = rename_reindex_env["client"]
+    resp = client.post(
+        "/sources/rename", json={"relpath": "policy.md", "new_basename": "policy_v2.md"}
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["old_relpath"] == "policy.md"
+    assert data["new_relpath"] == "policy_v2.md"
+    assert data["repointed_pages"] == ["full-orphan-candidate"]
+
+    assert not (rename_reindex_env["docs"] / "policy.md").exists()
+    assert (rename_reindex_env["docs"] / "policy_v2.md").exists()
+    page = (rename_reindex_env["wiki"] / "concepts" / "full-orphan-candidate.md").read_text(
+        encoding="utf-8"
+    )
+    assert "policy_v2.md#refunds" in page
+
+
+def test_rename_success_rebuilds_index_clears_staleness(rename_reindex_env):
+    import markdown_kb.app.indexer as indexer_module
+
+    client = rename_reindex_env["client"]
+    # Wiki has content (full-orphan-candidate.md) but no index has ever been
+    # built yet -> stale (CONTEXT.md Section Index semantic).
+    assert indexer_module.index_stale() is True
+    assert not indexer_module.INDEX_PATH.exists()
+
+    resp = client.post(
+        "/sources/rename", json={"relpath": "policy.md", "new_basename": "policy_v2.md"}
+    )
+    assert resp.status_code == 200, resp.text
+
+    assert indexer_module.INDEX_PATH.exists(), "build_index() must persist the Section Index"
+    assert indexer_module.index_stale() is False, (
+        "a successful rename must trigger exactly one build_index() so the "
+        "re-pointed wiki/ content is no longer stale (ADR-0041 decision 5)"
+    )
+
+
+@pytest.mark.parametrize(
+    "body,expected_status",
+    [
+        ({"relpath": "ghost.md", "new_basename": "ghost2.md"}, 404),
+        ({"relpath": "../escape.md", "new_basename": "policy_v2.md"}, 422),
+        ({"relpath": "policy.md", "new_basename": "other.md"}, 409),
+    ],
+)
+def test_rename_refusal_paths_never_trigger_reindex(rename_reindex_env, body, expected_status):
+    """Guard refusals (404/422/409) must NOT call build_index() — mirrors the
+    route docstring's own claim that ``build_index`` is never called on any
+    exception path."""
+    import markdown_kb.app.indexer as indexer_module
+
+    client = rename_reindex_env["client"]
+    (rename_reindex_env["docs"] / "other.md").write_text("# Other\n", encoding="utf-8")
+
+    resp = client.post("/sources/rename", json=body)
+    assert resp.status_code == expected_status, resp.text
+    assert not indexer_module.INDEX_PATH.exists(), (
+        "a refused rename must never trigger build_index()"
+    )
+
+
+def test_rename_missing_source_404(sources_env):
+    resp = sources_env["client"].post(
+        "/sources/rename", json={"relpath": "ghost.md", "new_basename": "ghost2.md"}
+    )
+    assert resp.status_code == 404
+
+
+def test_rename_traversal_422(sources_env):
+    resp = sources_env["client"].post(
+        "/sources/rename", json={"relpath": "../escape.md", "new_basename": "policy_v2.md"}
+    )
+    assert resp.status_code == 422
+
+
+def test_rename_refuses_when_new_basename_collides_409(sources_env):
+    (sources_env["docs"] / "other.md").write_text("# Other\n", encoding="utf-8")
+    resp = sources_env["client"].post(
+        "/sources/rename", json={"relpath": "policy.md", "new_basename": "other.md"}
+    )
+    assert resp.status_code == 409
+
+
+def test_rename_refuses_when_origin_ambiguous_409(sources_env):
+    (sources_env["docs"] / "elsewhere").mkdir()
+    (sources_env["docs"] / "elsewhere" / "policy.md").write_text("# Elsewhere\n", encoding="utf-8")
+
+    resp = sources_env["client"].post(
+        "/sources/rename", json={"relpath": "policy.md", "new_basename": "policy_v2.md"}
     )
     assert resp.status_code == 409
 

@@ -73,10 +73,15 @@ mutate the live corpus (a Source file move) with no LLM call, the same
 rationale as ``PAGES_DELETE_TEMPLATE`` / the alias endpoints — both are
 classified below. Neither is parameterized (the relpath/timestamp travel in
 the request body, not the path) so, unlike those two, no canonicalisation
-template is needed. ``GET /sources/{relpath}/impact`` and ``GET
-/sources/trash`` are deliberately left OUT of both sets: read-only, no LLM,
-no mutation — the same rationale that already leaves ``GET /read/*`` and
-``GET /pages/resolution-map`` unclassified.
+template is needed. ``POST /sources/rename`` (issue #605, ADR-0041 decision
+5) is classified for the same reason plus more: a Source-file move AND a
+mechanical re-point of every derived page's frontmatter AND a BM25 reindex
+— still no LLM call, but the heaviest of the three lifecycle acts, so it
+stays admin-semaphore + kill-switch gated exactly like its S1 siblings.
+``GET /sources/{relpath}/impact`` and ``GET /sources/trash`` are
+deliberately left OUT of both sets: read-only, no LLM, no mutation — the
+same rationale that already leaves ``GET /read/*`` and ``GET
+/pages/resolution-map`` unclassified.
 """
 
 from __future__ import annotations
@@ -172,6 +177,7 @@ ADMIN_PATHS: frozenset[str] = frozenset(
         ALIAS_REMOVE_TEMPLATE,  # ADR-0030 extension: Direct-tier remove-alias — no LLM, still a live-corpus mutation (issue #491)
         "/sources/retire",  # ADR-0041: Confirmed retire — no LLM, a Source-file move (issue #604)
         "/sources/restore",  # ADR-0041: Direct restore — no LLM, a Source-file move (issue #604)
+        "/sources/rename",  # ADR-0041 decision 5: Direct rename — no LLM, a Source-file move + citation re-point + reindex (issue #605)
     }
 )
 

@@ -1,12 +1,15 @@
-"""Deep module per Ousterhout. Public surface: ``retire``, ``restore``, ``list_trash``,
-``compute_impact``, ``RetireResult``, ``TrashEntry``, ``ImpactPreview``,
-``InvalidRelpath``, ``SourceNotFound``, ``TrashEntryNotFound``,
-``RestoreTargetOccupied``, ``RestoreBasenameCollision``.
+"""Deep module per Ousterhout. Public surface: ``retire``, ``restore``, ``rename``,
+``list_trash``, ``compute_impact``, ``RetireResult``, ``TrashEntry``,
+``ImpactPreview``, ``RenameResult``, ``InvalidRelpath``, ``SourceNotFound``,
+``TrashEntryNotFound``, ``RestoreTargetOccupied``, ``RestoreBasenameCollision``,
+``SourceOriginAmbiguous``, ``RenameBasenameCollision``.
 
-Source lifecycle — governed retire/restore of Sources into a timestamped
-Source Trash (ADR-0041, issue #604 — **S1 of 3**: this slice ships the
-trash-move core: retire, restore, the shared validator, and the audit log.
-S2 adds rename; S3 adds the Console/CLI/MCP surfaces.
+Source lifecycle — governed retire/restore/rename of Sources (ADR-0041).
+Issue #604 (S1) shipped the trash-move core: retire, restore, the shared
+validator, and the audit log. **This module now also ships S2 (issue #605):
+rename** — atomic same-directory basename move + mechanical re-point of
+every derived page's ``sources``/``source_hashes`` reference + one caller-
+triggered reindex. S3 adds the Console/CLI/MCP surfaces.
 
 **Retire** (Confirmed) is one atomic whole-file move ``docs/<relpath>`` ->
 ``<TRASH_DIR>/<UTC-timestamp>/docs/<relpath>`` (``atomic.replace_atomic`` —
@@ -42,6 +45,29 @@ delete click re-verifies the full-orphan predicate at delete time and 409s —
 re-synthesizes on the next ingest because its ``source_hashes`` skip-state
 died with it (ADR-0029 decision 4).
 
+**Rename** (Direct) is one atomic same-directory basename move
+(``docs/<dir>/old.md`` -> ``docs/<dir>/new.md``) plus a mechanical re-point
+of every derived page's ``sources`` entries and ``source_hashes`` keys, done
+under the same lock (ADR-0041 decision 5). No LLM: re-synthesizing unchanged
+bytes costs money and invites synthesis drift for zero new information. No
+alias: page slugs are outline-minted (ADR-0027) and a file rename moves no
+page identity, so there is nothing to redirect. Guards, sharing the same
+refuse-never-fall-back posture: ``new_basename`` must pass the safe-basename
+character check; ``SourceOriginAmbiguous`` when the OLD basename matches 2+
+files anywhere under ``docs_dir`` (an anomalous pre-existing state — the
+re-point below matches citations by BARE basename, the same addressing
+scheme every citation already uses, so an ambiguous origin risks rewriting a
+citation that actually names a *different* file); ``RenameBasenameCollision``
+when ``new_basename`` already exists anywhere under ``docs_dir`` (would mint
+an ``ambiguous_source`` state). The re-point itself is a surgical
+frontmatter-only rewrite via ``wiki_writer.read_page_parts`` (mirrors
+``pages.add_alias`` / ``pages.remove_alias``): only the parsed frontmatter
+dict's ``sources`` list and ``source_hashes`` keys are touched; the sentinel
+comment, heading, body, and citation line are preserved byte-for-byte.
+Re-point scope mirrors ``compute_impact``'s own scope
+(``_iter_lifecycle_wiki_pages`` — entities/concepts pages), the same
+"derived wiki page" boundary S1 already established.
+
 **Shared validator** (ADR-0041 decision 6): ``_is_safe_relpath`` /
 ``_is_safe_component`` reuse ``upload._is_safe_basename``'s character rules
 (CVE-2021-42574 bidi controls, ASCII control chars, the Section.id ``'#'``
@@ -62,33 +88,39 @@ needed there, since it is already the shared public reader ``pages.py``
 itself uses.
 
 **Audit**: one bounded ``log_event`` line per act (``source_retired`` /
-``source_restored`` — act, relpath, timestamp, and impact counts for
-retire), from this module's own channel (``wiki/log.md``, same as every
-other ``markdown_kb`` module — CODING_STANDARD §5.1). No manifest file
+``source_restored`` / ``source_renamed`` — act, relpath(s), and impact/
+re-point counts), from this module's own channel (``wiki/log.md``, same as
+every other ``markdown_kb`` module — CODING_STANDARD §5.1). No manifest file
 (ADR-0041 decision 8): the timestamped trash tree IS the physical audit
-trail; ``list_trash`` reads it directly, no separate authoritative state.
+trail for retire/restore; ``list_trash`` reads it directly, no separate
+authoritative state.
 
 **No reindex** anywhere in this module: retire/restore never touch
 ``wiki/`` (ADR-0041 Invariant — corpus exit stays solely the existing C11
-Confirmed delete), so there is nothing for a reindex to pick up.
+Confirmed delete), so there is nothing for a reindex to pick up. Rename DOES
+rewrite ``wiki/`` page frontmatter, but reindex stays a route-layer concern
+here too (mirrors ``pages.delete_full_orphan`` / ``reconcile.
+apply_reconcile``): the Gateway route calls ``indexer.build_index()`` exactly
+once after a successful ``rename()`` returns (the delete/promote pattern).
 
 **Concurrency**: every mutating sequence (impact-compute + move for retire;
-occupancy/collision-check + move for restore) runs under
-``indexer._index_lock`` — mirrors ``pages.delete_full_orphan`` /
-``reconcile.py``'s apply-time convention, so a concurrent ``run_lint()``
-sweep (which holds the same lock for its full read pass) never observes a
-half-moved Source, and a concurrent retire/restore of the same relpath
-never races.
+occupancy/collision-check + move for restore; origin/collision-check + move
++ citation re-point for rename) runs under ``indexer._index_lock`` — mirrors
+``pages.delete_full_orphan`` / ``reconcile.py``'s apply-time convention, so a
+concurrent ``run_lint()`` sweep (which holds the same lock for its full read
+pass) never observes a half-moved Source or a half-rewritten page, and a
+concurrent lifecycle act on the same relpath never races.
 
 **Endpoints live in the Gateway, not here** (mirrors ``upload.py`` /
 ``read.py``, both deep modules in ``markdown_kb/app/`` wired from
 ``gateway/app/routes.py`` — Upload/Console-adjacent system boundaries are a
 Gateway concern per ADR-0010): ``GET /sources/{relpath}/impact``, ``POST
-/sources/retire``, ``POST /sources/restore``, ``GET /sources/trash``. This
-module has no dependency on FastAPI or HTTP status codes (CODING_STANDARD
-§4.4 — validation at the route boundary, domain exceptions here).
+/sources/retire``, ``POST /sources/restore``, ``GET /sources/trash``, ``POST
+/sources/rename``. This module has no dependency on FastAPI or HTTP status
+codes (CODING_STANDARD §4.4 — validation at the route boundary, domain
+exceptions here).
 
-See ADR-0041 and GitHub issue #604 (S1) for design rationale.
+See ADR-0041 and GitHub issues #604 (S1) / #605 (S2) for design rationale.
 """
 
 from __future__ import annotations
@@ -98,11 +130,13 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
+import yaml
+
 from ._paths import DOCS_DIR, TRASH_DIR, WIKI_DIR
-from .atomic import replace_atomic
+from .atomic import replace_atomic, write_text_atomic
 from .indexer import _index_lock
 from .logger import log_event
-from .wiki_writer import read_existing_frontmatter
+from .wiki_writer import read_existing_frontmatter, read_page_parts
 
 # ---------------------------------------------------------------------------
 # Exceptions
@@ -152,6 +186,35 @@ class RestoreBasenameCollision(Exception):
         super().__init__(f"basename of {relpath} collides with {collisions}; restore refused")
 
 
+class SourceOriginAmbiguous(Exception):
+    """``relpath``'s basename matches 2+ files anywhere under ``docs_dir`` —
+    an anomalous pre-existing state. ``rename`` refuses rather than guess
+    which file the mechanical re-point (which matches derived-page citations
+    by BARE basename) should touch (route -> 409, ADR-0041 decision 5 /
+    ADR-0036 §6 refuse-never-fall-back)."""
+
+    def __init__(self, relpath: str, matches: list[str]) -> None:
+        self.relpath = relpath
+        self.matches = matches
+        super().__init__(
+            f"basename of {relpath} is ambiguous under docs/: {matches}; rename refused"
+        )
+
+
+class RenameBasenameCollision(Exception):
+    """The requested ``new_basename`` already exists elsewhere under
+    ``docs_dir`` — renaming would mint an ``ambiguous_source`` state;
+    refused, never auto-suffixed (route -> 409, ADR-0041 decision 5 /
+    ADR-0036 §6)."""
+
+    def __init__(self, new_basename: str, collisions: list[str]) -> None:
+        self.new_basename = new_basename
+        self.collisions = collisions
+        super().__init__(
+            f"{new_basename!r} already exists under docs/: {collisions}; rename refused"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Result types
 # ---------------------------------------------------------------------------
@@ -186,6 +249,19 @@ class TrashEntry:
 
     timestamp: str
     relpath: str
+
+
+@dataclass
+class RenameResult:
+    """Outcome of a successful ``rename()`` call (ADR-0041 decision 5).
+
+    ``repointed_pages`` is the sorted list of wiki page slugs whose
+    ``sources`` / ``source_hashes`` frontmatter was rewritten.
+    """
+
+    old_relpath: str
+    new_relpath: str
+    repointed_pages: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -539,6 +615,160 @@ def restore(
         replace_atomic(trash_path, target)
 
         log_event("source_restored", f"relpath={relpath} timestamp={timestamp}")
+
+
+# ---------------------------------------------------------------------------
+# Public API — rename
+# ---------------------------------------------------------------------------
+
+
+def _repoint_citations(wiki_dir: Path, old_basename: str, new_basename: str) -> list[str]:
+    """Rewrite every derived page's ``old_basename`` reference to
+    ``new_basename`` in place — the mechanical re-point (ADR-0041 decision 5).
+
+    A page is rewritten when its ``sources`` list cites ``old_basename``
+    (any anchor, preserved verbatim) and/or its ``source_hashes`` dict has an
+    ``old_basename`` key. Surgical frontmatter-only rewrite via
+    ``wiki_writer.read_page_parts`` — the sentinel comment, heading, body,
+    and citation line are preserved byte-for-byte.
+
+    Returns the sorted list of page slugs actually rewritten.
+    """
+    repointed: list[str] = []
+    for slug, page_path in _iter_lifecycle_wiki_pages(wiki_dir):
+        parts = read_page_parts(page_path)
+        if parts is None:
+            continue
+        prefix, fm, suffix = parts
+
+        sources = fm.get("sources") or []
+        if not isinstance(sources, list):
+            sources = []
+        changed = False
+        new_sources: list[str] = []
+        for citation in sources:
+            citation = str(citation)
+            file_part, sep, anchor = citation.partition("#")
+            if Path(file_part).name == old_basename:
+                new_sources.append(f"{new_basename}{sep}{anchor}")
+                changed = True
+            else:
+                new_sources.append(citation)
+
+        source_hashes = fm.get("source_hashes") or {}
+        if isinstance(source_hashes, dict) and old_basename in source_hashes:
+            source_hashes = dict(source_hashes)
+            source_hashes[new_basename] = source_hashes.pop(old_basename)
+            fm["source_hashes"] = source_hashes
+            changed = True
+
+        if not changed:
+            continue
+
+        fm["sources"] = new_sources
+        fm_text = yaml.dump(fm, default_flow_style=False, allow_unicode=True)
+        if not fm_text.endswith("\n"):
+            fm_text += "\n"
+        write_text_atomic(page_path, prefix + fm_text + suffix)
+        repointed.append(slug)
+
+    return sorted(repointed)
+
+
+def rename(
+    relpath: str,
+    new_basename: str,
+    *,
+    docs_dir: Path | None = None,
+    wiki_dir: Path | None = None,
+) -> RenameResult:
+    """Rename the Source at ``docs_dir / relpath`` to ``new_basename`` in the
+    same directory (ADR-0041 decision 5) — one atomic same-directory
+    basename move plus a mechanical re-point of every derived page's
+    ``sources`` entries and ``source_hashes`` keys.
+
+    No LLM: the Source's bytes are untouched, so re-synthesizing wiki
+    content would cost money and invite drift for zero new information. No
+    alias: page slugs are outline-minted (ADR-0027) and a file rename moves
+    no page identity — there is nothing to redirect.
+
+    No reindex here: reindex is a route-layer concern (mirrors ``pages.
+    delete_full_orphan`` / ``reconcile.apply_reconcile``) — the caller
+    triggers exactly one ``build_index()`` after this returns.
+
+    Args:
+        relpath:      Path of the Source relative to ``docs_dir``, e.g.
+                      ``'policy.md'`` or ``'demo-zh/policy.md'``.
+        new_basename: The new bare filename (no directory component) — v1
+                      renames the basename only (CONTEXT.md "Rename
+                      (Source)"); subdirectory moves are out of scope.
+        docs_dir:     Override ``DOCS_DIR`` (tests only).
+        wiki_dir:     Override ``WIKI_DIR`` (tests only).
+
+    Returns:
+        ``RenameResult`` with the new relpath and the sorted list of page
+        slugs whose ``sources`` / ``source_hashes`` were re-pointed.
+
+    Raises:
+        InvalidRelpath: ``relpath`` fails the traversal/character safety
+            check, ``new_basename`` fails the safe-basename check, or
+            ``new_basename`` equals the current basename (a rename must
+            name something new).
+        SourceNotFound: no file exists at ``docs_dir / relpath``.
+        SourceOriginAmbiguous: ``relpath``'s basename matches 2+ files
+            under ``docs_dir``.
+        RenameBasenameCollision: ``new_basename`` already exists somewhere
+            under ``docs_dir``.
+    """
+    resolved_docs = docs_dir if docs_dir is not None else DOCS_DIR
+    resolved_wiki = wiki_dir if wiki_dir is not None else WIKI_DIR
+
+    ok, reason = _is_safe_relpath(relpath)
+    if not ok:
+        raise InvalidRelpath(reason)
+    ok_new, reason_new = _is_safe_component(new_basename)
+    if not ok_new:
+        raise InvalidRelpath(f"new_basename {reason_new}")
+
+    old_basename = PurePosixPath(relpath).name
+    if new_basename == old_basename:
+        raise InvalidRelpath(f"new_basename must differ from the current basename {old_basename!r}")
+
+    with _index_lock:
+        source_path = resolved_docs / relpath
+        if not source_path.is_file():
+            raise SourceNotFound(relpath)
+
+        origin_matches = sorted(
+            p.relative_to(resolved_docs).as_posix()
+            for p in resolved_docs.glob(f"**/{old_basename}")
+        )
+        if len(origin_matches) > 1:
+            raise SourceOriginAmbiguous(relpath, origin_matches)
+
+        collisions = sorted(
+            p.relative_to(resolved_docs).as_posix()
+            for p in resolved_docs.glob(f"**/{new_basename}")
+        )
+        if collisions:
+            raise RenameBasenameCollision(new_basename, collisions)
+
+        new_target = source_path.parent / new_basename
+        replace_atomic(source_path, new_target)
+        new_relpath = new_target.relative_to(resolved_docs).as_posix()
+
+        repointed = _repoint_citations(resolved_wiki, old_basename, new_basename)
+
+        log_event(
+            "source_renamed",
+            f"old_relpath={relpath} new_relpath={new_relpath} repointed_pages={len(repointed)}",
+        )
+
+    return RenameResult(
+        old_relpath=relpath,
+        new_relpath=new_relpath,
+        repointed_pages=repointed,
+    )
 
 
 # ---------------------------------------------------------------------------
