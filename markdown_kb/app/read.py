@@ -3,8 +3,10 @@
 Resource browser — read-only access to the whitelisted corpus roots.
 
 Exposes ``list_tree(relpath)`` and ``read_file(relpath)`` constrained to a
-whitelist of roots: ``docs/``, ``raw/``, ``wiki/``.  The ``.kb/`` directory
-is explicitly excluded.
+whitelist of roots: ``docs/``, ``raw/``, ``wiki/``, ``.trash/`` (ADR-0041,
+issue #604 — read-only pre-restore inspection of a retired Source; see
+``source_lifecycle.py`` for the write side).  The ``.kb/`` directory is
+explicitly excluded.
 
 Security guarantees (path-traversal defence):
   - ``..`` components and absolute paths are rejected before any I/O.
@@ -42,7 +44,7 @@ import contextlib
 from dataclasses import dataclass
 from pathlib import Path
 
-from ._paths import _REPO_ROOT, DOCS_DIR, WIKI_DIR
+from ._paths import _REPO_ROOT, DOCS_DIR, TRASH_DIR, WIKI_DIR
 
 # ---------------------------------------------------------------------------
 # Paths and constants
@@ -52,10 +54,14 @@ RAW_DIR: Path = _REPO_ROOT / "raw"
 
 # The whitelist maps a root name to its resolved absolute path.
 # .kb/ is intentionally absent — it must never be reachable.
+# .trash is read-only in practice: this module exposes no write path at all,
+# so adding it here only ever grants pre-restore inspection (ADR-0041), never
+# a way to write into the trash tree.
 _WHITELIST_ROOTS: dict[str, Path] = {
     "docs": DOCS_DIR,
     "raw": RAW_DIR,
     "wiki": WIKI_DIR,
+    ".trash": TRASH_DIR,
 }
 
 
