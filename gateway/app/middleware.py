@@ -17,11 +17,22 @@ guards, in this order, for every request:
      over the answer paths and an admin semaphore (``KB_MAX_ADMIN``, default 2)
      over the index/mutate paths.  Over-limit → 503.  The read semaphore's
      saturation is what ``GET /healthz/shed`` reports (``read_saturated()``).
+     ``/chat/stream`` additionally passes through a dedicated, tighter SSE cap
+     (``KB_SSE_MAX_CONCURRENT`` — see ``gateway/app/sse_capacity.py``, issue
+     #599): an SSE connection is held for the FULL stream duration (seconds),
+     unlike a normal request/response cycle, so a slow/stalled reader can
+     starve capacity even while the general read semaphore still has room.
   4. **Graceful provider failure** — an OpenAI ``insufficient_quota`` / 429
      bubbling out of a *non-streaming* heavy handler is mapped to a friendly
      503 instead of an unhandled 500 / worker crash (the streaming path already
      renders provider errors as a terminal SSE ``error`` event in
      ``gateway/app/routes.py`` — AC5).
+  5. **SSE heartbeat + idle-read timeout** — ``/chat/stream`` only (issue
+     #599): a ``: ping`` comment frame is injected every
+     ``KB_SSE_HEARTBEAT_INTERVAL_SEC`` while the downstream generator is
+     idle, and any ``send()`` to the client that blocks past
+     ``KB_SSE_IDLE_TIMEOUT_SEC`` (no read progress) closes the stream
+     server-side. See ``gateway/app/sse_capacity.py`` for the mechanism.
 
 All conditional logic that *decides an answer* lives in the deep stacks; this
 module only wires guards around them (CODING_STANDARD §2.3).  Single-worker
@@ -79,6 +90,7 @@ import openai
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from . import budget as _budget
+from . import sse_capacity as _sse_capacity
 from .logger import log_event as _log_event
 
 # ---------------------------------------------------------------------------
@@ -292,6 +304,9 @@ class ProdMiddleware:
         path = _canonical_path(scope.get("path", ""))
         is_read = path in READ_PATHS
         is_admin = path in ADMIN_PATHS
+        # The one SSE surface (issue #599) — drives the extra concurrency cap
+        # and the heartbeat/idle-timeout wrap below, on top of the read guards.
+        is_sse = path == "/chat/stream"
 
         # Non-heavy paths (/, /healthz, /static, /read/*, favicons, ...) bypass
         # every guard — liveness and the UI must always be reachable (AC1).
@@ -325,6 +340,19 @@ class ProdMiddleware:
             await _send_json(send, 503, {"detail": "server busy, please retry"})
             return
 
+        # 3b. SSE-specific concurrency cap (issue #599) — a SEPARATE, tighter
+        # pool just for /chat/stream: an SSE connection is held for the FULL
+        # stream duration (seconds), unlike a normal request/response cycle,
+        # so a slow/stalled reader can starve capacity even while the general
+        # read semaphore above still has room. Checked in ADDITION to (not
+        # instead of) the read semaphore; over-limit releases the read-sem
+        # slot just taken and sheds with the same busy-retry shape.
+        if is_sse and not _sse_capacity.sse_sem.acquire(blocking=False):
+            sem.release()
+            _log_event("overload_shed", f"path={path} kind=sse")
+            await _send_json(send, 503, {"detail": "server busy, please retry"})
+            return
+
         # Admitted past both gates → only now charge the conservative estimate.
         # Only requests that actually proceed to the handler (and may call
         # OpenAI) consume budget; over-cap and shed rejections never do.
@@ -336,9 +364,24 @@ class ProdMiddleware:
             #    call and renders provider errors as a terminal SSE error event
             #    (gateway/app/routes.py), so we never wrap it here — an exception
             #    after the response has started cannot be turned into a 503.
-            await self._call_with_quota_guard(scope, receive, send, path, is_read)
+            if is_sse:
+                # 5. SSE heartbeat + idle-read timeout (issue #599) — wraps the
+                #    same quota-guarded call, so the provider-failure mapping
+                #    above still applies unchanged; this layer only injects
+                #    heartbeat comment frames and enforces the idle-read cap.
+                await _sse_capacity.run_with_heartbeat(
+                    lambda queued_send: self._call_with_quota_guard(
+                        scope, receive, queued_send, path, is_read
+                    ),
+                    send,
+                    log_summary=f"path={path}",
+                )
+            else:
+                await self._call_with_quota_guard(scope, receive, send, path, is_read)
         finally:
             sem.release()
+            if is_sse:
+                _sse_capacity.sse_sem.release()
 
     async def _call_with_quota_guard(
         self,
