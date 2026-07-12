@@ -1,5 +1,6 @@
 """Shallow module per Ousterhout. Public surface: ``DailyBudget``, ``budget``,
-``estimate_cost``, ``DAILY_USD_CAP``, ``TRANSCRIBE_PAGE_USD``.
+``estimate_cost``, ``DAILY_USD_CAP``, ``TRANSCRIBE_PAGE_USD``,
+``READ_RESERVED_USD``.
 
 Per-UTC-day cost accumulator for the demo deploy's hard $/day ceiling (issue
 #269, AC4).  Each *heavy* (OpenAI-calling) request is charged a **conservative
@@ -98,6 +99,19 @@ through — every file after the ceiling is crossed is rejected before its
 pages are billed — rather than only discovering the overrun once the whole
 batch (all vision calls) has already run.
 
+Read-reserved admin ceiling (issue #598 Slice A): the public demo box is
+key-free, so a burst on ADMIN_PATHS (ingest/index/transcribe/lint) could spend
+the WHOLE ``KB_DAILY_USD_CAP`` before any reader ever gets a grounded answer —
+turning an open box into a one-visitor-burst outage for the rest of the UTC
+day. ``KB_READ_RESERVED_USD`` (default $1.00) carves out a floor of the cap
+that ADMIN_PATHS cannot spend into: ``DailyBudget.over_admin_cap()`` trips at
+``cap_usd - read_reserved_usd`` instead of the full ``cap_usd``. READ_PATHS
+are unaffected — ``ProdMiddleware`` keeps gating them on the unchanged
+``over_cap()``, so the read/chat path always has ``read_reserved_usd`` of
+headroom even once admin traffic alone would have exhausted the cap.
+``read_reserved_usd`` defaults to 0.0 (identical to ``over_cap()``) for any
+``DailyBudget`` built without it, so existing callers are unaffected.
+
 Single-worker model (CODING_STANDARD §2.6/§2.7): one in-process ``dict`` is
 the whole store; multi-worker would need a shared store. Within that single
 process, ``charge()``/``charge_pages()`` are called from more than one thread
@@ -187,6 +201,23 @@ def _read_transcribe_page_cost() -> float:
 TRANSCRIBE_PAGE_USD = _read_transcribe_page_cost()
 
 
+def _read_read_reserved() -> float:
+    """Read ``KB_READ_RESERVED_USD`` at construction time (default $1.00).
+
+    The floor of ``KB_DAILY_USD_CAP`` that ADMIN_PATHS cannot spend into (see
+    the module docstring's "Read-reserved admin ceiling" paragraph, issue #598).
+    """
+    raw = os.getenv("KB_READ_RESERVED_USD", "1.0")
+    try:
+        return float(raw)
+    except ValueError:
+        return 1.0
+
+
+# Module-level default, read once at import (restart to apply a new value).
+READ_RESERVED_USD = _read_read_reserved()
+
+
 def estimate_cost(path: str) -> float:
     """Return the conservative USD estimate for a heavy ``path``.
 
@@ -212,11 +243,16 @@ class DailyBudget:
       - ``reserve_pages(page_count, day=None)`` — atomic over_cap-then-charge_pages
         (issue #472 — the Transcribe page-budget hook's admission check).
       - ``over_cap(day=None)``      — True once ``day``'s total reaches the cap.
+      - ``over_admin_cap(day=None)`` — True once ``day``'s total reaches
+        ``cap_usd - read_reserved_usd`` (issue #598 — the reduced ceiling
+        ADMIN_PATHS gate on, so the last ``read_reserved_usd`` of the cap
+        stays reserved for READ_PATHS' unchanged ``over_cap()``).
       - ``day_total(day=None)``     — current accumulated USD for ``day``.
       - ``snapshot(day=None)``      — read-only ``{day, spent_estimate, cap,
-        remaining}`` dict for ``GET /healthz/budget`` (issue #510). Never
-        charges; one lock acquisition so the four fields describe the same
-        instant even under concurrent charge()/charge_pages() callers.
+        remaining, read_reserved}`` dict for ``GET /healthz/budget`` (issue
+        #510; ``read_reserved`` added issue #598). Never charges; one lock
+        acquisition so the fields describe the same instant even under
+        concurrent charge()/charge_pages() callers.
 
     The store is a ``{day: total}`` dict.  Old days are never pruned (one float
     per calendar day is negligible for a demo lifetime); a lookup for a day with
@@ -228,8 +264,9 @@ class DailyBudget:
     update and never both pass an over-cap check before either charge lands.
     """
 
-    def __init__(self, *, cap_usd: float) -> None:
+    def __init__(self, *, cap_usd: float, read_reserved_usd: float = 0.0) -> None:
         self.cap_usd = cap_usd
+        self.read_reserved_usd = read_reserved_usd
         self._totals: dict[str, float] = {}
         self._lock = threading.Lock()
 
@@ -287,6 +324,18 @@ class DailyBudget:
         """
         return self.day_total(day=day) >= self.cap_usd
 
+    def over_admin_cap(self, *, day: str | None = None) -> bool:
+        """True once ``day``'s total has reached ``cap_usd - read_reserved_usd``.
+
+        The gate ``ProdMiddleware`` uses for ADMIN_PATHS (issue #598 Slice A):
+        admin/mutating traffic loses access to the last ``read_reserved_usd``
+        of the daily cap, so it can never starve READ_PATHS — which keep
+        gating on the full ``over_cap()`` — of budget. A ``DailyBudget`` built
+        with the default ``read_reserved_usd=0.0`` behaves identically to
+        ``over_cap()`` here.
+        """
+        return self.day_total(day=day) >= (self.cap_usd - self.read_reserved_usd)
+
     def snapshot(self, *, day: str | None = None) -> dict[str, str | float]:
         """Return a read-only ``{day, spent_estimate, cap, remaining}`` dict.
 
@@ -310,9 +359,10 @@ class DailyBudget:
             "spent_estimate": spent,
             "cap": cap,
             "remaining": max(cap - spent, 0.0),
+            "read_reserved": self.read_reserved_usd,
         }
 
 
 # Module-level singleton — the one accumulator the middleware shares across
 # requests (single-worker model; CODING_STANDARD §2.7).
-budget = DailyBudget(cap_usd=DAILY_USD_CAP)
+budget = DailyBudget(cap_usd=DAILY_USD_CAP, read_reserved_usd=READ_RESERVED_USD)

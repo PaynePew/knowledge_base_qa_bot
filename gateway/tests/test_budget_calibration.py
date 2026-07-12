@@ -109,7 +109,8 @@ def test_healthz_budget_shape(client):
     resp = client.get("/healthz/budget")
     assert resp.status_code == 200
     body = resp.json()
-    assert set(body.keys()) == {"day", "spent_estimate", "cap", "remaining"}
+    # read_reserved added issue #598 (additive-only shape — see test_budget_read_reserved.py).
+    assert set(body.keys()) == {"day", "spent_estimate", "cap", "remaining", "read_reserved"}
     assert isinstance(body["day"], str) and len(body["day"]) == 10  # YYYY-MM-DD
     assert body["spent_estimate"] == pytest.approx(0.0)
     assert body["cap"] == pytest.approx(3.0)
