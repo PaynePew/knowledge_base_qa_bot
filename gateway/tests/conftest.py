@@ -69,3 +69,39 @@ def _neutralize_rag_distance_gate(monkeypatch):
     covered in vector_rag/tests/test_rag_distance_gate.py.
     """
     monkeypatch.setenv("KB_RAG_DISTANCE_THRESHOLD", "1000.0")
+
+
+@pytest.fixture(autouse=True)
+def _fresh_per_ip_rate_limiter():
+    """Suite-wide isolation for the per-IP rate limiter (issue #598 Slice A).
+
+    Two cross-test bleeds, both unique to the limiter among the middleware's
+    module-level singletons:
+
+    1. **Window bleed** — ``TestClient`` presents the SAME client address for
+       every request and the limiter's window only expires by wall clock (the
+       semaphores self-release per request; the budget ledger is reloaded by
+       most files' ``_fresh_app`` fixtures), so without a per-test rebuild the
+       whole suite shares one 30-requests/5-minute window and every heavy-path
+       test after the 30th request in the session 429s.
+    2. **Config poisoning** — tests that ``importlib.reload`` middleware under
+       a monkeypatched ``KB_RATE_LIMIT_PER_IP`` (e.g. ``=1``) leave the
+       reloaded singleton's tightened limit behind after monkeypatch restores
+       the env, 429ing any later test file that does not reload middleware
+       itself.
+
+    Reloading ``ratelimit`` re-reads the (now clean) env, and the singleton is
+    rebuilt exactly as ``middleware.py`` builds it at import. Runs BEFORE each
+    test's own fixtures, so tests that deliberately reload middleware with a
+    monkeypatched env still get their tightened limiter afterwards.
+    """
+    import importlib
+
+    import gateway.app.middleware as _mw
+    import gateway.app.ratelimit as _rl
+
+    importlib.reload(_rl)
+    _mw.rate_limiter = _rl.RateLimiter(
+        limit=_rl.RATE_LIMIT_PER_IP, window_sec=_rl.RATE_LIMIT_WINDOW_SEC
+    )
+    yield
