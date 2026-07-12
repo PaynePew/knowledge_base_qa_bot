@@ -1276,6 +1276,7 @@ def search(
     k: int = 3,
     exclude_qa: bool = False,
     qa_question_weight: float = QA_QUESTION_TOKEN_WEIGHT,
+    lang: str | None = None,
 ) -> list[tuple[Section, float]]:
     """Return the top-``k`` BM25 Sections in the QUERY's language.
 
@@ -1307,8 +1308,15 @@ def search(
     the parameter exists so calibration tooling
     (``eval/qa_field_weight/calibrate.py``) can sweep candidate weights
     against one already-built index without rebuilding it per weight.
+
+    ``lang`` (#582 dominant-script gate routing) overrides the corpus-slice
+    language that would otherwise come from ``detect_lang(query)`` — used by
+    ``retrieval._gate_route`` when its own (wider) routing band disagrees with
+    this module's corpus-tagging ratio (``_ZH_RATIO_THRESHOLD``), and for the
+    union fallback's non-default language slice. ``None`` (default) preserves
+    every pre-#582 caller's behaviour and call shape unchanged.
     """
-    query_lang = detect_lang(query)
+    query_lang = lang if lang is not None else detect_lang(query)
     query_tokens = tokenize(query)
     ranked = [
         (section, bm25_score(query_tokens, section, qa_question_weight=qa_question_weight))

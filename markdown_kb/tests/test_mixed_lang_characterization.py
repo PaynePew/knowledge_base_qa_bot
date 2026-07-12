@@ -25,6 +25,22 @@ the follow-up routing-policy slice (dominant-script / dual-gate / union
 corpus) named in the issue's scope decision. They intentionally do not assert
 which behaviour is "correct" — that policy call has not been made yet. No
 production code changes in this slice.
+
+UPDATE (#582 slice 2, ``retrieval._dominant_script`` / ``_gate_route``): the
+routing policy landed. ``_is_cjk_query`` and ``detect_lang`` as PURE
+PREDICATES are unchanged (section 1 below still holds — they still disagree
+on the same inputs, that raw fact doesn't change), but neither decides gate
+routing directly anymore: ``_retrieve_and_gate`` now calls one classifier,
+``_dominant_script``, for both the threshold and the corpus slice, so they
+can no longer disagree outside its near-50/50 band. The
+``test_latin_dominant_code_switch_*`` case below is where the fix is
+observable end to end — its assertions were updated in place (comment naming
+#582) because the pinned CURRENT behaviour deliberately changed. The
+CJK-dominant contrast case's assertions did not change (dominant_script now
+routes it through the union band's tie-break rather than a direct pick, but
+the tie-break still resolves to the same "zh" route, so the observable
+outcome is identical — see ``test_dominant_script_routing.py`` for direct
+coverage of the new classifier and the union path).
 """
 
 from __future__ import annotations
@@ -148,6 +164,15 @@ def test_cjk_dominant_code_switch_routes_consistently(monkeypatch):
     """Contrast case: a CJK-dominant code-switched query does NOT trigger the
     #582 mismatch. Both classifiers say "zh", so the zh threshold is applied
     to a zh-filtered corpus slice — routing and corpus slice agree.
+
+    Assertions unchanged post-#582: this query's CJK ratio (~0.5) actually
+    falls inside ``_dominant_script``'s near-50/50 union band, so
+    ``_retrieve_and_gate`` now resolves it via the union tie-break rather
+    than a direct single-classifier pick — but the zh route independently
+    clears while the en route (near-zero token overlap with this corpus)
+    does not, so the tie-break still lands on "zh" and the observable outcome
+    here is identical. See ``test_dominant_script_routing.py`` for direct
+    coverage of the union path.
     """
     monkeypatch.setattr(ret, "_SCORE_THRESHOLD", 9999.0)
     monkeypatch.setattr(ret, "_SCORE_THRESHOLD_ZH", 0.0)
@@ -167,17 +192,22 @@ def test_cjk_dominant_code_switch_routes_consistently(monkeypatch):
         _teardown_index()
 
 
-def test_latin_dominant_code_switch_applies_zh_threshold_to_en_corpus_slice(monkeypatch):
-    """The #582 mismatch, pinned end to end via ``_retrieve_and_gate``.
+def test_latin_dominant_code_switch_routing_fixed_by_582(monkeypatch):
+    """The #582 mismatch, pinned end to end via ``_retrieve_and_gate`` — RESOLVED.
 
-    ``indexer.search`` (called inside ``_retrieve_and_gate``) filters the
-    corpus using ``detect_lang`` -> "en", so only the en-tagged Section is
-    ever scored. But ``_is_cjk_query`` -> True (the query quotes "熊貓"), so
-    the zh threshold is the one applied to that en-scale score. With the zh
-    threshold set to always-refuse and the en threshold set to always-clear,
-    the CURRENT routing produces a refusal on a query whose retrieved corpus
-    slice is entirely English — evidence that the threshold and the corpus
-    slice can be gated by disagreeing language calls.
+    UPDATED for #582 slice 2: this fixture's pinned outcome deliberately
+    flips here. Before #582, ``indexer.search`` (called inside
+    ``_retrieve_and_gate``) filtered the corpus using ``detect_lang`` -> "en"
+    (only the en-tagged Section was ever scored), but ``_is_cjk_query`` -> True
+    (the query quotes "熊貓") applied the zh threshold to that en-scale score
+    — a false refusal (the original assertion here was
+    ``gate["early_exit"] is True``).
+
+    ``_dominant_script`` replaces both call sites with one classifier: this
+    query's CJK ratio (~0.07, one product-name token) is well below
+    ``_DOMINANT_SCRIPT_LOW`` (0.40), so it now routes to "en" for BOTH the
+    threshold AND the corpus slice, together — they can no longer disagree.
+    With the en threshold set to always-clear, the gate now PASSES.
     """
     monkeypatch.setattr(ret, "_SCORE_THRESHOLD", 0.0)
     monkeypatch.setattr(ret, "_SCORE_THRESHOLD_ZH", 9999.0)
@@ -190,9 +220,10 @@ def test_latin_dominant_code_switch_applies_zh_threshold_to_en_corpus_slice(monk
             f"got {[(sec.id, sec.metadata.get(idx.LANG_METADATA_KEY)) for sec, _ in hits]}"
         )
         gate = ret._retrieve_and_gate(query)
-        # zh threshold (9999.0, always refuses) applied even though the
-        # scored corpus slice is en-only -> the gate refuses.
-        assert gate["early_exit"] is True
-        assert gate["grounding_outcome"].reason == "below_threshold"
+        # #582: dominant-script routing sends this query's threshold AND
+        # corpus slice to "en" together (en threshold 0.0, always clears) ->
+        # the gate now passes, instead of the pre-#582 false refusal.
+        assert gate["early_exit"] is False
+        assert gate["grounding_outcome"].reason == "claim_supported"
     finally:
         _teardown_index()
