@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``parse_markdown``, ``parse_markdown_body``, ``split_frontmatter``, ``count_uncarried_chars``, ``build_index``, ``load_index_json``, ``search``, ``slugify``, ``wiki_page_count``, ``indexed_sections_count``, ``Section`` (dataclass), plus the module-level ``sections`` list (read by ``retrieval.py``).
+"""Deep module per Ousterhout. Public surface: ``parse_markdown``, ``parse_markdown_body``, ``split_frontmatter``, ``count_uncarried_chars``, ``build_index``, ``load_index_json``, ``search``, ``slugify``, ``wiki_page_count``, ``indexed_sections_count``, ``index_stale``, ``Section`` (dataclass), plus the module-level ``sections`` list (read by ``retrieval.py``).
 
 Markdown Section Index builder.
 
@@ -1065,6 +1065,60 @@ def indexed_sections_count(index_path: Path | None = None) -> int:
     raw = index_path.read_text(encoding="utf-8")
     payload = json.loads(raw)
     return int(payload.get("stats", {}).get("sections_indexed", 0))
+
+
+def index_stale(index_path: Path | None = None) -> bool:
+    """Whether the persisted Section Index is stale relative to wiki/.
+
+    Implements the CONTEXT.md "Section Index" staleness semantic verbatim —
+    the index "[g]oes stale when [the whitelisted wiki subdirectories]
+    change and /index has not been re-run" — via filesystem mtimes only (no
+    LLM, no content diff). For the Operator Console's Index artifact-node
+    badge (issue #559 A2): deliberately **state**-derived, not
+    click-history-derived. Contrast the pre-existing #173 ``indexStale`` JS
+    flag (flips true on Ingest-click, false on Index-click), which this
+    function neither reads nor influences.
+
+    Re-reads ``WIKI_DIR`` at call time (mirrors ``wiki_page_count``) so test
+    monkeypatches take effect. Scans the same three whitelisted subdirs as
+    ``wiki_page_count`` (``entities/``, ``concepts/``, ``qa/``) — wiki root
+    meta files (``index.md``, ``log.md``, ...) never count.
+
+    Args:
+        index_path: Path to ``.kb/index.json``. Defaults to the module-level
+            ``INDEX_PATH``.
+
+    Returns:
+        ``True`` when any file under the curated wiki subdirs has an mtime
+        newer than ``.kb/index.json`` — including the case where the index
+        has never been built but wiki/ already has content. ``False`` when
+        the index is at least as new as every wiki file, OR when wiki/ has
+        no content at all (nothing to be stale relative to).
+    """
+    if index_path is None:
+        index_path = INDEX_PATH
+
+    newest_wiki_mtime: float | None = None
+    for name in ("entities", "concepts", "qa"):
+        sub_dir = WIKI_DIR / name
+        if not sub_dir.exists():
+            continue
+        for p in sub_dir.rglob("*"):
+            if not p.is_file():
+                continue
+            if any(part.startswith(".") for part in p.relative_to(sub_dir).parts):
+                continue
+            mtime = p.stat().st_mtime
+            if newest_wiki_mtime is None or mtime > newest_wiki_mtime:
+                newest_wiki_mtime = mtime
+
+    if newest_wiki_mtime is None:
+        return False  # no wiki content at all — nothing to be stale relative to
+
+    if not index_path.exists():
+        return True  # wiki has content but the index has never been built
+
+    return newest_wiki_mtime > index_path.stat().st_mtime
 
 
 def build_index(docs_dir: Path = DOCS_DIR) -> tuple[int, int]:
