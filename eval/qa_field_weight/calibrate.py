@@ -202,9 +202,7 @@ def evaluate_weight(
     own_hits = indexer.search(_OWN_QUESTION, k, qa_question_weight=weight)
     return WeightPoint(
         weight=weight,
-        own_question_hit_rate=1.0
-        if _own_question_hit(own_hits, own_question_id)
-        else 0.0,
+        own_question_hit_rate=float(_own_question_hit(own_hits, own_question_id)),
         pollution_rate=_pollution_rate(pollution_hits, real_file),
     )
 
