@@ -212,6 +212,16 @@ def _is_safe_component(name: str) -> tuple[bool, str]:
         return False, f"must not contain a path separator: {name!r}"
     if name in (".", ".."):
         return False, f"must not be '.' or '..': {name!r}"
+    if ":" in name:
+        # Windows drive-relative landmine (issue #397, slugs.is_bare_slug's
+        # own rule): PureWindowsPath treats a "X:" LEADING segment as a fresh
+        # drive root, so ``docs_dir / relpath`` can silently escape docs_dir
+        # entirely when relpath (or its first component) starts with a
+        # colon — e.g. ``docs_dir / "D:evil.md"`` resolves to ``D:evil.md``,
+        # not ``docs_dir/D:evil.md``. Banned unconditionally (not just in
+        # leading position) because ':' is illegal in a real filename on
+        # every supported OS anyway, so this has zero legitimate-use cost.
+        return False, f"must not contain ':': {name!r}"
     if _CONTROL_RE.search(name):
         return False, f"contains a control character: {name!r}"
     for bidi in _BIDI_CONTROLS:

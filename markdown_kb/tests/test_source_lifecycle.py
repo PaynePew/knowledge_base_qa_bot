@@ -109,12 +109,37 @@ def test_compute_impact_missing_source_raises(lifecycle_env):
         )
 
 
-@pytest.mark.parametrize("bad_relpath", ["../escape.md", "/etc/passwd", "a/../../b.md", ""])
+@pytest.mark.parametrize(
+    "bad_relpath",
+    [
+        "../escape.md",
+        "/etc/passwd",
+        "a/../../b.md",
+        "",
+        "D:evil.md",  # Windows drive-relative escape (issue #397 landmine)
+        "D:sub/evil.md",
+    ],
+)
 def test_compute_impact_unsafe_relpath_raises(lifecycle_env, bad_relpath):
     with pytest.raises(sl.InvalidRelpath):
         sl.compute_impact(
             bad_relpath, docs_dir=lifecycle_env["docs"], wiki_dir=lifecycle_env["wiki"]
         )
+
+
+def test_retire_rejects_windows_drive_relative_relpath_before_touching_disk(lifecycle_env):
+    """issue #397 landmine: ``docs_dir / "D:evil.md"`` resolves to
+    ``D:evil.md`` on Windows — a colon anywhere in relpath must be refused
+    BEFORE any filesystem access, mirroring ``slugs.is_bare_slug``'s own
+    unconditional ':' ban."""
+    with pytest.raises(sl.InvalidRelpath):
+        sl.retire(
+            "D:evil.md",
+            docs_dir=lifecycle_env["docs"],
+            wiki_dir=lifecycle_env["wiki"],
+            trash_dir=lifecycle_env["trash"],
+        )
+    assert not lifecycle_env["trash"].exists()
 
 
 def test_compute_impact_nested_relpath_resolves(tmp_path):
@@ -267,6 +292,17 @@ def test_restore_missing_entry_raises(lifecycle_env):
     with pytest.raises(sl.TrashEntryNotFound):
         sl.restore(
             "20260101T000000000000Z",
+            "policy.md",
+            docs_dir=lifecycle_env["docs"],
+            trash_dir=lifecycle_env["trash"],
+        )
+
+
+def test_restore_rejects_windows_drive_relative_timestamp(lifecycle_env):
+    """The same issue #397 colon guard applies to the ``timestamp`` component."""
+    with pytest.raises(sl.InvalidRelpath):
+        sl.restore(
+            "D:evil",
             "policy.md",
             docs_dir=lifecycle_env["docs"],
             trash_dir=lifecycle_env["trash"],
