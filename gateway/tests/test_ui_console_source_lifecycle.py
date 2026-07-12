@@ -171,19 +171,70 @@ def test_retire_confirm_posts_retire_via_admin_fetch():
     assert "JSON.stringify({ relpath: relpath })" in fn
 
 
-def test_retire_confirm_success_refreshes_browse_and_source_trash():
-    text = _console_text()
-    fn = _extract_function(text, "openRetireConfirm")
+def _retire_success_branch(fn: str) -> str:
     success_branch = re.search(
-        r"retireSourceRequest\(relpath\)\s*\.then\(function\(\)\s*\{(.*?)\n      \}\)",
+        r"retireSourceRequest\(relpath\)\s*\.then\(function\(result\)\s*\{(.*?)\n      \}\)",
         fn,
         re.DOTALL,
     )
     assert success_branch is not None
-    body = success_branch.group(1)
+    return success_branch.group(1)
+
+
+def test_retire_confirm_success_refreshes_browse_and_source_trash():
+    text = _console_text()
+    fn = _extract_function(text, "openRetireConfirm")
+    body = _retire_success_branch(fn)
     assert "closeModal();" in body
     assert "navigateTo(browserPath);" in body
     assert "loadSourceTrash();" in body
+
+
+# ---------------------------------------------------------------------------
+# Retire success routes the curator to the resulting C11 findings
+# (issue #606 reviewer follow-up, ADR-0041 decision 2)
+# ---------------------------------------------------------------------------
+
+
+def test_retire_success_consumes_the_response_impact_not_the_preview():
+    """The success handler must read ``result.impact`` off the RESOLVED
+    retire response, not re-use the pre-confirm preview variable (``impact``,
+    scoped to the ``sourceImpactRequest`` .then above) — that preview can be
+    stale by the time the confirm click resolves."""
+    text = _console_text()
+    fn = _extract_function(text, "openRetireConfirm")
+    body = _retire_success_branch(fn)
+    assert "result.impact.full_orphans" in body
+    assert "result.impact.partial_orphans" in body
+
+
+def test_retire_success_routes_to_lint_only_when_something_was_orphaned():
+    text = _console_text()
+    fn = _extract_function(text, "openRetireConfirm")
+    body = _retire_success_branch(fn)
+    assert "if (fullCount || partialCount) {" in body
+
+
+def test_retire_success_reuses_last_batch_summary_not_a_new_banner():
+    """Routing reuses the SAME one-shot lastBatchSummary mechanism every
+    other Lint card action already uses (finishBatchRemediation /
+    runLintRemediation) — no new banner/panel type introduced."""
+    text = _console_text()
+    fn = _extract_function(text, "openRetireConfirm")
+    body = _retire_success_branch(fn)
+    assert "lastBatchSummary = chrome.sourceRetireOutcomeSummary" in body
+    assert '.replace("{full}", String(fullCount))' in body
+    assert '.replace("{partial}", String(partialCount))' in body
+
+
+def test_retire_success_scrolls_to_the_lint_step_via_existing_helper():
+    """The 'direct route' reuses scrollSoftIntoView (the same navigation
+    helper Browse/openFile already use) targeting the Lint step's own
+    result container (lintResultEl) — no new scroll/navigation mechanism."""
+    text = _console_text()
+    fn = _extract_function(text, "openRetireConfirm")
+    body = _retire_success_branch(fn)
+    assert "if (lintResultEl) scrollSoftIntoView(lintResultEl);" in body
 
 
 def test_retire_confirm_click_guards_against_double_submit():
@@ -320,6 +371,7 @@ _SOURCE_LIFECYCLE_KEYS = (
     "sourceRetireConfirmBtn",
     "sourceRetireCancelBtn",
     "sourceRetireWorking",
+    "sourceRetireOutcomeSummary",
     "sourceRenameModalTitlePrefix",
     "sourceRenameInputLabel",
     "sourceRenameConfirmBtn",
@@ -343,6 +395,15 @@ def test_every_source_lifecycle_key_defined_in_both_languages():
             f"expected exactly 2 definitions of {key!r} (en + zh), "
             f"found {len(re.findall(rf'{key}:', text))}"
         )
+
+
+def test_source_retire_outcome_summary_carries_full_and_partial_placeholders():
+    text = _console_text()
+    matches = re.findall(r'sourceRetireOutcomeSummary:\s*"([^"]+)"', text)
+    assert len(matches) == 2
+    for s in matches:
+        assert "{full}" in s
+        assert "{partial}" in s
 
 
 def test_source_trash_zh_label_is_real_chinese_text():

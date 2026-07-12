@@ -3680,6 +3680,13 @@ var LINT_CHROME = {
     sourceRetireConfirmBtn: "Retire",
     sourceRetireCancelBtn: "Cancel",
     sourceRetireWorking:  "Retiring…",
+    /* issue #606 follow-up (ADR-0041 decision 2): shown as a one-shot
+       lastBatchSummary banner on the Lint card's NEXT render — routes the
+       curator to the resulting C11 findings using the retire RESPONSE's
+       impact payload (not the pre-confirm preview). {full}/{partial} are
+       replaced with the response's counts verbatim (§12.5: server data
+       only). */
+    sourceRetireOutcomeSummary: "{full} full orphan(s), {partial} partial orphan(s) — run Lint below for the resulting C11 findings.",
     sourceRenameModalTitlePrefix: "Rename docs/",
     sourceRenameInputLabel: "New filename",
     sourceRenameConfirmBtn: "Rename",
@@ -4005,6 +4012,7 @@ var LINT_CHROME = {
     sourceRetireConfirmBtn: "退役",
     sourceRetireCancelBtn: "取消",
     sourceRetireWorking:  "退役中…",
+    sourceRetireOutcomeSummary: "{full} 個完全孤兒、{partial} 個部分孤兒 — 請至下方執行 Lint 以檢視對應的 C11 發現。",
     sourceRenameModalTitlePrefix: "重新命名 docs/",
     sourceRenameInputLabel: "新檔名",
     sourceRenameConfirmBtn: "重新命名",
@@ -8959,10 +8967,17 @@ function sourceTrashListRequest() {
    impact preview (GET /sources/{relpath}/impact) — the Confirm button stays
    disabled until that preview lands, so the curator never confirms blind. On
    success, closes and refreshes BOTH the current Browse listing (the file
-   left docs/) and the Source Trash section (the file arrived there) — the
-   pre-confirm impact preview IS the routing to the resulting C11 findings
-   (ADR-0041 decision 2: full/partial orphans are shown before the act, not
-   just implied after it). */
+   left docs/) and the Source Trash section (the file arrived there).
+   Routing the curator to the resulting C11 findings (ADR-0041 decision 2)
+   uses the RETIRE RESPONSE's own impact payload — not the pre-confirm
+   preview above, which was computed before the move and can go stale during
+   the confirm click's async window (mirrors kb_cli's source_retire_cmd,
+   which prints result.impact, never the pre-confirm preview, once the move
+   is durable). Reuses two EXISTING mechanisms rather than inventing a new
+   one: lastBatchSummary, the same one-shot banner every other card action
+   already uses to leave a note for the Lint card's next render, and
+   scrollSoftIntoView, the same navigation helper Browse/openFile already
+   use. Silent when nothing was orphaned (§12.5: no false affordance). */
 function openRetireConfirm(relpath) {
   var chrome = LINT_CHROME[consoleLang];
   var overlay = el("div", { class: "reconcile-overlay" });
@@ -8991,11 +9006,19 @@ function openRetireConfirm(relpath) {
     statusMsgEl.className = "card-status-msg";
 
     retireSourceRequest(relpath)
-      .then(function() {
+      .then(function(result) {
         sourceLifecycleInFlight = false;
         closeModal();
         navigateTo(browserPath);
         loadSourceTrash();
+        var fullCount = (result.impact.full_orphans || []).length;
+        var partialCount = (result.impact.partial_orphans || []).length;
+        if (fullCount || partialCount) {
+          lastBatchSummary = chrome.sourceRetireOutcomeSummary
+            .replace("{full}", String(fullCount))
+            .replace("{partial}", String(partialCount));
+          if (lintResultEl) scrollSoftIntoView(lintResultEl);
+        }
       })
       .catch(function(err) {
         sourceLifecycleInFlight = false;
