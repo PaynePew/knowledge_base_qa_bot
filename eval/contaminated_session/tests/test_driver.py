@@ -1,9 +1,15 @@
 """Driver tests (#608) — LLM-free.
 
-``rewrite_fn`` is always an inline stub here, never
+``rewrite_fn`` is always an inline stub here, never CALLED as
 ``gateway.app.query_rewriting.rewrite_query`` — CODING_STANDARD §6.4 caps the
 Query Rewriting surface at one live test (already spent by
-``gateway/tests/test_query_rewriting.py``); this suite never calls it.
+``gateway/tests/test_query_rewriting.py``); this suite never invokes it.
+One regression test below (``test_evaluate_case_call_shape_binds_against_the_real_rewrite_query``)
+DOES import the real ``rewrite_query`` to check its signature via
+``inspect.signature(...).bind(...)`` — that's introspection, not a call, so
+it spends no LLM budget and needs no API key; it exists to catch #608-shaped
+seam drift (a stub's call shape silently diverging from the real function's)
+in CI instead of at real-run time.
 
 The committed characterization corpus (``eval/contaminated_session/corpus/``)
 drives both the "does contamination flip retrieval" tests (topic vocabulary
@@ -13,6 +19,7 @@ test.
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 
 import pytest
@@ -26,9 +33,13 @@ def _stub_rewrite_returning(contaminated_text: str, clean_text: str):
     whether ``history`` is non-empty (contaminated) or empty (clean/control)
     — mirrors the real ``rewrite_query`` contract (empty history = passthrough
     is up to the caller's fixed text here, not literally unchanged, since the
-    test wants to control retrieval directly)."""
+    test wants to control retrieval directly).
 
-    def _rewrite(raw_query: str, history: list[dict]) -> str:
+    ``history`` is keyword-only, matching ``RewriteFn`` / the real
+    ``rewrite_query`` signature exactly (#608) — a positional-friendly stub
+    here would mask the seam mismatch the driver actually needs to catch."""
+
+    def _rewrite(raw_query: str, *, history: list[dict]) -> str:
         return contaminated_text if history else clean_text
 
     return _rewrite
@@ -143,7 +154,7 @@ def test_real_cases_evaluate_end_to_end_with_a_no_op_rewrite():
     turn-1-passthrough shape) so this test stays LLM-free and deterministic."""
     index_corpus()
 
-    def _identity_rewrite(raw_query: str, history: list[dict]) -> str:
+    def _identity_rewrite(raw_query: str, *, history: list[dict]) -> str:
         return raw_query
 
     for case in CASES:
@@ -152,3 +163,24 @@ def test_real_cases_evaluate_end_to_end_with_a_no_op_rewrite():
         assert outcome.clean_rewrite == case.followup_question
         # Identity rewrite means both arms retrieve identically -> never flipped.
         assert outcome.flipped is False
+
+
+def test_evaluate_case_call_shape_binds_against_the_real_rewrite_query():
+    """Regression for #608: ``evaluate_case`` called ``rewrite_fn(raw_query,
+    history)`` POSITIONALLY, but the real seam
+    ``gateway.app.query_rewriting.rewrite_query`` declares ``history`` as
+    KEYWORD-ONLY (``def rewrite_query(raw_query: str, *, history: list[dict])``).
+    Every stub in this suite accepted history either way, so all 21 tests
+    passed while a real run crashed with TypeError before any work.
+
+    This test imports the REAL ``rewrite_query`` (never calls it — no LLM
+    call, no API key needed) and asserts the driver's actual call shape
+    binds against its real signature via
+    ``inspect.signature(...).bind(...)``, which raises ``TypeError`` on a
+    shape mismatch. Any future drift in either signature fails this test in
+    CI instead of surfacing only in a real (spend-triggering) run."""
+    from gateway.app.query_rewriting import rewrite_query
+
+    signature = inspect.signature(rewrite_query)
+    # Mirrors evaluate_case's real call: rewrite_fn(case.followup_question, history=...)
+    signature.bind("literal follow-up question", history=[])

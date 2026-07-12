@@ -19,9 +19,9 @@ caller controls the seam:
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 import markdown_kb.app.indexer as indexer
 import markdown_kb.app.retrieval as retrieval
@@ -32,10 +32,18 @@ from .sessions import ContaminatedSessionCase
 _PKG_ROOT = Path(__file__).resolve().parent
 CORPUS_DIR = _PKG_ROOT / "corpus"
 
-#: ``(raw_query, history) -> rewritten_query`` — mirrors
-#: ``gateway.app.query_rewriting.rewrite_query``'s signature exactly so the
-#: real function is a drop-in ``RewriteFn``.
-RewriteFn = Callable[[str, list[dict]], str]
+
+class RewriteFn(Protocol):
+    """``(raw_query, *, history) -> rewritten_query`` — mirrors
+    ``gateway.app.query_rewriting.rewrite_query``'s signature exactly
+    (``history`` is KEYWORD-ONLY there, hence the ``*`` here too — a plain
+    ``Callable[[str, list[dict]], str]`` alias cannot express that and would
+    silently accept a stub that takes ``history`` positionally, which is
+    exactly the #608 seam-drift bug) so the real function is a drop-in
+    ``RewriteFn``.
+    """
+
+    def __call__(self, raw_query: str, *, history: list[dict]) -> str: ...
 
 
 def index_corpus(corpus_dir: Path | None = None) -> tuple[int, int]:
@@ -108,8 +116,10 @@ def evaluate_case(
     ONLY LLM call (when ``rewrite_fn`` is the real ``rewrite_query``) is the
     contaminated arm.
     """
-    contaminated_rewrite = rewrite_fn(case.followup_question, case.contaminated_history)
-    clean_rewrite = rewrite_fn(case.followup_question, case.clean_history)
+    contaminated_rewrite = rewrite_fn(
+        case.followup_question, history=case.contaminated_history
+    )
+    clean_rewrite = rewrite_fn(case.followup_question, history=case.clean_history)
     drift = compute_drift(case.followup_question, contaminated_rewrite)
     return ContaminatedSessionOutcome(
         case=case,

@@ -10,7 +10,7 @@ from eval.contaminated_session.driver import evaluate_case
 from eval.contaminated_session.sessions import CASES
 
 
-def _identity_rewrite(raw_query: str, history: list[dict]) -> str:
+def _identity_rewrite(raw_query: str, *, history: list[dict]) -> str:
     return raw_query
 
 
@@ -77,7 +77,7 @@ def test_fake_flag_forces_tracer_path_even_with_a_key_present(tmp_path, monkeypa
 
 
 def test_offline_rewrite_stub_preserves_turn1_passthrough():
-    assert runner._offline_rewrite_stub("hello", []) == "hello"
+    assert runner._offline_rewrite_stub("hello", history=[]) == "hello"
 
 
 def test_offline_rewrite_stub_appends_prior_question_when_history_present():
@@ -90,5 +90,5 @@ def test_offline_rewrite_stub_appends_prior_question_when_history_present():
             "ts": "2026-01-01T00:00:00Z",
         }
     ]
-    result = runner._offline_rewrite_stub("And store credit?", history)
+    result = runner._offline_rewrite_stub("And store credit?", history=history)
     assert result == "And store credit? [How long do refunds take?]"

@@ -55,7 +55,7 @@ OFFLINE_TRACER_HEADER = (
 )
 
 
-def _offline_rewrite_stub(raw_query: str, history: list[dict]) -> str:
+def _offline_rewrite_stub(raw_query: str, *, history: list[dict]) -> str:
     """Deterministic, LLM-free stand-in for ``rewrite_query`` (offline-tracer path only).
 
     Preserves the real function's turn-1-passthrough contract (empty history
@@ -63,6 +63,11 @@ def _offline_rewrite_stub(raw_query: str, history: list[dict]) -> str:
     stored question as bracketed context — enough to exercise the
     drift/flip plumbing end to end without an API call. Never a substitute
     for the real rewrite's judgment; a real run's numbers will differ.
+
+    ``history`` is keyword-only to match ``RewriteFn`` /
+    ``gateway.app.query_rewriting.rewrite_query`` exactly (#608): a
+    positional-only stub here would pass every test in this suite while
+    crashing against the real seam.
     """
     if not history:
         return raw_query
