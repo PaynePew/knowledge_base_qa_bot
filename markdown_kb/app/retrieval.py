@@ -213,7 +213,11 @@ def query(question: str, exclude_qa: bool = False) -> dict:
     return result
 
 
-def stream_query(question: str, original_question: str | None = None) -> Iterator[dict]:
+def stream_query(
+    question: str,
+    original_question: str | None = None,
+    degraded: bool = False,
+) -> Iterator[dict]:
     """Generator that yields two dicts for use by the SSE streaming endpoint.
 
     Phase 9 — ADR-0009 (verify-then-stream / sources-first).
@@ -230,6 +234,13 @@ def stream_query(question: str, original_question: str | None = None) -> Iterato
     ``retrieval_query`` so the filed page's audit metadata always reflects
     what actually retrieved it.
 
+    ``degraded`` (issue #598 Slice B): set by the Gateway only when
+    ``ProdMiddleware`` admitted this request past an exhausted daily budget
+    (``KB_DAILY_USD_CAP``). Skips ``_draft_and_verify`` entirely — see
+    ``_serve_degraded`` — so a budget-exhausted read never triggers a real
+    (uncounted) LLM call. No filing happens on this path either way
+    (filing needs the verifier's grounding_outcome).
+
     Yields:
         1. A *partial* result dict immediately after retrieval (before any
            LLM call), so the gateway can emit the ``sources`` SSE event
@@ -237,7 +248,8 @@ def stream_query(question: str, original_question: str | None = None) -> Iterato
            Shape: ``{sources, grounding_outcome, _phase: "sources_ready"}``.
            ``grounding_outcome`` at this stage is provisional — it is the
            pre-LLM gate outcome (may be a Cannot Confirm if below threshold).
-        2. A *full* result dict after draft + Grounding Check complete.
+        2. A *full* result dict after draft + Grounding Check complete (or,
+           when ``degraded``, after the no-LLM degraded-serving branch).
            Shape: ``{answer, sources, grounding_outcome}`` — identical to
            what ``query()`` returns.
 
@@ -260,6 +272,16 @@ def stream_query(question: str, original_question: str | None = None) -> Iterato
         "answer": gate.get("answer", ""),
         "ranked": gate.get("ranked", []),
     }
+
+    if degraded:
+        # issue #598 Slice B: budget-exhausted degraded serving. Reuses the
+        # gate already computed above (no second BM25 search) the same way
+        # _draft_and_verify reuses gate["ranked"] on the normal path below.
+        # Handles BOTH the early_exit-already-CC case and the gate-passed
+        # case uniformly (_serve_degraded reads gate["ranked"], which is
+        # empty on early_exit) -- no LLM call either way.
+        yield _serve_degraded(question, gate)
+        return
 
     if gate["early_exit"]:
         # Pre-LLM gate fired — the partial result IS the full result.
@@ -490,6 +512,44 @@ def _draft_and_verify(
         "answer": answer,
         "sources": sources,
         "grounding_outcome": outcome,
+    }
+
+
+def _serve_degraded(question: str, gate: dict) -> dict:
+    """No-LLM serving for a budget-exhausted READ_PATHS request (issue #598
+    Slice B). Never calls the LLM -- the whole point is zero marginal cost
+    once ``KB_DAILY_USD_CAP`` is spent. Reuses the ``gate`` dict
+    ``stream_query`` already computed for the sources-ready partial (no
+    second BM25 search).
+
+    A live ``wiki/qa/`` page (a Filed Answer — already grounded when it was
+    originally filed and promoted, ADR-0020) ranked top and cleared the
+    normal gate threshold serves its own body verbatim as the answer,
+    citations narrowed to that one page. Any other outcome (no ranked hit,
+    below threshold, index missing, or a non-qa top hit) returns Cannot
+    Confirm. Degraded mode never serves a non-qa Section's raw text as if it
+    were a fresh Grounded Answer -- that would let an unverified claim
+    escape without the LLM+verifier chain (ADR-0001); only an
+    already-grounded Filed Answer is safe to replay with no verifier call.
+    """
+    truncated = question[:60].replace('"', "'")
+    ranked = gate.get("ranked") or []
+    if ranked:
+        top_sec, _top_score = ranked[0]
+        if (top_sec.metadata or {}).get("type") == "qa":
+            qa_source = next(s for s in gate["sources"] if s["source"] == top_sec.id)
+            log_event("chat_degraded", f'"{truncated}" mode=cached_qa slug={top_sec.id}')
+            return {
+                "answer": top_sec.content.strip(),
+                "sources": [qa_source],
+                "grounding_outcome": GroundingOutcome(passed=True, reason="degraded_cached_qa"),
+            }
+
+    log_event("chat_degraded", f'"{truncated}" mode=cannot_confirm')
+    return {
+        "answer": CANNOT_CONFIRM_PHRASE,
+        "sources": gate["sources"],
+        "grounding_outcome": GroundingOutcome(passed=False, reason="degraded_budget_exhausted"),
     }
 
 
