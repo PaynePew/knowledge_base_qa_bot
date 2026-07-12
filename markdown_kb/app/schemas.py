@@ -253,6 +253,15 @@ class WikiPageFrontmatter(BaseModel):
     - ``count`` is the re-ask counter for Filed Answers. Defaults to ``1`` so
       entity/concept construction does not need to know about the field.
 
+    Issue #579 (multi-turn rewrite drift):
+    - ``retrieval_query`` is the query text actually used to retrieve this
+      answer — the Gateway's rewritten, self-contained follow-up on turn 2+,
+      or the same text as ``question`` on turn 1 / single-turn ``/chat``
+      (passthrough — no rewrite happened). ``question`` always stays the
+      user's literal ask; ``retrieval_query`` is curator-audit-only metadata
+      for spotting rewrite drift. ``qa`` pages only; ``None`` on entity and
+      concept pages.
+
     Phase 3 amendment (issue #93):
     - ``source_hashes`` is the 8th field, carrying per-source hash pairs.
       Shape: ``{<source_filename>: {"raw": <content_sha256 | null>, "docs_body": <hex>}}``.
@@ -286,6 +295,9 @@ class WikiPageFrontmatter(BaseModel):
     # keep working without modification (forward-compat schema change).
     question: str | None = None
     count: int = 1
+    # Issue #579 — the query actually used to retrieve this answer (rewritten
+    # or passthrough). See class docstring "Issue #579" note.
+    retrieval_query: str | None = None
     # Phase 3 amendment (issue #93): 8th field — per-source hash chain.
     # Default factory returns empty dict = "drift state unknown" (legacy Phase 6
     # pages have no source_hashes; /ingest must NOT skip on empty source_hashes).

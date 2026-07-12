@@ -2,6 +2,12 @@
 
 Gateway HTTP wiring for ``POST /chat/stream`` and ``POST /upload``.
 
+Source lifecycle S1 (issue #604, ADR-0041) — ``GET /sources/{relpath}/impact``,
+``POST /sources/retire``, ``POST /sources/restore``, ``GET /sources/trash``.
+Delegates entirely to ``markdown_kb.app.source_lifecycle`` (deep module);
+this is a Console/Upload-adjacent system boundary, a Gateway concern per
+ADR-0010, same rationale as ``POST /upload`` and ``GET /read/*``.
+
 Phase 9 Slice 1 — Wiki SSE happy-path tracer bullet (ADR-0009, ADR-0010).
 Phase 9 Slice 2 (issue #119) — Full SSE event contract: status event (liveness
 during the draft+verify gap), terminal error event (post-sources LLM/infra
@@ -36,7 +42,9 @@ shared serializer renders them as-is.
 
 SSE event contract (ADR-0009, extended by Phase 11):
   status{phase:"rewriting"}  — emitted on turn 2+ BEFORE sources (Phase 11 Slice 4)
-  sources            — immediately after retrieval (real latency win)
+  sources{sources,rewritten_query?} — immediately after retrieval (real latency
+                       win); ``rewritten_query`` present only on turn 2+ (issue
+                       #579 — surfaces what was actually searched for)
   status{phase:"verifying"}  — liveness between sources and first token; LLM path only
   token(s)           — verified answer or CANNOT_CONFIRM_PHRASE; one per word
   done{grounding:{passed,reason},filed,stack,session} — terminal success event
@@ -78,6 +86,17 @@ from markdown_kb.app.read import list_tree as _list_tree
 from markdown_kb.app.read import read_file as _read_file
 from markdown_kb.app.retrieval import stream_query as _wiki_stream_query
 from markdown_kb.app.schemas import ChatRequest
+from markdown_kb.app.source_lifecycle import InvalidRelpath as _SourceInvalidRelpath
+from markdown_kb.app.source_lifecycle import (
+    RestoreBasenameCollision as _SourceRestoreBasenameCollision,
+)
+from markdown_kb.app.source_lifecycle import RestoreTargetOccupied as _SourceRestoreTargetOccupied
+from markdown_kb.app.source_lifecycle import SourceNotFound as _SourceNotFound
+from markdown_kb.app.source_lifecycle import TrashEntryNotFound as _SourceTrashEntryNotFound
+from markdown_kb.app.source_lifecycle import compute_impact as _compute_impact
+from markdown_kb.app.source_lifecycle import list_trash as _list_trash
+from markdown_kb.app.source_lifecycle import restore as _restore_source
+from markdown_kb.app.source_lifecycle import retire as _retire_source
 from markdown_kb.app.sse import encode_event, events_for_result
 from markdown_kb.app.upload import upload_files as _upload_files
 from pydantic import BaseModel, Field
@@ -118,7 +137,11 @@ class HybridIndexResponseSchema(BaseModel):
 
 
 # Per-stack dispatch mapping.  Adding a new stack = one entry here; the
-# generator body below is identical for every stack (ADR-0010).
+# generator body below is identical for every stack (ADR-0010). Every entry
+# supports the ``(query: str) -> Iterator[dict]`` call shape below; the wiki
+# entry ALSO accepts an ``original_question`` keyword (issue #579, filing
+# under the original ask on turn 2+) that only the wiki call site in
+# ``_sse_generator`` ever passes — the shared type stays the common subset.
 _STACK_STREAM_FN: dict[str, Callable[[str], Iterator[dict]]] = {
     "wiki": _wiki_stream_query,
     "rag": _rag_stream_query,
@@ -164,7 +187,10 @@ def chat_stream(
          docs/-relative ``path`` for the clickable citation (#307; present when
          the chunk carries source-path metadata) — but no score, no derived_from.
          This is the genuine latency win — retrieval is ~instant; the user sees
-         grounding context while the LLM drafts (~4-7s).
+         grounding context while the LLM drafts (~4-7s). On turn 2+ ALSO carries
+         ``rewritten_query`` (issue #579) — the self-contained query that was
+         actually retrieved against, so the reader can see what the follow-up
+         resolved to; absent on turn 1 (passthrough, nothing new to show).
       3. ``status:{phase:"verifying"}`` — liveness signal emitted after sources,
          before the first token, on the LLM path only (early-exit CC paths skip
          this).
@@ -243,7 +269,15 @@ def chat_stream(
           - Turn 1 (empty history): passthrough — no status:rewriting, no
             rewrite LLM call (preserves Phase 9 sources-first latency win).
           - Dispatch uses ``self_contained_query`` (rewritten or passthrough),
-            never ``req.query`` directly.
+            never ``req.query`` directly — retrieval always searches on the
+            self-contained form.
+          - Issue #579: on turn 2+, ``stack=wiki`` filing dispatch ADDITIONALLY
+            receives ``req.query`` (the literal ask) so the filed page's
+            ``question`` never drifts to the rewrite; the rewrite still lands
+            in the page's ``retrieval_query`` audit field. The Conversation
+            Store's stored turn is UNCHANGED by this — it still records
+            ``self_contained_query`` (see the ``append_turn`` call below),
+            since that is what the NEXT turn's rewrite needs as history.
           - On ``done``: append turn to Conversation Store; inject ``session``
             into the ``done`` payload.
           - On ``error`` (before ``done``): forward the error, do NOT write.
@@ -284,7 +318,19 @@ def chat_stream(
             # Turn 1: passthrough (no rewrite, no status:rewriting event).
             self_contained_query = req.query
 
-        gen = stream_fn(self_contained_query)
+        # Issue #579: on turn 2+, the Wiki stack additionally needs the raw
+        # ask (req.query) alongside the rewrite so filing can record the
+        # ORIGINAL question while still retrieving on the rewrite — see
+        # markdown_kb.app.retrieval.stream_query's ``original_question`` arg.
+        # Turn 1 is passthrough (self_contained_query already IS req.query,
+        # so the extra arg would be redundant) and RAG/Hybrid never file, so
+        # neither needs the widened call — kept off their call sites entirely
+        # (CODING_STANDARD §11: do not widen a call shape every caller must
+        # accept when only one caller needs the new argument).
+        if stack == "wiki" and history:
+            gen = stream_fn(self_contained_query, original_question=req.query)
+        else:
+            gen = stream_fn(self_contained_query)
 
         # First yield: sources_ready partial — emit sources event only.
         partial = next(gen)
@@ -316,7 +362,14 @@ def chat_stream(
             if s.get("lint"):
                 entry["lint"] = s["lint"]
             source_list.append(entry)
-        yield encode_event("sources", {"sources": source_list})
+        sources_payload: dict = {"sources": source_list}
+        # Issue #579: surface the rewritten query on turn 2+ so the reader can
+        # see what was actually searched for (the follow-up may drift from
+        # what was literally asked). Omitted on turn 1 — passthrough means
+        # it would be identical to the visible query, nothing new to show.
+        if history:
+            sources_payload["rewritten_query"] = self_contained_query
+        yield encode_event("sources", sources_payload)
 
         # Emit status{phase:"verifying"} on the LLM path only (early_exit=False).
         # Early-exit CC paths skip the LLM entirely — emitting "verifying" there
@@ -667,6 +720,179 @@ def read_index_freshness() -> IndexFreshnessSchema:
         ``IndexFreshnessSchema`` with a single ``stale`` bool.
     """
     return IndexFreshnessSchema(stale=_index_stale())
+
+
+# ---------------------------------------------------------------------------
+# GET /sources/{relpath}/impact, POST /sources/retire, POST /sources/restore,
+# GET /sources/trash — Source lifecycle S1 (issue #604, ADR-0041)
+# ---------------------------------------------------------------------------
+
+
+class ImpactPreviewSchema(BaseModel):
+    """Response body for ``GET /sources/{relpath}/impact`` (also nested in
+    ``RetireResponseSchema``). ``full_orphans`` / ``partial_orphans`` are
+    wiki page slugs."""
+
+    relpath: str
+    full_orphans: list[str]
+    partial_orphans: list[str]
+
+
+class RetireRequest(BaseModel):
+    """Request body for ``POST /sources/retire``."""
+
+    relpath: str
+
+
+class RetireResponseSchema(BaseModel):
+    """Response body for ``POST /sources/retire`` — routes the curator to
+    the resulting C11 findings (ADR-0041 decision 2)."""
+
+    relpath: str
+    timestamp: str
+    impact: ImpactPreviewSchema
+
+
+class RestoreRequest(BaseModel):
+    """Request body for ``POST /sources/restore`` — keyed by the trash
+    entry's ``(timestamp, relpath)`` (ADR-0041 decision 4)."""
+
+    timestamp: str
+    relpath: str
+
+
+class TrashEntrySchema(BaseModel):
+    """One entry in the Source Trash, as returned by ``GET /sources/trash``."""
+
+    timestamp: str
+    relpath: str
+
+
+class TrashListSchema(BaseModel):
+    """Response body for ``GET /sources/trash``."""
+
+    entries: list[TrashEntrySchema]
+
+
+def _impact_schema(preview) -> ImpactPreviewSchema:
+    return ImpactPreviewSchema(
+        relpath=preview.relpath,
+        full_orphans=preview.full_orphans,
+        partial_orphans=preview.partial_orphans,
+    )
+
+
+@router.get("/sources/{relpath:path}/impact", response_model=ImpactPreviewSchema)
+def source_impact(relpath: str) -> ImpactPreviewSchema:
+    """Read-only retire impact preview — the confirmation dialog's data source.
+
+    Delegates to ``markdown_kb.app.source_lifecycle.compute_impact`` (deep
+    module). Never mounted as an admin/read heavy path (see
+    ``middleware.py``): no LLM call, no mutation — mirrors ``GET
+    /read/*`` / ``GET /pages/resolution-map`` staying ungated.
+
+    Args:
+        relpath: Path of the Source relative to ``docs/``, e.g.
+            ``'policy.md'`` or ``'demo-zh/policy.md'``.
+
+    Returns:
+        ``ImpactPreviewSchema`` — the wiki page slugs that would become full
+        orphans (deletable via the existing C11 flow) vs. partial.
+
+    Raises:
+        HTTP 422: ``relpath`` fails the traversal/character safety check.
+        HTTP 404: no Source exists at ``docs/<relpath>``.
+    """
+    try:
+        preview = _compute_impact(relpath)
+    except _SourceInvalidRelpath as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except _SourceNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return _impact_schema(preview)
+
+
+@router.post("/sources/retire", response_model=RetireResponseSchema)
+def source_retire(request: RetireRequest) -> RetireResponseSchema:
+    """Retire a Source: one atomic whole-file move into the Source Trash.
+
+    Confirmed Remediation (ADR-0024) — the curator confirms an irreversible-
+    feeling (but ``restore``-reversible) operation. Delegates to
+    ``markdown_kb.app.source_lifecycle.retire`` (deep module). No reindex:
+    retire never touches ``wiki/`` (ADR-0041 Invariant).
+
+    Exception mapping:
+
+    - ``InvalidRelpath`` -> ``422`` (traversal/character safety check failed)
+    - ``SourceNotFound`` -> ``404`` (no file at ``docs/<relpath>``)
+
+    Returns:
+        ``RetireResponseSchema`` carrying the trash ``timestamp`` and the
+        impact preview computed just before the move — routes the curator
+        to the resulting C11 findings without a second lint run.
+    """
+    try:
+        result = _retire_source(request.relpath)
+    except _SourceInvalidRelpath as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except _SourceNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return RetireResponseSchema(
+        relpath=result.relpath,
+        timestamp=result.timestamp,
+        impact=_impact_schema(result.impact),
+    )
+
+
+@router.post("/sources/restore", status_code=204)
+def source_restore(request: RestoreRequest) -> None:
+    """Restore a trash entry: the atomic inverse of retire.
+
+    Direct class (ADR-0041 decision 4) — no LLM, reversible via a second
+    retire. Delegates to ``markdown_kb.app.source_lifecycle.restore`` (deep
+    module). No page bookkeeping, no reindex (restore never touches
+    ``wiki/``).
+
+    Exception mapping:
+
+    - ``InvalidRelpath``            -> ``422`` (bad ``relpath``/``timestamp``)
+    - ``TrashEntryNotFound``        -> ``404`` (no entry at that timestamp/relpath)
+    - ``RestoreTargetOccupied``     -> ``409`` (a same-name Source exists now)
+    - ``RestoreBasenameCollision``  -> ``409`` (basename exists elsewhere
+      under ``docs/``; restoring would mint an ``ambiguous_source`` state)
+
+    Returns HTTP 204 No Content on success (mirrors ``DELETE /pages/{slug}``).
+    """
+    try:
+        _restore_source(request.timestamp, request.relpath)
+    except _SourceInvalidRelpath as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except _SourceTrashEntryNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except _SourceRestoreTargetOccupied as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except _SourceRestoreBasenameCollision as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/sources/trash", response_model=TrashListSchema)
+def source_trash() -> TrashListSchema:
+    """List every entry in the Source Trash (ADR-0041 decision 8 — the trash
+    tree itself is the audit trail; no separate manifest).
+
+    Read-only, ungated (no LLM, no mutation — same rationale as ``GET
+    /sources/{relpath}/impact``).
+
+    Returns:
+        ``TrashListSchema`` — one entry per retired Source still in the
+        trash, sorted by timestamp then relpath.
+    """
+    entries = _list_trash()
+    return TrashListSchema(
+        entries=[TrashEntrySchema(timestamp=e.timestamp, relpath=e.relpath) for e in entries]
+    )
 
 
 # ---------------------------------------------------------------------------

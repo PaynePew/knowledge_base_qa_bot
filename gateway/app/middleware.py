@@ -66,6 +66,16 @@ so it — not its poll/preflight siblings — is the path that needs the admin
 gate. ``POST /wiki/import/jobs`` / ``GET /wiki/import/jobs/{job_id}``
 (issue #497) split identically: the submit starts the same billed work as
 ``/wiki/import`` and is classified; its poll sibling stays unclassified.
+
+``POST /sources/retire`` / ``POST /sources/restore`` (issue #604, ADR-0041)
+mutate the live corpus (a Source file move) with no LLM call, the same
+rationale as ``PAGES_DELETE_TEMPLATE`` / the alias endpoints — both are
+classified below. Neither is parameterized (the relpath/timestamp travel in
+the request body, not the path) so, unlike those two, no canonicalisation
+template is needed. ``GET /sources/{relpath}/impact`` and ``GET
+/sources/trash`` are deliberately left OUT of both sets: read-only, no LLM,
+no mutation — the same rationale that already leaves ``GET /read/*`` and
+``GET /pages/resolution-map`` unclassified.
 """
 
 from __future__ import annotations
@@ -159,6 +169,8 @@ ADMIN_PATHS: frozenset[str] = frozenset(
         "/wiki/qa/promote-batch",  # ADR-0023: Direct-tier batch promote — no LLM, still a live-corpus mutation (issue #382)
         ALIAS_ASSIGN_TEMPLATE,  # ADR-0030 decision 3: Direct-tier assign-alias — no LLM, still a live-corpus mutation (issue #409)
         ALIAS_REMOVE_TEMPLATE,  # ADR-0030 extension: Direct-tier remove-alias — no LLM, still a live-corpus mutation (issue #491)
+        "/sources/retire",  # ADR-0041: Confirmed retire — no LLM, a Source-file move (issue #604)
+        "/sources/restore",  # ADR-0041: Direct restore — no LLM, a Source-file move (issue #604)
     }
 )
 

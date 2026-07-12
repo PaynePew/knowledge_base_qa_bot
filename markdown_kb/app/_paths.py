@@ -1,4 +1,4 @@
-"""Shallow module per Ousterhout. Public surface: ``DOCS_DIR``, ``WIKI_DIR``, ``INDEX_PATH``.
+"""Shallow module per Ousterhout. Public surface: ``DOCS_DIR``, ``WIKI_DIR``, ``INDEX_PATH``, ``TRASH_DIR``.
 
 Canonical filesystem locations for the markdown_kb app.
 
@@ -30,3 +30,12 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 DOCS_DIR = _REPO_ROOT / "docs"
 WIKI_DIR = _REPO_ROOT / "wiki"
 INDEX_PATH = _REPO_ROOT / ".kb" / "index.json"
+
+# Source Trash root (ADR-0041, issue #604) — deliberately a SIBLING of docs/,
+# not nested inside it: every Source scanner (upload origin resolution,
+# ingest pairing, lint citation resolution) walks docs_dir.glob("**/...") and
+# is therefore structurally blind to anything under here, by construction —
+# no exclusion list to maintain, no re-ingest resurrection path. Consumed by
+# ``source_lifecycle.py`` (the trash-move implementation) and ``read.py``
+# (a read-only whitelist root for pre-restore inspection).
+TRASH_DIR = _REPO_ROOT / ".trash"

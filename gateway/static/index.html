@@ -248,6 +248,15 @@
     text-align: center;
   }
 
+  /* issue #579: what the turn-2+ follow-up actually resolved to. A muted
+     caption above the records toggle — informational, not an affordance. */
+  .rewritten-query {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: var(--fs-2xs);
+    color: var(--ink-3);
+    padding: 0 0 10px;
+  }
+
   /* VERIFY */
   .verify {
     display: inline-flex; align-items: center; gap: 10px;
@@ -1045,6 +1054,7 @@ var CHROME = {
     understanding: "Understanding your question…",
     checking: "Checking each claim against the cited record…",
     rewritingLabel: "Rewriting", verifyingLabel: "Verification",
+    searchedForLabel: "Searched for: ",
     grounded: "Grounded", cannot: "Cannot confirm", filed: "Filed → ",
     openConsole: "open console ↗", askNext: "Ask next",
     emptyEyebrow: "Grounded Q&A · ", emptyTitle: "What would you like to know?",
@@ -1070,6 +1080,7 @@ var CHROME = {
     understanding: "正在理解你的問題…",
     checking: "正在逐一比對每項說法與引用來源…",
     rewritingLabel: "改寫", verifyingLabel: "驗證",
+    searchedForLabel: "實際搜尋:",
     grounded: "有據", cannot: "無法確認", filed: "已歸檔 → ",
     openConsole: "開啟 console ↗", askNext: "接著可以問",
     emptyEyebrow: "有據問答 · ", emptyTitle: "想知道些什麼?",
@@ -1608,18 +1619,30 @@ function openCitation(path, label, triggerEl) {
     .catch(function(err) { pre.textContent = "Failed to load source: " + (err.message || String(err)); });
 }
 
-function onSources(sources) {
+function onSources(data) {
   /* §12.3 sources-first: this function is called before any answer area is
      created. The answer entry is only created in onToken, which runs after.
      §12.9: clear the turn-2+ "rewriting" indicator now that sources have arrived. */
+  var sources = data.sources || [];
   /* issue #558: capture citation ids for this turn's Reader Feedback record
      BEFORE the empty-sources early return below, so a Cannot Confirm answer
      (0 sources) still gets a (empty) citations snapshot rather than a stale
      one from the previous turn. */
-  currentSources = (sources || []).map(function(s) { return s.source; });
+  currentSources = sources.map(function(s) { return s.source; });
   clearIndicator();
   var entry = el("div", { class: "entry" });
   entry.append(makeLabel(t("recordsLabel"), { count: sources.length }));
+
+  /* issue #579: surface what was actually searched for (turn 2+ only — the
+     server omits rewritten_query on turn 1 passthrough, nothing new to show).
+     Server-decided text, rendered via textContent only (§12.4) — the client
+     does not re-implement or guess at the rewrite (§12.5). */
+  if (data.rewritten_query) {
+    entry.append(el("div", {
+      class: "rewritten-query",
+      text: t("searchedForLabel") + data.rewritten_query,
+    }));
+  }
 
   if (!sources.length) {
     entry.append(el("div", { class: "recs-empty", text: t("recsEmpty") }));
@@ -2088,7 +2111,7 @@ function onBudgetExhausted() {
 /* ── DISPATCH ────────────────────────────────────────────────────────────── */
 function dispatch(ev, data) {
   /* §12.2: unknown event types are ignored (forward-compat) */
-  if (ev === "sources") onSources(data.sources);
+  if (ev === "sources") onSources(data);  /* issue #579: pass full data — carries rewritten_query on turn 2+ */
   else if (ev === "status") onStatus(data);  /* Phase 11 Slice 4: pass data for phase-awareness */
   else if (ev === "token") onToken(data);
   else if (ev === "done") onDone(data);

@@ -263,6 +263,19 @@ Authorized by GitHub issue #409 and [ADR-0030](adr/0030-alias-frontmatter-link-l
 
 ---
 
+## `/sources/retire`, `/sources/restore` routes (source lifecycle S1, issue #604)
+
+Authorized by GitHub issue #604 and [ADR-0041](adr/0041-governed-source-lifecycle-trash-retire-restore-rename.md).
+
+| Kind | When fired | Summary template |
+|---|---|---|
+| `source_retired` | `source_lifecycle.retire()` successfully moved a Source into the Source Trash. Only fires on an actual move — the `InvalidRelpath` (422) and `SourceNotFound` (404) refusal paths do not emit a log entry (mirrors `orphan_page_deleted`'s "only fires on success" convention). | `relpath=<relpath> timestamp=<trash timestamp> full_orphans=<count> partial_orphans=<count>` |
+| `source_restored` | `source_lifecycle.restore()` successfully moved a trash entry back to `docs/`. Only fires on an actual move — every refusal (`InvalidRelpath` 422, `TrashEntryNotFound` 404, `RestoreTargetOccupied` 409, `RestoreBasenameCollision` 409) does not emit a log entry. | `relpath=<relpath> timestamp=<trash timestamp>` |
+
+No log entry is emitted for `GET /sources/{relpath}/impact` or `GET /sources/trash` — both are pure reads (mirrors `GET /pages/resolution-map` staying silent).
+
+---
+
 ## Vector RAG (Stack B)
 
 Authorized by GitHub issue #103 (Phase 8 Slice 3). Stack B stays decoupled from
