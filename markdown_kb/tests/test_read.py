@@ -397,3 +397,123 @@ def test_read_file_empty_relpath_raises_path_rejected(tmp_path):
     roots = _make_roots(tmp_path)
     with pytest.raises(PathRejected):
         read_file("", roots=roots)
+
+
+# ---------------------------------------------------------------------------
+# count_tree (issue #559 A1 — Operator Console artifact-node live counts)
+# ---------------------------------------------------------------------------
+
+
+def test_count_tree_empty_dir_is_zero(tmp_path):
+    """count_tree on an empty whitelisted dir returns 0."""
+    from app.read import count_tree
+
+    roots = _make_roots(tmp_path)
+    assert count_tree("raw", roots=roots) == 0
+
+
+def test_count_tree_counts_top_level_files(tmp_path):
+    """count_tree counts files directly inside the root."""
+    from app.read import count_tree
+
+    roots = _make_roots(tmp_path)
+    (roots["docs"] / "alpha.md").write_text("a", encoding="utf-8")
+    (roots["docs"] / "beta.md").write_text("b", encoding="utf-8")
+
+    assert count_tree("docs", roots=roots) == 2
+
+
+def test_count_tree_counts_nested_files_recursively(tmp_path):
+    """count_tree recurses into subdirectories."""
+    from app.read import count_tree
+
+    roots = _make_roots(tmp_path)
+    sub = roots["wiki"] / "entities"
+    sub.mkdir()
+    (roots["wiki"] / "index.md").write_text("root", encoding="utf-8")
+    (sub / "acme.md").write_text("nested", encoding="utf-8")
+
+    assert count_tree("wiki", roots=roots) == 2
+
+
+def test_count_tree_excludes_hidden_files(tmp_path):
+    """count_tree excludes dot-prefixed files, matching list_tree's visibility rule."""
+    from app.read import count_tree
+
+    roots = _make_roots(tmp_path)
+    (roots["docs"] / ".hidden").write_text("secret", encoding="utf-8")
+    (roots["docs"] / "visible.md").write_text("public", encoding="utf-8")
+
+    assert count_tree("docs", roots=roots) == 1
+
+
+def test_count_tree_excludes_files_in_hidden_directories(tmp_path):
+    """count_tree excludes files nested inside a dot-prefixed directory."""
+    from app.read import count_tree
+
+    roots = _make_roots(tmp_path)
+    archive = roots["wiki"] / ".archive"
+    archive.mkdir()
+    (archive / "old.md").write_text("old", encoding="utf-8")
+    (roots["wiki"] / "keep.md").write_text("keep", encoding="utf-8")
+
+    assert count_tree("wiki", roots=roots) == 1
+
+
+def test_count_tree_missing_root_directory_is_zero(tmp_path):
+    """count_tree on a root that does not exist on disk yet returns 0, not FileNotFound."""
+    from app.read import count_tree
+
+    roots = {
+        "docs": tmp_path / "docs",
+        "raw": tmp_path / "raw",  # deliberately not created
+        "wiki": tmp_path / "wiki",
+    }
+    assert count_tree("raw", roots=roots) == 0
+
+
+def test_count_tree_on_file_raises_not_a_file(tmp_path):
+    """count_tree called on a file path raises NotAFile."""
+    from app.read import NotAFile, count_tree
+
+    roots = _make_roots(tmp_path)
+    (roots["docs"] / "leaf.md").write_text("# Leaf\n", encoding="utf-8")
+
+    with pytest.raises(NotAFile):
+        count_tree("docs/leaf.md", roots=roots)
+
+
+def test_count_tree_empty_relpath_raises_path_rejected(tmp_path):
+    """count_tree with an empty relpath raises PathRejected (no root-listing mode)."""
+    from app.read import PathRejected, count_tree
+
+    roots = _make_roots(tmp_path)
+    with pytest.raises(PathRejected):
+        count_tree("", roots=roots)
+
+
+def test_count_tree_unknown_root_rejected(tmp_path):
+    """count_tree with an unknown root name raises PathRejected."""
+    from app.read import PathRejected, count_tree
+
+    roots = _make_roots(tmp_path)
+    with pytest.raises(PathRejected):
+        count_tree("secrets", roots=roots)
+
+
+def test_count_tree_dotdot_rejected(tmp_path):
+    """count_tree rejects path traversal like list_tree does."""
+    from app.read import PathRejected, count_tree
+
+    roots = _make_roots(tmp_path)
+    with pytest.raises(PathRejected):
+        count_tree("docs/../wiki", roots=roots)
+
+
+def test_count_tree_kb_root_not_in_whitelist_rejected(tmp_path):
+    """.kb/ is not in the whitelist — count_tree('.kb') raises PathRejected."""
+    from app.read import PathRejected, count_tree
+
+    roots = _make_roots(tmp_path)
+    with pytest.raises(PathRejected):
+        count_tree(".kb", roots=roots)
