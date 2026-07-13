@@ -29,7 +29,7 @@ import socket
 import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +39,7 @@ from .fake_upstream import run_fake_upstream
 from .import_load import ImportLoadResult, run_import_load
 from .process import spawn_gateway, terminate_gateway, wait_for_health
 from .sampler import MemorySampler
+from .transcribe_load import TranscribeLoadResult, run_transcribe_load
 
 
 @dataclass(frozen=True)
@@ -49,7 +50,14 @@ class ScenarioSpec:
     chat_requests_per_worker: int = 0
     run_import: bool = False
     import_files: int = 6
+    run_transcribe: bool = False
+    transcribe_pages: int = 16
     settle_sec: float = 2.0
+    # Per-scenario env layer (e.g. KB_TRANSCRIBE_ENABLED for S5) — merged in
+    # UNDER the CLI's own --env overrides (see run_scenario), so a knob-
+    # sensitivity rerun can still override a scenario default the same way
+    # S4 overrode S3's KB_MAX_INFLIGHT.
+    scenario_env: dict[str, str] = field(default_factory=dict)
 
 
 SCENARIOS: dict[str, ScenarioSpec] = {
@@ -90,6 +98,31 @@ SCENARIOS: dict[str, ScenarioSpec] = {
         run_import=True,
         import_files=6,
     ),
+    "S5_transcribe_c16": ScenarioSpec(
+        scenario_id="S5_transcribe_c16",
+        description=(
+            "Transcribe-only: one synthetic 16-page scanned PDF (single source, "
+            "so page-level concurrency saturates within it), KB_TRANSCRIBE_CONCURRENCY "
+            "default (16). Rerun with --env KB_TRANSCRIBE_CONCURRENCY=3 --out-name "
+            "S5_transcribe_c3 for the prod-cap comparison (issue #627)."
+        ),
+        run_transcribe=True,
+        transcribe_pages=16,
+        scenario_env={"KB_TRANSCRIBE_ENABLED": "true"},
+    ),
+    "S5_transcribe_headline": ScenarioSpec(
+        scenario_id="S5_transcribe_headline",
+        description=(
+            "Chat load at concurrency=6 running concurrently with the same 16-page "
+            "Transcribe batch as S5_transcribe_c16 (mirrors S3_headline's shape, "
+            "issue #627)."
+        ),
+        chat_concurrency=6,
+        chat_requests_per_worker=10,
+        run_transcribe=True,
+        transcribe_pages=16,
+        scenario_env={"KB_TRANSCRIBE_ENABLED": "true"},
+    ),
 }
 
 
@@ -125,6 +158,7 @@ def run_scenario(
             dict(os.environ),
             config.HARNESS_BASE_ENV,
             {"OPENAI_API_KEY": "dummy-loadtest-key", "OPENAI_API_BASE": fake_base_url},
+            spec.scenario_env,
             extra_env,
         ]
         env = config.resolve_env(*env_layers)
@@ -136,6 +170,7 @@ def run_scenario(
             sample_result = None
             chat_result: ChatLoadResult | None = None
             import_result: ImportLoadResult | None = None
+            transcribe_result: TranscribeLoadResult | None = None
             wall_start = time.monotonic()
             try:
                 wait_for_health(
@@ -150,6 +185,10 @@ def run_scenario(
                         chat_result, import_result = _run_concurrently(
                             base_gateway_url, spec
                         )
+                    elif spec.chat_concurrency > 0 and spec.run_transcribe:
+                        chat_result, transcribe_result = _run_chat_and_transcribe(
+                            base_gateway_url, spec
+                        )
                     elif spec.chat_concurrency > 0:
                         chat_result = run_chat_load(
                             base_gateway_url,
@@ -159,6 +198,10 @@ def run_scenario(
                     elif spec.run_import:
                         import_result = run_import_load(
                             base_gateway_url, spec.import_files
+                        )
+                    elif spec.run_transcribe:
+                        transcribe_result = run_transcribe_load(
+                            base_gateway_url, spec.transcribe_pages
                         )
                     else:
                         time.sleep(spec.settle_sec)
@@ -184,6 +227,7 @@ def run_scenario(
         "memory": asdict(sample_result) if sample_result else None,
         "chat_load": asdict(chat_result) if chat_result else None,
         "import_load": asdict(import_result) if import_result else None,
+        "transcribe_load": asdict(transcribe_result) if transcribe_result else None,
     }
 
 
@@ -200,3 +244,21 @@ def _run_concurrently(
         )
         import_future = pool.submit(run_import_load, base_url, spec.import_files)
         return chat_future.result(), import_future.result()
+
+
+def _run_chat_and_transcribe(
+    base_url: str, spec: ScenarioSpec
+) -> tuple[ChatLoadResult, TranscribeLoadResult]:
+    """Run chat load and a Transcribe batch on two threads, both blocking until
+    done (issue #627 S5 — mirrors ``_run_concurrently``'s chat+import shape)."""
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        chat_future = pool.submit(
+            run_chat_load,
+            base_url,
+            spec.chat_concurrency,
+            spec.chat_requests_per_worker,
+        )
+        transcribe_future = pool.submit(
+            run_transcribe_load, base_url, spec.transcribe_pages
+        )
+        return chat_future.result(), transcribe_future.result()

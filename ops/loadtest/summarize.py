@@ -30,11 +30,15 @@ def request_error_rate(result: dict[str, Any]) -> float | None:
 def to_markdown_table(results: list[dict[str, Any]]) -> str:
     """Render the per-scenario peak-RSS summary table (methodology's headline
     table). Rows are emitted in the order *results* is given — callers sort
-    first if a specific order matters."""
+    first if a specific order matters.
+
+    "Transcribe status" (issue #627) is appended at the end so older result
+    JSONs with no ``transcribe_load`` key (S0-S4, issue #600) still render
+    cleanly as ``-`` rather than requiring a re-run."""
     header = (
         "| Scenario | Description | Peak RSS (MB) | Source | Wall clock (s) | "
-        "Chat sent/ok/err | Import status |\n"
-        "|---|---|---|---|---|---|---|\n"
+        "Chat sent/ok/err | Import status | Transcribe status |\n"
+        "|---|---|---|---|---|---|---|---|\n"
     )
     rows = []
     for r in results:
@@ -53,10 +57,16 @@ def to_markdown_table(results: list[dict[str, Any]]) -> str:
             if imp
             else "-"
         )
+        transcribe = r.get("transcribe_load")
+        transcribe_cell = (
+            f"{transcribe['status']} (pages {transcribe['pages_done']}/{transcribe['pages_total']})"
+            if transcribe
+            else "-"
+        )
         label = r.get("result_id") or r["scenario_id"]
         rows.append(
             f"| {label} | {r['description']} | "
             f"{peak if peak is not None else '-'} | {source} | {r['wall_clock_sec']} | "
-            f"{chat_cell} | {import_cell} |"
+            f"{chat_cell} | {import_cell} | {transcribe_cell} |"
         )
     return header + "\n".join(rows) + "\n"
