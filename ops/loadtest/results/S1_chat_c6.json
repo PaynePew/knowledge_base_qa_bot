@@ -1,0 +1,22 @@
+{
+  "chat_load": {
+    "errors": [],
+    "requests_error": 0,
+    "requests_ok": 60,
+    "requests_sent": 60,
+    "wall_clock_sec": 4.281
+  },
+  "description": "Chat-only, stack=wiki, concurrency=6 (== KB_MAX_INFLIGHT default).",
+  "env_overrides": {},
+  "import_load": null,
+  "memory": {
+    "peak_rss_polled_mb": 192.5,
+    "peak_wset_os_mb": 192.54,
+    "platform": "Windows",
+    "sample_count": 20
+  },
+  "platform": "Windows",
+  "result_id": "S1_chat_c6",
+  "scenario_id": "S1_chat_c6",
+  "wall_clock_sec": 10.14
+}

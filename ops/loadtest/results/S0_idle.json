@@ -1,0 +1,16 @@
+{
+  "chat_load": null,
+  "description": "Idle-after-warmup baseline (dummy key + fake upstream, zero requests).",
+  "env_overrides": {},
+  "import_load": null,
+  "memory": {
+    "peak_rss_polled_mb": 169.01,
+    "peak_wset_os_mb": 169.04,
+    "platform": "Windows",
+    "sample_count": 23
+  },
+  "platform": "Windows",
+  "result_id": "S0_idle",
+  "scenario_id": "S0_idle",
+  "wall_clock_sec": 13.86
+}
