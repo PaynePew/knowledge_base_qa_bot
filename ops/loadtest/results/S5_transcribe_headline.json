@@ -1,0 +1,31 @@
+{
+  "chat_load": {
+    "errors": [],
+    "requests_error": 0,
+    "requests_ok": 60,
+    "requests_sent": 60,
+    "wall_clock_sec": 4.531
+  },
+  "description": "Chat load at concurrency=6 running concurrently with the same 16-page Transcribe batch as S5_transcribe_c16 (mirrors S3_headline's shape, issue #627).",
+  "env_overrides": {},
+  "import_load": null,
+  "memory": {
+    "peak_rss_polled_mb": 220.42,
+    "peak_wset_os_mb": 213.89,
+    "platform": "Windows",
+    "sample_count": 21
+  },
+  "platform": "Windows",
+  "result_id": "S5_transcribe_headline",
+  "scenario_id": "S5_transcribe_headline",
+  "transcribe_load": {
+    "error": null,
+    "files_done": 1,
+    "files_total": 1,
+    "pages_done": 16,
+    "pages_total": 16,
+    "status": "completed",
+    "wall_clock_sec": 2.812
+  },
+  "wall_clock_sec": 11.641
+}
