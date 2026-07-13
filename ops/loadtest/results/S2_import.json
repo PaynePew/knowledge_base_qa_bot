@@ -1,0 +1,22 @@
+{
+  "chat_load": null,
+  "description": "Import-batch-only (zero LLM-shaped requests), POST /wiki/import/jobs submit+poll.",
+  "env_overrides": {},
+  "import_load": {
+    "error": null,
+    "files_done": 6,
+    "files_total": 6,
+    "status": "completed",
+    "wall_clock_sec": 0.391
+  },
+  "memory": {
+    "peak_rss_polled_mb": 169.47,
+    "peak_wset_os_mb": 169.5,
+    "platform": "Windows",
+    "sample_count": 3
+  },
+  "platform": "Windows",
+  "result_id": "S2_import",
+  "scenario_id": "S2_import",
+  "wall_clock_sec": 6.344
+}
