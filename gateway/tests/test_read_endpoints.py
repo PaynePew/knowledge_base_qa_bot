@@ -223,6 +223,33 @@ def test_tree_nonexistent_subdir_returns_404(read_env):
     assert resp.status_code == 404
 
 
+def test_tree_missing_root_directory_returns_empty_entries(tmp_path, monkeypatch):
+    """GET /read/tree?path=.trash returns 200 {"entries": []} when the
+    .trash root has not been created on disk yet (issue #629 — an
+    advertised whitelist root must always be listable, never a 404)."""
+    import markdown_kb.app.read as read_module
+
+    docs = tmp_path / "docs"
+    raw = tmp_path / "raw"
+    wiki = tmp_path / "wiki"
+    trash = tmp_path / ".trash"  # deliberately NOT created
+    for d in (docs, raw, wiki):
+        d.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(
+        read_module,
+        "_WHITELIST_ROOTS",
+        {"docs": docs, "raw": raw, "wiki": wiki, ".trash": trash},
+    )
+
+    from gateway.app.main import app
+
+    client = TestClient(app, raise_server_exceptions=True)
+    resp = client.get("/read/tree", params={"path": ".trash"})
+    assert resp.status_code == 200
+    assert resp.json() == {"entries": []}
+
+
 def test_file_on_directory_returns_400(read_env):
     """GET /read/file on a directory returns HTTP 400."""
     client = read_env["client"]

@@ -359,6 +359,32 @@ def test_list_tree_nonexistent_subpath_raises_file_not_found(tmp_path):
         list_tree("docs/no-such-subdir", roots=roots)
 
 
+def test_list_tree_missing_root_directory_is_empty_listing(tmp_path):
+    """list_tree on a whitelisted root that has not been created on disk yet
+    (e.g. .trash before the first retire, ADR-0041) returns [] instead of
+    raising FileNotFound — an advertised root must always be listable
+    (issue #629)."""
+    from app.read import list_tree
+
+    roots = _make_roots(tmp_path)
+    roots[".trash"] = tmp_path / ".trash"  # deliberately not created
+
+    assert list_tree(".trash", roots=roots) == []
+
+
+def test_list_tree_missing_root_subpath_still_raises_file_not_found(tmp_path):
+    """A nonexistent SUB-path under a not-yet-created root still raises
+    FileNotFound — only the bare root itself gets the empty-listing
+    treatment (issue #629)."""
+    from app.read import FileNotFound, list_tree
+
+    roots = _make_roots(tmp_path)
+    roots[".trash"] = tmp_path / ".trash"  # deliberately not created
+
+    with pytest.raises(FileNotFound):
+        list_tree(".trash/nope", roots=roots)
+
+
 def test_read_file_nonexistent_raises_file_not_found(tmp_path):
     """read_file on a non-existent file raises FileNotFound."""
     from app.read import FileNotFound, read_file

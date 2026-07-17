@@ -8774,6 +8774,13 @@ function navigateTo(relpath) {
     .catch(function(err) {
       browserBooted = true;
       entriesEl.classList.remove("is-loading");
+      /* Re-render the breadcrumb for the attempted path so its root crumb
+         is always a clickable button (renderBreadcrumb only renders the
+         non-clickable crumb-current span when relpath === ""). Without
+         this, a failure starting from the root listing leaves the
+         breadcrumb in its pre-click root state and nothing in the rail
+         clickable — an error must never dead-end navigation (issue #629). */
+      renderBreadcrumb(relpath);
       entriesEl.replaceChildren(
         el("div", { class: "busy-row" },
           el("span", { style: "color:var(--fail);", text: LINT_CHROME[consoleLang].browseFailedToLoadPrefix + (err.message || String(err)) })

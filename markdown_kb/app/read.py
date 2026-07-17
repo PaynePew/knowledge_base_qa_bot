@@ -21,6 +21,9 @@ Public surface:
         ``relpath=''`` lists the roots themselves (docs, raw, wiki).
         ``relpath='docs'`` lists entries inside docs/.
         Returns ``list[TreeEntry]`` sorted: dirs first (alpha), then files (alpha).
+        A whitelist root that has not been created on disk yet (e.g. ``.trash``
+        before the first retire) returns ``[]`` rather than raising
+        FileNotFound (issue #629) — a nonexistent SUB-path still raises.
 
     ``read_file(relpath)`` — read and return the UTF-8 text of a file inside
         one of the whitelisted roots.  Returns the raw text as a ``str``.
@@ -203,11 +206,15 @@ def list_tree(
     Returns:
         ``list[TreeEntry]`` — directories first (alphabetical), then files
         (alphabetical).  Entries starting with ``.`` are hidden and excluded.
+        A bare whitelist root not yet created on disk (e.g. ``'.trash'``
+        before the first retire) returns ``[]`` rather than raising.
 
     Raises:
         PathRejected: path contains ``..``, is absolute, or resolves outside
             the whitelist root.
-        FileNotFound: the resolved path does not exist.
+        FileNotFound: the resolved path does not exist (a nonexistent
+            SUB-path; a bare missing root returns ``[]`` instead — see
+            ``Returns`` above).
         NotAFile: only raised from read_file; list_tree never raises this.
     """
     effective_roots = roots if roots is not None else _WHITELIST_ROOTS
@@ -238,6 +245,14 @@ def list_tree(
     resolved = _resolve_and_check(root_dir, sub_parts)
 
     if not resolved.exists():
+        if not sub_parts:
+            # relpath names a whitelist root itself (e.g. '.trash') that has
+            # not been created on disk yet — .trash is lazily created on the
+            # first retire (ADR-0041). An advertised root must always be
+            # listable, so treat it as an empty directory rather than 404ing
+            # (issue #629). A nonexistent SUB-path still raises below —
+            # mirrors count_tree's not-yet-created-root handling.
+            return []
         raise FileNotFound(f"Path does not exist: {relpath!r}")
 
     if not resolved.is_dir():
