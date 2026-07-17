@@ -206,11 +206,15 @@ def list_tree(
     Returns:
         ``list[TreeEntry]`` — directories first (alphabetical), then files
         (alphabetical).  Entries starting with ``.`` are hidden and excluded.
+        A bare whitelist root not yet created on disk (e.g. ``'.trash'``
+        before the first retire) returns ``[]`` rather than raising.
 
     Raises:
         PathRejected: path contains ``..``, is absolute, or resolves outside
             the whitelist root.
-        FileNotFound: the resolved path does not exist.
+        FileNotFound: the resolved path does not exist (a nonexistent
+            SUB-path; a bare missing root returns ``[]`` instead — see
+            ``Returns`` above).
         NotAFile: only raised from read_file; list_tree never raises this.
     """
     effective_roots = roots if roots is not None else _WHITELIST_ROOTS
