@@ -186,3 +186,172 @@ summarize math). After a run, `git status` should show only the committed
 single log channel has no env override), restore it with
 `git checkout -- wiki/log.md` before committing; never commit a mutated
 `raw/`, `docs/`, or `.kb/` artifact either.
+
+## S5 addendum (#627) — 2026-07-13
+
+Closes the "Transcribe / OCR path" gap in the "Not measured" section above.
+Follow-up to #600 (parent #580); this issue's own 2026-07-13 triage note
+narrowed scope: the container-side re-run (Gap 2, below) is carved OUT of
+this slice (local docker daemon unavailable, and the deployed tenant must
+never be load-tested) — this addendum covers Gap 1 (transcribe-inclusive
+characterization) only.
+
+### Methodology delta
+
+**Fixture.** No new fixture was committed (per this issue's scope). A
+16-page PDF is assembled **in memory, at harness-run time**
+(`ops/loadtest/transcribe_load.py::_build_multipage_pdf`) by repeating the
+already-committed `markdown_kb/tests/fixtures/raw_import/image_only.pdf`'s
+page 0 via `pypdfium2`'s own page-import API, staged under a run-unique
+`raw/` filename, and removed in `finally` — never written to a committed
+path. One multi-page **source** (not several 1-page sources) is required to
+exercise page-level concurrency at all: `transcribe_jobs._run_batch` is
+sequential-over-sources by design (mirrors `import_sources`), with
+concurrency living entirely *within* one source's page-worker pool
+(`transcriber.transcribe_pdf_bytes_concurrent`).
+
+**Fake-upstream shape, verified not assumed.** The transcriber's page call
+sends vision content parts (`HumanMessage(content=[{"type": "text", ...},
+{"type": "image_url", ...}])`) with `reasoning_effort` set and no
+`response_format`/`tools` key. Probed this directly against a throwaway
+local FastAPI stub during implementation (captured request body keys:
+`["messages", "model", "reasoning_effort", "stream"]`) — it lands on
+`POST /v1/chat/completions`, the same endpoint #600's fake upstream already
+implements, and falls into that handler's existing plain-text-stub branch
+(no `response_format`/`tools` present). **No fake-upstream code change was
+needed.** The stub answer (~71 chars) assembled across 16 pages totals
+~1.17KB, comfortably under `KB_LONGFORM_MIN_CHARS` (2000) — same
+"keep Structure Enrichment's gate closed" discipline `import_load.py`
+documents for its own fixtures, so this scenario's only LLM traffic is the
+16 per-page transcription calls it exists to measure.
+
+**Route.** `POST /wiki/transcribe/batch` (single source, `{"sources": [...]
+}`) + poll `GET /wiki/transcribe/jobs/{job_id}` — the async batch surface
+(issue #459 AC5), admin-gated (`KB_MAX_ADMIN`) same as `/wiki/import/jobs`.
+`KB_TRANSCRIBE_ENABLED=true` is layered in as a **scenario-scoped** env
+override (`ScenarioSpec.scenario_env`, merged under CLI `--env` so a rerun
+can still override it) rather than added to `HARNESS_BASE_ENV` — S0-S4 never
+touch the Transcribe path and shouldn't gain a new always-on flag.
+
+### Results
+
+| Scenario | Description | Peak RSS (MB) | Source | Wall clock (s) | Chat sent/ok/err | Transcribe status |
+|---|---|---|---|---|---|---|
+| S5_transcribe_c16 | Transcribe-only, 16-page single source, `KB_TRANSCRIBE_CONCURRENCY` default (16) | 198.58 | peak_wset (OS) | 21.06 | - | completed (pages 16/16) |
+| S5_transcribe_c3 | Same load, `KB_TRANSCRIBE_CONCURRENCY=3` (prod value, #456/#459) | 194.53 | peak_wset (OS) | 8.33 | - | completed (pages 16/16) |
+| S5_transcribe_headline | Chat load c=6 (60 req) concurrent with the same 16-page transcribe batch | 213.89 | peak_wset (OS)\* | 11.64 | 60/60/0 | completed (pages 16/16) |
+
+\* `S5_transcribe_headline` is the first scenario across #600+#627 where
+`peak_wset_os_mb` (213.89) and `peak_rss_polled_mb` (220.42) disagree by
+more than a rounding error (6.5 MB, ~3%) — every S0-S4 scenario and both
+transcribe-only S5 runs agreed within 0.03 MB. Plausible cause: this is the
+first three-concurrent-load-source scenario (SSE chat workers + Transcribe's
+own page-worker pool, both writing memory on independent threads at once),
+which the 200ms poll can catch a transient joint spike of that
+`peak_wset`'s single post-load read might just miss by a sample or two —
+not independently confirmed, flagged here rather than silently picking one
+number. `summarize.py`'s existing `peak_rss_mb` preference for
+`peak_wset_os_mb` is kept for consistency with S0-S4's rows; either figure
+keeps this scenario inside the methodology's overall envelope.
+
+### Which knob bounds S5 — and a real methodology caveat
+
+- **`KB_TRANSCRIBE_CONCURRENCY` (16 -> 3) moved peak RSS by only ~4 MB
+  (198.58 -> 194.53, ~2%)** — directionally consistent with #600's
+  `KB_MAX_INFLIGHT` finding (lower concurrency -> lower peak) but a much
+  smaller effect, despite a *larger* proportional cut (16->3, -81%, vs
+  #600's 6->2, -67%).
+- **This is very likely an artifact of the fake upstream's near-instant
+  response time, not evidence the real knob is weak.** The #456/#459 OOM
+  precedent this S5 exists to characterize came from a REAL vision model
+  call taking real seconds per page, so `KB_TRANSCRIBE_CONCURRENCY` pages
+  were genuinely resident (rendered PNG + in-flight HTTP call) at once for
+  that whole duration. Here, the fake upstream answers in milliseconds, so
+  even 16 "concurrently permitted" pages barely overlap in wall-clock time —
+  there's little sustained concurrent residency for the semaphore to bound.
+  **Read this ~2% delta as a floor, not the real effect size**; it does not
+  contradict the #456/#459 incident, it just cannot reproduce the
+  slow-upstream dynamic that caused it (matching #600's own "answer fidelity
+  doesn't matter, reaching the same code path does" framing — true for
+  *which* LLM branch executes, not for *how long memory is held* under
+  concurrency).
+- **Chat + Transcribe compounds, unlike chat + Import (a real, new
+  finding).** #600 found `S3_headline` (chat c=6 + import) tracked
+  chat-alone almost exactly (192.04 vs 192.54 MB) — import's own footprint
+  was additive-but-negligible. Here, `S5_transcribe_headline` (213.89 MB)
+  sits **above both** its own components measured alone: transcribe-alone
+  (198.58) and #600's chat-alone `S1_chat_c6` (192.54) — roughly +15 MB over
+  the higher of the two, not just "tracks the bigger one" the way import
+  did. Transcribe holds real per-page image buffers across a page-worker
+  pool for the scenario's duration in a way Import's zero-LLM mechanical
+  pass never does, so this is the more representative "does a background
+  Transcribe batch cost the concurrent chat path anything" signal — and the
+  answer is a real, non-trivial yes on this box, even at synthetic-load
+  scale.
+
+### Recommended caps (updated)
+
+S0-S4's conclusion stands unchanged (`KB_MAX_INFLIGHT` /
+`KB_SSE_MAX_CONCURRENT` bound chat's peak; no shipped-default change
+indicated by that data). Adding S5's data:
+
+- **No shipped-default change is indicated by the S5 data alone either** —
+  even the worst-observed peak here (`S5_transcribe_headline`, 213.89-220.42
+  MB) sits comfortably inside a 512 MB budget, with more headroom to spare
+  than #600's own worst case.
+- **This is NOT a confident "close as adequate," though — two caveats keep
+  it open:**
+  1. The concurrency-knob caveat above: this harness's fake-upstream latency
+     profile structurally cannot reproduce the sustained-concurrent-residency
+     dynamic that caused the real #456/#459 OOM, so a synthetic ~2% delta at
+     16 vs 3 is not strong evidence that `KB_TRANSCRIBE_CONCURRENCY=16`
+     (the shipped default) is safe under a REAL slow-model workload — only
+     that this harness cannot falsify it either way.
+  2. Gap 2 (container-side re-run, below) remains unmeasured; every number
+     above is this Windows dev box's, not the 512 MB Linux tenant's (same
+     caveat #600's report already carries for S0-S4).
+- **Conclusion: hold `KB_TRANSCRIBE_CONCURRENCY` at its shipped default (16)
+  for now — do not lower it shipped-side on this issue's data — and open a
+  dedicated container-run issue at review time** to close both caveats
+  together (a real Linux container measurement is also the only way to get a
+  real-vision-model-shaped concurrency signal cheaply, by measuring wall
+  time per page instead of guessing). If that container run reproduces
+  anything close to #456/#459's real OOM shape, that issue is where a
+  shipped-default change (mirroring the #474/#482 CapacityLimiter pattern)
+  belongs — not here.
+
+### Not measured (updated)
+
+- ~~Transcribe / OCR path (S5)~~ — **closed by this addendum.**
+- **True Linux-container numbers (Gap 2) — still open, scope-carved-out of
+  this issue** (2026-07-13 triage: local docker daemon is down, and the
+  deployed tenant must never be load-tested). Reproduction recipe for
+  whoever picks up the dedicated container-run issue:
+
+  ```bash
+  # From repo root, on a box with a working docker daemon:
+  docker build -t kbqabot-loadtest -f Dockerfile .
+  docker run --rm --memory=512m --memory-swap=512m -p 8000:8000 \
+    --env-file <(printf 'OPENAI_API_KEY=dummy\nOPENAI_API_BASE=http://host.docker.internal:<fake-upstream-port>/v1\n') \
+    kbqabot-loadtest
+
+  # Measurement channel — either works, cross-check like this report's
+  # peak_wset vs polled-RSS pair:
+  docker stats --no-stream kbqabot-loadtest            # quick, coarse
+  # or, more precise (matches this report's "sum the process tree" finding —
+  # a container has its own analogous gotcha: cgroup v2 memory.peak is for
+  # the WHOLE cgroup, already summed, so no process-tree walk is needed
+  # inside the container the way sampler.py needs one on Windows):
+  cat /sys/fs/cgroup/memory.peak                        # cgroup v2, single number, bytes
+  ```
+
+  The harness's own scenarios (`S1_chat_c6`, `S3_headline`,
+  `S5_transcribe_headline` at minimum) should be re-run **against** this
+  container rather than the harness spawning `uvicorn` as a local subprocess
+  — point the harness's chat/import/transcribe load drivers at the
+  container's exposed port instead of `spawn_gateway`'s local subprocess, or
+  simply replay the same HTTP call sequences with `curl`/`httpx` by hand.
+  Never point this at the deployed box, same rule as the local harness.
+- Everything else S0-S4 already left unmeasured (Hybrid/RAG stacks under
+  load, sustained/long-duration load, `KB_IMPORT_MAX_CONCURRENT_JOBS` /
+  `KB_MAX_ADMIN` saturation) is still unmeasured; S5 did not touch any of it.

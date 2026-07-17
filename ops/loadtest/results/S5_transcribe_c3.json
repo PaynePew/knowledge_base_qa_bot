@@ -1,0 +1,27 @@
+{
+  "chat_load": null,
+  "description": "Transcribe-only: one synthetic 16-page scanned PDF (single source, so page-level concurrency saturates within it), KB_TRANSCRIBE_CONCURRENCY default (16). Rerun with --env KB_TRANSCRIBE_CONCURRENCY=3 --out-name S5_transcribe_c3 for the prod-cap comparison (issue #627).",
+  "env_overrides": {
+    "KB_TRANSCRIBE_CONCURRENCY": "3"
+  },
+  "import_load": null,
+  "memory": {
+    "peak_rss_polled_mb": 194.22,
+    "peak_wset_os_mb": 194.53,
+    "platform": "Windows",
+    "sample_count": 10
+  },
+  "platform": "Windows",
+  "result_id": "S5_transcribe_c3",
+  "scenario_id": "S5_transcribe_c16",
+  "transcribe_load": {
+    "error": null,
+    "files_done": 1,
+    "files_total": 1,
+    "pages_done": 16,
+    "pages_total": 16,
+    "status": "completed",
+    "wall_clock_sec": 1.922
+  },
+  "wall_clock_sec": 8.328
+}
