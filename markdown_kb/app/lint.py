@@ -2676,10 +2676,27 @@ def _check_c8_promotion_candidates(
     return [finding for _c, _u, finding in candidates[:top_n]]
 
 
+_C9_GRACE_DAYS_DEFAULT = 3.0
+
+
+def _c9_grace_days() -> float:
+    """Grace period in days before a newer cited page flags a live Filed
+    Answer stale (issue #639). Read per request via KB_LINT_C9_GRACE_DAYS
+    (mirrors the KB_LINT_C5_* knob convention); blank/malformed values fall
+    back to the 3.0-day default."""
+    raw = os.environ.get("KB_LINT_C9_GRACE_DAYS", "")
+    try:
+        return float(raw) if raw else _C9_GRACE_DAYS_DEFAULT
+    except ValueError:
+        return _C9_GRACE_DAYS_DEFAULT
+
+
 def _check_c9_qa_staleness(
     wiki_dir: Path,
 ) -> list[QaStalenessFinding]:
     """Flag live Filed Answers whose cited entity pages have been re-ingested more recently.
+    A citation is stale only when the drift exceeds the grace period
+    (``_c9_grace_days``, default 3.0 days — issue #639).
 
     PRD #78 Phase 5 amendment §"C9 — qa-staleness". Read-only — surfaced to
     ``lint-report.md`` §``## Stale Filed Answers``. Closes Q6b "entity
@@ -2780,9 +2797,12 @@ def _check_c9_qa_staleness(
             if entity_updated.tzinfo is None:
                 entity_updated = entity_updated.replace(tzinfo=datetime.UTC)
 
-            if entity_updated > qa_updated:
+            # issue #639 (operator decision 2026-07-20): a citation only
+            # counts as stale past the grace period — routine re-ingests
+            # were flagging answers minutes after filing.
+            drift_seconds = (entity_updated - qa_updated).total_seconds()
+            if drift_seconds > _c9_grace_days() * 86400.0:
                 stale_citations.append(citation_str)
-                drift_seconds = (entity_updated - qa_updated).total_seconds()
                 if drift_seconds > max_drift_seconds:
                     max_drift_seconds = drift_seconds
 

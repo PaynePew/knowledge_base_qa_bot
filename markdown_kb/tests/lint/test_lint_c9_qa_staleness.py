@@ -111,6 +111,40 @@ class TestC9QaStaleness:
         findings = _check_c9_qa_staleness(tmp_wiki_dir)
         assert findings == []
 
+    def test_c9_drift_within_grace_period_not_flagged(self, tmp_wiki_dir):
+        """issue #639: a routine re-ingest 2 days after filing stays quiet —
+        only drift beyond the 3.0-day default grace flags."""
+        _write_entity_page(tmp_wiki_dir, "fresh-entity", updated="2026-02-03T00:00:00Z")
+        _write_qa_page(
+            tmp_wiki_dir,
+            "qa-fresh",
+            sources=["fresh-entity#main"],
+            status="live",
+            updated="2026-02-01T00:00:00Z",  # entity newer by 2d < 3d grace
+        )
+
+        from app.lint import _check_c9_qa_staleness
+
+        assert _check_c9_qa_staleness(tmp_wiki_dir) == []
+
+    def test_c9_grace_env_override(self, tmp_wiki_dir, monkeypatch):
+        """issue #639: KB_LINT_C9_GRACE_DAYS=0 restores flag-any-drift, read
+        per request (no restart)."""
+        monkeypatch.setenv("KB_LINT_C9_GRACE_DAYS", "0")
+        _write_entity_page(tmp_wiki_dir, "fresh-entity", updated="2026-02-03T00:00:00Z")
+        _write_qa_page(
+            tmp_wiki_dir,
+            "qa-fresh",
+            sources=["fresh-entity#main"],
+            status="live",
+            updated="2026-02-01T00:00:00Z",
+        )
+
+        from app.lint import _check_c9_qa_staleness
+
+        findings = _check_c9_qa_staleness(tmp_wiki_dir)
+        assert [f.page_slug for f in findings] == ["qa-fresh"]
+
     def test_c9_newer_entity_flags_qa(self, tmp_wiki_dir):
         """AC2: entity.frontmatter.updated > qa.frontmatter.updated → finding emitted."""
         _write_entity_page(tmp_wiki_dir, "vip-membership", updated="2026-03-01T00:00:00Z")
