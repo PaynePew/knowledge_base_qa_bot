@@ -135,10 +135,15 @@ def test_stage_disabled_at_creation_applies_to_both_the_staged_and_fetch_paths()
 
 def test_staged_badge_rendered_only_on_the_staged_path():
     fn = _extract_function(_console_text(), "openC5SourceEditor")
+    assert "if (showingStaged)" in fn
     assert (
-        'showingStaged ? el("span", { class: "c5-staged-badge", '
-        "text: chrome.c5EditSourceShowingStaged }) : null" in fn
+        'children.unshift(el("span", { class: "c5-staged-badge", '
+        "text: chrome.c5EditSourceShowingStaged }))" in fn
     )
+    # Regression guard (adversarial verify, 2026-07-20): a null ternaried
+    # into NATIVE replaceChildren renders a literal "null" text node on the
+    # fetch-fallback path — el() skips null children, replaceChildren does not.
+    assert ": null" not in fn
 
 
 def test_staged_prefill_indicator_chrome_defined_bilingually():

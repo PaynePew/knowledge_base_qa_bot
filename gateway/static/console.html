@@ -6213,10 +6213,15 @@ function openC5SourceEditor(section, sectionEl, opts) {
       stageBtn.textContent = chrome.c5EditSourceStaged;
       if (opts && opts.onStagedChange) opts.onStagedChange();
     });
-    editorEl.replaceChildren(
-      showingStaged ? el("span", { class: "c5-staged-badge", text: chrome.c5EditSourceShowingStaged }) : null,
-      textarea,
-      el("div", { class: "c5-source-editor-actions" }, stageBtn, closeEditorBtn));
+    /* Native replaceChildren stringifies a null argument into a literal
+       "null" text node (unlike the el() helper, which skips null kids), so
+       the badge is conditionally unshifted rather than ternaried in. */
+    var children = [textarea,
+      el("div", { class: "c5-source-editor-actions" }, stageBtn, closeEditorBtn)];
+    if (showingStaged) {
+      children.unshift(el("span", { class: "c5-staged-badge", text: chrome.c5EditSourceShowingStaged }));
+    }
+    editorEl.replaceChildren.apply(editorEl, children);
     textarea.focus();
   }
 
