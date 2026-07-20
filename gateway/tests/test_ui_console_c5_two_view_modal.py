@@ -203,9 +203,15 @@ def test_editor_stage_stores_content_and_never_writes():
 
 def test_editor_chrome_defined_bilingually():
     text = _console_text()
-    for key in ("c5EditSourceLoading", "c5EditSourceStage", "c5EditSourceStaged",
-                "c5EditSourceCancel", "c5StagedBadge", "c5StagedBarPrefix",
-                "c5UploadStaged"):
+    for key in (
+        "c5EditSourceLoading",
+        "c5EditSourceStage",
+        "c5EditSourceStaged",
+        "c5EditSourceCancel",
+        "c5StagedBadge",
+        "c5StagedBarPrefix",
+        "c5UploadStaged",
+    ):
         assert len(re.findall(rf'{key}:\s*"[^"]+"', text)) == 2, (
             f"chrome key {key} must be defined in BOTH language blocks"
         )
@@ -267,8 +273,7 @@ def test_pending_targets_is_a_module_level_array_not_a_single_slot():
 def test_add_target_dedupes_and_never_fetches():
     fn = _extract_function(_console_text(), "addC5FixSourceTarget")
     assert "function addC5FixSourceTarget(sourcePath, content)" in fn, (
-        "ADR-0043 decision 2: staging routes the corrected text through the "
-        "same accumulator"
+        "ADR-0043 decision 2: staging routes the corrected text through the same accumulator"
     )
     assert "pendingC5FixSourceTargets.some(" in fn, "must dedupe by sourcePath"
     assert "pendingC5FixSourceTargets.push(" in fn
