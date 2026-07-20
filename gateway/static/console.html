@@ -3819,6 +3819,9 @@ var LINT_CHROME = {
     c5EditSourceStaged:     "Staged ✓",
     c5EditSourceCancel:     "Close editor",
     c5StagedBadge:          "corrected in-app",
+    /* issue #634: shown when the editor prefilled from an already-staged
+       correction instead of fetching the on-disk file. */
+    c5EditSourceShowingStaged: "Showing the staged edit, not the on-disk file",
 
     /* issue #636 rider: bilingual drift label — "19.2d drift" / "漂移 19.2 天" */
     driftPrefix:            "",
@@ -4148,6 +4151,7 @@ var LINT_CHROME = {
     c5EditSourceStaged:     "已暫存 ✓",
     c5EditSourceCancel:     "關閉編輯",
     c5StagedBadge:          "已於介面內修正",
+    c5EditSourceShowingStaged: "顯示暫存修正版本,非磁碟上的檔案",
 
     /* issue #636 rider: bilingual drift label — "19.2d drift" / "漂移 19.2 天" */
     driftPrefix:            "漂移 ",
@@ -6160,16 +6164,27 @@ function renderC5SourceCard(pageSlug, sections, opts) {
   return card;
 }
 
-/* ── C5 in-modal Source editor (issue #632, ADR-0043 decisions 1-2) ────────
-   Loads the WHOLE file (GET /read/file, same convention as openFile —
-   section.source_path verbatim, no client-side path or section
-   reconstruction, §12.5) into a textarea under the section. "Stage
+/* ── C5 in-modal Source editor (issue #632, ADR-0043 decisions 1-2;
+   issue #634 staged-prefill rider) ─────────────────────────────────────────
+   Loads the WHOLE file into a textarea under the section. "Stage
    correction" stores the corrected text on the pending target via
    addC5FixSourceTarget(sourcePath, content) — pure client state; the only
-   request this editor ever makes is the read-only load. The staged text is
-   uploaded by an explicit staged-upload run (renderC5StagedBar / the batch
-   panel), never from here. A second click on Fix this Source while the
-   editor is open just refocuses it. */
+   request this editor ever makes is the read-only GET /read/file load, and
+   only when no correction is already staged for this exact source_path
+   (below). The staged text is uploaded by an explicit staged-upload run
+   (renderC5StagedBar / the batch panel), never from here. A second click on
+   Fix this Source while the editor is open just refocuses it.
+
+   issue #634: re-opening the editor for a Source that already carries a
+   staged correction must show THAT text, not fetch the on-disk original —
+   otherwise an unedited click on Stage (which started enabled) silently
+   replaced the earlier correction with the unmodified file (last stage
+   wins, ADR-0043 decision 2, applied to bytes the curator never touched
+   this visit). Two changes close that path: (1) prefer the staged target's
+   content over /read/file, tagged with a visible "showing staged edit"
+   badge so it never reads as file state; (2) Stage starts disabled and only
+   arms on the textarea's first real edit, so a bare re-open-then-click can
+   no longer write anything. */
 function openC5SourceEditor(section, sectionEl, opts) {
   var chrome = LINT_CHROME[consoleLang];
   var existing = sectionEl.querySelector(".c5-source-editor");
@@ -6178,37 +6193,48 @@ function openC5SourceEditor(section, sectionEl, opts) {
     if (openTextarea) openTextarea.focus();
     return;
   }
-  var editorEl = el("div", { class: "c5-source-editor" },
-    el("span", { class: "spinner" }),
-    document.createTextNode(" " + chrome.c5EditSourceLoading)
-  );
+  var editorEl = el("div", { class: "c5-source-editor" });
   sectionEl.append(editorEl);
 
+  function buildEditor(content, showingStaged) {
+    var textarea = el("textarea", { class: "reconcile-textarea", rows: "12" });
+    textarea.value = content;
+    var stageBtn = el("button", { class: "fix-source-btn", type: "button",
+      text: chrome.c5EditSourceStage, disabled: "" });
+    var closeEditorBtn = el("button", { class: "view-source-btn", type: "button", text: chrome.c5EditSourceCancel });
+    closeEditorBtn.addEventListener("click", function() { editorEl.remove(); });
+    textarea.addEventListener("input", function() {
+      stageBtn.disabled = false;
+      stageBtn.textContent = chrome.c5EditSourceStage;
+    });
+    stageBtn.addEventListener("click", function() {
+      addC5FixSourceTarget(section.source_path, textarea.value);
+      stageBtn.disabled = true;
+      stageBtn.textContent = chrome.c5EditSourceStaged;
+      if (opts && opts.onStagedChange) opts.onStagedChange();
+    });
+    editorEl.replaceChildren(
+      showingStaged ? el("span", { class: "c5-staged-badge", text: chrome.c5EditSourceShowingStaged }) : null,
+      textarea,
+      el("div", { class: "c5-source-editor-actions" }, stageBtn, closeEditorBtn));
+    textarea.focus();
+  }
+
+  var stagedTarget = pendingC5FixSourceTargets.filter(function(t) {
+    return t.sourcePath === section.source_path && t.content != null;
+  })[0];
+  if (stagedTarget) {
+    buildEditor(stagedTarget.content, true);
+    return;
+  }
+
+  editorEl.replaceChildren(el("span", { class: "spinner" }), document.createTextNode(" " + chrome.c5EditSourceLoading));
   fetch("/read/file?" + new URLSearchParams({ path: section.source_path }))
     .then(function(r) {
       if (!r.ok) return r.json().then(function(j) { throw new Error(j.detail || ("HTTP " + r.status)); });
       return r.json();
     })
-    .then(function(data) {
-      var textarea = el("textarea", { class: "reconcile-textarea", rows: "12" });
-      textarea.value = data.content;
-      var stageBtn = el("button", { class: "fix-source-btn", type: "button", text: chrome.c5EditSourceStage });
-      var closeEditorBtn = el("button", { class: "view-source-btn", type: "button", text: chrome.c5EditSourceCancel });
-      closeEditorBtn.addEventListener("click", function() { editorEl.remove(); });
-      textarea.addEventListener("input", function() {
-        stageBtn.disabled = false;
-        stageBtn.textContent = chrome.c5EditSourceStage;
-      });
-      stageBtn.addEventListener("click", function() {
-        addC5FixSourceTarget(section.source_path, textarea.value);
-        stageBtn.disabled = true;
-        stageBtn.textContent = chrome.c5EditSourceStaged;
-        if (opts && opts.onStagedChange) opts.onStagedChange();
-      });
-      editorEl.replaceChildren(textarea,
-        el("div", { class: "c5-source-editor-actions" }, stageBtn, closeEditorBtn));
-      textarea.focus();
-    })
+    .then(function(data) { buildEditor(data.content, false); })
     .catch(function(err) {
       editorEl.replaceChildren(el("div", { class: "reconcile-error",
         text: chrome.c5EditSourceLoadFailed + (err.message || String(err)) }));
