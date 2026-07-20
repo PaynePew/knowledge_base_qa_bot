@@ -336,6 +336,11 @@ def list_tree_recursive(
 
     collected: list[TreeEntry] = []
     truncated = False
+    seen_dirs: set[Path] = set()
+
+    def _checked_resolve(entry_relpath: str) -> Path:
+        parts = entry_relpath.split("/")
+        return _resolve_and_check(effective_roots[parts[0]], parts[1:])
 
     def _walk(sub_relpath: str) -> None:
         nonlocal truncated
@@ -343,8 +348,18 @@ def list_tree_recursive(
             if len(collected) >= limit:
                 truncated = True
                 return
+            # Descending validates a dir via list_tree, but entries we only
+            # LIST are never validated by it — a dangling out-of-root symlink
+            # surfaces as a file and would otherwise leak into the listing
+            # unchecked. Resolve every entry; escapes raise PathRejected.
+            resolved = _checked_resolve(entry.relpath)
             collected.append(entry)
             if entry.is_dir:
+                # A within-root dir symlink can alias an ancestor; walking it
+                # again would recurse forever. Each resolved dir is walked once.
+                if resolved in seen_dirs:
+                    continue
+                seen_dirs.add(resolved)
                 _walk(entry.relpath)
                 if truncated:
                     return

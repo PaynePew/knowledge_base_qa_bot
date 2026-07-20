@@ -183,6 +183,30 @@ def test_recursive_symlink_escape_rejected(tmp_path):
         list_tree_recursive("docs", roots=roots)
 
 
+def test_recursive_within_root_symlink_cycle_terminates(tmp_path):
+    """A dir symlink aliasing its own ancestor must not recurse forever —
+    each resolved directory is walked exactly once (defensive gap flagged by
+    the slice's adversarial verify)."""
+    from app.read import list_tree_recursive
+
+    roots = _make_roots(tmp_path)
+    sub = roots["docs"] / "sub"
+    sub.mkdir()
+    (sub / "leaf.md").write_text("# Leaf\n", encoding="utf-8")
+    try:
+        (sub / "loop").symlink_to(sub, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlink creation not available in this environment")
+
+    entries, truncated = list_tree_recursive("docs", roots=roots)
+
+    assert truncated is False
+    relpaths = [e.relpath for e in entries]
+    assert "docs/sub/leaf.md" in relpaths
+    # the alias may be listed, but its contents are never walked a second time
+    assert relpaths.count("docs/sub/loop/leaf.md") == 0
+
+
 def test_recursive_nonexistent_subpath_raises_file_not_found(tmp_path):
     from app.read import FileNotFound, list_tree_recursive
 
