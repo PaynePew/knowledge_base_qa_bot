@@ -1,8 +1,8 @@
 ---
 id: refund-policy-a
 type: concept
-created: "2026-03-01T10:00:00Z"
-updated: "2026-03-01T10:00:00Z"
+created: "2026-03-05T10:00:00Z"
+updated: "2026-03-05T10:00:00Z"
 sources:
   - policy_a.md#refund-timeline
 status: live
