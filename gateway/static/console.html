@@ -1689,6 +1689,19 @@
   .field-manual-empty { display: none; }
   .field-manual-empty.visible { display: block; }
 
+  /* Truncated-listing warning (issue #644) — shown below the Browse rail's
+     quick-find results once the recursive fetch hit the 10,000-entry cap;
+     same show/hide-via-class convention as .field-manual-empty above. */
+  .browse-quick-find-truncated {
+    display: none;
+    padding: 8px 16px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: var(--fs-2xs);
+    color: var(--ink-3);
+    border-top: 1px solid var(--rule);
+  }
+  .browse-quick-find-truncated.visible { display: block; }
+
   /* ── C4 collision dual resolution (tier-B S2, issue #378, ADR-0028) ──
      Both real Gated affordances. Reuses every .reconcile-* modal/column
      class above (the shape is identical: old-vs-editable preview + apply). */
@@ -3807,6 +3820,15 @@ var LINT_CHROME = {
     browseLoadingPathPrefix: "Loading ",
     browseFailedToLoadPrefix: "Failed to load: ",
     browseEmptyDirectory: "(empty directory)",
+    /* issue #644: Browse rail quick-find over a recursive /read/tree
+       listing — reuses the #643 railSearchInput()/highlightMatches()
+       factory (railSearchClearLabel below covers the clear button for
+       both); these five keys are quick-find-specific. */
+    browseQuickFindPlaceholder: "Search files and folders…",
+    browseQuickFindLoading: "Searching…",
+    browseQuickFindEmpty: "No matching files or folders.",
+    browseQuickFindTruncated: "Showing the first 10,000 entries — narrow your search to see more.",
+    browseQuickFindFailedToLoadPrefix: "Search failed to load: ",
     viewerLoading:       "loading…",
     viewerClose:         "close",
     viewerRaw:           "raw",
@@ -4240,6 +4262,11 @@ var LINT_CHROME = {
     browseLoadingPathPrefix: "正在載入 ",
     browseFailedToLoadPrefix: "載入失敗:",
     browseEmptyDirectory: "(空目錄)",
+    browseQuickFindPlaceholder: "搜尋檔案與資料夾…",
+    browseQuickFindLoading: "搜尋中…",
+    browseQuickFindEmpty: "沒有符合的檔案或資料夾。",
+    browseQuickFindTruncated: "僅顯示前 10,000 筆結果 — 請縮小搜尋範圍以查看更多。",
+    browseQuickFindFailedToLoadPrefix: "搜尋載入失敗:",
     viewerLoading:       "載入中…",
     viewerClose:         "關閉",
     viewerRaw:           "原始檔",
@@ -5190,6 +5217,14 @@ function applyConsoleLang() {
      state). */
   if (fieldManualSearchInput) {
     applyFieldManualFilter(fieldManualSearchInput.value);
+  }
+  /* issue #644: re-run the active Browse quick-find (if any) against the
+     now-current language's text — mirrors the Field Manual retro-switch
+     immediately above. No-op before the Browse rail section is built
+     (browseQuickFindWidget is still undefined at the very first, boot-time
+     call to this function). */
+  if (browseQuickFindWidget) {
+    applyBrowseQuickFind(browseQuickFindWidget.input.value);
   }
 }
 
@@ -9324,10 +9359,23 @@ var breadcrumbEl = el("div", { class: "browser-breadcrumb" });
 var entriesEl = el("div", { class: "browser-entries" });
 var fileViewerEl = el("div", { id: "file-viewer-container" });
 
+/* Quick-find box (issue #644), built via the SAME railSearchInput()
+   factory the Field Manual lookup box (#643) uses — applyBrowseQuickFind
+   is a forward reference (function declaration, hoisted; defined below
+   alongside the rest of the quick-find state, right after renderEntries),
+   safe because railSearchInput only STORES the callback here, it does not
+   call it. browseQuickFindTruncatedEl is a sibling notice line under
+   entriesEl, not inside it, so it survives entriesEl.replaceChildren()
+   calls from both the normal breadcrumb view and the search-results view. */
+var browseQuickFindWidget = railSearchInput("browseQuickFindPlaceholder", applyBrowseQuickFind);
+var browseQuickFindTruncatedEl = el("div", { class: "browse-quick-find-truncated" });
+
 browserSection.append(
   bindText(el("div", { class: "section-label" }), "browseSectionLabel"),
+  browseQuickFindWidget.wrap,
   breadcrumbEl,
   entriesEl,
+  browseQuickFindTruncatedEl,
   fileViewerEl
 );
 
@@ -9576,6 +9624,150 @@ function renderEntries(entries) {
     });
   }
 }
+
+/* ── Browse rail quick-find (issue #644) ──────────────────────────────────
+   Cross-tree quick-find layered over the SAME entriesEl/breadcrumbEl the
+   breadcrumb navigator above already owns: an active query swaps entriesEl
+   to a flat result list and hides breadcrumbEl; clearing restores both from
+   the already-cached lastBrowserEntries/browserPath (no re-fetch, mirrors
+   the lang-toggle re-render at renderEntries's own call site above).
+   browseQuickFindEntries caches the flat listing from the last
+   /read/tree?recursive=true fetch — refetched on every focus of the quick-
+   find input ("once per search session", issue #644 AC), never on
+   keystroke (typing just re-filters the cached list). Depends on #643's
+   railSearchInput() + highlightMatches() (both module-scope, defined
+   above this section). */
+var browseQuickFindEntries = null;    // flat listing from the last recursive fetch; null = not yet fetched this session
+var browseQuickFindTruncated = false; // true iff that fetch hit the 10,000-entry cap
+var browseQuickFindFetchInFlight = false;
+var browseQuickFindQuery = "";        // last-applied query; "" means inactive (normal breadcrumb view)
+
+/* One flat quick-find result row — mirrors renderEntries' entry-row shape
+   (.entry-row/.entry-icon/.entry-name/.entry-meta) but shows the FULL
+   relpath (highlighted) instead of just the basename, since a match can
+   live several folders deep and the basename alone would not show where
+   (issue #644 AC). A file row opens exactly like a normal folder-listing
+   row (openFile); a dir row is a destination, not a preview — clicking it
+   clears the search AND navigates in (issue #644 AC), rather than showing
+   that directory's own quick-find-filtered contents. */
+function renderBrowseQuickFindRow(entry) {
+  var rowClass = "entry-row" + (entry.is_dir ? " is-dir" : "");
+  var nameEl = el("span", { class: "entry-name", text: entry.relpath });
+  var row = el("div", { class: rowClass,
+    onclick: function() {
+      if (entry.is_dir) {
+        clearBrowseQuickFind();
+        navigateTo(entry.relpath);
+      } else {
+        openFile(entry.relpath, entry.name);
+      }
+    }
+  },
+    el("span", { class: "entry-icon", text: entry.is_dir ? "▸" : "·" }),
+    nameEl,
+    el("span", { class: "entry-meta", text: entry.is_dir ? "" : fmtBytes(entry.size) })
+  );
+  highlightMatches(nameEl, browseQuickFindQuery);
+  return row;
+}
+
+/* Lazily fetches the flat cross-tree listing on focus (issue #644 AC) —
+   unconditional on every focus event (not just the first), so the cache
+   never goes stale across an upload/ingest/retire without any dedicated
+   invalidation logic (issue #644 AC: "cheap at current corpus size").
+   Re-applies the active query against the freshly-fetched list once it
+   resolves, so a query typed WHILE the fetch is still in flight (rendered
+   via the loading branch of applyBrowseQuickFind below) still lands
+   correctly. */
+function fetchBrowseQuickFindEntries() {
+  if (browseQuickFindFetchInFlight) return;
+  browseQuickFindFetchInFlight = true;
+  browseQuickFindEntries = null;
+  browseQuickFindTruncated = false;
+  fetch("/read/tree?" + new URLSearchParams({ path: "", recursive: "true" }))
+    .then(function(r) {
+      if (!r.ok) return r.json().then(function(j) { throw new Error(j.detail || ("HTTP " + r.status)); });
+      return r.json();
+    })
+    .then(function(data) {
+      browseQuickFindEntries = data.entries || [];
+      browseQuickFindTruncated = !!data.truncated;
+      if (browseQuickFindQuery) applyBrowseQuickFind(browseQuickFindQuery);
+    })
+    .catch(function(err) {
+      browseQuickFindEntries = [];
+      if (browseQuickFindQuery) {
+        entriesEl.replaceChildren(
+          el("div", { class: "busy-row" },
+            el("span", { style: "color:var(--fail);",
+              text: LINT_CHROME[consoleLang].browseQuickFindFailedToLoadPrefix + (err.message || String(err)) })
+          )
+        );
+      }
+    })
+    .finally(function() { browseQuickFindFetchInFlight = false; });
+}
+
+/* Filters browseQuickFindEntries by relpath substring (issue #644 AC) — the
+   FILTER LOGIC stays local to this section (#643's own scoping rule);
+   railSearchInput above only supplies the input/clear chrome. NFC-
+   normalizes + lowercases both sides (issue #644 AC) so CJK filenames
+   (composed vs. decomposed input) and case differences both still match.
+   A blank/whitespace-only query restores the normal breadcrumb view —
+   re-rendered from the already-cached lastBrowserEntries, no re-fetch. */
+function applyBrowseQuickFind(rawQuery) {
+  browseQuickFindQuery = (rawQuery || "").trim();
+
+  if (!browseQuickFindQuery) {
+    breadcrumbEl.style.display = "";
+    browseQuickFindTruncatedEl.classList.remove("visible");
+    browseQuickFindTruncatedEl.textContent = "";
+    if (lastBrowserEntries) renderEntries(lastBrowserEntries);
+    return;
+  }
+
+  breadcrumbEl.style.display = "none";
+
+  if (browseQuickFindEntries === null) {
+    entriesEl.replaceChildren(
+      el("div", { class: "busy-row" },
+        el("span", { class: "spinner" }),
+        el("span", { text: LINT_CHROME[consoleLang].browseQuickFindLoading })
+      )
+    );
+    browseQuickFindTruncatedEl.classList.remove("visible");
+    return;
+  }
+
+  var needle = browseQuickFindQuery.normalize("NFC").toLowerCase();
+  var matches = browseQuickFindEntries.filter(function(entry) {
+    return entry.relpath.normalize("NFC").toLowerCase().indexOf(needle) !== -1;
+  });
+
+  if (matches.length === 0) {
+    entriesEl.replaceChildren(
+      el("div", { class: "browser-empty", text: LINT_CHROME[consoleLang].browseQuickFindEmpty })
+    );
+  } else {
+    entriesEl.replaceChildren.apply(entriesEl, matches.map(renderBrowseQuickFindRow));
+  }
+
+  browseQuickFindTruncatedEl.classList.toggle("visible", browseQuickFindTruncated);
+  browseQuickFindTruncatedEl.textContent = browseQuickFindTruncated
+    ? LINT_CHROME[consoleLang].browseQuickFindTruncated
+    : "";
+}
+
+/* Clears the quick-find box + restores the normal breadcrumb view (issue
+   #644 AC) — the shared step both the clear-button (wired inside
+   railSearchInput itself) and a quick-find dir-row click (above) need
+   before navigating away from the flat result list. */
+function clearBrowseQuickFind() {
+  browseQuickFindWidget.input.value = "";
+  applyBrowseQuickFind("");
+}
+
+browseQuickFindWidget.input.addEventListener("focus", fetchBrowseQuickFindEntries);
 
 /* ── Source lifecycle (issue #606, ADR-0041) ──────────────────────────────
    Retire/Rename mount as per-file-row actions on the EXISTING Browse rail

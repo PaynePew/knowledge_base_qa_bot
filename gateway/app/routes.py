@@ -79,7 +79,7 @@ from collections.abc import Callable, Iterator
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Form, HTTPException, Query, Request, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 # Hybrid Retrieval (Stack C) — Phase 13 S4 (issue #314). Additive third stack;
 # ``hybrid_kb.query.stream_query`` is the same two-dict generator contract the
@@ -99,6 +99,7 @@ from markdown_kb.app.read import PathRejected as _ReadPathRejected
 from markdown_kb.app.read import TreeEntry as _TreeEntry
 from markdown_kb.app.read import count_tree as _count_tree
 from markdown_kb.app.read import list_tree as _list_tree
+from markdown_kb.app.read import list_tree_recursive as _list_tree_recursive
 from markdown_kb.app.read import read_file as _read_file
 from markdown_kb.app.retrieval import stream_query as _wiki_stream_query
 from markdown_kb.app.schemas import ChatRequest
@@ -670,9 +671,23 @@ class TreeEntrySchema(BaseModel):
 
 
 class TreeListSchema(BaseModel):
-    """Response body for GET /read/tree."""
+    """Response body for GET /read/tree (recursive=false, the default)."""
 
     entries: list[TreeEntrySchema]
+
+
+class RecursiveTreeListSchema(BaseModel):
+    """Response body for GET /read/tree?recursive=true (issue #644).
+
+    Returned via a raw ``JSONResponse`` (see ``read_tree`` below), NOT the
+    route's declared ``response_model=TreeListSchema`` — so the
+    ``recursive=false`` default path's response_model-driven serialization
+    is completely untouched by this addition (byte-identical, issue #644
+    AC), while this shape still gets the extra ``truncated`` field.
+    """
+
+    entries: list[TreeEntrySchema]
+    truncated: bool
 
 
 class FileContentSchema(BaseModel):
@@ -691,18 +706,35 @@ def read_tree(
     path: str = Query(
         default="", description="Relative path within the whitelist tree. Empty = list roots."
     ),
-) -> TreeListSchema:
-    """List one level of the whitelisted corpus tree.
+    recursive: bool = Query(
+        default=False,
+        description=(
+            "When true, return a FLAT list of every entry (files and dirs) "
+            "under path, hard-capped at 10,000 entries with a truncated:true "
+            "flag when the cap is hit (issue #644 — Browse rail quick-find). "
+            "Default false preserves the original one-level listing byte-for-byte."
+        ),
+    ),
+) -> TreeListSchema | JSONResponse:
+    """List the whitelisted corpus tree — one level, or FLAT and recursive.
 
-    Whitelisted roots: ``docs/``, ``raw/``, ``wiki/``.  ``.kb/`` is excluded.
+    Whitelisted roots: ``docs/``, ``raw/``, ``wiki/``, ``.trash/``.  ``.kb/``
+    is excluded.
 
     Args:
         path: Relative path string (e.g. ``''``, ``'docs'``, ``'wiki/sub'``).
-            Empty string returns the three root entries.
+            Empty string means "every whitelisted root".
+        recursive: See the query param description above.  ``False`` (the
+            default) is completely unchanged from before issue #644.
 
     Returns:
-        ``TreeListSchema`` with a list of ``TreeEntrySchema`` entries, sorted
-        directories first then files (alphabetical within each group).
+        ``recursive=False`` (default): ``TreeListSchema`` — one directory
+        level, dirs first then files (alphabetical within each group).
+        ``recursive=True``: a raw JSON body shaped like
+        ``RecursiveTreeListSchema`` (``entries`` + ``truncated``), returned
+        via ``JSONResponse`` so the default path's ``response_model``
+        handling above is untouched (issue #644 AC: byte-identical when
+        ``recursive`` is absent).
 
     Raises:
         HTTP 400: ``path`` contains ``..``, is absolute, or otherwise rejected.
@@ -710,6 +742,13 @@ def read_tree(
         HTTP 400: the resolved path is a file (call ``GET /read/file`` instead).
     """
     try:
+        if recursive:
+            entries, truncated = _list_tree_recursive(path)
+            payload = RecursiveTreeListSchema(
+                entries=[_tree_entry_to_schema(e) for e in entries],
+                truncated=truncated,
+            )
+            return JSONResponse(content=payload.model_dump(mode="json"))
         entries = _list_tree(path)
     except _ReadPathRejected as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
