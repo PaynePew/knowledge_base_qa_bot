@@ -31,3 +31,7 @@ The fail-soft grounding check (Phase 4 Slice #4) writes a page that fails ingest
 ## Amendment (2026-07-12, [[adr-0041]])
 
 Decision 4's supporting clause — "Giving up on a Source entirely is expressed by removing the Source file itself (a Source-owner act, deliberately outside this app)" — is **narrowed** by [[adr-0041]]: retire, restore, and rename become governed in-app acts (whole-file atomic moves under audit; bytes never edited), and **byte-purge is the only remaining out-of-app act**. Decision 5 (no in-app Source *editor* — no byte-editing surface) stands unchanged, as does everything else in this ADR. The C3 card copy that names the "remove the Source file" path should point at the in-app Retire act once it ships.
+
+## Amendment (2026-07-20, [[adr-0043]])
+
+Decision 5 is **narrowed** by [[adr-0043]] (issue #632): the C5 fix-source exit gains an **in-modal Source editor** whose staged text uploads through the existing `/upload` byte-ingress under the existing origin-path guards — the human still authors every byte, so "the judgment stays with the Source owner" holds. What this decision rejected and still rejects: app-*authored* Source content, and a general editing surface (`PUT /docs/{filename}` or an always-available editor — the Source browser rail stays read-only). C3's own fix-the-Source banner is unchanged (local edit + Upload); extending the in-modal editor to C3 is a possible follow-up, not decided here.

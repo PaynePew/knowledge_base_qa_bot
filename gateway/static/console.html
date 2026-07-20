@@ -1251,6 +1251,26 @@
   .fix-source-batch-upload-btn:hover:not(:disabled) { opacity: .82; }
   .fix-source-batch-upload-btn:disabled { opacity: .45; cursor: not-allowed; }
 
+  /* ── C5 in-modal Source editor + staged-upload bar (issue #632, ADR-0043)
+     Same visual language as the batch panel above; the editor textarea
+     reuses .reconcile-textarea. Hidden-until-populated mirrors
+     .fix-source-batch-panel's convention. */
+  .c5-source-editor { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .c5-source-editor-actions { display: flex; align-items: center; gap: 8px; }
+  .c5-staged-badge { font-size: var(--fs-xs); opacity: .7; white-space: nowrap; }
+  .c5-staged-bar {
+    display: none;
+    margin-top: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    font-size: var(--fs-xs);
+  }
+  .c5-staged-bar.visible { display: flex; }
+
   /* ── C2 Assign-Alias picker (issue #409, ADR-0030 decision 3) ──────────
      The red link's SECOND exit alongside .fill-import-btn (a picker +
      execute button, not just navigation — this one DOES fetch, so the
@@ -3758,7 +3778,7 @@ var LINT_CHROME = {
        the Source comparison view + the multi-target batch checklist. */
     reconcileViewWiki:   "Wiki comparison",
     reconcileViewSource: "Source comparison",
-    c5SourcesDisagreeNote: "The Sources disagree — this cannot be auto-reconciled at the wiki layer. Fix one Source to match the other, then upload it below.",
+    c5SourcesDisagreeNote: "The Sources disagree — this cannot be auto-reconciled at the wiki layer (Apply is disabled). Use \"Fix this Source\" in the Source comparison to edit one Source into agreement, stage it, then upload to re-verify.",
     c5FixThisSource:        "Fix this Source",
     c5SourceSectionMissing: "(citation could not be resolved to Section content)",
     c5FixSourceBatchHeadPrefix: "Fix Source (batch): ",
@@ -3767,6 +3787,16 @@ var LINT_CHROME = {
     c5FixSourceBatchChooseFiles: "Choose corrected file(s)…",
     c5FixSourceBatchWorking:     "Uploading, re-ingesting, and re-auditing…",
     c5FixSourceBatchMismatch:    "No pending fix-source target matches: ",
+
+    /* issue #632 (ADR-0043): in-modal Source editor + staged-correction upload */
+    c5EditSourceLoading:    "Loading Source…",
+    c5EditSourceLoadFailed: "Could not load the Source: ",
+    c5EditSourceStage:      "Stage correction",
+    c5EditSourceStaged:     "Staged ✓",
+    c5EditSourceCancel:     "Close editor",
+    c5StagedBadge:          "corrected in-app",
+    c5StagedBarPrefix:      "Staged Source corrections: ",
+    c5UploadStaged:         "Upload staged & re-verify",
   },
   zh: {
     reingest:        "重新匯入",
@@ -4069,7 +4099,7 @@ var LINT_CHROME = {
 
     reconcileViewWiki:   "Wiki 比較",
     reconcileViewSource: "Source 比較",
-    c5SourcesDisagreeNote: "兩份 Source 彼此矛盾 — 無法在 wiki 層自動協調。請修正其中一份 Source 使其與另一份一致,再於下方上傳。",
+    c5SourcesDisagreeNote: "兩份 Source 彼此矛盾 — 無法在 wiki 層自動協調(套用已停用)。請在 Source 比較中點「修正此 Source」直接編輯其中一份使其一致,暫存後上傳重新驗證。",
     c5FixThisSource:        "修正此 Source",
     c5SourceSectionMissing: "(此引用無法解析為 Section 內容)",
     c5FixSourceBatchHeadPrefix: "修正 Source(批次):",
@@ -4078,6 +4108,16 @@ var LINT_CHROME = {
     c5FixSourceBatchChooseFiles: "選擇已修正的檔案…",
     c5FixSourceBatchWorking:     "正在上傳、重新合成並重新稽核…",
     c5FixSourceBatchMismatch:    "沒有待處理目標符合檔名:",
+
+    /* issue #632 (ADR-0043): in-modal Source editor + staged-correction upload */
+    c5EditSourceLoading:    "載入 Source 中…",
+    c5EditSourceLoadFailed: "無法載入 Source:",
+    c5EditSourceStage:      "暫存修正",
+    c5EditSourceStaged:     "已暫存 ✓",
+    c5EditSourceCancel:     "關閉編輯",
+    c5StagedBadge:          "已於介面內修正",
+    c5StagedBarPrefix:      "已暫存 Source 修正:",
+    c5UploadStaged:         "上傳暫存修正並重新驗證",
   },
 };
 
@@ -4445,11 +4485,21 @@ function checkFixSourceOutcome(lintData) {
    convention rather than a separate persistent failure state. */
 var pendingC5FixSourceTargets = [];
 
-function addC5FixSourceTarget(sourcePath) {
+/* issue #632 (ADR-0043 decision 2): `content`, when given, is the staged
+   in-app correction — the WHOLE corrected file text, held as pure client
+   state until an explicit upload run. Re-staging the same Source replaces
+   its staged text (last stage wins). A target without content (legacy
+   accumulate) still works and is served by the file-picker path. */
+function addC5FixSourceTarget(sourcePath, content) {
   if (!sourcePath) return;
   var already = pendingC5FixSourceTargets.some(function(t) { return t.sourcePath === sourcePath; });
   if (!already) {
-    pendingC5FixSourceTargets.push({ sourcePath: sourcePath, filename: sourcePath.split("/").pop() });
+    pendingC5FixSourceTargets.push({ sourcePath: sourcePath, filename: sourcePath.split("/").pop(),
+      content: content != null ? content : null });
+  } else if (content != null) {
+    pendingC5FixSourceTargets.forEach(function(t) {
+      if (t.sourcePath === sourcePath) t.content = content;
+    });
   }
   renderC5FixSourcePanel();
 }
@@ -4483,6 +4533,9 @@ function renderC5FixSourcePanel() {
     removeBtn.addEventListener("click", function() { removeC5FixSourceTarget(target.sourcePath); });
     list.append(el("div", { class: "fix-source-batch-item" },
       el("span", { class: "fix-source-batch-item-path", text: target.sourcePath }),
+      // issue #632 (ADR-0043 decision 4): a target carrying a staged in-app
+      // correction is marked, so the curator knows it needs no local file.
+      target.content != null ? el("span", { class: "c5-staged-badge", text: chrome.c5StagedBadge }) : null,
       viewBtn,
       removeBtn
     ));
@@ -4503,12 +4556,25 @@ function renderC5FixSourcePanel() {
     fileInput.value = "";
   });
 
+  // issue #632 (ADR-0043 decision 4): targets staged in-app upload directly —
+  // no file picker round-trip. The picker stays for locally-edited files.
+  var stagedCount = pendingC5FixSourceTargets.filter(function(t) { return t.content != null; }).length;
+  var uploadStagedBtn = null;
+  if (stagedCount > 0) {
+    uploadStagedBtn = el("button", { class: "fix-source-batch-upload-btn", type: "button",
+      text: chrome.c5UploadStaged + " (" + stagedCount + ")" });
+    uploadStagedBtn.addEventListener("click", function() {
+      if (uploadStagedBtn.disabled || remediationInFlight) return;
+      runC5FixSourceStaged(uploadStagedBtn, statusMsgEl);
+    });
+  }
+
   panel.replaceChildren(
     el("div", { class: "fix-source-batch-head" },
       el("span", { text: chrome.c5FixSourceBatchHeadPrefix + pendingC5FixSourceTargets.length + chrome.c5FixSourceBatchHeadSuffix })
     ),
     list,
-    el("div", { class: "fix-source-batch-controls" }, uploadBtn, fileInput, statusMsgEl)
+    el("div", { class: "fix-source-batch-controls" }, uploadStagedBtn, uploadBtn, fileInput, statusMsgEl)
   );
   panel.classList.add("visible");
 }
@@ -4560,6 +4626,35 @@ function runC5FixSourceBatch(files, btn, statusMsgEl) {
     return;
   }
 
+  runC5FixSourcePipeline(matched, btn, statusMsgEl);
+}
+
+/* issue #632 (ADR-0043 decision 3): the staged-correction runner. Builds the
+   pipeline entries from every pending target carrying an in-app correction —
+   the staged text becomes the uploaded byte-stream (a Blob under the target's
+   own filename), so the server-side overwrite guards (ADR-0036 decision 6)
+   see exactly what a picked file would have been. */
+function runC5FixSourceStaged(btn, statusMsgEl, onSuccess) {
+  if (remediationInFlight) return;
+  var entries = pendingC5FixSourceTargets
+    .filter(function(t) { return t.content != null; })
+    .map(function(t) {
+      return { file: new Blob([t.content], { type: "text/markdown" }), target: t };
+    });
+  if (entries.length === 0) return;
+  runC5FixSourcePipeline(entries, btn, statusMsgEl, onSuccess);
+}
+
+/* ONE pipeline for every fix-source byte-source (ADR-0036 decision 5,
+   ADR-0043 decision 3): sequential per-target /upload — each with its OWN
+   resolved overwrite_relpath (issue #533) and the target's own filename as
+   the explicit third append argument, so a staged Blob and a picked File
+   upload identically — then ONE force re-ingest over the entries' filenames,
+   then ONE deep audit. `entries` = [{file: File|Blob, target}]. `onSuccess`
+   (optional) runs after the audit re-render — the in-modal staged bar uses
+   it to close the Reconcile modal. */
+function runC5FixSourcePipeline(entries, btn, statusMsgEl, onSuccess) {
+  var chrome = LINT_CHROME[consoleLang];
   remediationInFlight = true;
   btn.disabled = true;
   statusMsgEl.replaceChildren(el("span", { class: "spinner" }),
@@ -4568,7 +4663,7 @@ function runC5FixSourceBatch(files, btn, statusMsgEl) {
 
   function uploadOne(entry) {
     var formData = new FormData();
-    formData.append("files", entry.file, entry.file.name);
+    formData.append("files", entry.file, entry.target.filename);
     formData.append("overwrite_relpath", entry.target.sourcePath);
     return adminFetch("/upload", { method: "POST", body: formData })
       .then(function(resp) {
@@ -4577,16 +4672,16 @@ function runC5FixSourceBatch(files, btn, statusMsgEl) {
       });
   }
 
-  matched.reduce(function(chain, entry) {
+  entries.reduce(function(chain, entry) {
     return chain.then(function() { return uploadOne(entry); });
   }, Promise.resolve())
     .then(function() {
-      // ONE force re-ingest over exactly the matched filenames (§12.8).
+      // ONE force re-ingest over exactly the entries' filenames (§12.8).
       return adminFetch("/wiki/ingest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sources: matched.map(function(e) { return e.target.filename; }),
+          sources: entries.map(function(e) { return e.target.filename; }),
           force: true,
         }),
       });
@@ -4617,6 +4712,7 @@ function runC5FixSourceBatch(files, btn, statusMsgEl) {
       lastLintData = lintData;
       if (lintResultEl) lintResultEl.replaceChildren(renderLintCard(lintData, lintResultEl));
       renderCurationQueue(document.getElementById("curation-queue-root"), lintData);
+      if (onSuccess) onSuccess();
     })
     .catch(function(err) {
       remediationInFlight = false;
@@ -5958,7 +6054,7 @@ function openReconcileModal(pageA, pageB, resultEl, siblingButtons, finding) {
    resolved to content (missing/ambiguous Source, or a stale anchor —
    source_resolution !== "resolved") disables both controls: there is no
    real path to view or fix from here (§12.5, no false affordance). */
-function renderC5SourceCard(pageSlug, sections) {
+function renderC5SourceCard(pageSlug, sections, opts) {
   var chrome = LINT_CHROME[consoleLang];
   var card = el("div", { class: "reconcile-source-card" },
     el("div", { class: "reconcile-col-head", text: pageSlug })
@@ -5967,26 +6063,85 @@ function renderC5SourceCard(pageSlug, sections) {
     var resolved = section.source_resolution === "resolved" && !!section.source_path;
     var viewBtn = el("button", { class: "view-source-btn", type: "button", text: chrome.viewSource });
     var editBtn = el("button", { class: "fix-source-btn", type: "button", text: chrome.c5FixThisSource });
+    var headText = (section.heading || section.id) + (section.source_path ? " — " + section.source_path : "");
+    var sectionEl = el("div", { class: "reconcile-source-section" },
+      el("div", { class: "reconcile-source-section-head", text: headText }),
+      el("pre", { class: "reconcile-source-section-content",
+        text: section.content || chrome.c5SourceSectionMissing }),
+      el("div", { class: "reconcile-source-section-actions" }, viewBtn, editBtn)
+    );
     if (resolved) {
       viewBtn.addEventListener("click", function() {
         openFile(section.source_path, section.id.split("#")[0]);
       });
+      // issue #632 (ADR-0043 decision 1, supersedes ADR-0036 decision 4):
+      // Fix this Source opens the in-modal editor right under the section —
+      // no more silently accumulating a target behind the modal overlay.
       editBtn.addEventListener("click", function() {
-        addC5FixSourceTarget(section.source_path);
+        openC5SourceEditor(section, sectionEl, opts);
       });
     } else {
       viewBtn.disabled = true;
       editBtn.disabled = true;
     }
-    var headText = (section.heading || section.id) + (section.source_path ? " — " + section.source_path : "");
-    card.append(el("div", { class: "reconcile-source-section" },
-      el("div", { class: "reconcile-source-section-head", text: headText }),
-      el("pre", { class: "reconcile-source-section-content",
-        text: section.content || chrome.c5SourceSectionMissing }),
-      el("div", { class: "reconcile-source-section-actions" }, viewBtn, editBtn)
-    ));
+    card.append(sectionEl);
   });
   return card;
+}
+
+/* ── C5 in-modal Source editor (issue #632, ADR-0043 decisions 1-2) ────────
+   Loads the WHOLE file (GET /read/file, same convention as openFile —
+   section.source_path verbatim, no client-side path or section
+   reconstruction, §12.5) into a textarea under the section. "Stage
+   correction" stores the corrected text on the pending target via
+   addC5FixSourceTarget(sourcePath, content) — pure client state; the only
+   request this editor ever makes is the read-only load. The staged text is
+   uploaded by an explicit staged-upload run (renderC5StagedBar / the batch
+   panel), never from here. A second click on Fix this Source while the
+   editor is open just refocuses it. */
+function openC5SourceEditor(section, sectionEl, opts) {
+  var chrome = LINT_CHROME[consoleLang];
+  var existing = sectionEl.querySelector(".c5-source-editor");
+  if (existing) {
+    var openTextarea = existing.querySelector("textarea");
+    if (openTextarea) openTextarea.focus();
+    return;
+  }
+  var editorEl = el("div", { class: "c5-source-editor" },
+    el("span", { class: "spinner" }),
+    document.createTextNode(" " + chrome.c5EditSourceLoading)
+  );
+  sectionEl.append(editorEl);
+
+  fetch("/read/file?" + new URLSearchParams({ path: section.source_path }))
+    .then(function(r) {
+      if (!r.ok) return r.json().then(function(j) { throw new Error(j.detail || ("HTTP " + r.status)); });
+      return r.json();
+    })
+    .then(function(data) {
+      var textarea = el("textarea", { class: "reconcile-textarea", rows: "12" });
+      textarea.value = data.content;
+      var stageBtn = el("button", { class: "fix-source-btn", type: "button", text: chrome.c5EditSourceStage });
+      var closeEditorBtn = el("button", { class: "view-source-btn", type: "button", text: chrome.c5EditSourceCancel });
+      closeEditorBtn.addEventListener("click", function() { editorEl.remove(); });
+      textarea.addEventListener("input", function() {
+        stageBtn.disabled = false;
+        stageBtn.textContent = chrome.c5EditSourceStage;
+      });
+      stageBtn.addEventListener("click", function() {
+        addC5FixSourceTarget(section.source_path, textarea.value);
+        stageBtn.disabled = true;
+        stageBtn.textContent = chrome.c5EditSourceStaged;
+        if (opts && opts.onStagedChange) opts.onStagedChange();
+      });
+      editorEl.replaceChildren(textarea,
+        el("div", { class: "c5-source-editor-actions" }, stageBtn, closeEditorBtn));
+      textarea.focus();
+    })
+    .catch(function(err) {
+      editorEl.replaceChildren(el("div", { class: "reconcile-error",
+        text: chrome.c5EditSourceLoadFailed + (err.message || String(err)) }));
+    });
 }
 
 /* Both pages' cards side by side, plus the "Sources disagree" note (ADR-0036
@@ -5994,7 +6149,7 @@ function renderC5SourceCard(pageSlug, sections) {
    case (ADR-0038: decided by the convergence re-judge, NOT by grounding, which
    cannot see cross-page disagreement). Omitted for a converged (wiki-rooted)
    generate so toggling here out of curiosity never reads as alarming. */
-function renderC5SourceComparisonView(data) {
+function renderC5SourceComparisonView(data, opts) {
   var chrome = LINT_CHROME[consoleLang];
   var converged = data.converged === true;
   var container = el("div", {});
@@ -6002,10 +6157,42 @@ function renderC5SourceComparisonView(data) {
     container.append(el("div", { class: "sources-disagree-note", text: chrome.c5SourcesDisagreeNote }));
   }
   container.append(el("div", { class: "reconcile-source-columns" },
-    renderC5SourceCard(data.page_a, data.cited_sections_a),
-    renderC5SourceCard(data.page_b, data.cited_sections_b)
+    renderC5SourceCard(data.page_a, data.cited_sections_a, opts),
+    renderC5SourceCard(data.page_b, data.cited_sections_b, opts)
   ));
   return container;
+}
+
+/* ── C5 in-modal staged-upload bar (issue #632, ADR-0043 decision 3) ───────
+   Rebuilt into `barEl` on every staging change; hidden while nothing is
+   staged (no false affordance, §12.5). The upload control runs the ONE
+   shared fix-source pipeline over the staged targets and, on success,
+   closes the Reconcile modal — the curator lands back on the already
+   re-rendered Lint card. Double-submit is prevented by the global
+   remediationInFlight guard every remediation control already checks (the
+   sibling row buttons live behind the modal overlay and are unreachable
+   while it is open, so no per-button disable is needed here). */
+function renderC5StagedBar(barEl, closeModal) {
+  var chrome = LINT_CHROME[consoleLang];
+  var staged = pendingC5FixSourceTargets.filter(function(t) { return t.content != null; });
+  if (staged.length === 0) {
+    barEl.classList.remove("visible");
+    barEl.replaceChildren();
+    return;
+  }
+  var statusMsgEl = el("span", { class: "card-status-msg" });
+  var uploadBtn = el("button", { class: "fix-source-batch-upload-btn", type: "button",
+    text: chrome.c5UploadStaged + " (" + staged.length + ")" });
+  uploadBtn.addEventListener("click", function() {
+    if (uploadBtn.disabled || remediationInFlight) return;
+    runC5FixSourceStaged(uploadBtn, statusMsgEl, closeModal);
+  });
+  barEl.replaceChildren(
+    el("span", { text: chrome.c5StagedBarPrefix + staged.map(function(t) { return t.sourcePath; }).join(", ") }),
+    uploadBtn,
+    statusMsgEl
+  );
+  barEl.classList.add("visible");
 }
 
 /* Renders the generate-time draft: a grounding report, a header toggle
@@ -6170,21 +6357,35 @@ function renderReconcilePreview(modal, data, resultEl, closeModal, siblingButton
   // it only picks which evidence to show first.
   var activeView = (passed && !converged) ? "source" : "wiki";
 
-  var wikiViewEl = el("div", { class: "reconcile-columns" },
-    el("div", { class: "reconcile-col" },
-      el("div", { class: "reconcile-col-head", text: data.page_a + chrome.modalCurrentSuffix }),
-      el("pre", { class: "reconcile-old", text: data.old_content_a }),
-      el("div", { class: "reconcile-col-head", text: data.page_a + chrome.modalDraftEditableSuffix }),
-      textareaA
-    ),
-    el("div", { class: "reconcile-col" },
-      el("div", { class: "reconcile-col-head", text: data.page_b + chrome.modalCurrentSuffix }),
-      el("pre", { class: "reconcile-old", text: data.old_content_b }),
-      el("div", { class: "reconcile-col-head", text: data.page_b + chrome.modalDraftEditableSuffix }),
-      textareaB
+  // issue #632 (ADR-0043 decision 5): the sources-disagree note renders in
+  // the Wiki view too when the pair is not converged, so the disabled Apply
+  // is explained where the curator is looking — not only behind the Source
+  // toggle.
+  var wikiViewEl = el("div", {},
+    converged ? null : el("div", { class: "sources-disagree-note", text: chrome.c5SourcesDisagreeNote }),
+    el("div", { class: "reconcile-columns" },
+      el("div", { class: "reconcile-col" },
+        el("div", { class: "reconcile-col-head", text: data.page_a + chrome.modalCurrentSuffix }),
+        el("pre", { class: "reconcile-old", text: data.old_content_a }),
+        el("div", { class: "reconcile-col-head", text: data.page_a + chrome.modalDraftEditableSuffix }),
+        textareaA
+      ),
+      el("div", { class: "reconcile-col" },
+        el("div", { class: "reconcile-col-head", text: data.page_b + chrome.modalCurrentSuffix }),
+        el("pre", { class: "reconcile-old", text: data.old_content_b }),
+        el("div", { class: "reconcile-col-head", text: data.page_b + chrome.modalDraftEditableSuffix }),
+        textareaB
+      )
     )
   );
-  var sourceViewEl = renderC5SourceComparisonView(data);
+  // issue #632 (ADR-0043 decision 3): the staged-upload bar lives at the foot
+  // of the Source view — staging happens there — and is rebuilt on every
+  // Stage click. Its success path closes this modal.
+  var stagedBarEl = el("div", { class: "c5-staged-bar" });
+  function refreshStagedBar() { renderC5StagedBar(stagedBarEl, closeModal); }
+  var sourceViewEl = renderC5SourceComparisonView(data, { onStagedChange: refreshStagedBar });
+  sourceViewEl.append(stagedBarEl);
+  refreshStagedBar();
   var viewBodyEl = el("div");
 
   var wikiToggleBtn = el("button", { class: "reconcile-view-toggle-btn", type: "button",

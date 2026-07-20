@@ -17,14 +17,21 @@ Covers:
   picks which evidence to show first and refuses to Apply a source-rooted pair.
 - The Source comparison view renders both pages' own ``cited_sections_a``/
   ``cited_sections_b`` (issue #534's payload), each with a read-only
-  ``/read/file`` view control and an edit entry point that accumulates the
-  Source into the fix-source batch panel — never fetching anything itself.
+  ``/read/file`` view control and an edit entry point that opens an IN-MODAL
+  Source editor (issue #632, ADR-0043 — supersedes ADR-0036 decision 4's
+  "no in-app editor"): the whole file is fetched read-only via ``/read/file``
+  and "Stage correction" stores the corrected text on the pending target —
+  pure client state, never a write request.
 - A citation that could not be resolved to content disables both controls
   (no false affordance).
 - The fix-source batch panel accumulates MULTIPLE targets (an array,
-  deduplicated), unlike C3's single-pending-slot banner, and its batch run
-  drives exactly one force re-ingest and one deep-audit (ADR-0036
-  decision 5), never a per-target stepper.
+  deduplicated), unlike C3's single-pending-slot banner, and EVERY byte-source
+  (file-picker batch, in-modal staged corrections) converges on ONE shared
+  pipeline that drives exactly one force re-ingest and one deep-audit
+  (ADR-0036 decision 5, unchanged by ADR-0043), never a per-target stepper.
+- The Wiki comparison view shows the sources-disagree note when the pair is
+  not converged, so the disabled Apply is explained at point of use
+  (ADR-0043 decision 5).
 - A wiki-rooted Reconcile still edits -> applies exactly as before — the
   Apply button's request body and success path are untouched by the toggle.
 - No ``innerHTML`` assignment is introduced (§12.4).
@@ -164,13 +171,44 @@ def test_source_card_offers_a_view_file_link_wired_to_read_file():
     assert '"docs/" + ' not in fn
 
 
-def test_source_card_edit_entry_point_never_fetches_itself():
-    """ADR-0029/ADR-0036 Invariant mirrored: accumulating a fix-source
-    target is a pure navigation — the click handler makes no request."""
+def test_source_card_edit_entry_point_opens_the_inline_editor():
+    """ADR-0043 decision 1 (supersedes ADR-0036 decision 4): Fix this Source
+    opens the in-modal editor instead of silently accumulating a target the
+    curator cannot see behind the modal overlay."""
     fn = _extract_function(_console_text(), "renderC5SourceCard")
     assert "fix-source-btn" in fn
-    assert "addC5FixSourceTarget(section.source_path)" in fn
-    assert "fetch(" not in fn
+    assert "openC5SourceEditor(section" in fn
+    assert "fetch(" not in fn, "the card itself still never fetches — the editor does"
+
+
+def test_editor_fetches_the_whole_file_via_read_file_verbatim():
+    """ADR-0043 decisions 1/6: the editor loads the WHOLE file (no client-side
+    section splicing, §12.5) through the same GET /read/file convention as
+    openFile, with section.source_path used verbatim — never a rebuilt path."""
+    fn = _extract_function(_console_text(), "openC5SourceEditor")
+    assert '"/read/file?"' in fn
+    assert "section.source_path" in fn
+    assert '"docs/" + ' not in fn
+
+
+def test_editor_stage_stores_content_and_never_writes():
+    """ADR-0043 decision 2: Stage correction is pure client state — it routes
+    through addC5FixSourceTarget(sourcePath, content); the editor makes no
+    admin/mutating request itself (the only fetch is the read-only load)."""
+    fn = _extract_function(_console_text(), "openC5SourceEditor")
+    assert "addC5FixSourceTarget(section.source_path, textarea.value)" in fn
+    assert "adminFetch(" not in fn
+    assert '"/upload"' not in fn
+
+
+def test_editor_chrome_defined_bilingually():
+    text = _console_text()
+    for key in ("c5EditSourceLoading", "c5EditSourceStage", "c5EditSourceStaged",
+                "c5EditSourceCancel", "c5StagedBadge", "c5StagedBarPrefix",
+                "c5UploadStaged"):
+        assert len(re.findall(rf'{key}:\s*"[^"]+"', text)) == 2, (
+            f"chrome key {key} must be defined in BOTH language blocks"
+        )
 
 
 def test_source_card_disables_both_controls_when_unresolved():
@@ -195,6 +233,10 @@ def test_pending_targets_is_a_module_level_array_not_a_single_slot():
 
 def test_add_target_dedupes_and_never_fetches():
     fn = _extract_function(_console_text(), "addC5FixSourceTarget")
+    assert "function addC5FixSourceTarget(sourcePath, content)" in fn, (
+        "ADR-0043 decision 2: staging routes the corrected text through the "
+        "same accumulator"
+    )
     assert "pendingC5FixSourceTargets.some(" in fn, "must dedupe by sourcePath"
     assert "pendingC5FixSourceTargets.push(" in fn
     assert "fetch(" not in fn, "accumulating a target must never make a request"
@@ -221,21 +263,45 @@ def test_panel_css_hidden_by_default():
     assert re.search(r"\.fix-source-batch-panel\.visible\s*\{([^}]*)\}", text)
 
 
-def test_batch_run_uploads_sequentially_with_per_target_overwrite_relpath():
-    """Each matched file uploads with its OWN target's resolved
-    overwrite_relpath (ADR-0036 §6 / issue #533) — sequential, not
-    Promise.all, mirroring runIngestBatches's own sequencing rationale."""
-    fn = _extract_function(_console_text(), "runC5FixSourceBatch")
+def test_pipeline_uploads_sequentially_with_per_target_overwrite_relpath():
+    """Each entry uploads with its OWN target's resolved overwrite_relpath
+    (ADR-0036 §6 / issue #533) — sequential, not Promise.all, mirroring
+    runIngestBatches's own sequencing rationale. The filename is the target's
+    own (explicit third argument), so a staged Blob and a picked File upload
+    identically (ADR-0043 decision 3)."""
+    fn = _extract_function(_console_text(), "runC5FixSourcePipeline")
+    assert 'formData.append("files", entry.file, entry.target.filename);' in fn
     assert 'formData.append("overwrite_relpath", entry.target.sourcePath);' in fn
-    assert "matched.reduce(function(chain, entry)" in fn
+    assert "entries.reduce(function(chain, entry)" in fn
     assert "Promise.all(" not in fn
 
 
-def test_batch_run_drives_exactly_one_force_reingest_and_one_deep_audit():
-    fn = _extract_function(_console_text(), "runC5FixSourceBatch")
+def test_pipeline_drives_exactly_one_force_reingest_and_one_deep_audit():
+    fn = _extract_function(_console_text(), "runC5FixSourcePipeline")
     assert fn.count('adminFetch("/wiki/ingest"') == 1
     assert fn.count('adminFetch("/wiki/lint?include_c5=true"') == 1
     assert "force: true," in fn
+
+
+def test_every_byte_source_converges_on_the_one_pipeline():
+    """ADR-0043 decision 3: the file-picker batch and the staged-correction
+    runner both delegate to runC5FixSourcePipeline — neither owns a second
+    upload/re-ingest/audit sequence."""
+    text = _console_text()
+    batch = _extract_function(text, "runC5FixSourceBatch")
+    staged = _extract_function(text, "runC5FixSourceStaged")
+    assert "runC5FixSourcePipeline(" in batch
+    assert "runC5FixSourcePipeline(" in staged
+    for fn in (batch, staged):
+        assert 'adminFetch("/wiki/ingest"' not in fn
+        assert 'adminFetch("/wiki/lint' not in fn
+        assert 'adminFetch("/upload"' not in fn
+
+
+def test_staged_runner_builds_blobs_from_staged_content_only():
+    fn = _extract_function(_console_text(), "runC5FixSourceStaged")
+    assert "t.content != null" in fn
+    assert "new Blob([t.content]" in fn
 
 
 def test_batch_run_reports_unmatched_files_without_uploading_them():
@@ -244,24 +310,46 @@ def test_batch_run_reports_unmatched_files_without_uploading_them():
     assert "c5FixSourceBatchMismatch" in fn
 
 
-def test_batch_run_success_clears_targets_and_flags_a_genuine_deep_judgment():
+def test_pipeline_success_clears_targets_and_flags_a_genuine_deep_judgment():
     """Mirrors the Deep audit control's own one-shot signal (issue #489) —
-    the fix-source batch's include_c5=true response is also a genuine
+    the fix-source pipeline's include_c5=true response is also a genuine
     judgment, not a fast relint's untouched empty default."""
-    fn = _extract_function(_console_text(), "runC5FixSourceBatch")
+    fn = _extract_function(_console_text(), "runC5FixSourcePipeline")
     assert "pendingDeepC5Audit = true;" in fn
     assert "pendingC5FixSourceTargets = [];" in fn
     assert "renderLintCard(lintData, lintResultEl)" in fn
     assert "renderCurationQueue(" in fn
 
 
-def test_batch_run_checks_pending_coverage_and_fix_source_outcomes_first():
+def test_pipeline_checks_pending_coverage_and_fix_source_outcomes_first():
     """Same ordering convention as the other two include_c5 call sites."""
-    fn = _extract_function(_console_text(), "runC5FixSourceBatch")
+    fn = _extract_function(_console_text(), "runC5FixSourcePipeline")
     check_pos = fn.find("checkFixSourceOutcome(lintData)")
     render_pos = fn.find("renderLintCard(lintData, lintResultEl)")
     assert check_pos != -1 and render_pos != -1
     assert check_pos < render_pos
+
+
+def test_staged_bar_rendered_into_source_view_and_wired_to_close_the_modal():
+    """ADR-0043 decision 3: the in-modal staged-upload bar lives in the Source
+    comparison view (where staging happens) and its success path closes the
+    modal — the curator lands back on the re-rendered Lint card."""
+    text = _console_text()
+    preview = _extract_function(text, "renderReconcilePreview")
+    assert "renderC5StagedBar(" in preview
+    bar = _extract_function(text, "renderC5StagedBar")
+    assert "runC5FixSourceStaged(" in bar
+    assert "c5UploadStaged" in bar
+
+
+def test_panel_marks_staged_targets_and_offers_direct_staged_upload():
+    """ADR-0043 decision 4: the batch panel shows which targets carry an
+    in-app correction and can upload the staged set without a file picker;
+    the file-picker path survives as the local-editing escape hatch."""
+    fn = _extract_function(_console_text(), "renderC5FixSourcePanel")
+    assert "c5StagedBadge" in fn
+    assert "runC5FixSourceStaged(" in fn
+    assert "c5FixSourceBatchChooseFiles" in fn
 
 
 # ---------------------------------------------------------------------------
@@ -280,9 +368,17 @@ def test_apply_flow_unaffected_by_the_view_toggle():
 
 def test_wiki_view_still_contains_the_editable_columns():
     fn = _extract_function(_console_text(), "renderReconcilePreview")
-    assert 'var wikiViewEl = el("div", { class: "reconcile-columns" },' in fn
+    assert 'el("div", { class: "reconcile-columns" },' in fn
     assert "textareaA" in fn
     assert "textareaB" in fn
+
+
+def test_wiki_view_explains_the_disabled_apply_when_not_converged():
+    """ADR-0043 decision 5: the sources-disagree note renders in the Wiki
+    comparison view too (not only the Source view), so a curator editing the
+    draft sees WHY Apply is disabled instead of a dead button."""
+    fn = _extract_function(_console_text(), "renderReconcilePreview")
+    assert 'converged ? null : el("div", { class: "sources-disagree-note"' in fn
 
 
 # ---------------------------------------------------------------------------
