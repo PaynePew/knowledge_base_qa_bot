@@ -119,16 +119,22 @@ def test_batch_run_still_reports_unmatched_files_without_uploading_them():
 def test_batch_run_still_uploads_with_per_target_overwrite_relpath():
     """Regression: each matched entry still uploads with its OWN target's
     resolved overwrite_relpath (issue #533, ADR-0036 §6) — the claim-
-    tracking fix must not disturb the existing upload wiring."""
-    fn = _extract_function(_console_text(), "runC5FixSourceBatch")
-    assert 'formData.append("overwrite_relpath", entry.target.sourcePath);' in fn
-    assert "matched.reduce(function(chain, entry)" in fn
+    tracking fix must not disturb the upload wiring. Since issue #632
+    (ADR-0043) the upload sequence lives in the shared
+    ``runC5FixSourcePipeline``, which the batch run's matched entries feed."""
+    text = _console_text()
+    batch = _extract_function(text, "runC5FixSourceBatch")
+    assert "runC5FixSourcePipeline(matched" in batch
+    pipeline = _extract_function(text, "runC5FixSourcePipeline")
+    assert 'formData.append("overwrite_relpath", entry.target.sourcePath);' in pipeline
+    assert "entries.reduce(function(chain, entry)" in pipeline
 
 
 def test_batch_run_still_drives_exactly_one_force_reingest_and_one_deep_audit():
     """Regression: still ONE force re-ingest + ONE deep-audit per batch
-    (ADR-0036 decision 5) — unaffected by the matching-loop fix."""
-    fn = _extract_function(_console_text(), "runC5FixSourceBatch")
+    (ADR-0036 decision 5, shared pipeline since ADR-0043) — unaffected by
+    the matching-loop fix."""
+    fn = _extract_function(_console_text(), "runC5FixSourcePipeline")
     assert fn.count('adminFetch("/wiki/ingest"') == 1
     assert fn.count('adminFetch("/wiki/lint?include_c5=true"') == 1
     assert "force: true," in fn
