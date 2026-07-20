@@ -9939,7 +9939,7 @@ var fieldManualFilterQuery = ""; // last-applied query; read by the "?"-jump cle
    stay out of the way until a curator asks a specific question via "?". */
 function renderFieldManualEntry(code) {
   var chevron = el("span", { class: "lint-chevron", text: "▾", "aria-hidden": "true" });
-  var headLabel = bindText(el("span", { class: "field-manual-head-text" }), "manual" + code + "Header");
+  var headLabel = bindText(el("span", {}), "manual" + code + "Header");
   var bodyId = "field-manual-body-" + code;
   var toggleBtn = el("button", {
     type: "button", class: "lint-collapse-toggle",
