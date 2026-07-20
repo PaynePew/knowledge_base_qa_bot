@@ -3820,6 +3820,10 @@ var LINT_CHROME = {
     c5EditSourceCancel:     "Close editor",
     c5StagedBadge:          "corrected in-app",
 
+    /* issue #636 rider: bilingual drift label — "19.2d drift" / "漂移 19.2 天" */
+    driftPrefix:            "",
+    driftSuffix:            "d drift",
+
     /* issue #635 (ADR-0044): whole-file sibling-section disclosure */
     c5UncitedTag:           "not cited by this page",
     c5GroundingUnionNote:   "The citation check runs against the WHOLE Source files — a flagged claim may come from a section the page does not cite (see the collapsed sections in the Source comparison).",
@@ -4145,6 +4149,10 @@ var LINT_CHROME = {
     c5EditSourceCancel:     "關閉編輯",
     c5StagedBadge:          "已於介面內修正",
 
+    /* issue #636 rider: bilingual drift label — "19.2d drift" / "漂移 19.2 天" */
+    driftPrefix:            "漂移 ",
+    driftSuffix:            " 天",
+
     /* issue #635 (ADR-0044): whole-file sibling-section disclosure */
     c5UncitedTag:           "此頁未引用",
     c5GroundingUnionNote:   "引證檢核以整份 Source 檔案為準 — 紅字聲明可能出自頁面未引用的章節(見 Source 比較中收合的章節)。",
@@ -4152,6 +4160,15 @@ var LINT_CHROME = {
     c5UploadStaged:         "上傳暫存修正並重新驗證",
   },
 };
+
+/* Bilingual drift label (issue #636 rider): "19.2d drift" / "漂移 19.2 天".
+   One helper for every C6/C9 drift rendering — the zh curation queue used
+   to show a bare "19.2天" (unit translated, meaning lost) while the lint
+   card rows showed untranslated "19.2d drift". */
+function formatDriftDays(days) {
+  var chrome = LINT_CHROME[consoleLang];
+  return chrome.driftPrefix + days.toFixed(1) + chrome.driftSuffix;
+}
 
 /* ============================================================
    C1/C2 Routed Coverage Fill (tier-B S7, issue #383, ADR-0027)
@@ -5778,7 +5795,7 @@ function renderLintCard(data, resultEl) {
         "orphan", "label-failed", deleteOrphanAction(f.page_slug, f.full));
     },
     C6: function(i, f) {
-      var drift = f.drift_days != null ? f.drift_days.toFixed(1) + "d drift" : "";
+      var drift = f.drift_days != null ? formatDriftDays(f.drift_days) : "";
       return findingRow(i, f.page_slug, f.source + (drift ? " · " + drift : ""),
         "stale", "label-updated", reingestAction(f.source, false));
     },
@@ -5849,7 +5866,7 @@ function renderLintCard(data, resultEl) {
         "invalid", "label-failed", discardAction(f.page_slug));
     },
     C9: function(i, f) {
-      return findingRow(i, f.page_slug, f.max_drift_days.toFixed(1) + "d drift",
+      return findingRow(i, f.page_slug, formatDriftDays(f.max_drift_days),
         "stale-qa", "label-updated");
     },
   };
@@ -7444,8 +7461,7 @@ function renderCurationQueue(rootEl, lintData) {
     );
     staleSlugs.forEach(function(slug) {
       var f = staleMap[slug];
-      var driftUnit = consoleLang === "zh" ? "天" : "d drift";
-      var drift = f.max_drift_days != null ? f.max_drift_days.toFixed(1) + driftUnit : "";
+      var drift = f.max_drift_days != null ? formatDriftDays(f.max_drift_days) : "";
       var hint = consoleLang === "zh"
         ? "重新歸檔:根據目前的實體/概念重新推導此回答,並暫存為新草稿供審核 — 舊回答將離開知識庫。"
         : "Re-file: re-derive this answer from the current entities/concepts and " +
