@@ -1642,6 +1642,53 @@
   }
   .field-manual-text { font-size: var(--fs-xs); color: var(--ink-2); line-height: 1.5; }
 
+  /* ── Rail lookup box (issue #643) — railSearchInput() factory's chrome: a
+     bordered pill holding the text input + an always-visible "×" clear
+     button, sitting flush above .field-manual-entries. Named "rail-search",
+     not "field-manual-search", because it is reusable as-is by the Browse
+     quick-find sibling issue. */
+  .rail-search {
+    display: flex; align-items: center; gap: 4px;
+    margin-bottom: 8px;
+    border: 1px solid var(--rule); border-radius: 6px;
+    background: var(--surface);
+    padding: 0 6px 0 10px;
+  }
+  .rail-search-input {
+    flex: 1 1 auto; min-width: 0;
+    border: none; background: none; outline: none;
+    font-family: inherit; font-size: var(--fs-xs); color: var(--ink);
+    padding: 7px 0;
+  }
+  .rail-search-input::placeholder { color: var(--ink-4); }
+  .rail-search-clear {
+    flex: none;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px;
+    border: none; border-radius: 50%;
+    background: none; color: var(--ink-3);
+    font-size: 13px; line-height: 1;
+    padding: 0; cursor: pointer;
+  }
+  .rail-search-clear:hover { color: var(--ink); background: var(--rule-2); }
+  .rail-search-clear:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* Matched substrings inside a Field Manual entry (issue #643). rgba() of
+     --warn (#9a640f) at low alpha rather than a new token — scoped to this
+     one file, no shared.css change for a single-purpose highlight color. */
+  .rail-search-hl { background: rgba(154, 100, 15, .22); color: inherit; border-radius: 2px; }
+
+  /* Non-matching Field Manual entries are removed from layout entirely —
+     "hidden, not merely collapsed" (issue #643 AC) — unlike the
+     accordion's own .collapsed state, which keeps the header row visible. */
+  .field-manual-entry.filtered-out { display: none; }
+
+  /* "No matching entries" message (issue #643) — same show/hide-via-class
+     convention as .entry-row-notice.visible / .staleness-banner.visible
+     above. */
+  .field-manual-empty { display: none; }
+  .field-manual-empty.visible { display: block; }
+
   /* ── C4 collision dual resolution (tier-B S2, issue #378, ADR-0028) ──
      Both real Gated affordances. Reuses every .reconcile-* modal/column
      class above (the shape is identical: old-vs-editable preview + apply). */
@@ -3813,6 +3860,15 @@ var LINT_CHROME = {
     manualEffectsLabel: "Remediation effect",
     manualHelpAriaLabelPrefix: "Explain ",
 
+    /* Lookup box (issue #643) — filters the 11 entries above by code,
+       title, or body text. railSearchClearLabel is shared by every
+       railSearchInput() call site (the Browse quick-find sibling reuses
+       the same factory + label); the placeholder and empty-state text are
+       specific to this section. */
+    fieldManualSearchPlaceholder: "Search by code, term, or text…",
+    railSearchClearLabel: "Clear search",
+    fieldManualSearchEmpty: "No matching entries.",
+
     manualC6Header: "C6 — Stale",
     manualC6Rule: "A wiki page is stale when the Source file's content hash no longer matches the hash stored in the page's frontmatter when it was synthesized — a SHA-256 comparison of file content, not a modified-time check, so it stays correct across a git clone or checkout.",
     manualC6Glossary: "hash — the SHA-256 fingerprint of a Source file's raw text, stored per-Source in frontmatter.source_hashes at ingest time. drift (days) — for C6, how long the Source file's on-disk modified time has run ahead of the page's own frontmatter.updated timestamp, shown as \"X.Xd drift\" on the row.",
@@ -4220,6 +4276,10 @@ var LINT_CHROME = {
     manualGlossaryLabel: "術語",
     manualEffectsLabel: "補救結果",
     manualHelpAriaLabelPrefix: "說明 ",
+
+    fieldManualSearchPlaceholder: "依代碼、術語或內容搜尋…",
+    railSearchClearLabel: "清除搜尋",
+    fieldManualSearchEmpty: "沒有符合的條目。",
 
     manualC6Header: "C6 — 過時",
     manualC6Rule: "當 Source 檔案內容的 hash 不再與頁面 frontmatter 中(合成當時)記錄的 hash 相符,該 wiki 頁面即為過時 — 比對的是檔案內容的 SHA-256,而非修改時間,因此在 git clone/checkout 後仍然正確。",
@@ -4999,6 +5059,85 @@ function manualHelpButton(code) {
   return btn;
 }
 
+/* issue #643: railSearchInput() instances register a refresh callback here
+   so applyConsoleLang() (below) can retro-switch their placeholder/
+   aria-label attributes on a language toggle — bindText/I18N_BOUND (above)
+   only retro-switches an element's textContent, which does nothing for an
+   <input>'s attributes. Any future call site (e.g. the Browse quick-find
+   sibling, issue #643) gets working i18n retro-switch for free just by
+   calling railSearchInput() — no second manual wiring step here. */
+var RAIL_SEARCH_INPUTS = [];
+
+/* Shared lookup-box chrome (issue #643 AC: "extract a small
+   railSearchInput(placeholderKey, onQuery) factory ... so the sibling
+   issue can reuse it"). Builds an input + an always-visible "×" clear
+   button, wired to call onQuery(value) on every keystroke and on Clear.
+   placeholderKey names a flat LINT_CHROME key (present in both languages)
+   used for BOTH the input's placeholder and its aria-label; the clear
+   button's own label is the one generic railSearchClearLabel every call
+   site shares. This factory owns ONLY the chrome + the two DOM events —
+   the match predicate, what "matched" means, and what happens to the
+   matched/unmatched rows is the caller's onQuery callback (issue #643 AC:
+   "Keep FILTER LOGIC local to this section — only the input chrome is
+   shared"). */
+function railSearchInput(placeholderKey, onQuery) {
+  var input = el("input", { type: "text", class: "rail-search-input" });
+  var clearBtn = el("button", { type: "button", class: "rail-search-clear", text: "×" });
+  var wrap = el("div", { class: "rail-search" }, input, clearBtn);
+
+  function refreshLabels() {
+    var label = LINT_CHROME[consoleLang][placeholderKey];
+    input.setAttribute("placeholder", label);
+    input.setAttribute("aria-label", label);
+    clearBtn.setAttribute("aria-label", LINT_CHROME[consoleLang].railSearchClearLabel);
+  }
+  refreshLabels();
+  RAIL_SEARCH_INPUTS.push({ refresh: refreshLabels });
+
+  input.addEventListener("input", function() { onQuery(input.value); });
+  clearBtn.addEventListener("click", function() {
+    input.value = "";
+    onQuery("");
+    input.focus();
+  });
+
+  return { wrap: wrap, input: input };
+}
+
+/* Splits containerEl's text into plain-text + <mark class="rail-search-hl">
+   segments around every case-insensitive, NFC-normalized match of query —
+   the §12.4-compliant route to "highlighted substring" (createElement /
+   appendChild via el(), never innerHTML; issue #643 AC). Reads
+   containerEl.textContent as the source string on EVERY call (never the
+   previous DOM), so repeated calls — one per keystroke — never accumulate
+   stale <mark> spans left over from an earlier query; a blank query just
+   restores a single plain text node. NFC-normalizes + lowercases BOTH the
+   container's own text and the query before comparing (issue #643 AC) so
+   CJK text (composed vs. decomposed input) and case differences both still
+   match. Module scope, outside any render closure (issue #643 AC), so the
+   Browse quick-find sibling can reuse it too. */
+function highlightMatches(containerEl, query) {
+  var raw = containerEl.textContent;
+  var normRaw = raw.normalize("NFC");
+  var needle = (query || "").normalize("NFC").toLowerCase().trim();
+  if (!needle) {
+    containerEl.replaceChildren(document.createTextNode(raw));
+    return;
+  }
+  var haystack = normRaw.toLowerCase();
+  var frags = [];
+  var pos = 0;
+  var idx = haystack.indexOf(needle, pos);
+  while (idx !== -1) {
+    if (idx > pos) frags.push(document.createTextNode(normRaw.slice(pos, idx)));
+    frags.push(el("mark", { class: "rail-search-hl" }, normRaw.slice(idx, idx + needle.length)));
+    pos = idx + needle.length;
+    idx = haystack.indexOf(needle, pos);
+  }
+  if (pos < normRaw.length) frags.push(document.createTextNode(normRaw.slice(pos)));
+  containerEl.replaceChildren.apply(containerEl, frags);
+}
+
 /* Applies consoleLang to <html lang> (accessibility), the header toggle
    button's own label, and every boot-time-bound element registered via
    bindText (issue #498). Looked up fresh by id each call rather than a
@@ -5034,6 +5173,23 @@ function applyConsoleLang() {
      still null). */
   if (lastFeedbackData !== null && feedbackResultEl) {
     feedbackResultEl.replaceChildren(renderFeedbackResult(lastFeedbackData));
+  }
+  /* issue #643: refresh every railSearchInput() instance's placeholder /
+     aria-label / clear-button aria-label — attributes, not textContent, so
+     I18N_BOUND (above) doesn't touch them. */
+  RAIL_SEARCH_INPUTS.forEach(function(entry) { entry.refresh(); });
+  /* issue #643: re-run the active Field Manual filter (if any) against the
+     now-current language's text. I18N_BOUND just overwrote every bound
+     header/body element's textContent above (dropping any highlight spans
+     from the OLD language in the process) — without this, a stale query
+     would either match nothing or leave the highlight gone (issue #643 AC:
+     "re-filter + re-highlight, not stale spans"). No-op before the section
+     is built (fieldManualSearchInput is still undefined at the very first,
+     boot-time call to this function — the Field Manual section is defined
+     further down the file and sets its own correct initial, unfiltered
+     state). */
+  if (fieldManualSearchInput) {
+    applyFieldManualFilter(fieldManualSearchInput.value);
   }
 }
 
@@ -9760,6 +9916,21 @@ var fieldManualSection = document.getElementById("field-manual-section");
 var fieldManualEntriesEl = el("div", { class: "field-manual-entries" });
 var fieldManualEntries = {}; // code -> entry wrapper element
 
+/* Lookup box state (issue #643). fieldManualSearchTargets caches the
+   per-entry elements the filter/highlighter need (the toggle button plus
+   the header + three body text elements) — a SEPARATE map from
+   fieldManualEntries (which stays exactly "code -> wrapper", the shape
+   openFieldManualEntry already depends on). fieldManualSearchInput /
+   fieldManualEmptyEl start null/undefined (not yet built) so the
+   boot-time applyConsoleLang() call above — which runs before this file
+   reaches this point — can guard on them safely; both are assigned below,
+   in the same synchronous pass, before any later call can observe one set
+   without the other. */
+var fieldManualSearchTargets = {}; // code -> {toggleBtn, headEl, textEls}
+var fieldManualSearchInput = null;
+var fieldManualEmptyEl = null;
+var fieldManualFilterQuery = ""; // last-applied query; read by the "?"-jump clear below
+
 /* One collapsible entry, matching the SAME lint-collapse-toggle/chevron/
    grid-rows chrome the Lint axis groups and Curation Queue already use
    (the two selector-list extensions near .lint-collapse-body above) — this
@@ -9776,13 +9947,16 @@ function renderFieldManualEntry(code) {
   }, chevron, headLabel);
   var head = el("div", { class: "field-manual-head" }, toggleBtn);
 
+  var ruleTextEl = bindText(el("div", { class: "field-manual-text" }), "manual" + code + "Rule");
+  var glossaryTextEl = bindText(el("div", { class: "field-manual-text" }), "manual" + code + "Glossary");
+  var effectsTextEl = bindText(el("div", { class: "field-manual-text" }), "manual" + code + "Effects");
   var body = el("div", { class: "field-manual-body" },
     bindText(el("div", { class: "field-manual-term" }), "manualRuleLabel"),
-    bindText(el("div", { class: "field-manual-text" }), "manual" + code + "Rule"),
+    ruleTextEl,
     bindText(el("div", { class: "field-manual-term" }), "manualGlossaryLabel"),
-    bindText(el("div", { class: "field-manual-text" }), "manual" + code + "Glossary"),
+    glossaryTextEl,
     bindText(el("div", { class: "field-manual-term" }), "manualEffectsLabel"),
-    bindText(el("div", { class: "field-manual-text" }), "manual" + code + "Effects")
+    effectsTextEl
   );
   var inner = el("div", { class: "lint-collapse-inner" }, body);
   var collapseBody = el("div", { class: "lint-collapse-body", id: bodyId }, inner);
@@ -9794,6 +9968,11 @@ function renderFieldManualEntry(code) {
   });
 
   fieldManualEntries[code] = wrap;
+  fieldManualSearchTargets[code] = {
+    toggleBtn: toggleBtn,
+    headEl: headLabel,
+    textEls: [ruleTextEl, glossaryTextEl, effectsTextEl],
+  };
   return wrap;
 }
 
@@ -9801,21 +9980,106 @@ FIELD_MANUAL_CODES.forEach(function(code) {
   fieldManualEntriesEl.append(renderFieldManualEntry(code));
 });
 
+/* Filters the FIELD_MANUAL_CODES entries above by code, title, or body
+   text (issue #643 AC) — the bound header span already reads
+   "<CODE> — <Title>" (e.g. "C6 — Stale"), so one substring test against it
+   covers BOTH code and title; body text is the three Rule/Glossary/Effects
+   value elements. NFC-normalizes + lowercases BOTH sides before comparing
+   (issue #643 AC) so CJK text (composed vs. decomposed input) and case
+   differences both still match. FILTER LOGIC stays local to this section
+   (issue #643 AC) — railSearchInput() above only supplies the input/clear
+   chrome and calls this as its onQuery callback. A blank/whitespace-only
+   query restores the default state: every entry visible and collapsed,
+   discarding whatever expand state a curator reached manually (issue #643
+   AC: "Clearing the box restores the default state"). Also re-run once
+   from applyConsoleLang() (above) on a language toggle, since a stale
+   query's highlight spans were built from the OLD language's text. */
+function applyFieldManualFilter(rawQuery) {
+  fieldManualFilterQuery = rawQuery || "";
+  var needle = fieldManualFilterQuery.normalize("NFC").toLowerCase().trim();
+
+  if (!needle) {
+    FIELD_MANUAL_CODES.forEach(function(code) {
+      var wrap = fieldManualEntries[code];
+      var target = fieldManualSearchTargets[code];
+      if (!wrap || !target) return;
+      wrap.classList.remove("filtered-out");
+      wrap.classList.add("collapsed");
+      target.toggleBtn.setAttribute("aria-expanded", "false");
+      highlightMatches(target.headEl, "");
+      target.textEls.forEach(function(t) { highlightMatches(t, ""); });
+    });
+    if (fieldManualEmptyEl) {
+      fieldManualEmptyEl.classList.remove("visible");
+      fieldManualEmptyEl.textContent = "";
+    }
+    return;
+  }
+
+  var anyVisible = false;
+  FIELD_MANUAL_CODES.forEach(function(code) {
+    var wrap = fieldManualEntries[code];
+    var target = fieldManualSearchTargets[code];
+    if (!wrap || !target) return;
+    var texts = [target.headEl.textContent].concat(
+      target.textEls.map(function(t) { return t.textContent; })
+    );
+    var matched = texts.some(function(t) {
+      return t.normalize("NFC").toLowerCase().indexOf(needle) !== -1;
+    });
+    if (matched) {
+      anyVisible = true;
+      wrap.classList.remove("filtered-out");
+      wrap.classList.remove("collapsed");
+      target.toggleBtn.setAttribute("aria-expanded", "true");
+      highlightMatches(target.headEl, fieldManualFilterQuery);
+      target.textEls.forEach(function(t) { highlightMatches(t, fieldManualFilterQuery); });
+    } else {
+      wrap.classList.add("filtered-out");
+      highlightMatches(target.headEl, "");
+      target.textEls.forEach(function(t) { highlightMatches(t, ""); });
+    }
+  });
+
+  if (fieldManualEmptyEl) {
+    var showEmpty = !anyVisible;
+    fieldManualEmptyEl.classList.toggle("visible", showEmpty);
+    fieldManualEmptyEl.textContent = showEmpty ? LINT_CHROME[consoleLang].fieldManualSearchEmpty : "";
+  }
+}
+
+/* Lookup box + "no matches" message, built via the shared railSearchInput()
+   factory (issue #643 AC) and placed at the TOP of the section, above the
+   entries it filters. */
+var fieldManualSearchWidget = railSearchInput("fieldManualSearchPlaceholder", applyFieldManualFilter);
+fieldManualSearchInput = fieldManualSearchWidget.input;
+fieldManualEmptyEl = el("div", { class: "browser-empty field-manual-empty" });
+
 fieldManualSection.append(
   bindText(el("div", { class: "section-label" }), "fieldManualSectionLabel"),
-  fieldManualEntriesEl
+  fieldManualSearchWidget.wrap,
+  fieldManualEntriesEl,
+  fieldManualEmptyEl
 );
 
 /* Opens (expanding if needed) and scrolls the given code's Field Manual
    entry into view — the manualHelpButton click target, and the reason this
-   is "contextual help", not just a reference page (issue #637 AC). Opens
-   the off-canvas rail drawer first when it is not currently visible
-   (mirrors initResourceRailDrawer's own breakpoint, gateway/static/
-   console.html's own @media (max-width: 899px) rule). No-op if the code
-   has no entry (defensive — mirrors every other rail lookup's guard). */
+   is "contextual help", not just a reference page (issue #637 AC). Clears
+   any active lookup-box filter FIRST (issue #643 AC: "a '?' jump always
+   lands on a visible entry") — only when a query is actually active, so a
+   plain "?" click while the box is empty doesn't also force-collapse
+   entries a curator expanded manually. Opens the off-canvas rail drawer
+   first when it is not currently visible (mirrors initResourceRailDrawer's
+   own breakpoint, gateway/static/console.html's own
+   @media (max-width: 899px) rule). No-op if the code has no entry
+   (defensive — mirrors every other rail lookup's guard). */
 function openFieldManualEntry(code) {
   var wrap = fieldManualEntries[code];
   if (!wrap) return;
+  if (fieldManualFilterQuery) {
+    if (fieldManualSearchInput) fieldManualSearchInput.value = "";
+    applyFieldManualFilter("");
+  }
   if (matchMedia("(max-width: 899px)").matches && !document.body.classList.contains("rail-open")) {
     var railToggle = document.getElementById("rail-toggle");
     if (railToggle) railToggle.click();
