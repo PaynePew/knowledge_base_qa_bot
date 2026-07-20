@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``list_tree``, ``read_file``, ``count_tree``, ``TreeEntry``.
+"""Deep module per Ousterhout. Public surface: ``list_tree``, ``list_tree_recursive``, ``read_file``, ``count_tree``, ``TreeEntry``.
 
 Resource browser — read-only access to the whitelisted corpus roots.
 
@@ -8,7 +8,9 @@ issue #604 — read-only pre-restore inspection of a retired Source; see
 ``source_lifecycle.py`` for the write side).  The ``.kb/`` directory is
 explicitly excluded.  ``count_tree(relpath)`` (issue #559 A1) is a cheap
 recursive file count over the same whitelist, for the Operator Console's
-live artifact-node counts.
+live artifact-node counts.  ``list_tree_recursive(relpath)`` (issue #644) is
+a flat, cross-tree recursive listing over the same whitelist, for the
+Operator Console's Browse rail quick-find.
 
 Security guarantees (path-traversal defence):
   - ``..`` components and absolute paths are rejected before any I/O.
@@ -24,6 +26,14 @@ Public surface:
         A whitelist root that has not been created on disk yet (e.g. ``.trash``
         before the first retire) returns ``[]`` rather than raising
         FileNotFound (issue #629) — a nonexistent SUB-path still raises.
+
+    ``list_tree_recursive(relpath='', limit=10_000)`` — flatten every entry
+        (files AND dirs) reachable under ``relpath`` into one list, walking
+        depth-first via repeated ``list_tree`` calls. Returns
+        ``(list[TreeEntry], truncated: bool)``; ``truncated`` is True once
+        ``limit`` entries have been collected (a corpus-growth guard, not
+        pagination — issue #644). Same whitelist/traversal rules as
+        list_tree, checked at ``relpath`` itself before any recursion.
 
     ``read_file(relpath)`` — read and return the UTF-8 text of a file inside
         one of the whitelisted roots.  Returns the raw text as a ``str``.
@@ -47,6 +57,7 @@ Raises:
 
 See GitHub issue #171 (Phase 15 S5) and PRD #168 for design rationale.
 count_tree added by issue #559 A1 (Operator Console artifact-node counts).
+list_tree_recursive added by issue #644 (Browse rail quick-find).
 """
 
 from __future__ import annotations
@@ -281,6 +292,65 @@ def list_tree(
     files.sort(key=lambda e: e.name)
 
     return dirs + files
+
+
+def list_tree_recursive(
+    relpath: str = "",
+    *,
+    roots: dict[str, Path] | None = None,
+    limit: int = 10_000,
+) -> tuple[list[TreeEntry], bool]:
+    """Flatten every entry (files AND dirs) reachable under relpath.
+
+    Walks depth-first via repeated ``list_tree`` calls, one level at a time —
+    so it inherits list_tree's exact security checks, dirs-first/alpha
+    ordering (per directory), hidden-entry exclusion, and "not-yet-created
+    root returns []" behaviour, with no separate traversal logic to drift
+    out of sync (issue #644 — the Operator Console's Browse rail
+    quick-find). Validation of ``relpath`` itself happens before any
+    recursion (the first ``list_tree`` call), matching list_tree's own
+    error timing.
+
+    Args:
+        relpath: Same shape as list_tree.  Empty string (the default) walks
+            every whitelisted root.
+        roots:   Override the module-level ``_WHITELIST_ROOTS`` (tests only).
+        limit:   Hard cap on the number of entries returned — a
+            corpus-growth guard, not pagination.  Once this many entries
+            have been collected the walk stops early.
+
+    Returns:
+        ``(entries, truncated)`` — ``entries`` is a flat ``list[TreeEntry]``
+        in walk order (dirs-first/alpha per directory level, matching
+        list_tree).  ``truncated`` is True iff ``limit`` was hit before the
+        whole tree was walked.
+
+    Raises:
+        PathRejected: path contains ``..``, is absolute, or resolves outside
+            the whitelist root.
+        FileNotFound: the resolved path does not exist (a nonexistent
+            SUB-path).
+        NotAFile: ``relpath`` names a file rather than a directory.
+    """
+    effective_roots = roots if roots is not None else _WHITELIST_ROOTS
+
+    collected: list[TreeEntry] = []
+    truncated = False
+
+    def _walk(sub_relpath: str) -> None:
+        nonlocal truncated
+        for entry in list_tree(sub_relpath, roots=effective_roots):
+            if len(collected) >= limit:
+                truncated = True
+                return
+            collected.append(entry)
+            if entry.is_dir:
+                _walk(entry.relpath)
+                if truncated:
+                    return
+
+    _walk(relpath)
+    return collected, truncated
 
 
 def read_file(
