@@ -980,7 +980,8 @@
   }
   .lint-axis.collapsed .lint-chevron,
   .curation-collapse.collapsed .lint-chevron,
-  .feedback-collapse.collapsed .lint-chevron { transform: rotate(-90deg); }
+  .feedback-collapse.collapsed .lint-chevron,
+  .field-manual-entry.collapsed .lint-chevron { transform: rotate(-90deg); }
   .lint-collapse-count { color: var(--ink-3); font-weight: 400; }
   .lint-collapse-body {
     display: grid; grid-template-rows: 1fr;
@@ -988,7 +989,8 @@
   }
   .lint-axis.collapsed .lint-collapse-body,
   .curation-collapse.collapsed .lint-collapse-body,
-  .feedback-collapse.collapsed .lint-collapse-body { grid-template-rows: 0fr; }
+  .feedback-collapse.collapsed .lint-collapse-body,
+  .field-manual-entry.collapsed .lint-collapse-body { grid-template-rows: 0fr; }
   .lint-collapse-inner { overflow: hidden; min-height: 0; }
   /* The 2px inter-axis divider moves from the head to the wrapper, since each
      axis head is now nested (always a wrapper's first child). */
@@ -1597,6 +1599,48 @@
     text-underline-offset: 2px;
     cursor: pointer;
   }
+
+  /* ── "?" contextual-help affordance (issue #637) — sits next to a lint
+     finding row's title / a queue-owned check's count line, opens (and
+     scrolls to) the matching Field Manual rail entry. Sized to sit inline
+     with a text row without disturbing its line-height. */
+  .rec-title-row { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+  .rec-title-row .id { min-width: 0; flex: 1 1 auto; }
+  .manual-help-btn {
+    flex: none;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 15px; height: 15px;
+    border: 1px solid var(--ink-4); border-radius: 50%;
+    background: none; color: var(--ink-3);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 9px; line-height: 1;
+    padding: 0; cursor: pointer;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .manual-help-btn:hover { color: var(--ink); border-color: var(--ink-2); }
+  .manual-help-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ── Field Manual rail section (issue #637) — one expandable entry per
+     ROW_RENDERERS finding code, visually a "browser-entries"-styled box
+     (matches Browse / Source Trash) whose rows expand via the SAME
+     lint-collapse-* chevron/grid-rows chrome the Lint axis groups and
+     Curation Queue already use (see the two selector-list extensions
+     above) — "expandable rows" means the one interaction this console
+     already has, not a second disclosure widget. */
+  .field-manual-entries { border: 1px solid var(--rule); border-radius: 6px; background: var(--surface); overflow: hidden; }
+  .field-manual-entry { border-top: 1px solid var(--rule-2); }
+  .field-manual-entry:first-child { border-top: none; }
+  .field-manual-head { padding: 11px 16px; }
+  .field-manual-body {
+    padding: 0 16px 14px 43px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .field-manual-term {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: var(--fs-2xs); letter-spacing: .06em; text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .field-manual-text { font-size: var(--fs-xs); color: var(--ink-2); line-height: 1.5; }
 
   /* ── C4 collision dual resolution (tier-B S2, issue #378, ADR-0028) ──
      Both real Gated affordances. Reuses every .reconcile-* modal/column
@@ -2300,6 +2344,9 @@
         </div>
         <div id="source-trash-section">
           <!-- Source Trash built by JS below (issue #606, ADR-0041) -->
+        </div>
+        <div id="field-manual-section">
+          <!-- Field Manual built by JS below (issue #637) -->
         </div>
       </aside>
     </div>
@@ -3359,6 +3406,14 @@ var LINT_CHECK_META = {
    three codes now. */
 var QUEUE_OWNED_LIFECYCLE_CHECKS = { C8: true, C9: true, C10: true };
 
+/* Field Manual entry order (issue #637) — every ROW_RENDERERS finding code,
+   axis order, derived from the two arrays above rather than a second
+   hardcoded list so it can never drift out of sync with them. There is no
+   C7 (issue #406 scope item 5 — the id was never assigned). */
+var FIELD_MANUAL_CODES = LINT_AXIS_ORDER.reduce(function(acc, axis) {
+  return acc.concat(AXIS_CHECK_CODES[axis]);
+}, []);
+
 /* ============================================================
    zh/en Console header language toggle (issue #365, ADR-0023 tier-A S5)
 
@@ -3744,6 +3799,75 @@ var LINT_CHROME = {
     sourceTrashRestoreWorking: "Restoring…",
     sourceTrashRestoreFailedPrefix: "Restore failed: ",
 
+    /* ── Field Manual rail section (issue #637) — one expandable entry per
+       ROW_RENDERERS finding code: a plain-language trigger rule, a glossary
+       of the terms that code's own rows use, and what its remediation
+       button(s) actually change. Content accuracy: derived from the
+       markdown_kb/app/lint.py check docstrings (never invented) — see the
+       per-code comment where each is used, gateway/tests/
+       test_ui_console_field_manual.py cross-checks the code-set against
+       ROW_RENDERERS itself. */
+    fieldManualSectionLabel: "Field Manual",
+    manualRuleLabel: "Rule",
+    manualGlossaryLabel: "Glossary",
+    manualEffectsLabel: "Remediation effect",
+    manualHelpAriaLabelPrefix: "Explain ",
+
+    manualC6Header: "C6 — Stale",
+    manualC6Rule: "A wiki page is stale when the Source file's content hash no longer matches the hash stored in the page's frontmatter when it was synthesized — a SHA-256 comparison of file content, not a modified-time check, so it stays correct across a git clone or checkout.",
+    manualC6Glossary: "hash — the SHA-256 fingerprint of a Source file's raw text, stored per-Source in frontmatter.source_hashes at ingest time. drift (days) — for C6, how long the Source file's on-disk modified time has run ahead of the page's own frontmatter.updated timestamp, shown as \"X.Xd drift\" on the row.",
+    manualC6Effects: "Re-ingest re-runs /ingest for that one Source: it re-synthesizes the page from the CURRENT Source content, re-runs the Grounding Check, writes a fresh source_hashes entry, and — on success — the row disappears on the next lint. \"Re-ingest all\" batches every C6 (and C3) Source shown in one pass.",
+
+    manualC3Header: "C3 — Failed Grounding",
+    manualC3Rule: "A page is flagged when its frontmatter.status is failed_grounding — fail-soft ingest wrote it because the post-LLM Grounding Check verifier either rejected one or more claims (reason claim_unsupported) or was itself unavailable (reason verifier_unavailable, a transient failure).",
+    manualC3Glossary: "Grounding Check — the post-LLM verifier that checks every claim in a synthesized draft against its cited Sources before the page is allowed to write. claim_unsupported — the verifier found at least one claim the cited Source does not actually support. verifier_unavailable — the verifier call itself failed (timeout/error), not a content problem.",
+    manualC3Effects: "Re-ingest (retry) re-runs /ingest unchanged — appropriate only for verifier_unavailable, since a claim_unsupported failure will fail identically against the same unedited Source. \"Fix Source\" routes to the Browse/Upload flow to edit the Source text first; the row clears once a subsequent re-ingest passes verification.",
+
+    manualC11Header: "C11 — Orphan Page",
+    manualC11Rule: "A wiki page is an orphan when at least one entry in its frontmatter.sources cites a file that no longer exists anywhere under docs/. A full orphan has EVERY cited Source missing; a partial orphan still has at least one surviving Source.",
+    manualC11Glossary: "orphan — a page whose cited Source file is gone. full vs. partial — the remediation-deciding split: a full orphan has nothing left to ground it, a partial orphan may still be validly grounded by its surviving citation(s).",
+    manualC11Effects: "Delete (full orphans only) permanently removes the wiki page file, after a confirmation dialog that names the exact operation and target — there is no draft to review here, only an operation to confirm. A partial orphan shows advisory text only: repair the citation by hand; it is never auto-deleted.",
+
+    manualC5Header: "C5 — Contradiction",
+    manualC5Rule: "C5 pairs are LLM-judged, not a deterministic predicate: the LLM judge compares two wiki pages that plausibly answer the same question and classifies the pair as none / tension / direct. Only tension and direct pairs surface as findings — direct renders with the failed label, tension with updated. At most KB_LINT_C5_MAX_PAIRS candidate pairs (env, default 30) are judged per run; the rest are recorded as capped, not silently dropped.",
+    manualC5Glossary: "contradiction — same-question incompatibility only, never mere topical similarity or consistent redundancy. converged — the Reconcile draft's convergence re-judge finds the two DRAFTS now agree. source-rooted contradiction — the pair is unreconcilable at the wiki layer because the Sources themselves disagree (its exit is fix-the-Source, not Reconcile).",
+    manualC5Effects: "Reconcile drafts a merged rewrite of both pages (nothing written yet), then re-runs the contradiction judge on the draft pair: converged enables Apply (wiki-rooted — writes both pages); not-converged disables Apply and switches to the Source-comparison view (source-rooted — edit docs/, then re-ingest, instead).",
+
+    manualC4Header: "C4 — Slug Collision",
+    manualC4Rule: "Ingest appends -2, -3, ... suffixes when two synthesized pages would otherwise share the same slug. A collision group is 2+ pages sharing a base slug — evidence the same concept was captured twice.",
+    manualC4Glossary: "slug — the URL-safe page identifier ingest mints from the synthesized page's title. differentiate exemption — a group whose every current member carries an apply-time sentinel recording exactly that member set is treated as intentionally complementary, so it stops re-firing until membership changes or a re-ingest overwrites the sentinel.",
+    manualC4Effects: "Merge drafts one combined page from the group (base_slug must be an existing real page) and, on Apply, deletes the variants. Differentiate drafts a distinct rewrite for every member (base_slug included) and stamps each with a sentinel recording the resolved group, so an unchanged group stops re-triggering C4 on the next lint.",
+
+    manualC12Header: "C12 — Alias Collision",
+    manualC12Rule: "Two collision shapes: alias_vs_slug — a page's declared alias equals another (or the same) page's real slug, so the alias can never resolve to its own declaring page since a real slug always wins resolution; alias_vs_alias — two or more pages independently declare the SAME alias with no real page owning that slug, so the shared resolver's tie-break (lexicographically-first canonical slug) silently decides a winner.",
+    manualC12Glossary: "alias — an extra name a page's frontmatter.aliases declares, so a wikilink or citation can resolve to it without using the exact slug. resolves to — which page a colliding alias currently, silently, wins for.",
+    manualC12Effects: "Remove issues DELETE /pages/{slug}/aliases/{alias} for the chosen claimant(s) — the add-only assign-alias endpoint can never resolve a collision on its own, so removal is the only real fix. The alias disappears from every remaining claimant's frontmatter, and the finding clears on the next lint.",
+
+    manualC1Header: "C1 — Coverage Gap",
+    manualC1Rule: "Parses wiki/log.md for chat_fallback / chat_grounding_fallback entries and clusters them by canonical query (plus, for below_threshold, the top-scoring Section; for claim_unsupported, the cited pages). A cluster is suppressed once a later bare chat log entry for the same canonical query succeeded — C1 reports queries whose LATEST outcome is still a failure, not every query that ever failed. Clusters below KB_LINT_MIN_HITS (env, default 1) are excluded.",
+    manualC1Glossary: "hit count — how many times that cluster's query pattern has recurred in the log. retrieval_empty / below_threshold / claim_unsupported — the three fallback reasons C1 clusters on (a fourth kind, wiki_layer_empty, is never a C1 cluster).",
+    manualC1Effects: "\"Fill via Import\" navigates to the Upload/Import/Ingest flow, carrying the finding's query context along — there is no draft to approve here, only an existing workflow to carry it into; the operator supplies the missing Source content by hand, then re-lints to confirm the cluster clears.",
+
+    manualC2Header: "C2 — Red Link",
+    manualC2Rule: "Scans every [[wikilink]] in wiki/entities/ and wiki/concepts/ against the shared alias-resolution map (real slugs UNION declared aliases). A link is a red link when its target slug resolves to neither.",
+    manualC2Glossary: "red-link — an unresolved [[wikilink]] target (matches neither a real slug nor a declared alias). mention count — how many times that missing slug is referenced, across however many pages.",
+    manualC2Effects: "\"Fill via Import\" routes to Upload/Import/Ingest to create the missing page from a new Source. \"Assign Alias\" instead maps the red-link slug onto an EXISTING page as a new alias — a Direct, one-click write. Either path clears the row on the next lint.",
+
+    manualC8Header: "C8 — Promotion Candidate",
+    manualC8Rule: "Surfaces status: draft Filed Answers ranked by re-ask popularity (count) — how many times a chat re-derived the same already-filed answer instead of asking something genuinely new. Capped at the top KB_LINT_PROMOTION_TOP_N (env, default 10) by count desc, then updated desc.",
+    manualC8Glossary: "Filed Answer — a wiki/qa/*.md page POST /chat writes once a Grounded Answer passes the filing gate. draft vs. live — only status: live Filed Answers are retrievable; promotion is the explicit curator decision that flips the bit.",
+    manualC8Effects: "Promote (in the Curation Queue below, not on this line) sets status: live and auto-reindexes the page so it becomes retrievable immediately. Discard deletes the draft outright. Both are Direct — no LLM draft, one click, and the item disappears from C8 either way.",
+
+    manualC10Header: "C10 — Invalid QA Schema",
+    manualC10Rule: "One finding per (page, broken property): status must be one of live / draft / stale / superseded; type must equal \"qa\"; question must be a non-empty string; count must be a positive integer. An unparseable frontmatter block itself produces a single finding flagging frontmatter.",
+    manualC10Glossary: "schema — the required frontmatter shape every wiki/qa/*.md page must satisfy before the filing/promotion machinery will trust it.",
+    manualC10Effects: "Discard deletes the broken qa page outright (Direct, one click) — there is no auto-repair, since a malformed field usually means the record should never have been filed as-is. \"Discard all\" batches every C10 finding shown at once.",
+
+    manualC9Header: "C9 — Stale Filed Answer",
+    manualC9Rule: "A live Filed Answer is stale when at least one cited entity/concept page's frontmatter.updated is newer than the answer's own frontmatter.updated by more than a grace period: entity_updated > qa_updated + grace. Grace defaults to 3.0 days and is operator-overridable via KB_LINT_C9_GRACE_DAYS — a negative or malformed value falls back to the default.",
+    manualC9Glossary: "drift (days) — for C9, the MAXIMUM gap in days between the Filed Answer's own updated timestamp and the newest updated citation among its sources, shown as \"X.Xd drift\" on the queue line. grace period — how many days a citation may run ahead of the answer before it counts as stale, so a routine re-ingest of a cited page does not stale-flag every answer that cites it.",
+    manualC9Effects: "Re-file (in the Curation Queue below, not on this line) re-derives the answer by running its original question back through chat synthesis with wiki/qa/ excluded from retrieval, grounding-checks the result, and — only on a pass — stages it onto the SAME slug as a fresh status: draft for the Promote gate. A failed re-ground changes nothing, and the stale answer stays live until a curator promotes its replacement.",
+
     /* issue #498: banners (static HTML, bound via bindText) */
     bannerDemoStrong: "Demo environment",
     bannerDemoText: " — changes are real but ephemeral. This console resets to the seeded knowledge base periodically (~2 days) and on each deploy.",
@@ -4087,6 +4211,67 @@ var LINT_CHROME = {
     sourceTrashRestoreBtn: "復原",
     sourceTrashRestoreWorking: "復原中…",
     sourceTrashRestoreFailedPrefix: "復原失敗：",
+
+    fieldManualSectionLabel: "操作手冊",
+    manualRuleLabel: "規則",
+    manualGlossaryLabel: "術語",
+    manualEffectsLabel: "補救結果",
+    manualHelpAriaLabelPrefix: "說明 ",
+
+    manualC6Header: "C6 — 過時",
+    manualC6Rule: "當 Source 檔案內容的 hash 不再與頁面 frontmatter 中(合成當時)記錄的 hash 相符,該 wiki 頁面即為過時 — 比對的是檔案內容的 SHA-256,而非修改時間,因此在 git clone/checkout 後仍然正確。",
+    manualC6Glossary: "hash — Source 檔案原始文字的 SHA-256 指紋,於合成(ingest)時寫入該 Source 對應的 frontmatter.source_hashes。drift(天)— 在 C6 中,指 Source 檔案的磁碟修改時間領先頁面自身 frontmatter.updated 的天數,顯示為列上的「X.Xd drift」。",
+    manualC6Effects: "重新匯入會針對該 Source 重新執行 /ingest:以「目前」的 Source 內容重新合成頁面、重新執行引證檢核、寫入新的 source_hashes 記錄 — 成功後,下次檢查該列即消失。「全部重新匯入」會一次批次處理畫面上所有 C6(與 C3)的 Source。",
+
+    manualC3Header: "C3 — 引證檢核失敗",
+    manualC3Rule: "當頁面 frontmatter.status 為 failed_grounding 時會被標記 — 這是 fail-soft 合成流程寫入的結果:LLM 生成後的引證檢核驗證器拒絕了一項以上聲明(原因為 claim_unsupported),或驗證器本身無法使用(原因為 verifier_unavailable,屬暫時性故障)。",
+    manualC3Glossary: "引證檢核(Grounding Check)— 在頁面允許寫入前,對合成草稿中的每項聲明逐一比對其引用的 Source 的 LLM 生成後驗證步驟。claim_unsupported — 驗證器發現至少一項聲明不受所引用 Source 支持。verifier_unavailable — 驗證器本身呼叫失敗(逾時/錯誤),並非內容問題。",
+    manualC3Effects: "重新匯入(重試)會原樣重新執行 /ingest — 僅適用於 verifier_unavailable,因為 claim_unsupported 的失敗會在同一份未修改的 Source 上重複發生相同結果。「修正 Source」會導向瀏覽/上傳流程,先修改 Source 文字;待後續重新匯入通過驗證後,該列即消失。",
+
+    manualC11Header: "C11 — 孤立頁面",
+    manualC11Rule: "當 wiki 頁面 frontmatter.sources 中至少有一筆引用的檔案已不存在於 docs/ 底下任何位置時,該頁面即為孤立頁面。完全孤兒(full)代表「所有」被引用的 Source 皆已消失;部分孤兒(partial)則仍有至少一個 Source 存在。",
+    manualC11Glossary: "孤立頁面(orphan)— 所引用的 Source 檔案已消失的頁面。完全 vs 部分 — 決定補救方式的關鍵區別:完全孤兒已無任何依據可供引證,部分孤兒仍可能因尚存的引用而合法通過引證。",
+    manualC11Effects: "刪除(僅限完全孤兒)會在一個具體指名操作與目標的確認對話框後,永久移除該 wiki 頁面檔案 — 此處沒有草稿可審閱,只有一項操作待確認。部分孤兒僅顯示提示文字:請手動修正引用,系統不會自動刪除。",
+
+    manualC5Header: "C5 — 矛盾",
+    manualC5Rule: "C5 的判定由 LLM 裁決,並非固定的機械式規則:LLM 裁決者比對兩個可能回答同一問題的 wiki 頁面,並將該配對分類為 none / tension / direct。只有 tension 與 direct 會顯示為發現項目 — direct 以 failed 標籤呈現,tension 以 updated 標籤呈現。每次執行最多裁決 KB_LINT_C5_MAX_PAIRS(環境變數,預設 30)組候選配對;超過上限的配對會記錄為「未裁決(已達上限)」,而非被靜默捨棄。",
+    manualC5Glossary: "矛盾(contradiction)— 僅限「同一問題下互不相容」,並非單純主題相似或內容重複一致。已收斂(converged)— Reconcile 草稿的收斂再裁決判定兩份「草稿」現已一致。Source 層矛盾(source-rooted contradiction)— 該配對在 wiki 層無法調和,因為 Source 本身彼此矛盾(其出路是修正 Source,而非 Reconcile)。",
+    manualC5Effects: "協調(Reconcile)會先草擬兩頁的合併改寫版本(尚未寫入任何內容),再對這份「草稿」配對重新執行矛盾裁決:已收斂則啟用套用(屬 wiki 層問題 — 會寫入兩頁);未收斂則停用套用,並切換為 Source 比較檢視(屬 Source 層問題 — 改為修改 docs/ 後重新匯入)。",
+
+    manualC4Header: "C4 — Slug 重複",
+    manualC4Rule: "當兩個合成頁面原本會共用同一個 slug 時,ingest 會附加 -2、-3……等後綴。凡有 2 個以上頁面共用同一個基底 slug,即構成一個重複群組 — 代表同一概念被重複建立。",
+    manualC4Glossary: "slug — ingest 依合成頁面標題所產生、可用於網址的頁面識別碼。區分豁免(differentiate exemption)— 若一個群組目前的每個成員都帶有套用時寫入、且成員集合完全相符的標記,即視為刻意互補,不再重複觸發,直到成員異動或重新匯入覆寫該標記為止。",
+    manualC4Effects: "合併會就該群組草擬一份合併頁面(base_slug 必須是實際存在的頁面);套用後會刪除其餘變體。區分則會為每個成員(包含 base_slug)各自草擬獨立改寫版本,並在每頁標記已解決的群組內容 — 只要群組成員不變,下次檢查即不再觸發 C4。",
+
+    manualC12Header: "C12 — 別名衝突",
+    manualC12Rule: "有兩種衝突型態:alias_vs_slug — 某頁面宣告的別名與另一(或同一)頁面的實際 slug 相同,由於實際 slug 永遠優先於別名解析,該別名永遠無法解析回宣告它的頁面本身;alias_vs_alias — 兩個以上頁面各自獨立宣告「同一個」別名,且沒有任何頁面以此為實際 slug,此時共用解析器會以「字母序最前的 slug」作為裁決依據,靜默決定由誰勝出。",
+    manualC12Glossary: "別名(alias)— 頁面 frontmatter.aliases 中宣告的額外名稱,讓 wikilink 或引用可在不知道確切 slug 的情況下解析到該頁。解析對象(resolves to)— 目前由哪個頁面靜默贏得該衝突別名。",
+    manualC12Effects: "移除會針對所選的宣告頁面呼叫 DELETE /pages/{slug}/aliases/{alias} — 因為僅能新增的指派別名端點本身無法解決衝突,移除才是唯一真正的修正方式。移除後,該別名會從其餘宣告頁面的 frontmatter 中消失,下次檢查該發現項目即清除。",
+
+    manualC1Header: "C1 — 覆蓋缺口",
+    manualC1Rule: "解析 wiki/log.md 中的 chat_fallback / chat_grounding_fallback 紀錄,依標準化查詢字串分群(below_threshold 另加上得分最高的 Section;claim_unsupported 另加上所引用的頁面)。若同一標準化查詢後續出現一筆成功的一般 chat 紀錄,該群組即被抑制 — C1 呈現的是「最新結果仍為失敗」的查詢,而非曾經失敗過的所有查詢。命中次數低於 KB_LINT_MIN_HITS(環境變數,預設 1)的群組會被排除。",
+    manualC1Glossary: "命中次數(hit count)— 該群組的查詢模式在紀錄中重複出現的次數。retrieval_empty / below_threshold / claim_unsupported — C1 分群依據的三種 fallback 原因(第四種 wiki_layer_empty 永遠不會成為 C1 群組)。",
+    manualC1Effects: "「透過匯入補齊」會導向上傳/匯入/合成流程,並帶入該發現項目的查詢內容 — 此處沒有草稿可核准,只是導引進入既有流程;由操作者手動補上缺少的 Source 內容,再重新檢查以確認該群組已清除。",
+
+    manualC2Header: "C2 — 失效連結",
+    manualC2Rule: "掃描 wiki/entities/ 與 wiki/concepts/ 中每個 [[wikilink]],並與共用的別名解析對照表(實際 slug 聯集已宣告的別名)比對。若連結目標的 slug 在對照表中皆無法解析,即為失效連結。",
+    manualC2Glossary: "失效連結(red-link)— 無法解析的 [[wikilink]] 目標(既非實際 slug,也非已宣告的別名)。提及次數(mention count)— 該缺失 slug 在(不限單一頁面)被引用的總次數。",
+    manualC2Effects: "「透過匯入補齊」會導向上傳/匯入/合成流程,以新的 Source 建立缺少的頁面。「指派別名」則改將該失效連結的 slug 對應到一個「既有」頁面,新增一筆別名 — 屬於一鍵完成的 Direct 寫入。兩條路徑皆會在下次檢查時清除該列。",
+
+    manualC8Header: "C8 — 待升級草稿",
+    manualC8Rule: "呈現 status: draft 的已歸檔回答,依重複被問到的次數(count)排序 — 代表同一則已歸檔回答被 chat 重複取用、而非產生真正新回答的次數。依 count 由大到小、再依 updated 由新到舊排序,並取前 KB_LINT_PROMOTION_TOP_N(環境變數,預設 10)筆。",
+    manualC8Glossary: "已歸檔回答(Filed Answer)— POST /chat 在一則已通過歸檔門檻的已核實回答上寫入的 wiki/qa/*.md 頁面。draft 與 live — 只有 status: live 的已歸檔回答可被檢索,升等即是策展者明確將此狀態切換的決定。",
+    manualC8Effects: "升等(位於下方 Curation Queue,而非此列)會將 status 設為 live 並自動重建索引,使頁面立即可被檢索。捨棄則直接刪除該草稿。兩者皆屬 Direct — 無需 LLM 草稿、一鍵完成,無論選哪一項,該項目都會從 C8 消失。",
+
+    manualC10Header: "C10 — QA 格式錯誤",
+    manualC10Rule: "每筆(頁面、有問題的欄位)組合各產生一項發現:status 必須為 live / draft / stale / superseded 之一;type 必須等於 \"qa\";question 必須為非空字串;count 必須為正整數。若 frontmatter 本身無法解析,則單獨產生一筆標記 frontmatter 的發現。",
+    manualC10Glossary: "schema — 每個 wiki/qa/*.md 頁面在被歸檔/升等機制信任前,必須符合的 frontmatter 格式規範。",
+    manualC10Effects: "捨棄會直接刪除有問題的 qa 頁面(Direct,一鍵完成)— 沒有自動修復機制,因為欄位格式錯誤通常代表此紀錄原本就不該以現狀被歸檔。「全部捨棄」可一次批次處理畫面上所有 C10 發現。",
+
+    manualC9Header: "C9 — 資料過舊的已歸檔回答",
+    manualC9Rule: "當一則生效中的已歸檔回答,其所引用的至少一個 entity/concept 頁面之 frontmatter.updated,超過寬限期地新於該回答自身的 frontmatter.updated 時,即視為過舊:entity_updated > qa_updated + 寬限天數。寬限天數預設為 3.0 天,可透過 KB_LINT_C9_GRACE_DAYS 由操作者覆寫 — 負值或格式錯誤的值會回退為預設值。",
+    manualC9Glossary: "drift(天)— 在 C9 中,指該已歸檔回答自身的 updated 時間戳,與其所有引用中「最新」的 updated 時間戳之間的「最大」天數差,顯示為佇列列上的「X.Xd drift」。寬限期(grace period)— 引用可領先回答多少天而不被視為過舊,避免被引用頁面的例行重新匯入,把每一則引用它的回答都標為過舊。",
+    manualC9Effects: "重新歸檔(位於下方 Curation Queue,而非此列)會將原始問題重新送入 chat 合成流程(檢索時排除 wiki/qa/),對結果執行引證檢核 — 只有通過時,才會以相同 slug 產生一份全新的 status: draft,進入升等關卡。若重新推導失敗,則不做任何變更,該過舊回答會持續生效,直到策展者升等其替代版本為止。",
 
     bannerDemoStrong: "展示環境",
     bannerDemoText: " — 所做的變更是真實的,但暫時性。此展示環境會定期(約每 2 天)以及每次部署時重置為種子知識庫。",
@@ -4789,6 +4974,27 @@ function bindText(elem, key) {
   return elem;
 }
 
+/* Small "?" contextual-help affordance (issue #637) — sits next to a lint
+   finding row's title (findingRow) or a queue-owned check's count line
+   (queueCountLine); opens the matching Field Manual rail entry rather than
+   just linking to a reference page. A single helper so both call sites
+   share the identical button shape/behaviour; defined at module scope
+   (outside ROW_RENDERERS, like every other action helper) so the "no
+   LINT_CHROME[consoleLang] inside ROW_RENDERERS" structural guard
+   (test_ui_console_lint_bilingual.py) is unaffected. Re-read fresh on every
+   call rather than bound via bindText — findingRow/queueCountLine are
+   re-rendered per lint run, the same convention every other per-row action
+   button already follows. */
+function manualHelpButton(code) {
+  var btn = el("button", {
+    class: "manual-help-btn", type: "button",
+    "aria-label": LINT_CHROME[consoleLang].manualHelpAriaLabelPrefix + code,
+    text: "?",
+  });
+  btn.addEventListener("click", function() { openFieldManualEntry(code); });
+  return btn;
+}
+
 /* Applies consoleLang to <html lang> (accessibility), the header toggle
    button's own label, and every boot-time-bound element registered via
    bindText (issue #498). Looked up fresh by id each call rather than a
@@ -5383,19 +5589,27 @@ function renderLintCard(data, resultEl) {
     var label = consoleLang === "zh" ? LINT_CHECK_LABEL_ZH[code] : meta.label;
     var pointer = LINT_CHROME[consoleLang].seeCurationQueue;
     return el("div", { class: "lint-group-head" },
-      el("span", { text: code + " " + label + " (" + count + ") — " + pointer }),
+      el("span", { text: code + " " + label + " (" + count + ") — " + pointer },
+        manualHelpButton(code)),
       batchBtnEl || null
     );
   }
 
   /* Helper: emit one finding row. actionsEl (optional) is appended inside
      the body cell, below the id/crumb text, so the existing 3-column .rec
-     grid used by every other result card stays untouched. */
-  function findingRow(idx, title, subtitle, labelText, labelClass, actionsEl) {
+     grid used by every other result card stays untouched. `code` (issue
+     #637) drives the row's "?" contextual-help affordance — every
+     ROW_RENDERERS entry passes its own check code, even the three
+     queue-owned ones whose row is never actually rendered (see
+     QUEUE_OWNED_LIFECYCLE_CHECKS above; their "?" lives on
+     queueCountLine instead). */
+  function findingRow(code, idx, title, subtitle, labelText, labelClass, actionsEl) {
     var numStr = String(idx).padStart(2, "0");
-    var rowBodyEl = el("div", { class: "body" },
-      el("div", { class: "id", text: title })
+    var titleRow = el("div", { class: "rec-title-row" },
+      el("div", { class: "id", text: title }),
+      manualHelpButton(code)
     );
+    var rowBodyEl = el("div", { class: "body" }, titleRow);
     if (subtitle) rowBodyEl.append(el("div", { class: "crumb", text: subtitle }));
     if (actionsEl) rowBodyEl.append(actionsEl);
     return el("div", { class: "rec" },
@@ -5790,13 +6004,13 @@ function renderLintCard(data, resultEl) {
 
   var ROW_RENDERERS = {
     C11: function(i, f) {
-      return findingRow(i, f.page_slug,
+      return findingRow("C11", i, f.page_slug,
         "missing: " + (f.missing_sources || []).join(", "),
         "orphan", "label-failed", deleteOrphanAction(f.page_slug, f.full));
     },
     C6: function(i, f) {
       var drift = f.drift_days != null ? formatDriftDays(f.drift_days) : "";
-      return findingRow(i, f.page_slug, f.source + (drift ? " · " + drift : ""),
+      return findingRow("C6", i, f.page_slug, f.source + (drift ? " · " + drift : ""),
         "stale", "label-updated", reingestAction(f.source, false));
     },
     C3: function(i, f) {
@@ -5806,19 +6020,19 @@ function renderLintCard(data, resultEl) {
          navigation control alongside it (never replacing it). c3GiveUpNote
          is always-visible card copy (no button — ADR-0029 Invariant: no
          delete affordance on a C3 finding). */
-      return findingRow(i, f.page_slug, f.reason + " — " + c3ClaimsSummary(f),
+      return findingRow("C3", i, f.page_slug, f.reason + " — " + c3ClaimsSummary(f),
         "grounding", "label-failed",
         el("div", {}, reingestAction(f.source, true), fixSourceAction(f), c3GiveUpNote(f)));
     },
     C5: function(i, f) {
       c5FindingByPair[f.page_a + "::" + f.page_b] = f;
-      return findingRow(i, f.page_a + " / " + f.page_b,
+      return findingRow("C5", i, f.page_a + " / " + f.page_b,
         null,
         f.severity, f.severity === "direct" ? "label-failed" : "label-updated",
         c5ConflictPanel(f, reconcileAction(f.page_a, f.page_b)));
     },
     C4: function(i, f) {
-      return findingRow(i, f.base_slug, (f.pages_in_group || []).join(", "),
+      return findingRow("C4", i, f.base_slug, (f.pages_in_group || []).join(", "),
         "collision", "label-updated", collisionAction(f.base_slug, f.pages_in_group));
     },
     /* ── C12 alias-collision (issue #491) — a real Remove control. Two
@@ -5836,13 +6050,13 @@ function renderLintCard(data, resultEl) {
     C12: function(i, f) {
       var collidesWith = (f.claimed_by || []).join(", ") +
         (f.slug_owner ? " vs page slug " + f.slug_owner : "");
-      return findingRow(i, f.alias,
+      return findingRow("C12", i, f.alias,
         f.kind + " · claimed by: " + collidesWith + " · resolves to " + f.resolved_to,
         "alias-collision", "label-updated",
         removeAliasAction(f));
     },
     C1: function(i, f) {
-      return findingRow(i, f.query_canonical,
+      return findingRow("C1", i, f.query_canonical,
         f.reason + " · " + f.hit_count + " hit" + (f.hit_count !== 1 ? "s" : ""),
         "gap", "label-skipped",
         el("div", {}, fillViaImportAction("C1", f), verifyReaskAction(f)));
@@ -5852,21 +6066,21 @@ function renderLintCard(data, resultEl) {
          the existing Routed fillViaImportAction stays wired unchanged, and
          assignAliasAction adds a second, Direct-class picker alongside it
          (never replacing it). */
-      return findingRow(i, f.slug,
+      return findingRow("C2", i, f.slug,
         f.mention_count + " mention" + (f.mention_count !== 1 ? "s" : "") +
         " · " + (f.referenced_by || []).slice(0, 3).join(", "),
         "red-link", "label-failed",
         el("div", {}, fillViaImportAction("C2", f), assignAliasAction(f)));
     },
     C8: function(i, f) {
-      return findingRow(i, f.slug, f.question, "count:" + f.count, "label-created");
+      return findingRow("C8", i, f.slug, f.question, "count:" + f.count, "label-created");
     },
     C10: function(i, f) {
-      return findingRow(i, f.page_slug, f.property_name + " = " + f.offending_value,
+      return findingRow("C10", i, f.page_slug, f.property_name + " = " + f.offending_value,
         "invalid", "label-failed", discardAction(f.page_slug));
     },
     C9: function(i, f) {
-      return findingRow(i, f.page_slug, formatDriftDays(f.max_drift_days),
+      return findingRow("C9", i, f.page_slug, formatDriftDays(f.max_drift_days),
         "stale-qa", "label-updated");
     },
   };
@@ -9491,6 +9705,88 @@ function renderSourceTrash(entries) {
   });
 
   sourceTrashEntriesEl.replaceChildren.apply(sourceTrashEntriesEl, kids);
+}
+
+/* ── Field Manual rail section (issue #637) ───────────────────────────────
+   Curator-facing documentation for every ROW_RENDERERS finding code — one
+   expandable entry with a plain-language rule, a glossary of the terms its
+   own rows use, and what its remediation button(s) actually change. Built
+   ONCE at boot (no fetch — the content is static LINT_CHROME text), the
+   same "section-label + boot-time bindText tree" shape as Browse and
+   Source Trash above; entries stay in the DOM for the console's whole
+   lifetime and are just retro-switched by applyConsoleLang() like every
+   other I18N_BOUND node. fieldManualEntries caches each entry's wrapper so
+   the "?" affordance (manualHelpButton, findingRow/queueCountLine above)
+   can expand + scroll to it without a second render pass. */
+var fieldManualSection = document.getElementById("field-manual-section");
+var fieldManualEntriesEl = el("div", { class: "field-manual-entries" });
+var fieldManualEntries = {}; // code -> entry wrapper element
+
+/* One collapsible entry, matching the SAME lint-collapse-toggle/chevron/
+   grid-rows chrome the Lint axis groups and Curation Queue already use
+   (the two selector-list extensions near .lint-collapse-body above) — this
+   file's one "expandable row" interaction, not a second widget. Starts
+   collapsed (unlike the axis groups) since the section's whole point is to
+   stay out of the way until a curator asks a specific question via "?". */
+function renderFieldManualEntry(code) {
+  var chevron = el("span", { class: "lint-chevron", text: "▾", "aria-hidden": "true" });
+  var headLabel = bindText(el("span", {}), "manual" + code + "Header");
+  var bodyId = "field-manual-body-" + code;
+  var toggleBtn = el("button", {
+    type: "button", class: "lint-collapse-toggle",
+    "aria-expanded": "false", "aria-controls": bodyId,
+  }, chevron, headLabel);
+  var head = el("div", { class: "field-manual-head" }, toggleBtn);
+
+  var body = el("div", { class: "field-manual-body" },
+    bindText(el("div", { class: "field-manual-term" }), "manualRuleLabel"),
+    bindText(el("div", { class: "field-manual-text" }), "manual" + code + "Rule"),
+    bindText(el("div", { class: "field-manual-term" }), "manualGlossaryLabel"),
+    bindText(el("div", { class: "field-manual-text" }), "manual" + code + "Glossary"),
+    bindText(el("div", { class: "field-manual-term" }), "manualEffectsLabel"),
+    bindText(el("div", { class: "field-manual-text" }), "manual" + code + "Effects")
+  );
+  var inner = el("div", { class: "lint-collapse-inner" }, body);
+  var collapseBody = el("div", { class: "lint-collapse-body", id: bodyId }, inner);
+  var wrap = el("div", { class: "field-manual-entry collapsed" }, head, collapseBody);
+
+  toggleBtn.addEventListener("click", function() {
+    var nowCollapsed = wrap.classList.toggle("collapsed");
+    toggleBtn.setAttribute("aria-expanded", String(!nowCollapsed));
+  });
+
+  fieldManualEntries[code] = wrap;
+  return wrap;
+}
+
+FIELD_MANUAL_CODES.forEach(function(code) {
+  fieldManualEntriesEl.append(renderFieldManualEntry(code));
+});
+
+fieldManualSection.append(
+  bindText(el("div", { class: "section-label" }), "fieldManualSectionLabel"),
+  fieldManualEntriesEl
+);
+
+/* Opens (expanding if needed) and scrolls the given code's Field Manual
+   entry into view — the manualHelpButton click target, and the reason this
+   is "contextual help", not just a reference page (issue #637 AC). Opens
+   the off-canvas rail drawer first when it is not currently visible
+   (mirrors initResourceRailDrawer's own breakpoint, gateway/static/
+   console.html's own @media (max-width: 899px) rule). No-op if the code
+   has no entry (defensive — mirrors every other rail lookup's guard). */
+function openFieldManualEntry(code) {
+  var wrap = fieldManualEntries[code];
+  if (!wrap) return;
+  if (matchMedia("(max-width: 899px)").matches && !document.body.classList.contains("rail-open")) {
+    var railToggle = document.getElementById("rail-toggle");
+    if (railToggle) railToggle.click();
+  }
+  if (wrap.classList.contains("collapsed")) {
+    var toggleBtn = wrap.querySelector(".lint-collapse-toggle");
+    if (toggleBtn) toggleBtn.click();
+  }
+  scrollSoftIntoView(wrap, "center");
 }
 
 /* ── Wikilink linkify (issue #410, ADR-0030 decision 5) ──────────────────
