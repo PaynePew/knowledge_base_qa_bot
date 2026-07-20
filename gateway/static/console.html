@@ -6177,7 +6177,14 @@ function renderLintCard(data, resultEl) {
     renderedAnyFindings = true;
     bodyEl.append(el("div", { class: "lint-group-head", text: LINT_CHROME[consoleLang].checkErrors + " (" + errKeys.length + ")" }));
     errKeys.forEach(function(k, i) {
-      bodyEl.append(findingRow(i + 1, k, checkErrors[k], "error", "label-failed"));
+      // check_errors is keyed by the internal check id (lowercase; C4's is
+      // "c4a", every other check's is its code lowercased — see
+      // markdown_kb/app/lint.py run_lint), not the UI-facing code
+      // (LINT_CHECK_META / FIELD_MANUAL_CODES) — normalise so the "?"
+      // affordance (issue #637) opens the right Field Manual entry. The
+      // displayed title stays the raw key `k` (unchanged).
+      var manualCode = k === "c4a" ? "C4" : k.toUpperCase();
+      bodyEl.append(findingRow(manualCode, i + 1, k, checkErrors[k], "error", "label-failed"));
     });
   }
 

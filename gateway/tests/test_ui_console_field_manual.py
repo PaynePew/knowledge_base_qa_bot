@@ -222,6 +222,17 @@ def test_every_row_renderers_call_site_passes_its_own_code_to_finding_row():
         )
 
 
+def test_check_errors_row_normalises_the_lowercase_internal_id_to_a_manual_code():
+    """check_errors is keyed by the internal check id (lowercase; C4's is
+    "c4a") rather than the UI-facing code — the "?" affordance must
+    normalise it, or every check-error row's help button would silently
+    open nothing (issue #637 follow-up finding)."""
+    text = _console_text()
+    fn = _extract_function(text, "renderLintCard")
+    assert 'var manualCode = k === "c4a" ? "C4" : k.toUpperCase();' in fn
+    assert "findingRow(manualCode, i + 1, k, checkErrors[k]" in fn
+
+
 def test_queue_count_line_renders_a_manual_help_button_for_queue_owned_codes():
     """C8/C9/C10 never reach ROW_RENDERERS's per-item rows (they render via
     queueCountLine instead — issue #438) so their "?" affordance anchors
