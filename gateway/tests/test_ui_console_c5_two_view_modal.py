@@ -211,6 +211,39 @@ def test_editor_chrome_defined_bilingually():
         )
 
 
+def test_source_card_renders_uncited_siblings_collapsed_with_toggle():
+    """issue #635 (ADR-0044): sibling sections of the cited files (cited ===
+    false) render collapsed to a toggle-able heading row tagged as not cited
+    — the whole-file evidence the grounding report may quote is on screen,
+    one click away, instead of invisible."""
+    fn = _extract_function(_console_text(), "renderC5SourceCard")
+    assert "section.cited !== false" in fn
+    assert "uncited-section-toggle" in fn
+    assert 'classList.toggle("collapsed")' in fn
+    assert "c5UncitedTag" in fn
+
+
+def test_uncited_sibling_chrome_defined_bilingually():
+    text = _console_text()
+    for key in ("c5UncitedTag", "c5GroundingUnionNote"):
+        assert len(re.findall(rf'{key}:\s*"[^"]+"', text)) == 2, (
+            f"chrome key {key} must be defined in BOTH language blocks"
+        )
+
+
+def test_collapsed_sibling_css_hides_content_and_actions():
+    text = _console_text()
+    assert ".reconcile-source-section.uncited.collapsed" in text
+
+
+def test_grounding_report_names_its_whole_file_scope():
+    """issue #635 (ADR-0044): when unsupported claims are listed, the modal
+    states the check ran against the WHOLE Source files — a flagged claim may
+    come from a section the page does not cite."""
+    fn = _extract_function(_console_text(), "renderReconcilePreview")
+    assert "c5GroundingUnionNote" in fn
+
+
 def test_source_card_disables_both_controls_when_unresolved():
     fn = _extract_function(_console_text(), "renderC5SourceCard")
     assert 'section.source_resolution === "resolved"' in fn

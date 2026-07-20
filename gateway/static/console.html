@@ -1271,6 +1271,30 @@
   }
   .c5-staged-bar.visible { display: flex; }
 
+  /* ── C5 uncited sibling sections (issue #635, ADR-0044) ──────────────────
+     Collapsed to a heading-row toggle; expanding reveals the same
+     content/actions block a cited section shows. */
+  .reconcile-source-section.uncited.collapsed .reconcile-source-section-content,
+  .reconcile-source-section.uncited.collapsed .reconcile-source-section-actions { display: none; }
+  .uncited-section-toggle {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 2px 0;
+    cursor: pointer;
+    font: inherit;
+    font-size: var(--fs-xs);
+  }
+  .uncited-section-toggle:hover { opacity: .75; }
+  .uncited-caret::before { content: "\25BE"; }
+  .reconcile-source-section.collapsed .uncited-caret::before { content: "\25B8"; }
+  .c5-uncited-tag { font-size: var(--fs-xs); opacity: .6; white-space: nowrap; }
+  .c5-grounding-union-note { font-size: var(--fs-xs); opacity: .75; max-width: 70ch; }
+
   /* ── C2 Assign-Alias picker (issue #409, ADR-0030 decision 3) ──────────
      The red link's SECOND exit alongside .fill-import-btn (a picker +
      execute button, not just navigation — this one DOES fetch, so the
@@ -3778,7 +3802,7 @@ var LINT_CHROME = {
        the Source comparison view + the multi-target batch checklist. */
     reconcileViewWiki:   "Wiki comparison",
     reconcileViewSource: "Source comparison",
-    c5SourcesDisagreeNote: "The Sources disagree — this cannot be auto-reconciled at the wiki layer (Apply is disabled). Use \"Fix this Source\" in the Source comparison to edit one Source into agreement, stage it, then upload to re-verify.",
+    c5SourcesDisagreeNote: "The Sources disagree — this cannot be auto-reconciled at the wiki layer (Apply is disabled). The conflicting statement may sit in a section the page does not cite (expand the collapsed sections in the Source comparison). Use \"Fix this Source\" to edit one Source into agreement, stage it, then upload to re-verify.",
     c5FixThisSource:        "Fix this Source",
     c5SourceSectionMissing: "(citation could not be resolved to Section content)",
     c5FixSourceBatchHeadPrefix: "Fix Source (batch): ",
@@ -3795,6 +3819,14 @@ var LINT_CHROME = {
     c5EditSourceStaged:     "Staged ✓",
     c5EditSourceCancel:     "Close editor",
     c5StagedBadge:          "corrected in-app",
+
+    /* issue #636 rider: bilingual drift label — "19.2d drift" / "漂移 19.2 天" */
+    driftPrefix:            "",
+    driftSuffix:            "d drift",
+
+    /* issue #635 (ADR-0044): whole-file sibling-section disclosure */
+    c5UncitedTag:           "not cited by this page",
+    c5GroundingUnionNote:   "The citation check runs against the WHOLE Source files — a flagged claim may come from a section the page does not cite (see the collapsed sections in the Source comparison).",
     c5StagedBarPrefix:      "Staged Source corrections: ",
     c5UploadStaged:         "Upload staged & re-verify",
   },
@@ -4099,7 +4131,7 @@ var LINT_CHROME = {
 
     reconcileViewWiki:   "Wiki 比較",
     reconcileViewSource: "Source 比較",
-    c5SourcesDisagreeNote: "兩份 Source 彼此矛盾 — 無法在 wiki 層自動協調(套用已停用)。請在 Source 比較中點「修正此 Source」直接編輯其中一份使其一致,暫存後上傳重新驗證。",
+    c5SourcesDisagreeNote: "兩份 Source 彼此矛盾 — 無法在 wiki 層自動協調(套用已停用)。矛盾的敘述可能在頁面未引用的章節裡(展開 Source 比較中收合的章節查看)。請點「修正此 Source」直接編輯其中一份使其一致,暫存後上傳重新驗證。",
     c5FixThisSource:        "修正此 Source",
     c5SourceSectionMissing: "(此引用無法解析為 Section 內容)",
     c5FixSourceBatchHeadPrefix: "修正 Source(批次):",
@@ -4116,10 +4148,27 @@ var LINT_CHROME = {
     c5EditSourceStaged:     "已暫存 ✓",
     c5EditSourceCancel:     "關閉編輯",
     c5StagedBadge:          "已於介面內修正",
+
+    /* issue #636 rider: bilingual drift label — "19.2d drift" / "漂移 19.2 天" */
+    driftPrefix:            "漂移 ",
+    driftSuffix:            " 天",
+
+    /* issue #635 (ADR-0044): whole-file sibling-section disclosure */
+    c5UncitedTag:           "此頁未引用",
+    c5GroundingUnionNote:   "引證檢核以整份 Source 檔案為準 — 紅字聲明可能出自頁面未引用的章節(見 Source 比較中收合的章節)。",
     c5StagedBarPrefix:      "已暫存 Source 修正:",
     c5UploadStaged:         "上傳暫存修正並重新驗證",
   },
 };
+
+/* Bilingual drift label (issue #636 rider): "19.2d drift" / "漂移 19.2 天".
+   One helper for every C6/C9 drift rendering — the zh curation queue used
+   to show a bare "19.2天" (unit translated, meaning lost) while the lint
+   card rows showed untranslated "19.2d drift". */
+function formatDriftDays(days) {
+  var chrome = LINT_CHROME[consoleLang];
+  return chrome.driftPrefix + days.toFixed(1) + chrome.driftSuffix;
+}
 
 /* ============================================================
    C1/C2 Routed Coverage Fill (tier-B S7, issue #383, ADR-0027)
@@ -5746,7 +5795,7 @@ function renderLintCard(data, resultEl) {
         "orphan", "label-failed", deleteOrphanAction(f.page_slug, f.full));
     },
     C6: function(i, f) {
-      var drift = f.drift_days != null ? f.drift_days.toFixed(1) + "d drift" : "";
+      var drift = f.drift_days != null ? formatDriftDays(f.drift_days) : "";
       return findingRow(i, f.page_slug, f.source + (drift ? " · " + drift : ""),
         "stale", "label-updated", reingestAction(f.source, false));
     },
@@ -5817,7 +5866,7 @@ function renderLintCard(data, resultEl) {
         "invalid", "label-failed", discardAction(f.page_slug));
     },
     C9: function(i, f) {
-      return findingRow(i, f.page_slug, f.max_drift_days.toFixed(1) + "d drift",
+      return findingRow(i, f.page_slug, formatDriftDays(f.max_drift_days),
         "stale-qa", "label-updated");
     },
   };
@@ -6061,15 +6110,37 @@ function renderC5SourceCard(pageSlug, sections, opts) {
   );
   (sections || []).forEach(function(section) {
     var resolved = section.source_resolution === "resolved" && !!section.source_path;
+    var isCited = section.cited !== false;
     var viewBtn = el("button", { class: "view-source-btn", type: "button", text: chrome.viewSource });
     var editBtn = el("button", { class: "fix-source-btn", type: "button", text: chrome.c5FixThisSource });
     var headText = (section.heading || section.id) + (section.source_path ? " — " + section.source_path : "");
-    var sectionEl = el("div", { class: "reconcile-source-section" },
-      el("div", { class: "reconcile-source-section-head", text: headText }),
-      el("pre", { class: "reconcile-source-section-content",
-        text: section.content || chrome.c5SourceSectionMissing }),
-      el("div", { class: "reconcile-source-section-actions" }, viewBtn, editBtn)
-    );
+    var contentEl = el("pre", { class: "reconcile-source-section-content",
+      text: section.content || chrome.c5SourceSectionMissing });
+    var actionsEl = el("div", { class: "reconcile-source-section-actions" }, viewBtn, editBtn);
+    var sectionEl;
+    if (isCited) {
+      sectionEl = el("div", { class: "reconcile-source-section" },
+        el("div", { class: "reconcile-source-section-head", text: headText }),
+        contentEl, actionsEl);
+    } else {
+      // issue #635 (ADR-0044): a sibling section the page does NOT cite —
+      // disclosed because the grounding/convergence evidence is whole-file
+      // (ADR-0036 decision 7), so a claim quoted in the report may live
+      // here. Collapsed to its heading; the toggle expands it in place with
+      // the same View/Fix affordances (the Fix editor loads the whole file
+      // either way).
+      var toggleBtn = el("button", { class: "uncited-section-toggle", type: "button",
+        "aria-expanded": "false" },
+        el("span", { class: "uncited-caret" }),
+        el("span", { text: headText }),
+        el("span", { class: "c5-uncited-tag", text: chrome.c5UncitedTag }));
+      sectionEl = el("div", { class: "reconcile-source-section uncited collapsed" },
+        toggleBtn, contentEl, actionsEl);
+      toggleBtn.addEventListener("click", function() {
+        var collapsed = sectionEl.classList.toggle("collapsed");
+        toggleBtn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+      });
+    }
     if (resolved) {
       viewBtn.addEventListener("click", function() {
         openFile(section.source_path, section.id.split("#")[0]);
@@ -6248,6 +6319,11 @@ function renderReconcilePreview(modal, data, resultEl, closeModal, siblingButton
     var claimsList = el("ul", { class: "reconcile-claims" });
     unsupported.forEach(function(c) { claimsList.append(el("li", { text: c })); });
     groundingEl.append(claimsList);
+    // issue #635 (ADR-0044): the check is whole-file (ADR-0036 decision 7) —
+    // say so, or a claim quoted from a non-cited sibling section reads as a
+    // hallucination ("where does 14 days come from?").
+    groundingEl.append(el("div", { class: "c5-grounding-union-note",
+      text: chrome.c5GroundingUnionNote }));
   }
 
   var statusMsgEl = el("span", { class: "card-status-msg" });
@@ -7385,8 +7461,7 @@ function renderCurationQueue(rootEl, lintData) {
     );
     staleSlugs.forEach(function(slug) {
       var f = staleMap[slug];
-      var driftUnit = consoleLang === "zh" ? "天" : "d drift";
-      var drift = f.max_drift_days != null ? f.max_drift_days.toFixed(1) + driftUnit : "";
+      var drift = f.max_drift_days != null ? formatDriftDays(f.max_drift_days) : "";
       var hint = consoleLang === "zh"
         ? "重新歸檔:根據目前的實體/概念重新推導此回答,並暫存為新草稿供審核 — 舊回答將離開知識庫。"
         : "Re-file: re-derive this answer from the current entities/concepts and " +
