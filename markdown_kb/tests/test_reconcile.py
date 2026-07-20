@@ -261,8 +261,10 @@ def test_generate_wiki_rooted_pair_carries_cited_sections_unchanged(
 
     assert resp.status_code == 200, resp.text
     data = resp.json()
-    assert len(data["cited_sections_a"]) == 1
-    assert len(data["cited_sections_b"]) == 1
+    # Since issue #635 (ADR-0044) sibling sections follow with cited=False;
+    # the CITED payload itself is unchanged.
+    assert len([s for s in data["cited_sections_a"] if s["cited"]]) == 1
+    assert len([s for s in data["cited_sections_b"] if s["cited"]]) == 1
     section_a = data["cited_sections_a"][0]
     section_b = data["cited_sections_b"][0]
     assert section_a["id"] == _SOURCE_CITATION
@@ -405,9 +407,12 @@ def two_source_client(two_source_wiki_dir, monkeypatch):
 
 
 def test_generate_cited_sections_are_per_page_not_union(two_source_client):
-    """cited_sections_a carries ONLY page-alpha's citation, cited_sections_b
-    ONLY page-beta's — proving this is per-page data, distinct from the
-    (unchanged, whole-file) grounding union both pages are checked against."""
+    """The CITED entries of cited_sections_a carry ONLY page-alpha's citation,
+    cited_sections_b ONLY page-beta's — proving this is per-page data,
+    distinct from the (unchanged, whole-file) grounding union both pages are
+    checked against. Since issue #635 (ADR-0044) the list ALSO discloses the
+    cited files' sibling sections, flagged cited=False, AFTER the cited
+    entries — the cited-first ordering and cited content are unchanged."""
     fake_grounding_llm = _make_fake_grounding_llm(_FAIL_RESULT)
     with patch("app.grounding.ChatOpenAI", return_value=fake_grounding_llm):
         resp = two_source_client.post(
@@ -416,12 +421,67 @@ def test_generate_cited_sections_are_per_page_not_union(two_source_client):
 
     assert resp.status_code == 200, resp.text
     data = resp.json()
-    assert [s["id"] for s in data["cited_sections_a"]] == [_PAGE_ALPHA_CITATION]
-    assert [s["id"] for s in data["cited_sections_b"]] == [_PAGE_BETA_CITATION]
+    cited_a = [s for s in data["cited_sections_a"] if s["cited"]]
+    cited_b = [s for s in data["cited_sections_b"] if s["cited"]]
+    assert [s["id"] for s in cited_a] == [_PAGE_ALPHA_CITATION]
+    assert [s["id"] for s in cited_b] == [_PAGE_BETA_CITATION]
     assert data["cited_sections_a"][0]["source_path"] == "docs/refund_policy.md"
     assert data["cited_sections_b"][0]["source_path"] == "docs/shipping_faq.md"
+    assert data["cited_sections_a"][0]["cited"] is True, (
+        "cited entries must come FIRST — issue #534 consumers rely on it"
+    )
     assert "24 hours" in data["cited_sections_a"][0]["content"]
     assert "3-5 business days" in data["cited_sections_b"][0]["content"]
+
+
+def test_generate_cited_sections_disclose_siblings_of_cited_files(two_source_client):
+    """issue #635 (ADR-0044): the sibling sections of a resolved cited file —
+    the ones the whole-file grounding union sees but the old cited-only
+    payload hid — are returned with cited=False, resolved, with real content,
+    after the cited entries, deduplicated against them."""
+    fake_grounding_llm = _make_fake_grounding_llm(_FAIL_RESULT)
+    with patch("app.grounding.ChatOpenAI", return_value=fake_grounding_llm):
+        resp = two_source_client.post(
+            "/pages/reconcile", json={"page_a": "page-alpha", "page_b": "page-beta"}
+        )
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    sections_a = data["cited_sections_a"]
+    siblings_a = [s for s in sections_a if not s["cited"]]
+    sibling_ids = {s["id"] for s in siblings_a}
+    # refund_policy.md: cited = #cancellation-window; siblings = the rest.
+    assert any("refund-timeline" in i for i in sibling_ids), sibling_ids
+    assert any("non-refundable-items" in i for i in sibling_ids), sibling_ids
+    # The cited section never reappears as a sibling (deduplicated).
+    assert _PAGE_ALPHA_CITATION not in sibling_ids
+    # Siblings are real, viewable, fixable sections of the resolved file.
+    for s in siblings_a:
+        assert s["source_resolution"] == "resolved"
+        assert s["source_path"] == "docs/refund_policy.md"
+        assert s["content"]
+        assert s["heading"]
+    # Ordering: every cited entry precedes every sibling entry.
+    first_sibling = next(i for i, s in enumerate(sections_a) if not s["cited"])
+    assert all(s["cited"] for s in sections_a[:first_sibling])
+
+
+def test_generate_unresolved_citation_yields_no_siblings(two_source_client):
+    """A missing/ambiguous citation cannot be parsed, so it contributes its
+    honest unresolved entry and nothing else (no phantom siblings)."""
+    fake_grounding_llm = _make_fake_grounding_llm(_FAIL_RESULT)
+    with patch("app.grounding.ChatOpenAI", return_value=fake_grounding_llm):
+        resp = two_source_client.post(
+            "/pages/reconcile", json={"page_a": "page-alpha", "page_b": "page-gamma"}
+        )
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    # page-gamma cites only the unresolvable Source: exactly one entry, and
+    # (vacuously for siblings) nothing flagged cited=False.
+    gamma_sections = data["cited_sections_b"]
+    assert [s["source_resolution"] for s in gamma_sections if s["cited"]] == ["missing"]
+    assert [s for s in gamma_sections if not s["cited"]] == []
 
 
 def test_generate_cited_sections_degrade_honestly_on_missing_source(two_source_client):

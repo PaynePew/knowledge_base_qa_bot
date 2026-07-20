@@ -445,6 +445,29 @@ def _cited_sections_for_page(fm: dict, docs_dir: Path) -> list[CitedSourceSectio
                     source_resolution=resolution,
                 )
             )
+
+    # issue #635 (ADR-0044): disclose every remaining sibling section of each
+    # resolved cited file, flagged cited=False, AFTER the cited entries (so
+    # the cited-first ordering issue #534's consumers rely on is untouched).
+    # The grounding/convergence evidence is whole-file (ADR-0036 decision 7);
+    # hiding siblings made the report cite claims the curator could not see.
+    # parsed_cache preserves first-parse (citation) order; _append_once
+    # already dedupes against the cited ids.
+    for path, sections in parsed_cache.items():
+        # Only resolved files ever enter parsed_cache, so the label is
+        # derivable directly — no second basename glob.
+        sibling_source_path = f"docs/{path.relative_to(docs_dir).as_posix()}"
+        for section in sections:
+            _append_once(
+                CitedSourceSection(
+                    id=section.id,
+                    heading=section.heading,
+                    content=section.content,
+                    source_path=sibling_source_path,
+                    source_resolution="resolved",
+                    cited=False,
+                )
+            )
     return out
 
 

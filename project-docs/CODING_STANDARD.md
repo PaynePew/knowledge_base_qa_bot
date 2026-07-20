@@ -2,7 +2,7 @@
 
 How code is shaped in this repo, what conventions hold across modules, what design patterns are in play, and what tooling enforces them. This file is **not the spec** — that lives in `project-docs/prd.md` and `project-docs/adr/*.md` / `CONTEXT.md`. This file is the **consistency layer** that keeps the spec implementable across slices without drifting.
 
-> **Freshness**: last reconciled through **ADR-0043** (2026-07-20). If `project-docs/adr/` holds a newer Accepted ADR than this stamp, this file is stale — reconcile per §0.3.
+> **Freshness**: last reconciled through **ADR-0044** (2026-07-20). If `project-docs/adr/` holds a newer Accepted ADR than this stamp, this file is stale — reconcile per §0.3.
 
 ## 0. Reading order
 

@@ -979,6 +979,13 @@ class CitedSourceSection(BaseModel):
     ``FailedGroundingFinding.source_path``'s ``"docs/<relative>"`` display
     convention for a ``/read/file`` view link; ``None`` when
     ``source_resolution`` is not ``"resolved"``.
+
+    ``cited`` (issue #635, ADR-0044) is ``False`` for a sibling section of a
+    resolved cited Source file that the page does NOT itself cite. Siblings
+    are disclosed because the grounding/convergence evidence is whole-file
+    (ADR-0036 decision 7): a claim flagged in the report may live in a
+    sibling the old cited-only payload never showed. Defaults ``True`` so
+    every pre-existing consumer keeps its meaning unchanged.
     """
 
     id: str
@@ -986,6 +993,7 @@ class CitedSourceSection(BaseModel):
     content: str | None = None
     source_path: str | None = None
     source_resolution: Literal["resolved", "missing", "ambiguous"] = "missing"
+    cited: bool = True
 
 
 class ReconcileGenerateResponse(BaseModel):
