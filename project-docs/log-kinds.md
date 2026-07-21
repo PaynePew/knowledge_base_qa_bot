@@ -387,6 +387,19 @@ success" convention several `markdown_kb` kinds already use (e.g.
 deliberately NOT logged (§5.3 bounded summaries — the full record already
 lives in `.kb/feedback.jsonl`, itself gitignored/ephemeral).
 
+The `unhandled_error` kind is gateway-specific, authorized by GitHub issue
+#648. Emitted by `gateway/app/error_logging.py::ErrorLoggingMiddleware` — a
+dedicated ASGI wrapper installed OUTERMOST in the middleware stack (after
+`ProdMiddleware`, so it observes anything `ProdMiddleware` re-raises,
+including from the mounted `/wiki` and `/rag` sub-apps) — for ANY exception
+that escapes a non-streaming request path with no more specific mapping.
+Log-and-re-raise: the response and stderr traceback are unchanged, this only
+adds the operator-facing audit line that was previously missing. Never fires
+for an exception `ProdMiddleware` already mapped to a response (e.g.
+`provider_quota_503`, which returns instead of re-raising) — no
+double-logging. `/chat/stream` is excluded: mid-stream errors on that one
+path are already rendered as a terminal SSE `error` event.
+
 | Kind | When fired | Summary template |
 |---|---|---|
 | `chat_rewrite` | Turn 2+ query rewriting succeeded inside `_sse_generator`; emitted right after `rewrite_query()` returns | `session=<uuid> raw="<60-char-bounded raw follow-up>" rewritten="<60-char-bounded self-contained query>"` |
@@ -397,6 +410,7 @@ lives in `.kb/feedback.jsonl`, itself gitignored/ephemeral).
 | `provider_quota_503` | A non-streaming heavy request raised an OpenAI `insufficient_quota` / 429, mapped to a friendly 503 | `path=<mounted-path> exc=<ExceptionClassName>` |
 | `feedback` | `POST /feedback` accepted a valid Reader Feedback record | `answer_id=<uuid> reaction=<up\|down> stack=<wiki\|rag\|hybrid> grounding=<reason> has_comment=<bool>` |
 | `sse_idle_timeout` | An open `/chat/stream` connection is closed server-side because a `send()` to the client made zero read progress for `KB_SSE_IDLE_TIMEOUT_SEC` (issue #599, `gateway/app/sse_capacity.py::run_with_heartbeat`) | `idle_timeout_sec=<seconds> path=/chat/stream` |
+| `unhandled_error` | Any exception escapes a non-streaming request path with no more specific mapping (issue #648, `gateway/app/error_logging.py::ErrorLoggingMiddleware`) — log-and-re-raise, zero behavior change | `path=<mounted-path> exc=<ExcClass>: <message repr, truncated to <=200 chars>` |
 
 `raw` and `rewritten` are truncated to 60 chars and have inner `"` replaced
 with `'` (per CODING_STANDARD §5.3 bounded-summary idiom).

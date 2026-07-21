@@ -56,6 +56,7 @@ from markdown_kb.app.main import app as _wiki_app  # noqa: E402
 from vector_rag.app.main import app as _rag_app  # noqa: E402
 
 from . import budget as _budget  # noqa: E402
+from .error_logging import ErrorLoggingMiddleware  # noqa: E402
 from .middleware import ProdMiddleware, read_saturated  # noqa: E402
 from .routes import router  # noqa: E402
 from .warmup import warm_hybrid_indexes, warm_openai_clients  # noqa: E402
@@ -149,6 +150,12 @@ app = FastAPI(title="KB Gateway", version="0.1.0", lifespan=lifespan)
 # Production overload + cost-protection guard (issue #269).  Added BEFORE the
 # routes/mounts so it wraps every request to the parent app and both sub-apps.
 app.add_middleware(ProdMiddleware)
+# Unhandled-exception -> gateway/log.md net (issue #648). Added AFTER
+# ProdMiddleware so Starlette makes it the OUTERMOST middleware (the
+# most-recently-added one wraps everything else) — it observes whatever
+# ProdMiddleware re-raises, including from the mounted /wiki and /rag
+# sub-apps, without touching ProdMiddleware's own guard chain.
+app.add_middleware(ErrorLoggingMiddleware)
 app.include_router(router)
 app.mount("/wiki", _wiki_app)
 app.mount("/rag", _rag_app)
