@@ -421,6 +421,7 @@ it from the wiki corpus.
 - [`PROMPT.md`](PROMPT.md): the exercise spec and design answers.
 - [`project-docs/adr/`](project-docs/adr/): the architectural decisions (ADR-0018 covers Hybrid; the curation layer — Reconcile, fix-source, Demote, aliases, PDF and longform ingest — spans ADR-0027–0038).
 - [`project-docs/roadmap.md`](project-docs/roadmap.md): the full implementation sequence.
+- [`project-docs/ops.md`](project-docs/ops.md): operations runbook — where logs and errors live, exact VPS commands.
 
 ---
 
@@ -800,3 +801,4 @@ CLI(`kb`)與 MCP 伺服器(`kb_mcp`)驅動的是與 Console 相同的生命週�
 - [`PROMPT.md`](PROMPT.md) —— 題目規格與設計解答。
 - [`project-docs/adr/`](project-docs/adr/) —— 架構決策（ADR-0018 涵蓋 Hybrid;策展層 —— Reconcile、fix-source、Demote、alias、PDF 與 longform ingest —— 落在 ADR-0027–0038)。
 - [`project-docs/roadmap.md`](project-docs/roadmap.md) —— 完整的實作順序。
+- [`project-docs/ops.md`](project-docs/ops.md) —— 維運手冊:log 與錯誤在哪裡、VPS 上的確切指令(英文)。
