@@ -71,6 +71,15 @@ services:
       - default
       - edge
     restart: unless-stopped
+    # issue #647: default json-file driver has no size cap, so uvicorn
+    # access logs + tracebacks grow unbounded on the VPS disk for as long as
+    # the container lives. Rotation only takes effect when the container is
+    # recreated (the next deploy's / reset's `up -d`), not on a live one.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   edge:
