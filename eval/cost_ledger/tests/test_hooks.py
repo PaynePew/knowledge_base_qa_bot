@@ -8,8 +8,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import pytest
+
 from eval.cost_ledger.hooks import (
     instrument_invoke,
+    instrument_structured_output,
     record_usage_from_response,
 )
 from eval.cost_ledger.ledger import CostLedger
@@ -133,6 +136,144 @@ def test_instrumented_getter_model_override_wins_over_client_attribute():
     instrumented_get_llm().invoke("x")
 
     assert ledger.calls[0].model == "gpt-4o-mini"
+
+
+# ---------------------------------------------------------------------------
+# instrument_structured_output
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _FakeStructuredChain:
+    """Stand-in for the Runnable ``with_structured_output(include_raw=True)``
+    returns: ``.invoke()`` yields the ``{"raw", "parsed", "parsing_error"}``
+    dict LangChain documents for that flag."""
+
+    scripted: dict = field(default_factory=dict)
+    invoke_calls: list = field(default_factory=list)
+
+    def invoke(self, prompt):
+        self.invoke_calls.append(prompt)
+        return self.scripted
+
+
+@dataclass
+class _FakeStructuredLLM:
+    """Stand-in for a verifier ``ChatOpenAI`` singleton whose call sites build
+    ``with_structured_output(schema)`` chains (no ``include_raw``) — the
+    exact surface ``markdown_kb.app.grounding.verify`` drives."""
+
+    model_name: str = "gpt-4o-mini"
+    chain: _FakeStructuredChain = field(default_factory=_FakeStructuredChain)
+    seen_kwargs: dict = field(default_factory=dict)
+
+    def with_structured_output(self, schema, **kwargs):
+        self.seen_kwargs = {"schema": schema, **kwargs}
+        return self.chain
+
+
+def _raw_with_usage(tokens: int = 30) -> _FakeResponse:
+    return _FakeResponse(
+        usage_metadata={
+            "input_tokens": tokens,
+            "output_tokens": 10,
+            "total_tokens": tokens + 10,
+        }
+    )
+
+
+def test_structured_output_chain_records_usage_and_returns_parsed():
+    """The wrapped getter's client forces ``include_raw=True`` internally,
+    records the raw message's usage, and hands the call site the bare parsed
+    object it always expected — the verifier surface hooks.py's docstring
+    deferred, now recorded without touching production call sites."""
+    ledger = CostLedger()
+    parsed = object()
+    fake = _FakeStructuredLLM(
+        chain=_FakeStructuredChain(
+            scripted={"raw": _raw_with_usage(30), "parsed": parsed, "parsing_error": None}
+        )
+    )
+    getter = instrument_structured_output(lambda: fake, ledger, stack="wiki", phase="query")
+
+    chain = getter().with_structured_output("GroundingResult")
+    result = chain.invoke("verify this")
+
+    assert result is parsed
+    assert fake.seen_kwargs["include_raw"] is True
+    assert fake.chain.invoke_calls == ["verify this"]
+    totals = ledger.totals(stack="wiki", phase="query")
+    assert totals.calls == 1
+    assert totals.total_tokens == 40
+
+
+def test_structured_output_chain_reraises_parsing_error_after_recording():
+    """A malformed structured response must still RAISE at the call site
+    (the bare chain's behaviour, which grounding.verify's retry loop
+    classifies) — but the paid call is recorded first."""
+    ledger = CostLedger()
+    boom = ValueError("malformed structured output")
+    fake = _FakeStructuredLLM(
+        chain=_FakeStructuredChain(
+            scripted={"raw": _raw_with_usage(15), "parsed": None, "parsing_error": boom}
+        )
+    )
+    getter = instrument_structured_output(lambda: fake, ledger, stack="rag", phase="query")
+
+    with pytest.raises(ValueError, match="malformed structured output"):
+        getter().with_structured_output("GroundingResult").invoke("verify")
+
+    assert ledger.totals(stack="rag", phase="query").calls == 1
+
+
+def test_structured_output_passes_dict_through_when_caller_wants_raw():
+    """A call site that itself passes ``include_raw=True`` keeps the full
+    dict shape unchanged — recording must not rewrite its contract."""
+    ledger = CostLedger()
+    scripted = {"raw": _raw_with_usage(5), "parsed": object(), "parsing_error": None}
+    fake = _FakeStructuredLLM(chain=_FakeStructuredChain(scripted=scripted))
+    getter = instrument_structured_output(lambda: fake, ledger, stack="wiki", phase="query")
+
+    result = getter().with_structured_output("S", include_raw=True).invoke("q")
+
+    assert result is scripted
+    assert ledger.totals(stack="wiki", phase="query").calls == 1
+
+
+def test_structured_output_records_model_from_client_attribute():
+    ledger = CostLedger()
+    fake = _FakeStructuredLLM(
+        model_name="gpt-4o",
+        chain=_FakeStructuredChain(
+            scripted={"raw": _raw_with_usage(1), "parsed": object(), "parsing_error": None}
+        ),
+    )
+    getter = instrument_structured_output(lambda: fake, ledger, stack="wiki", phase="query")
+
+    getter().with_structured_output("S").invoke("q")
+
+    assert ledger.calls[0].model == "gpt-4o"
+
+
+def test_structured_output_plain_invoke_still_records():
+    """The same proxy also observes plain ``.invoke()`` on the client, so a
+    getter shared by both call shapes stays fully recorded."""
+    ledger = CostLedger()
+
+    @dataclass
+    class _FakeBothLLM(_FakeStructuredLLM):
+        scripted_response: _FakeResponse = field(default_factory=_raw_with_usage)
+
+        def invoke(self, prompt):
+            return self.scripted_response
+
+    getter = instrument_structured_output(
+        lambda: _FakeBothLLM(), ledger, stack="hybrid", phase="query"
+    )
+
+    getter().invoke("plain call")
+
+    assert ledger.totals(stack="hybrid", phase="query").calls == 1
 
 
 def test_instrumented_client_delegates_other_attributes_unchanged():
