@@ -1,4 +1,4 @@
-"""Deep module per Ousterhout. Public surface: ``query``, ``stream_query``, ``get_llm``, ``warm_llm_client``, ``CANNOT_CONFIRM_PHRASE``, ``ensure_indexes_loaded``.
+"""Deep module per Ousterhout. Public surface: ``query``, ``stream_query``, ``answer_over_sections``, ``get_llm``, ``warm_llm_client``, ``CANNOT_CONFIRM_PHRASE``, ``ensure_indexes_loaded``.
 
 Hybrid Retrieval (Stack C) query path — slice S3 (ADR-0018 / #313) + the
 streaming variant ``stream_query`` (slice S4 / #314) the Gateway dispatches to
@@ -67,6 +67,7 @@ from .logger import log_event
 __all__ = [
     "query",
     "stream_query",
+    "answer_over_sections",
     "get_llm",
     "warm_llm_client",
     "CANNOT_CONFIRM_PHRASE",
@@ -234,6 +235,40 @@ def query(question: str) -> dict:
             "grounding_outcome": gate["grounding_outcome"],
         }
     return _draft_and_verify(question, gate["sections"], gate["sources"])
+
+
+def answer_over_sections(question: str, sections: list[Section]) -> dict:
+    """Answer-synthesis + Grounding Check over an ALREADY-RETRIEVED Section pool,
+    skipping this module's own RRF-fused retrieval (``query()``'s
+    ``_retrieve_and_gate`` step).
+
+    Public seam for a caller with its own retrieval strategy over the SAME
+    wiki corpus that only needs this module's answer-synthesis leg (its LLM
+    singleton, prompt, and Grounding Check) — e.g. the corpus v3 fair
+    experiment's dense-over-wiki arm (ADR-0045 Prerequisite 1), which
+    retrieves via ``hybrid_kb.app.dense_index.search`` alone, WITHOUT this
+    module's RRF fusion, then needs the identical synthesis leg ``query()``
+    itself uses so the two arms are comparable on everything except
+    retrieval. Reuses ``_draft_and_verify`` unchanged — nothing here
+    reimplements the LLM call, the self-refusal short-circuit, or the
+    post-LLM Grounding Check.
+
+    No pre-LLM relevance gate runs here — that lives in
+    ``_retrieve_and_gate``, upstream of this function, and this function has
+    no opinion on how ``sections`` was retrieved. An empty ``sections`` list
+    is the only refusal this function decides on its own (``retrieval_empty``,
+    parity with ``query()``'s own pre-gate on a genuinely empty pool).
+    """
+    sources = _build_sources(sections)
+    if not sections:
+        return {
+            "answer": CANNOT_CONFIRM_PHRASE,
+            "sources": sources,
+            "grounding_outcome": GroundingOutcome(
+                passed=False, reason="retrieval_empty"
+            ),
+        }
+    return _draft_and_verify(question, sections, sources)
 
 
 def stream_query(question: str) -> Iterator[dict]:
