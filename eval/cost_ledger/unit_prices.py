@@ -31,12 +31,15 @@ class UnitPrice:
     output_per_million: float
 
 
-# Appendix — pinned 2026-07-24 from https://openai.com/api/pricing (issue #657).
+# Appendix — pinned 2026-07-24 from https://openai.com/api/pricing (issue #657)
+# and https://platform.claude.com/docs/en/pricing (issue #672's Family B
+# generator; Anthropic first-party API rates).
 PINNED_PRICES: dict[str, UnitPrice] = {
     "gpt-4o-mini": UnitPrice(input_per_million=0.15, output_per_million=0.60),
     "gpt-4o": UnitPrice(input_per_million=2.50, output_per_million=10.00),
     "text-embedding-3-small": UnitPrice(input_per_million=0.02, output_per_million=0.0),
     "text-embedding-3-large": UnitPrice(input_per_million=0.13, output_per_million=0.0),
+    "claude-haiku-4-5": UnitPrice(input_per_million=1.00, output_per_million=5.00),
 }
 
 

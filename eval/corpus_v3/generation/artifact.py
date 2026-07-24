@@ -1,5 +1,6 @@
 """Deep module per Ousterhout. Public surface: ``StratumCount``,
-``build_deviations``, ``build_metadata``, ``render_query_artifact``.
+``build_deviations``, ``build_metadata``, ``render_query_artifact``,
+``load_query_artifact``.
 
 Committed query-set artifact assembly for the corpus v3 query generator
 (issue #672 AC 1: "deviations (if any) stated in the artifact header, not
@@ -13,10 +14,11 @@ package).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import yaml
 
-from ..query_schema import Query, query_to_dict
+from ..query_schema import Query, load_queries, query_to_dict
 
 
 @dataclass(frozen=True)
@@ -128,3 +130,20 @@ def render_query_artifact(queries: list[Query], *, metadata: dict) -> str:
         "queries": [query_to_dict(q) for q in queries],
     }
     return yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
+
+
+def load_query_artifact(path: Path) -> tuple[list[Query], dict]:
+    """Parse a committed artifact back into ``(queries, metadata)`` — the
+    inverse of :func:`render_query_artifact`, for passes that top up an
+    existing artifact (backfill) rather than regenerate it. Queries load via
+    ``load_queries`` so every entry re-validates against the same ``Query``
+    invariants a freshly generated one does; ``metadata`` is returned
+    verbatim. Raises ``ValueError`` when the metadata block is absent — an
+    artifact without its header is not this module's format, and topping up
+    a file whose provenance cannot be read would discard that provenance."""
+    path = Path(path)
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    metadata = (data or {}).get("metadata")
+    if not isinstance(metadata, dict):
+        raise ValueError(f"load_query_artifact: {path.name} has no metadata block")
+    return load_queries(path), metadata

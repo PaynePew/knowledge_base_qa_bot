@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import anthropic
+import httpx
 import pytest
 import yaml
 
@@ -36,10 +38,12 @@ class _FakeLLM:
         self,
         *,
         reject_every: bool = False,
+        empty_key_tokens: bool = False,
         input_tokens: int = 100,
         output_tokens: int = 50,
     ):
         self.reject_every = reject_every
+        self.empty_key_tokens = empty_key_tokens
         self.input_tokens = input_tokens
         self.output_tokens = output_tokens
         self.calls = 0
@@ -47,6 +51,8 @@ class _FakeLLM:
     def invoke(self, prompt: str):
         self.calls += 1
         key_tokens = ["the", "a"] if self.reject_every else ["reference", "passage"]
+        if self.empty_key_tokens:
+            key_tokens = []
         draft = QueryDraft(
             text="What does the reference passage say?",
             key_tokens=key_tokens,
@@ -171,6 +177,125 @@ def test_run_generation_drops_qc_rejected_drafts_and_counts_them():
     assert counts[0].qc_rejected == 2
 
 
+def test_run_generation_rejects_draft_violating_query_invariants():
+    """A draft that breaks a ``Query`` invariant (empty key_tokens on an
+    answerable slot — observed live mid-paid-run) is tallied as a rejection,
+    never allowed to abort the whole run."""
+    llm = _FakeLLM(empty_key_tokens=True)
+    ledger = gq.CostLedger()
+
+    import eval.corpus_v3.generation.generate_queries as mod
+
+    original = mod.derive_generation_targets
+    mod.derive_generation_targets = lambda groups: {
+        "factoid": [_target("factoid")],
+        "cross_doc": [],
+        "version_conflict": [],
+        "unanswerable": [],
+    }
+    try:
+        queries, counts = gq.run_generation(llm, ledger, cells=[("factoid", "en", 2)])
+    finally:
+        mod.derive_generation_targets = original
+
+    assert queries == []
+    assert counts[0].actual == 0
+    assert counts[0].qc_rejected == 2
+
+
+class _FlakyLLM(_FakeLLM):
+    """``_FakeLLM`` that raises ``errors`` (one per call, in order) before
+    every later call succeeds — the shape of a transient network blip
+    mid-run. ``attempts`` counts every ``invoke`` including the failures."""
+
+    def __init__(self, errors: list[Exception], **kwargs):
+        super().__init__(**kwargs)
+        self.errors = list(errors)
+        self.attempts = 0
+
+    def invoke(self, prompt: str):
+        self.attempts += 1
+        if self.errors:
+            raise self.errors.pop(0)
+        return super().invoke(prompt)
+
+
+def _connect_timeout() -> Exception:
+    return anthropic.APITimeoutError(
+        request=httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    )
+
+
+def _overloaded_529() -> Exception:
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    return anthropic.APIStatusError(
+        "overloaded", response=httpx.Response(529, request=request), body=None
+    )
+
+
+def _small_targets() -> dict:
+    return {
+        "factoid": [_target("factoid")],
+        "cross_doc": [],
+        "version_conflict": [],
+        "unanswerable": [],
+    }
+
+
+def test_run_generation_retries_transient_network_errors(monkeypatch):
+    """A transient failure mid-call (observed live: a WinError 10060 connect
+    timeout ~1h into the paid run) is retried with backoff until the network
+    recovers — the slot is filled, not the whole run aborted."""
+    sleeps: list[float] = []
+    monkeypatch.setattr(gq.time, "sleep", sleeps.append)
+    monkeypatch.setattr(gq, "derive_generation_targets", lambda groups: _small_targets())
+    llm = _FlakyLLM([_connect_timeout(), _overloaded_529()])
+    ledger = gq.CostLedger()
+
+    queries, counts = gq.run_generation(llm, ledger, cells=[("factoid", "en", 1)])
+
+    assert len(queries) == 1
+    assert counts[0].actual == 1
+    assert counts[0].qc_rejected == 0
+    assert llm.attempts == 3
+    assert len(sleeps) == 2
+
+
+def test_run_generation_reraises_when_transient_errors_outlast_retries(monkeypatch):
+    """An outage longer than the whole backoff schedule still fails fast
+    (bounded retry, CODING_STANDARD §4.1) — the run aborts with the original
+    error rather than looping forever."""
+    sleeps: list[float] = []
+    monkeypatch.setattr(gq.time, "sleep", sleeps.append)
+    monkeypatch.setattr(gq, "derive_generation_targets", lambda groups: _small_targets())
+    budget = 1 + len(gq._TRANSIENT_RETRY_SLEEPS)
+    llm = _FlakyLLM([_connect_timeout() for _ in range(budget + 5)])
+    ledger = gq.CostLedger()
+
+    with pytest.raises(anthropic.APIConnectionError):
+        gq.run_generation(llm, ledger, cells=[("factoid", "en", 1)])
+
+    assert llm.attempts == budget
+    assert len(sleeps) == len(gq._TRANSIENT_RETRY_SLEEPS)
+
+
+def test_run_generation_does_not_retry_non_transient_errors(monkeypatch):
+    """A non-transient failure (auth, 4xx, a programming bug) raises
+    immediately — retrying would only re-spend money on a call that can
+    never succeed."""
+    sleeps: list[float] = []
+    monkeypatch.setattr(gq.time, "sleep", sleeps.append)
+    monkeypatch.setattr(gq, "derive_generation_targets", lambda groups: _small_targets())
+    llm = _FlakyLLM([RuntimeError("malformed payload")])
+    ledger = gq.CostLedger()
+
+    with pytest.raises(RuntimeError):
+        gq.run_generation(llm, ledger, cells=[("factoid", "en", 1)])
+
+    assert llm.attempts == 1
+    assert sleeps == []
+
+
 def test_run_generation_windows_partition_one_id_space():
     """A pilot window [0, 2) and its remainder [2, 5) over the same cell must
     partition the cell's single deterministic enumeration — disjoint
@@ -211,6 +336,7 @@ def test_main_halts_and_writes_nothing_when_projected_spend_exceeds_cap(
     monkeypatch, tmp_path
 ):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.setattr(gq, "load_dotenv", lambda *a, **k: None)
     # Expensive fake calls (gpt-4o-mini pricing) so a small pilot already
     # projects well past the $10 cap over the real 4,236-query plan.
@@ -237,6 +363,7 @@ def test_main_halts_and_writes_nothing_when_projected_spend_exceeds_cap(
 
 def test_main_refuses_when_no_family_b_source_is_available(monkeypatch, tmp_path):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.setattr(gq, "load_dotenv", lambda *a, **k: None)
     monkeypatch.setattr(gq, "_get_family_a_llm", lambda: _FakeLLM())
     out_path = tmp_path / "queries.yaml"
@@ -272,6 +399,7 @@ def test_main_writes_artifact_with_deviations_when_qc_rejects_some(
     monkeypatch, tmp_path
 ):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.setattr(gq, "load_dotenv", lambda *a, **k: None)
     monkeypatch.setattr(gq, "_get_family_a_llm", lambda: _FakeLLM(reject_every=True))
 
@@ -305,3 +433,238 @@ def test_main_writes_artifact_with_deviations_when_qc_rejects_some(
     assert data["queries"][0]["generating_family"] == "human"
     assert data["metadata"]["deviations"]  # every LLM cell fell short -> non-empty
     assert data["metadata"]["generator_family_b"] == "human"
+
+
+def test_main_splits_cells_between_model_families_when_anthropic_key_present(
+    monkeypatch, tmp_path
+):
+    """ANTHROPIC_API_KEY present -> Family B is the second model family:
+    every cell's enumeration is split A=[0, ceil(n/2)) / B=[ceil(n/2), n),
+    ids partition with no duplicates, and each query records its own
+    generating family."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")
+    monkeypatch.setattr(gq, "load_dotenv", lambda *a, **k: None)
+    monkeypatch.setattr(gq, "_get_family_a_llm", lambda: _FakeLLM())
+    monkeypatch.setattr(gq, "_get_family_b_llm", lambda: _FakeLLM())
+
+    small_targets = {
+        "factoid": [_target("factoid")],
+        "cross_doc": [_target("cross_doc")],
+        "version_conflict": [_target("version_conflict")],
+        "unanswerable": [_target("unanswerable")],
+    }
+    monkeypatch.setattr(gq, "derive_generation_targets", lambda groups: small_targets)
+    # zh target 0: the fake draft's English text would fail the zh QC
+    # language gate; the family-split semantics under test are language-free
+    monkeypatch.setattr(gq, "EN_TARGET_PER_STRATUM", 2)
+    monkeypatch.setattr(gq, "ZH_TARGET_PER_STRATUM", 0)
+
+    out_path = tmp_path / "queries.yaml"
+    code = gq.main(
+        [
+            "--output",
+            str(out_path),
+            "--human-slice",
+            str(tmp_path / "no-such-human-slice.yaml"),
+            "--pilot-calls",
+            "2",
+        ]
+    )
+    assert code == 0
+    data = yaml.safe_load(out_path.read_text(encoding="utf-8"))
+    queries = data["queries"]
+    # 4 strata x en n=2 = 8 slots, every one generated exactly once
+    ids = sorted(q["query_id"] for q in queries)
+    assert len(ids) == len(set(ids)) == 8
+    by_family = {q["query_id"]: q["generating_family"] for q in queries}
+    # every en cell splits: idx 0 -> Family A, idx 1 -> Family B
+    assert by_family["factoid-en-0000"] == "gpt-4o-mini"
+    assert by_family["factoid-en-0001"] == gq.GENERATOR_MODEL_B
+    assert data["metadata"]["generator_family_b"] == gq.GENERATOR_MODEL_B
+    # merged per-cell counts still report the FULL target per cell
+    en_counts = [
+        c
+        for c in data["metadata"]["counts"]
+        if c["scenario_stratum"] == "factoid" and c["language"] == "en"
+    ]
+    assert en_counts[0]["target"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Backfill (--backfill: top up QC-shorted slots of an existing artifact)
+# ---------------------------------------------------------------------------
+def _backfill_setup(monkeypatch, tmp_path, *, family_b_llm):
+    """Produce a committed artifact where every Family B slot (idx 1 of each
+    en cell) was QC-rejected, then swap in ``family_b_llm`` for the backfill
+    pass. Returns the artifact path."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")
+    monkeypatch.setattr(gq, "load_dotenv", lambda *a, **k: None)
+    small_targets = {
+        "factoid": [_target("factoid")],
+        "cross_doc": [_target("cross_doc")],
+        "version_conflict": [_target("version_conflict")],
+        "unanswerable": [_target("unanswerable")],
+    }
+    monkeypatch.setattr(gq, "derive_generation_targets", lambda groups: small_targets)
+    monkeypatch.setattr(gq, "EN_TARGET_PER_STRATUM", 2)
+    monkeypatch.setattr(gq, "ZH_TARGET_PER_STRATUM", 0)
+    monkeypatch.setattr(gq, "_get_family_a_llm", lambda: _FakeLLM())
+    monkeypatch.setattr(gq, "_get_family_b_llm", lambda: _FakeLLM(reject_every=True))
+    out = tmp_path / "queries.yaml"
+    code = gq.main(
+        [
+            "--output",
+            str(out),
+            "--human-slice",
+            str(tmp_path / "no-such-human-slice.yaml"),
+            "--pilot-calls",
+            "2",
+        ]
+    )
+    assert code == 0
+    before = yaml.safe_load(out.read_text(encoding="utf-8"))
+    assert before["metadata"]["deviations"]  # every B slot was rejected
+    monkeypatch.setattr(gq, "_get_family_b_llm", lambda: family_b_llm)
+    return out
+
+
+def test_backfill_fills_qc_shorted_slots_in_family(monkeypatch, tmp_path):
+    """--backfill regenerates each missing slot in its ORIGINAL family with a
+    bumped variant_index (attempt k uses idx + k*target_n), fills the cell to
+    target, clears the deviation, and adds the extra spend to cost_usd."""
+    fill_llm = _FakeLLM()
+    out = _backfill_setup(monkeypatch, tmp_path, family_b_llm=fill_llm)
+    before = yaml.safe_load(out.read_text(encoding="utf-8"))
+
+    variant_indices: list[int] = []
+    real_build_prompt = gq.build_prompt
+
+    def recording(target, *, language, variant_index):
+        variant_indices.append(variant_index)
+        return real_build_prompt(
+            target, language=language, variant_index=variant_index
+        )
+
+    monkeypatch.setattr(gq, "build_prompt", recording)
+
+    assert gq.main(["--backfill", "--output", str(out)]) == 0
+
+    after = yaml.safe_load(out.read_text(encoding="utf-8"))
+    ids = sorted(q["query_id"] for q in after["queries"])
+    assert len(ids) == len(set(ids)) == 8
+    by_family = {q["query_id"]: q["generating_family"] for q in after["queries"]}
+    assert by_family["factoid-en-0001"] == gq.GENERATOR_MODEL_B
+    assert after["metadata"]["deviations"] == []
+    assert after["metadata"]["cost_usd"] > before["metadata"]["cost_usd"]
+    assert fill_llm.calls == 4  # one accepted attempt per missing slot
+    # attempt 1 on idx 1 of a target_n=2 cell -> variant namespace idx+1*2=3
+    assert variant_indices == [3, 3, 3, 3]
+    # original qc_rejected tally is preserved (still 1 per en cell)
+    en_cells = [c for c in after["metadata"]["counts"] if c["language"] == "en"]
+    assert all(c["actual"] == 2 and c["qc_rejected"] == 1 for c in en_cells)
+
+
+def test_backfill_caps_attempts_and_keeps_deviation_honest(monkeypatch, tmp_path):
+    """A slot the family keeps failing QC on stays missing after
+    BACKFILL_MAX_ATTEMPTS: the deviation stays in the header (never quietly
+    satisfied with a weaker gate) and every rejected attempt is tallied."""
+    still_rejecting = _FakeLLM(reject_every=True)
+    out = _backfill_setup(monkeypatch, tmp_path, family_b_llm=still_rejecting)
+
+    assert gq.main(["--backfill", "--output", str(out)]) == 0
+
+    after = yaml.safe_load(out.read_text(encoding="utf-8"))
+    assert len(after["queries"]) == 4  # nothing filled
+    assert len(after["metadata"]["deviations"]) == 4  # all still listed
+    assert still_rejecting.calls == 4 * gq.BACKFILL_MAX_ATTEMPTS
+    en_cells = [c for c in after["metadata"]["counts"] if c["language"] == "en"]
+    assert all(
+        c["actual"] == 1 and c["qc_rejected"] == 1 + gq.BACKFILL_MAX_ATTEMPTS
+        for c in en_cells
+    )
+
+
+def test_backfill_attempts_flag_overrides_the_default_budget(monkeypatch, tmp_path):
+    """--backfill-attempts N replaces BACKFILL_MAX_ATTEMPTS for a deeper
+    (still bounded) pass; out-of-range values are refused up front."""
+    still_rejecting = _FakeLLM(reject_every=True)
+    out = _backfill_setup(monkeypatch, tmp_path, family_b_llm=still_rejecting)
+
+    assert gq.main(["--backfill", "--backfill-attempts", "2", "--output", str(out)]) == 0
+    assert still_rejecting.calls == 4 * 2
+
+    before_text = out.read_text(encoding="utf-8")
+    assert gq.main(["--backfill", "--backfill-attempts", "0", "--output", str(out)]) == 1
+    assert (
+        gq.main(
+            [
+                "--backfill",
+                "--backfill-attempts",
+                str(gq.BACKFILL_ATTEMPTS_LIMIT + 1),
+                "--output",
+                str(out),
+            ]
+        )
+        == 1
+    )
+    assert out.read_text(encoding="utf-8") == before_text
+
+
+def test_backfill_refuses_without_key_for_the_shorted_family(monkeypatch, tmp_path):
+    """Missing slots in Family B's window + no ANTHROPIC_API_KEY -> hard
+    refusal, artifact untouched (never silently backfill cross-family)."""
+    out = _backfill_setup(monkeypatch, tmp_path, family_b_llm=_FakeLLM())
+    monkeypatch.delenv("ANTHROPIC_API_KEY")
+    before_text = out.read_text(encoding="utf-8")
+
+    assert gq.main(["--backfill", "--output", str(out)]) == 1
+    assert out.read_text(encoding="utf-8") == before_text
+
+
+def test_backfill_refuses_on_plan_drift(monkeypatch, tmp_path):
+    """An artifact generated under a different per-cell target must not be
+    backfilled -- the slot enumeration would no longer line up."""
+    out = _backfill_setup(monkeypatch, tmp_path, family_b_llm=_FakeLLM())
+    monkeypatch.setattr(gq, "EN_TARGET_PER_STRATUM", 3)
+    before_text = out.read_text(encoding="utf-8")
+
+    assert gq.main(["--backfill", "--output", str(out)]) == 1
+    assert out.read_text(encoding="utf-8") == before_text
+
+
+def test_backfill_no_missing_slots_is_a_no_op(monkeypatch, tmp_path):
+    """A complete artifact backfills to itself: exit 0, file byte-identical."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")
+    monkeypatch.setattr(gq, "load_dotenv", lambda *a, **k: None)
+    small_targets = {
+        "factoid": [_target("factoid")],
+        "cross_doc": [_target("cross_doc")],
+        "version_conflict": [_target("version_conflict")],
+        "unanswerable": [_target("unanswerable")],
+    }
+    monkeypatch.setattr(gq, "derive_generation_targets", lambda groups: small_targets)
+    monkeypatch.setattr(gq, "EN_TARGET_PER_STRATUM", 2)
+    monkeypatch.setattr(gq, "ZH_TARGET_PER_STRATUM", 0)
+    monkeypatch.setattr(gq, "_get_family_a_llm", lambda: _FakeLLM())
+    monkeypatch.setattr(gq, "_get_family_b_llm", lambda: _FakeLLM())
+    out = tmp_path / "queries.yaml"
+    assert (
+        gq.main(
+            [
+                "--output",
+                str(out),
+                "--human-slice",
+                str(tmp_path / "no-such-human-slice.yaml"),
+                "--pilot-calls",
+                "2",
+            ]
+        )
+        == 0
+    )
+    before_text = out.read_text(encoding="utf-8")
+
+    assert gq.main(["--backfill", "--output", str(out)]) == 0
+    assert out.read_text(encoding="utf-8") == before_text
