@@ -196,19 +196,40 @@ def run_generation(
     llm,
     ledger: CostLedger,
     *,
-    cells: list[tuple[ScenarioStratum, Language, int]] | None = None,
+    cells: list[tuple] | None = None,
 ) -> tuple[list[Query], list[StratumCount]]:
     """Generate every planned cell. Returns the accepted queries and a
-    ``StratumCount`` per cell (target vs actual vs qc_rejected)."""
+    ``StratumCount`` per cell (target vs actual vs qc_rejected).
+
+    A cell is ``(stratum, language, target_n)`` for the whole cell, or
+    ``(stratum, language, target_n, start, stop)`` for a window over the
+    cell's single deterministic enumeration. ``target_n`` is ALWAYS the
+    cell's full plan count: the sample (and therefore ``query_id``
+    numbering) is derived from it once, identically for every window, so a
+    pilot window ``(.., 0, k)`` and its remainder ``(.., k, target_n)``
+    partition the same id space instead of both restarting at 0. The
+    returned ``StratumCount.target`` covers only the window (``stop -
+    start``); summing a cell's windows recovers the full target."""
     all_targets = derive_generation_targets(ADVERSARIAL_GROUPS)
     queries: list[Query] = []
     counts: list[StratumCount] = []
-    for stratum, language, target_n in cells if cells is not None else _plan_cells():
+    for cell in cells if cells is not None else _plan_cells():
+        if len(cell) == 3:
+            stratum, language, target_n = cell
+            start, stop = 0, target_n
+        else:
+            stratum, language, target_n, start, stop = cell
+        if not 0 <= start <= stop <= target_n:
+            raise ValueError(
+                f"run_generation: window [{start}, {stop}) outside cell "
+                f"{stratum}/{language} target {target_n}"
+            )
         pool = all_targets[stratum]
         sampled = sample_targets(pool, seed=f"{stratum}:{language}", count=target_n)
         accepted = 0
         rejected = 0
-        for idx, target in enumerate(sampled):
+        for idx in range(start, stop):
+            target = sampled[idx]
             query_id = f"{stratum}-{language}-{idx:04d}"
             query = _generate_query(
                 llm,
@@ -227,7 +248,7 @@ def run_generation(
             StratumCount(
                 scenario_stratum=stratum,
                 language=language,
-                target=target_n,
+                target=stop - start,
                 actual=accepted,
                 qc_rejected=rejected,
             )
@@ -279,12 +300,16 @@ def main(argv: list[str] | None = None) -> int:
     plan = _plan_cells()
     total_planned_calls = sum(count for _, _, count in plan)
     pilot_n = min(args.pilot_calls, total_planned_calls)
-    pilot_cells: list[tuple[ScenarioStratum, Language, int]] = []
+    # Windowed cells: pilot takes [0, take) of each cell's single
+    # deterministic enumeration; the remainder resumes at [take, count) so
+    # the two runs partition the id space (no duplicate query_ids, no
+    # silently dropped slots).
+    pilot_cells: list[tuple[ScenarioStratum, Language, int, int, int]] = []
     remaining = pilot_n
     for stratum, language, count in plan:
         take = min(count, remaining)
         if take > 0:
-            pilot_cells.append((stratum, language, take))
+            pilot_cells.append((stratum, language, count, 0, take))
             remaining -= take
         if remaining <= 0:
             break
@@ -303,12 +328,12 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    pilot_taken = {(s, lang): n for s, lang, n in pilot_cells}
+    pilot_taken = {(s, lang): stop for s, lang, _n, _start, stop in pilot_cells}
     remaining_cells = [
-        (stratum, language, count - pilot_taken.get((stratum, language), 0))
+        (stratum, language, count, pilot_taken.get((stratum, language), 0), count)
         for stratum, language, count in plan
+        if count > pilot_taken.get((stratum, language), 0)
     ]
-    remaining_cells = [(s, lang, n) for s, lang, n in remaining_cells if n > 0]
 
     rest_queries, rest_counts = run_generation(llm, ledger, cells=remaining_cells)
 

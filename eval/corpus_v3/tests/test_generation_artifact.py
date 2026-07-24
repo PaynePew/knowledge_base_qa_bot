@@ -108,3 +108,29 @@ def test_render_query_artifact_round_trips_through_load_queries(tmp_path):
 
     raw = yaml.safe_load(text)
     assert raw["metadata"]["generator_family_a"] == "gpt-4o-mini"
+
+
+def test_render_query_artifact_raises_on_duplicate_query_ids():
+    """Downstream joins key on query_id and load_queries never checks
+    uniqueness, so a duplicate must fail loudly at write time."""
+    query = Query(
+        query_id="factoid-en-0000",
+        text="How long is the return window?",
+        scenario_stratum="factoid",
+        overlap_stratum="high_overlap",
+        language="en",
+        gold_section_ids=["returns_policy.md#return-window"],
+        key_tokens=["return", "window"],
+        generating_family="gpt-4o-mini",
+    )
+    md = build_metadata(
+        counts=[StratumCount("factoid", "en", 2, 2, 0)],
+        family_a_model="gpt-4o-mini",
+        family_b_source="human",
+        embedding_family="text-embedding-3-small",
+        generated_at="2026-07-24T00:00:00Z",
+        cost_usd=0.01,
+        prompt_template_version=1,
+    )
+    with pytest.raises(ValueError, match="duplicate query_ids"):
+        render_query_artifact([query, query], metadata=md)

@@ -171,6 +171,39 @@ def test_run_generation_drops_qc_rejected_drafts_and_counts_them():
     assert counts[0].qc_rejected == 2
 
 
+def test_run_generation_windows_partition_one_id_space():
+    """A pilot window [0, 2) and its remainder [2, 5) over the same cell must
+    partition the cell's single deterministic enumeration — disjoint
+    query_ids covering every slot exactly once, not both restarting at 0
+    (duplicate ids + silently dropped tail slots)."""
+    llm = _FakeLLM()
+    ledger = gq.CostLedger()
+
+    import eval.corpus_v3.generation.generate_queries as mod
+
+    original = mod.derive_generation_targets
+    mod.derive_generation_targets = lambda groups: {
+        "factoid": [_target("factoid")],
+        "cross_doc": [],
+        "version_conflict": [],
+        "unanswerable": [],
+    }
+    try:
+        pilot_queries, pilot_counts = gq.run_generation(
+            llm, ledger, cells=[("factoid", "en", 5, 0, 2)]
+        )
+        rest_queries, rest_counts = gq.run_generation(
+            llm, ledger, cells=[("factoid", "en", 5, 2, 5)]
+        )
+    finally:
+        mod.derive_generation_targets = original
+
+    ids = [q.query_id for q in pilot_queries + rest_queries]
+    assert ids == [f"factoid-en-{i:04d}" for i in range(5)]
+    assert pilot_counts[0].target == 2
+    assert rest_counts[0].target == 3
+
+
 # ---------------------------------------------------------------------------
 # Cost guard wiring (end-to-end main(), fake LLM, real cost math)
 # ---------------------------------------------------------------------------

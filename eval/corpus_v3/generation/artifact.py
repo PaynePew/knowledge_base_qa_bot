@@ -108,7 +108,21 @@ def render_query_artifact(queries: list[Query], *, metadata: dict) -> str:
     Round-trips through ``query_schema.load_queries`` (which reads only the
     ``queries`` key and ignores unknown top-level keys), so this stays
     compatible with the existing loader without changing its contract.
+
+    Raises ``ValueError`` on duplicate ``query_id``s: downstream joins key on
+    ``query_id`` and ``load_queries`` performs no uniqueness check, so a
+    duplicate written here would silently inflate n and corrupt pairing.
     """
+    seen: dict[str, int] = {}
+    for q in queries:
+        seen[q.query_id] = seen.get(q.query_id, 0) + 1
+    duplicates = sorted(qid for qid, n in seen.items() if n > 1)
+    if duplicates:
+        raise ValueError(
+            f"render_query_artifact: duplicate query_ids {duplicates[:5]}"
+            f"{' …' if len(duplicates) > 5 else ''} "
+            f"({len(duplicates)} id(s) appear more than once)"
+        )
     data = {
         "metadata": metadata,
         "queries": [query_to_dict(q) for q in queries],
