@@ -17,6 +17,7 @@ import markdown_kb.app.retrieval as mk_retrieval
 import pytest
 import vector_rag.app.retrieval as vr_retrieval
 from markdown_kb.app import grounding as grounding_module
+from markdown_kb.app.errors import LLMError
 from markdown_kb.app.retrieval import CANNOT_CONFIRM_PHRASE
 
 from eval.corpus_v3 import live_runner, run_verdict
@@ -383,6 +384,42 @@ def test_answer_with_retry_does_not_retry_non_transient_errors(monkeypatch):
     fn = _FlakyAnswerFn([RuntimeError("programming bug")])
 
     with pytest.raises(RuntimeError):
+        live_runner._answer_with_retry(fn, "q1", "wiki")
+
+    assert fn.attempts == 1
+    assert sleeps == []
+
+
+def test_answer_with_retry_retries_a_retryable_llm_error(monkeypatch):
+    """Every arm's ``_call_llm_with_error_handling`` maps SDK rate-limit /
+    timeout errors into ``LLMError(retryable=True)`` (ADR-0015), so the SDK
+    exception type never surfaces at the answer-loop boundary. Observed live
+    2026-07-25: an OpenAI 429 (daily request quota) crashed the run as
+    "non-transient" because only SDK types were classified."""
+    sleeps: list[float] = []
+    monkeypatch.setattr(live_runner.time, "sleep", sleeps.append)
+    fn = _FlakyAnswerFn(
+        [
+            LLMError(
+                retryable=True,
+                message="LLM service temporarily unavailable, please retry.",
+            )
+        ]
+    )
+
+    record = live_runner._answer_with_retry(fn, "q1", "wiki")
+
+    assert record.answer_text == "ok"
+    assert fn.attempts == 2
+    assert len(sleeps) == 1
+
+
+def test_answer_with_retry_does_not_retry_a_non_retryable_llm_error(monkeypatch):
+    sleeps: list[float] = []
+    monkeypatch.setattr(live_runner.time, "sleep", sleeps.append)
+    fn = _FlakyAnswerFn([LLMError(retryable=False, message="Invalid API credentials.")])
+
+    with pytest.raises(LLMError):
         live_runner._answer_with_retry(fn, "q1", "wiki")
 
     assert fn.attempts == 1

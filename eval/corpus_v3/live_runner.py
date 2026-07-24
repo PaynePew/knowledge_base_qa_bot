@@ -68,6 +68,8 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from markdown_kb.app.errors import LLMError
+
 from . import pilot_batch, run_verdict, stacks
 from .answer_fn import build_answer_fn
 from .build_corpus import ADVERSARIAL_GROUPS, AdversarialGroup
@@ -110,12 +112,22 @@ _TRANSIENT_RETRY_SLEEPS = (5.0, 15.0, 45.0, 90.0)
 # Transient-error classification (mirrors generate_queries._is_transient)
 # ---------------------------------------------------------------------------
 def _is_transient(exc: BaseException) -> bool:
-    """True when ``exc`` is worth retrying: an SDK connection/timeout error or
-    a retryable HTTP status (408/429/5xx). Mirrors
-    ``generation.generate_queries._is_transient`` verbatim -- duplicated, not
+    """True when ``exc`` is worth retrying: the arms' own ``LLMError`` with
+    its ``retryable`` flag set, an SDK connection/timeout error, or a
+    retryable HTTP status (408/429/5xx). Mirrors
+    ``generation.generate_queries._is_transient`` -- duplicated, not
     imported, per this package's own precedent for this exact helper
     (``pilot_batch.py`` mirroring ``run_comparison``'s isolation recipe
-    rather than importing a private name across packages)."""
+    rather than importing a private name across packages) -- PLUS the
+    ``LLMError`` branch: unlike ``generate_queries`` (which invokes the LLM
+    directly, so SDK exception types surface), this retry sits at the
+    answer-loop boundary, where every arm's ``_call_llm_with_error_handling``
+    has already mapped SDK errors into ``LLMError`` (ADR-0015: rate-limit /
+    timeout -> ``retryable=True``, auth / unexpected -> ``retryable=False``).
+    Observed live 2026-07-25: an OpenAI 429 (daily request quota) surfaced
+    here as ``LLMError`` and crashed the run as "non-transient"."""
+    if isinstance(exc, LLMError):
+        return exc.retryable
     connection_types: list[type] = []
     status_types: list[type] = []
     for sdk_name in ("openai", "anthropic"):  # function-scope: keep SDKs internal
