@@ -2,9 +2,9 @@ metadata:
   generator_family_a: gpt-4o-mini
   generator_family_b: claude-haiku-4-5
   embedding_family_avoided: text-embedding-3-small
-  generated_at: '2026-07-24T13:16:07Z'
+  generated_at: '2026-07-24T13:55:25Z'
   prompt_template_version: 1
-  cost_usd: 4.0341690999999935
+  cost_usd: 4.045975449999993
   counts:
   - scenario_stratum: factoid
     language: en
@@ -24,8 +24,8 @@ metadata:
   - scenario_stratum: cross_doc
     language: zh
     target: 200
-    actual: 186
-    qc_rejected: 14
+    actual: 200
+    qc_rejected: 90
   - scenario_stratum: version_conflict
     language: en
     target: 909
@@ -39,16 +39,14 @@ metadata:
   - scenario_stratum: unanswerable
     language: en
     target: 909
-    actual: 907
+    actual: 909
     qc_rejected: 2
   - scenario_stratum: unanswerable
     language: zh
     target: 200
     actual: 200
     qc_rejected: 0
-  deviations:
-  - 'cross_doc/zh: target=200, actual=186 (short by 14)'
-  - 'unanswerable/en: target=909, actual=907 (short by 2)'
+  deviations: []
 queries:
 - query_id: factoid-en-0000
   text: What are the weekday hours for walk-in customers?
@@ -68044,3 +68042,251 @@ queries:
     works during sign-in, but does NOT provide information about recovery procedures,
     backup codes, or what to do if the authenticator app is lost. The correct response
     should be a refusal to answer based on the passage.
+- query_id: cross_doc-zh-0011
+  text: 在什么时间段内，顾客可以亲自到Acme商店购物，并且在公共假期商店是否开放？
+  scenario_stratum: cross_doc
+  overlap_stratum: low_overlap
+  language: zh
+  gold_section_ids:
+  - store_hours_a.md#weekday-hours
+  - store_hours_b.md#weekday-hours
+  key_tokens:
+  - Acme商店
+  - 购物时间
+  - 公共假期
+  - 开放状态
+  generating_family: gpt-4o-mini
+  generation_notes: 需要结合商店营业时间和假期信息才能回答。
+- query_id: cross_doc-zh-0041
+  text: 在什么时间段内，顾客可以亲自到Acme商店购物，并且在公共假期期间商店是否开放？
+  scenario_stratum: cross_doc
+  overlap_stratum: low_overlap
+  language: zh
+  gold_section_ids:
+  - store_hours_a.md#weekday-hours
+  - store_hours_b.md#weekday-hours
+  key_tokens:
+  - Acme商店
+  - 购物时间
+  - 公共假期
+  - 开放
+  generating_family: gpt-4o-mini
+  generation_notes: 需要结合商店营业时间和假期信息才能回答。
+- query_id: cross_doc-zh-0053
+  text: 在公共假期期间，顾客可以通过什么方式联系Acme商店的支持？
+  scenario_stratum: cross_doc
+  overlap_stratum: low_overlap
+  language: zh
+  gold_section_ids:
+  - store_hours_a.md#weekday-hours
+  - store_hours_b.md#weekday-hours
+  key_tokens:
+  - 公共假期
+  - 联系
+  - 支持
+  generating_family: gpt-4o-mini
+  generation_notes: 需要结合商店营业时间和联系信息才能回答。
+- query_id: cross_doc-zh-0065
+  text: 在什么时间段内，顾客可以亲自到Acme商店购物，并且在公共假期期间商店是否开放？
+  scenario_stratum: cross_doc
+  overlap_stratum: low_overlap
+  language: zh
+  gold_section_ids:
+  - store_hours_a.md#weekday-hours
+  - store_hours_b.md#weekday-hours
+  key_tokens:
+  - Acme商店
+  - 购物时间
+  - 公共假期
+  - 开放
+  generating_family: gpt-4o-mini
+  generation_notes: 需要结合商店营业时间和假期信息才能回答。
+- query_id: cross_doc-zh-0071
+  text: 在什么时间段内，顾客可以亲自到Acme商店购物，并且在公共假期期间商店是否开放？
+  scenario_stratum: cross_doc
+  overlap_stratum: low_overlap
+  language: zh
+  gold_section_ids:
+  - store_hours_a.md#weekday-hours
+  - store_hours_b.md#weekday-hours
+  key_tokens:
+  - Acme商店
+  - 购物时间
+  - 公共假期
+  - 开放状态
+  generating_family: gpt-4o-mini
+  generation_notes: 需要结合商店营业时间和假期信息才能回答。
+- query_id: cross_doc-zh-0077
+  text: 在什么时间段内，顾客可以亲自到Acme商店购物，并且在公共假期期间商店是否开放？
+  scenario_stratum: cross_doc
+  overlap_stratum: low_overlap
+  language: zh
+  gold_section_ids:
+  - store_hours_a.md#weekday-hours
+  - store_hours_b.md#weekday-hours
+  key_tokens:
+  - Acme商店
+  - 购物时间
+  - 公共假期
+  - 开放状态
+  generating_family: gpt-4o-mini
+  generation_notes: 需要结合商店营业时间和假期信息才能回答。
+- query_id: cross_doc-zh-0089
+  text: 在什么时间段内，顾客可以亲自到Acme商店购物，并且在公共假期商店是否开放？
+  scenario_stratum: cross_doc
+  overlap_stratum: low_overlap
+  language: zh
+  gold_section_ids:
+  - store_hours_a.md#weekday-hours
+  - store_hours_b.md#weekday-hours
+  key_tokens:
+  - Acme商店
+  - 购物时间
+  - 公共假期
+  - 开放状态
+  generating_family: gpt-4o-mini
+  generation_notes: 需要结合商店营业时间和假期信息才能回答。
+- query_id: cross_doc-zh-0095
+  text: 在什么时间段内，顾客可以亲自到Acme商店购物，并且在公共假期期间商店是否开放？
+  scenario_stratum: cross_doc
+  overlap_stratum: low_overlap
+  language: zh
+  gold_section_ids:
+  - store_hours_a.md#weekday-hours
+  - store_hours_b.md#weekday-hours
+  key_tokens:
+  - Acme商店
+  - 购物时间
+  - 公共假期
+  - 开放
+  generating_family: gpt-4o-mini
+  generation_notes: 需要结合商店营业时间和假期信息才能回答。
+- query_id: unanswerable-en-0458
+  text: What is Acme Shop's policy on gift card expiration and balance forfeiture?
+  scenario_stratum: unanswerable
+  overlap_stratum: high_overlap
+  language: en
+  gold_section_ids: []
+  key_tokens:
+  - refusal
+  - contradictory
+  - cannot answer
+  - conflicting information
+  generating_family: claude-haiku-4-5
+  generation_notes: 'This question asks about Acme Shop''s gift card expiration policy,
+    which is the exact topic of the reference passage. However, the passage contains
+    two directly contradictory statements: the first claims gift cards never expire
+    and retain full value indefinitely, while the second states they expire after
+    12 months with forfeiture of unused balance. Because these statements are mutually
+    exclusive and irreconcilable, the correct response must be a refusal to answer
+    (acknowledging the contradiction) rather than selecting one statement as fact
+    from the passage.'
+- query_id: unanswerable-en-0764
+  text: What is Acme Shop's policy on gift card expiration and balance forfeiture?
+  scenario_stratum: unanswerable
+  overlap_stratum: high_overlap
+  language: en
+  gold_section_ids: []
+  key_tokens:
+  - refusal
+  - contradictory
+  - cannot answer
+  - conflicting information
+  generating_family: claude-haiku-4-5
+  generation_notes: 'This question asks about Acme Shop''s gift card expiration policy,
+    which is the exact topic of the reference passage. However, the passage contains
+    two directly contradictory statements: one claiming gift cards never expire and
+    retain full value indefinitely, and another stating they expire after 12 months
+    with forfeiture of unused balance. A correct response must refuse to answer by
+    acknowledging this contradiction, rather than selecting one statement from the
+    passage as the answer.'
+- query_id: cross_doc-zh-0005
+  text: 在什么时间段内，顾客可以亲自到Acme商店购物，并且在公共假期期间商店是否开放？
+  scenario_stratum: cross_doc
+  overlap_stratum: low_overlap
+  language: zh
+  gold_section_ids:
+  - store_hours_a.md#weekday-hours
+  - store_hours_b.md#weekday-hours
+  key_tokens:
+  - Acme商店
+  - 购物时间
+  - 公共假期
+  - 开放
+  generating_family: gpt-4o-mini
+  generation_notes: 需要结合商店营业时间和假期信息才能回答。
+- query_id: cross_doc-zh-0017
+  text: 在什么时间段内，顾客可以亲自到Acme商店购物，并且在公共假期期间商店是否开放？
+  scenario_stratum: cross_doc
+  overlap_stratum: low_overlap
+  language: zh
+  gold_section_ids:
+  - store_hours_a.md#weekday-hours
+  - store_hours_b.md#weekday-hours
+  key_tokens:
+  - Acme商店
+  - 开放时间
+  - 公共假期
+  - 亲自购物
+  generating_family: gpt-4o-mini
+  generation_notes: 需要结合商店的开放时间和假期信息才能回答。
+- query_id: cross_doc-zh-0023
+  text: 在什么时间段内，顾客可以亲自到Acme商店购物，并且在公共假期期间商店是否开放？
+  scenario_stratum: cross_doc
+  overlap_stratum: low_overlap
+  language: zh
+  gold_section_ids:
+  - store_hours_a.md#weekday-hours
+  - store_hours_b.md#weekday-hours
+  key_tokens:
+  - Acme商店
+  - 购物时间
+  - 公共假期
+  - 开放
+  generating_family: gpt-4o-mini
+  generation_notes: 需要结合商店营业时间和假期信息才能回答。
+- query_id: cross_doc-zh-0035
+  text: 在什么时间段内，顾客可以亲自到Acme商店购物，并且在公共假期期间商店是否开放？
+  scenario_stratum: cross_doc
+  overlap_stratum: low_overlap
+  language: zh
+  gold_section_ids:
+  - store_hours_a.md#weekday-hours
+  - store_hours_b.md#weekday-hours
+  key_tokens:
+  - Acme商店
+  - 开放时间
+  - 公共假期
+  generating_family: gpt-4o-mini
+  generation_notes: 需要结合商店的开放时间和假期信息才能回答。
+- query_id: cross_doc-zh-0047
+  text: 在什么时间段内，顾客可以亲自到Acme商店购物，并且在公共假期商店是否开放？
+  scenario_stratum: cross_doc
+  overlap_stratum: low_overlap
+  language: zh
+  gold_section_ids:
+  - store_hours_a.md#weekday-hours
+  - store_hours_b.md#weekday-hours
+  key_tokens:
+  - Acme商店
+  - 购物时间
+  - 公共假期
+  - 开放状态
+  generating_family: gpt-4o-mini
+  generation_notes: 需要结合商店营业时间和假期信息才能回答。
+- query_id: cross_doc-zh-0083
+  text: 在阿克梅商店的营业时间内，顾客可以在什么时间进行现场购物？如果顾客在营业时间外有紧急问题，他们应该如何联系商店？
+  scenario_stratum: cross_doc
+  overlap_stratum: low_overlap
+  language: zh
+  gold_section_ids:
+  - store_hours_a.md#weekday-hours
+  - store_hours_b.md#weekday-hours
+  key_tokens:
+  - 阿克梅商店
+  - 营业时间
+  - 现场购物
+  - 紧急问题
+  - 联系商店
+  generating_family: gpt-4o-mini
+  generation_notes: 结合了营业时间和联系信息的内容。
