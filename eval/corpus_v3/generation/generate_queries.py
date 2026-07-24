@@ -5,6 +5,12 @@ as a committed artifact (issue #672, ADR-0045 Prerequisite 4,
 Usage (from repo root):
 
     uv run python -m eval.corpus_v3.generation.generate_queries
+    uv run python -m eval.corpus_v3.generation.generate_queries --backfill
+
+``--backfill`` tops up an existing artifact's QC-shorted slots in-family
+(bounded re-attempts per slot with a bumped prompt variant, same QC gate —
+the "future slice adds bounded retry" step 5 below documents), instead of
+running a full generation.
 
 NOT run under pytest (``pyproject.toml``'s ``testpaths`` scopes collection to
 ``eval/corpus_v3/tests``, so this module is never collected). The
@@ -74,7 +80,12 @@ from .. import cost_guard as ledger_cost_guard
 from ..build_corpus import ADVERSARIAL_GROUPS
 from ..query_schema import LANGUAGES, SCENARIO_STRATA, Language, Query, ScenarioStratum
 from . import overlap, qc
-from .artifact import StratumCount, build_metadata, render_query_artifact
+from .artifact import (
+    StratumCount,
+    build_metadata,
+    load_query_artifact,
+    render_query_artifact,
+)
 from .gen_schema import QueryDraft, to_query
 from .prompts import PROMPT_TEMPLATE_VERSION, build_prompt
 from .targets import GenerationTarget, derive_generation_targets, sample_targets
@@ -118,6 +129,19 @@ EN_TARGET_PER_STRATUM = 909
 ZH_TARGET_PER_STRATUM = 200
 
 PILOT_CALLS = 20
+
+# --backfill: bounded re-attempts per still-missing slot. The full run is
+# single-attempt-per-slot (module docstring step 5); the backfill pass is
+# the "future slice adds bounded retry" that step documents. 5 keeps the
+# worst case tiny (missing slots x 5 calls) while giving a slot whose first
+# draft failed QC a real chance at a differently-phrased variant.
+# --backfill-attempts can raise it (observed live: zh store-hours slots pass
+# at a low per-variant rate, so a deeper pass pays for itself in cents), but
+# never past BACKFILL_ATTEMPTS_LIMIT: a slot that resists 100 distinct
+# variants is evidence the group is unfillable for this family, and the
+# honest response is a deviation line plus a human decision, not more calls.
+BACKFILL_MAX_ATTEMPTS = 5
+BACKFILL_ATTEMPTS_LIMIT = 100
 
 
 # ---------------------------------------------------------------------------
@@ -346,6 +370,60 @@ def run_generation(
     return queries, counts
 
 
+def run_backfill(
+    llm,
+    ledger: CostLedger,
+    *,
+    model: str,
+    windows: list[tuple],
+    existing_ids: set[str],
+    max_attempts: int = BACKFILL_MAX_ATTEMPTS,
+) -> tuple[list[Query], dict[tuple[str, str], tuple[int, int]]]:
+    """Fill the slots of ``windows`` whose query_id is absent from
+    ``existing_ids``: re-attempt each missing slot against its ORIGINAL
+    sampled target with a bumped variant_index — attempt ``k`` uses ``idx +
+    k * target_n``, a namespace disjoint from every first-pass index and
+    from other slots' attempts, so backfill stays deterministic and
+    collision-free. Same family, same QC gate: uniform rejection sampling,
+    conditioning a backfilled query on exactly what every first-pass
+    accepted query is conditioned on (passing QC), never on a weaker gate.
+
+    Returns ``(new_queries, {(stratum, language): (filled,
+    rejected_drafts)})``. A slot still unfilled after ``max_attempts`` stays
+    missing — the artifact's deviation line remains the honest record."""
+    all_targets = derive_generation_targets(ADVERSARIAL_GROUPS)
+    new_queries: list[Query] = []
+    stats: dict[tuple[str, str], list[int]] = {}
+    for stratum, language, target_n, start, stop in windows:
+        missing = [
+            idx
+            for idx in range(start, stop)
+            if f"{stratum}-{language}-{idx:04d}" not in existing_ids
+        ]
+        if not missing:
+            continue
+        cell_stats = stats.setdefault((stratum, language), [0, 0])
+        pool = all_targets[stratum]
+        sampled = sample_targets(pool, seed=f"{stratum}:{language}", count=target_n)
+        for idx in missing:
+            for attempt in range(1, max_attempts + 1):
+                query = _generate_query(
+                    llm,
+                    ledger,
+                    sampled[idx],
+                    model=model,
+                    language=language,
+                    variant_index=idx + attempt * target_n,
+                    query_id=f"{stratum}-{language}-{idx:04d}",
+                )
+                if query is not None:
+                    new_queries.append(query)
+                    cell_stats[0] += 1
+                    break
+                cell_stats[1] += 1
+    return new_queries, {k: (v[0], v[1]) for k, v in stats.items()}
+
+
 def _split_family_windows(
     plan: list[tuple[ScenarioStratum, Language, int]],
 ) -> tuple[list[tuple], list[tuple]]:
@@ -382,16 +460,203 @@ def _take_pilot(windows: list[tuple], n_calls: int) -> tuple[list[tuple], list[t
 # ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
+def _backfill(args: argparse.Namespace) -> int:
+    """Top up an existing artifact's QC-shorted slots (issue #672 follow-up:
+    the full run landed cross_doc/zh at 186/200, undercutting
+    ``POWER_ANALYSIS.md``'s pre-registered zh gate). Every drift between the
+    artifact and the current plan/family constants is a hard refusal — a
+    backfill against a changed plan would corrupt the slot enumeration the
+    power analysis pre-registered."""
+    if not 1 <= args.backfill_attempts <= BACKFILL_ATTEMPTS_LIMIT:
+        print(
+            f"--backfill-attempts must be in [1, {BACKFILL_ATTEMPTS_LIMIT}] "
+            f"(got {args.backfill_attempts}) -- nothing was attempted."
+        )
+        return 1
+    if not args.output.exists():
+        print(
+            f"--backfill requires an existing artifact at {args.output} -- "
+            "run the full generation first."
+        )
+        return 1
+    queries, metadata = load_query_artifact(args.output)
+    if (
+        metadata.get("generator_family_a") != GENERATOR_MODEL_A
+        or metadata.get("generator_family_b") != GENERATOR_MODEL_B
+    ):
+        print(
+            "--backfill only supports the two-model family layout this "
+            f"generator currently produces ({GENERATOR_MODEL_A} + "
+            f"{GENERATOR_MODEL_B}); the artifact records "
+            f"{metadata.get('generator_family_a')!r} + "
+            f"{metadata.get('generator_family_b')!r}. Backfilling across a "
+            "family change would corrupt the registered A/B window split -- "
+            "regenerate instead, or label the issue ready-for-human."
+        )
+        return 1
+    plan = _plan_cells()
+    counts_by_cell = {
+        (c["scenario_stratum"], c["language"]): dict(c) for c in metadata["counts"]
+    }
+    for stratum, language, n in plan:
+        recorded = counts_by_cell.get((stratum, language))
+        # A zero-target cell writes no count row (its zero-width window is
+        # dropped by _take_pilot), so absent == target 0, not drift.
+        recorded_target = recorded["target"] if recorded is not None else 0
+        if recorded_target != n:
+            print(
+                f"--backfill: plan drift on {stratum}/{language} -- current "
+                f"plan target {n} vs artifact "
+                f"{recorded['target'] if recorded else 'missing'}. The "
+                "artifact was generated under a different plan; backfilling "
+                "against it would corrupt the slot enumeration."
+            )
+            return 1
+    existing_ids = {q.query_id for q in queries}
+    a_windows, b_windows = _split_family_windows(plan)
+
+    def _has_missing(windows: list[tuple]) -> list[tuple]:
+        return [
+            (s, lang, n, start, stop)
+            for s, lang, n, start, stop in windows
+            if any(
+                f"{s}-{lang}-{i:04d}" not in existing_ids
+                for i in range(start, stop)
+            )
+        ]
+
+    family_jobs = []
+    for model, key_var, get_llm, windows in (
+        (GENERATOR_MODEL_A, "OPENAI_API_KEY", _get_family_a_llm, a_windows),
+        (GENERATOR_MODEL_B, "ANTHROPIC_API_KEY", _get_family_b_llm, b_windows),
+    ):
+        shorted = _has_missing(windows)
+        if not shorted:
+            continue
+        if not os.getenv(key_var):
+            print(
+                f"--backfill: {model} has missing slots but {key_var} is "
+                "absent -- nothing was written. A missing slot is only ever "
+                "refilled by its own family; supply the key and re-run."
+            )
+            return 1
+        family_jobs.append((model, get_llm, shorted))
+    if not family_jobs:
+        print("--backfill: no missing slots -- artifact already complete.")
+        return 0
+
+    ledger = CostLedger()
+    new_queries: list[Query] = []
+    filled = rejected = 0
+    for model, get_llm, shorted in family_jobs:
+        family_new, stats = run_backfill(
+            get_llm(),
+            ledger,
+            model=model,
+            windows=shorted,
+            existing_ids=existing_ids,
+            max_attempts=args.backfill_attempts,
+        )
+        new_queries.extend(family_new)
+        for cell_key, (cell_filled, cell_rejected) in stats.items():
+            counts_by_cell[cell_key]["actual"] += cell_filled
+            counts_by_cell[cell_key]["qc_rejected"] += cell_rejected
+            filled += cell_filled
+            rejected += cell_rejected
+
+    backfill_usd = ledger.totals(phase=LEDGER_PHASE).usd
+    prior_usd = metadata.get("cost_usd")
+    total_usd = (
+        None
+        if backfill_usd is None and prior_usd is None
+        else (prior_usd or 0.0) + (backfill_usd or 0.0)
+    )
+    if total_usd is not None and total_usd > ledger_cost_guard.BUDGET_USD_CAP:
+        print(
+            f"--backfill: cumulative spend ${total_usd:.2f} exceeds the "
+            f"${ledger_cost_guard.BUDGET_USD_CAP:.2f} cap -- nothing was "
+            "written; mark issue #672 ready-for-human."
+        )
+        return 1
+    counts = [
+        StratumCount(
+            scenario_stratum=c["scenario_stratum"],
+            language=c["language"],
+            target=counts_by_cell[(c["scenario_stratum"], c["language"])]["target"],
+            actual=counts_by_cell[(c["scenario_stratum"], c["language"])]["actual"],
+            qc_rejected=counts_by_cell[(c["scenario_stratum"], c["language"])][
+                "qc_rejected"
+            ],
+        )
+        for c in metadata["counts"]  # preserve the artifact's cell order
+    ]
+    new_metadata = build_metadata(
+        counts=counts,
+        family_a_model=metadata["generator_family_a"],
+        family_b_source=metadata["generator_family_b"],
+        embedding_family=metadata["embedding_family_avoided"],
+        generated_at=datetime.datetime.now(datetime.UTC).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        ),
+        cost_usd=total_usd,
+        prompt_template_version=metadata["prompt_template_version"],
+    )
+    args.output.write_text(
+        render_query_artifact(queries + new_queries, metadata=new_metadata),
+        encoding="utf-8",
+    )
+    unfilled = sum(
+        c["target"] - c["actual"]
+        for c in counts_by_cell.values()
+        if c["actual"] < c["target"]
+    )
+    cost_note = (
+        f"(cost ${total_usd:.2f}, backfill ${backfill_usd:.2f})"
+        if total_usd is not None and backfill_usd is not None
+        else "(cost unknown)"
+    )
+    print(
+        f"Backfilled {filled} slot(s), {rejected} draft(s) rejected, "
+        f"{unfilled} slot(s) still unfilled -- wrote "
+        f"{len(queries) + len(new_queries)} queries to {args.output.name} "
+        f"{cost_note}"
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Corpus v3 query generator.")
     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
     parser.add_argument("--human-slice", type=Path, default=HUMAN_SLICE_PATH)
     parser.add_argument("--pilot-calls", type=int, default=PILOT_CALLS)
+    parser.add_argument(
+        "--backfill",
+        action="store_true",
+        help=(
+            "top up an existing artifact's QC-shorted slots in-family "
+            "(bounded re-attempts per slot) instead of running a full "
+            "generation"
+        ),
+    )
+    parser.add_argument(
+        "--backfill-attempts",
+        type=int,
+        default=BACKFILL_MAX_ATTEMPTS,
+        help=(
+            "max re-attempts per missing slot in --backfill mode "
+            f"(default {BACKFILL_MAX_ATTEMPTS}, "
+            f"hard limit {BACKFILL_ATTEMPTS_LIMIT})"
+        ),
+    )
     args = parser.parse_args(argv)
 
     load_dotenv(
         find_dotenv(usecwd=True)
     )  # pick up OPENAI_API_KEY from a repo-root .env
+
+    if args.backfill:
+        # Key requirements differ per shorted family; _backfill checks them.
+        return _backfill(args)
 
     if not os.getenv("OPENAI_API_KEY"):
         print(
