@@ -7,10 +7,9 @@ test -- it carries no ``test_*`` functions and is never collected by
     uv run python -m eval.corpus_v3.run_verdict --mode live --confirm-live \
         --seed 42 --pilot-ledger path/to/pilot_ledger.json
 
-The CLI's ``--mode live`` path only runs the cost guard (see below) -- it has
-no ``answer_fn`` flag by design (see the "live-mode answering seam" section
-below); actually executing a live run requires calling this module's Python
-API directly with an ``answer_fn`` supplied.
+The CLI's ``--mode live`` path only runs the cost guard (see below); it
+always halts before spending anything, by design (see :data:`AnswerFn` and
+the "live-mode answering seam" section below for why).
 
 Seeded (``--seed``, default :data:`DEFAULT_SEED`) and temperature pinned to
 :data:`LIVE_TEMPERATURE` (0) for every LLM call a live run makes --
@@ -34,15 +33,19 @@ from a caller-supplied PILOT ledger (``--pilot-ledger``, already-recorded
 query-phase calls from a small trial batch) scaled to the planned full-run
 call count; on any guard failure -- over budget, or no pilot sample to
 project from at all -- it halts and prints the projection instead of
-spending anything (issue #662 AC 2). Even past the guard, live mode requires
-a caller-supplied ``answer_fn`` (the seam a real per-arm, in-process query
-call — PRD #654: "through each app's public query function, not HTTP" —
-plugs into): wiring that integration for all three apps is real
-production-adjacent work this script deliberately leaves as an explicit,
-named seam rather than a silent partial implementation. There is no fallback
-to fake data on the live path — that would violate CODING_STANDARD §6.6's
-canonical-name guarantee (only a run backed by ``answer_fn`` may write the
-canonical ``VERDICT.md``).
+spending anything (issue #662 AC 2). Even a guard-cleared run cannot proceed
+today: wiring the real per-arm, in-process answering call through each app's
+public query surface (PRD #654: "through each app's public query function,
+not HTTP" -- the :data:`AnswerFn` seam below names its shape) is real
+production-adjacent integration work this issue leaves as an explicit,
+named follow-up rather than a silent partial implementation, consistent
+with this repo having no generated corpus v3 query set or recorded
+query-phase ledger sample yet (both are separate, still-unbuilt
+prerequisites this module's cost guard already refuses to guess past).
+There is no fallback to fake data on a guard-cleared run -- that would
+violate CODING_STANDARD §6.6's canonical-name guarantee (only a run backed
+by a real per-arm answering integration may ever write the canonical
+``VERDICT.md``).
 """
 
 from __future__ import annotations
@@ -387,13 +390,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     pilot_ledger = load_pilot_ledger(args.pilot_ledger)
     if not run_cost_guard(pilot_ledger, planned_calls=args.planned_calls):
         return 1
-    # Past the guard: a real run still requires a caller-supplied answer_fn
-    # (see module docstring) -- this CLI entry point has none, by design.
+    # Past the guard: the real per-arm answering integration (module
+    # docstring's AnswerFn seam) is not wired anywhere yet -- named,
+    # explicit follow-up work, not something this run silently fakes.
     print(
-        "cost guard cleared, but --mode live has no wired answer_fn "
-        "(module docstring: 'no fallback to fake data on the live path') "
-        "-- supply one via the run_verdict.py API, not this CLI, to "
-        "actually execute the live verdict run",
+        "cost guard cleared, but the real per-arm answer_fn integration "
+        "(see module docstring: AnswerFn) is not wired yet -- this issue "
+        "leaves it as an explicit follow-up rather than faking a live run",
         file=sys.stderr,
     )
     return 3
