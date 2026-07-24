@@ -211,6 +211,7 @@ def test_main_halts_and_writes_nothing_when_projected_spend_exceeds_cap(
     monkeypatch, tmp_path
 ):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.setattr(gq, "load_dotenv", lambda *a, **k: None)
     # Expensive fake calls (gpt-4o-mini pricing) so a small pilot already
     # projects well past the $10 cap over the real 4,236-query plan.
@@ -237,6 +238,7 @@ def test_main_halts_and_writes_nothing_when_projected_spend_exceeds_cap(
 
 def test_main_refuses_when_no_family_b_source_is_available(monkeypatch, tmp_path):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.setattr(gq, "load_dotenv", lambda *a, **k: None)
     monkeypatch.setattr(gq, "_get_family_a_llm", lambda: _FakeLLM())
     out_path = tmp_path / "queries.yaml"
@@ -272,6 +274,7 @@ def test_main_writes_artifact_with_deviations_when_qc_rejects_some(
     monkeypatch, tmp_path
 ):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.setattr(gq, "load_dotenv", lambda *a, **k: None)
     monkeypatch.setattr(gq, "_get_family_a_llm", lambda: _FakeLLM(reject_every=True))
 
@@ -305,3 +308,59 @@ def test_main_writes_artifact_with_deviations_when_qc_rejects_some(
     assert data["queries"][0]["generating_family"] == "human"
     assert data["metadata"]["deviations"]  # every LLM cell fell short -> non-empty
     assert data["metadata"]["generator_family_b"] == "human"
+
+
+def test_main_splits_cells_between_model_families_when_anthropic_key_present(
+    monkeypatch, tmp_path
+):
+    """ANTHROPIC_API_KEY present -> Family B is the second model family:
+    every cell's enumeration is split A=[0, ceil(n/2)) / B=[ceil(n/2), n),
+    ids partition with no duplicates, and each query records its own
+    generating family."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")
+    monkeypatch.setattr(gq, "load_dotenv", lambda *a, **k: None)
+    monkeypatch.setattr(gq, "_get_family_a_llm", lambda: _FakeLLM())
+    monkeypatch.setattr(gq, "_get_family_b_llm", lambda: _FakeLLM())
+
+    small_targets = {
+        "factoid": [_target("factoid")],
+        "cross_doc": [_target("cross_doc")],
+        "version_conflict": [_target("version_conflict")],
+        "unanswerable": [_target("unanswerable")],
+    }
+    monkeypatch.setattr(gq, "derive_generation_targets", lambda groups: small_targets)
+    # zh target 0: the fake draft's English text would fail the zh QC
+    # language gate; the family-split semantics under test are language-free
+    monkeypatch.setattr(gq, "EN_TARGET_PER_STRATUM", 2)
+    monkeypatch.setattr(gq, "ZH_TARGET_PER_STRATUM", 0)
+
+    out_path = tmp_path / "queries.yaml"
+    code = gq.main(
+        [
+            "--output",
+            str(out_path),
+            "--human-slice",
+            str(tmp_path / "no-such-human-slice.yaml"),
+            "--pilot-calls",
+            "2",
+        ]
+    )
+    assert code == 0
+    data = yaml.safe_load(out_path.read_text(encoding="utf-8"))
+    queries = data["queries"]
+    # 4 strata x en n=2 = 8 slots, every one generated exactly once
+    ids = sorted(q["query_id"] for q in queries)
+    assert len(ids) == len(set(ids)) == 8
+    by_family = {q["query_id"]: q["generating_family"] for q in queries}
+    # every en cell splits: idx 0 -> Family A, idx 1 -> Family B
+    assert by_family["factoid-en-0000"] == "gpt-4o-mini"
+    assert by_family["factoid-en-0001"] == gq.GENERATOR_MODEL_B
+    assert data["metadata"]["generator_family_b"] == gq.GENERATOR_MODEL_B
+    # merged per-cell counts still report the FULL target per cell
+    en_counts = [
+        c
+        for c in data["metadata"]["counts"]
+        if c["scenario_stratum"] == "factoid" and c["language"] == "en"
+    ]
+    assert en_counts[0]["target"] == 2
