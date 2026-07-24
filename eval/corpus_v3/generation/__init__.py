@@ -25,6 +25,19 @@ gating, and the LLM-call convention — seeded, temperature-0, excluded from
 the default test suite — for the actual generator script this scaffolds).
 LLM output content is never asserted in tests (CODING_STANDARD §6.2); only
 these deterministic seams are.
+
+The actual generator script this spec anticipated (issue #672) adds:
+
+  - ``targets``           — deterministic derivation + sha256-ordered
+                             sampling of which corpus Section(s) each
+                             generated query targets, per scenario stratum.
+  - ``prompts``            — per-(stratum, language) prompt construction
+                             (structural contract only; wording is untested).
+  - ``artifact``           — committed query-set YAML assembly, including the
+                             target-vs-actual deviation header (AC 1).
+  - ``generate_queries``   — the CLI orchestrator (``__main__``, not
+                             collected by pytest), gated by the #662-pattern
+                             pre-spend cost guard (``eval.corpus_v3.cost_guard``).
 """
 
 from __future__ import annotations
