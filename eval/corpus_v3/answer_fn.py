@@ -48,8 +48,9 @@ import hybrid_kb.app.query as hybrid_query
 import markdown_kb.app.retrieval as mk_retrieval
 import vector_rag.app.retrieval as vr_retrieval
 from hybrid_kb.app.retrieval import DEFAULT_TOP_K
+from markdown_kb.app import grounding as mk_grounding
 
-from eval.cost_ledger.hooks import instrument_invoke
+from eval.cost_ledger.hooks import instrument_invoke, instrument_structured_output
 from eval.cost_ledger.ledger import CostLedger
 
 from .content_axes import AnswerRecord
@@ -120,19 +121,29 @@ _LLM_GETTER_TARGETS: dict[str, tuple[object, str]] = {
     "dense_over_wiki": (hybrid_query, "get_llm"),
 }
 
+# All four arms adopt ONE grounding verifier surface unchanged
+# (``markdown_kb.app.grounding.verify`` — vector_rag and hybrid_kb both import
+# it), so wrapping this single getter records every arm's grounding-verify
+# call. Without it an answered query ledgers 1 call instead of its true 2,
+# and a full-run cost projection scaled from that ledger undercounts by
+# roughly half (issue #674's known trap).
+_VERIFIER_GETTER_TARGET: tuple[object, str] = (mk_grounding, "get_verifier_llm")
+
 
 @contextmanager
 def _instrumented(arm: str, ledger: CostLedger | None) -> Iterator[None]:
-    """Temporarily wrap ``arm``'s answer-synthesis LLM getter so every
-    ``.invoke()`` call made during the ``with`` block is recorded into
-    ``ledger`` under ``(stack=arm, phase="query")``, then restore the
-    module's original getter.
+    """Temporarily wrap ``arm``'s answer-synthesis LLM getter AND the shared
+    grounding-verifier getter so every LLM call made during the ``with``
+    block -- synthesis via ``.invoke()``, verify via its
+    ``with_structured_output`` chain -- is recorded into ``ledger`` under
+    ``(stack=arm, phase="query")``, then restore both original getters.
 
     Wrap-then-restore (rather than a permanent monkeypatch) matters because
-    ``dense_over_wiki`` and ``hybrid`` share the SAME underlying getter
-    (``hybrid_kb.app.query.get_llm``) -- restoring after every call is what
-    keeps one arm's calls from being mis-attributed to the other, and keeps
-    repeated calls from double-wrapping an already-wrapped getter.
+    ``dense_over_wiki`` and ``hybrid`` share the SAME underlying synthesis
+    getter (``hybrid_kb.app.query.get_llm``) and ALL arms share the verifier
+    getter -- restoring after every call is what keeps one arm's calls from
+    being mis-attributed to the other, and keeps repeated calls from
+    double-wrapping an already-wrapped getter.
 
     A ``None`` ledger (the default -- a caller that doesn't want cost
     accounting) is a no-op.
@@ -142,15 +153,25 @@ def _instrumented(arm: str, ledger: CostLedger | None) -> Iterator[None]:
         return
     module, attr_name = _LLM_GETTER_TARGETS[arm]
     original_getter = getattr(module, attr_name)
+    verifier_module, verifier_attr = _VERIFIER_GETTER_TARGET
+    original_verifier_getter = getattr(verifier_module, verifier_attr)
     setattr(
         module,
         attr_name,
         instrument_invoke(original_getter, ledger, stack=arm, phase="query"),
     )
+    setattr(
+        verifier_module,
+        verifier_attr,
+        instrument_structured_output(
+            original_verifier_getter, ledger, stack=arm, phase="query"
+        ),
+    )
     try:
         yield
     finally:
         setattr(module, attr_name, original_getter)
+        setattr(verifier_module, verifier_attr, original_verifier_getter)
 
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 """Deep module per Ousterhout. Public surface: ``instrument_invoke``,
-``record_usage_from_response``.
+``instrument_structured_output``, ``record_usage_from_response``.
 
 Hooks a production LLM-facing module's lazy-singleton getter (``get_llm``,
 ``get_verifier_llm``, ``get_ingest_llm``, ... — see ADR-0005's LLM-facing
@@ -9,15 +9,17 @@ Mirrors CODING_STANDARD §2.7's own singleton pattern (tests swap the getter,
 not the client) — here the eval harness swaps the getter to add
 instrumentation instead of a stub.
 
-Only the plain ``ChatOpenAI.invoke`` call shape is auto-recorded (the
+``instrument_invoke`` records the plain ``ChatOpenAI.invoke`` call shape (the
 answer-synthesis surfaces per ADR-0005's table: ``markdown_kb``/``vector_rag``
 retrieval, ``hybrid_kb`` query). A ``with_structured_output`` chain (the
-verifier / classifier / synthesis surfaces) does not expose ``usage_metadata``
-on its parsed-object-only return unless the caller passes
-``include_raw=True`` — changing that return shape is production behaviour
-issue #657 does not touch (its AC 3 scopes the diff to the ledger plus the
-ingest undercount fix). Call ``record_usage_from_response`` directly at those
-call sites when the harness wires this ledger into the corpus v3 runner.
+verifier / classifier surfaces) does not expose ``usage_metadata`` on its
+parsed-object-only return unless the caller passes ``include_raw=True`` —
+changing that return shape is production behaviour issue #657 did not touch.
+``instrument_structured_output`` (issue #674) closes that gap from the eval
+side instead: it forces ``include_raw=True`` INSIDE the wrap, records off the
+raw message, and hands the call site the exact bare-chain contract it always
+had (parsed object, parsing errors raised) — production call sites stay
+byte-identical.
 """
 
 from __future__ import annotations
@@ -79,6 +81,96 @@ class _InvokeRecordingProxy:
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._llm, name)
+
+
+class _StructuredChainRecordingProxy:
+    """Wraps the Runnable a ``with_structured_output(include_raw=True)`` call
+    returns, so every ``.invoke()`` records the raw message's usage and then
+    reproduces the contract the CALL SITE asked for: the bare parsed object
+    (with a parsing error raised, exactly as an ``include_raw=False`` chain
+    would) unless the caller itself wanted the raw dict."""
+
+    def __init__(
+        self,
+        chain: Any,
+        ledger: CostLedger,
+        *,
+        stack: str,
+        phase: str,
+        model: str,
+        caller_wants_raw: bool,
+    ) -> None:
+        self._chain = chain
+        self._ledger = ledger
+        self._stack = stack
+        self._phase = phase
+        self._model = model
+        self._caller_wants_raw = caller_wants_raw
+
+    def invoke(self, *args: Any, **kwargs: Any) -> Any:
+        out = self._chain.invoke(*args, **kwargs)
+        raw = out.get("raw") if isinstance(out, dict) else None
+        # Record BEFORE any re-raise: a malformed response was still a paid call.
+        record_usage_from_response(
+            self._ledger,
+            stack=self._stack,
+            phase=self._phase,
+            model=self._model,
+            response=raw,
+        )
+        if self._caller_wants_raw or not isinstance(out, dict):
+            return out
+        parsing_error = out.get("parsing_error")
+        if parsing_error is not None:
+            raise parsing_error
+        return out.get("parsed")
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._chain, name)
+
+
+class _StructuredOutputRecordingProxy(_InvokeRecordingProxy):
+    """``_InvokeRecordingProxy`` that ALSO records chains built via
+    ``.with_structured_output()`` (forcing ``include_raw=True`` internally —
+    see :class:`_StructuredChainRecordingProxy`). Every other attribute still
+    delegates to the wrapped client unchanged."""
+
+    def with_structured_output(self, schema: Any, **kwargs: Any) -> Any:
+        caller_wants_raw = bool(kwargs.get("include_raw"))
+        kwargs["include_raw"] = True
+        chain = self._llm.with_structured_output(schema, **kwargs)
+        return _StructuredChainRecordingProxy(
+            chain,
+            self._ledger,
+            stack=self._stack,
+            phase=self._phase,
+            model=self._model,
+            caller_wants_raw=caller_wants_raw,
+        )
+
+
+def instrument_structured_output(
+    getter: Callable[[], Any],
+    ledger: CostLedger,
+    *,
+    stack: str,
+    phase: str,
+    model: str | None = None,
+) -> Callable[[], Any]:
+    """Wrap a lazy-singleton LLM getter whose call sites build
+    ``with_structured_output`` chains (the verifier surface), so those
+    chains' calls are recorded into `ledger` under (`stack`, `phase`) without
+    the call site changing shape. Plain ``.invoke()`` on the returned client
+    is recorded too. `model` resolution matches :func:`instrument_invoke`."""
+
+    def wrapped_getter() -> Any:
+        llm = getter()
+        resolved_model = model or getattr(llm, "model_name", None) or "unknown"
+        return _StructuredOutputRecordingProxy(
+            llm, ledger, stack=stack, phase=phase, model=resolved_model
+        )
+
+    return wrapped_getter
 
 
 def instrument_invoke(
