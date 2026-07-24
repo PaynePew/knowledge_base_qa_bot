@@ -164,8 +164,11 @@ def kill_clause_verdict(
     comparisons: Iterable[PairwiseComparison], *, wiki_arm: str, baseline_arm: str
 ) -> ClauseVerdict:
     """Mechanically evaluate ADR-0045's kill clause for ``wiki_arm`` vs
-    ``baseline_arm``: killed unless ``wiki_arm`` shows a statistically
-    significant advantage on **all three** content axes.
+    ``baseline_arm``: killed only when ``wiki_arm`` shows a statistically
+    significant advantage on **none** of the three content axes ("no ...
+    advantage ... on all three" = fails everywhere). A single significantly
+    won axis survives the arm — per the ADR's Survival clause it becomes
+    that stack's lead narrative, which is incompatible with retiring it.
 
     Raises ``ValueError`` if ``comparisons`` does not carry exactly one
     ``wiki_arm``-vs-``baseline_arm`` comparison per required axis -- a
@@ -182,10 +185,10 @@ def kill_clause_verdict(
             f"kill_clause_verdict missing {wiki_arm!r} vs {baseline_arm!r} "
             f"comparisons for axes: {sorted(missing)}"
         )
-    advantage_on_all = all(
+    advantage_on_any = any(
         by_axis[axis].significant_advantage(wiki_arm) for axis in REQUIRED_AXES
     )
-    killed = not advantage_on_all
+    killed = not advantage_on_any
     return ClauseVerdict(
         clause="kill",
         subject=wiki_arm,

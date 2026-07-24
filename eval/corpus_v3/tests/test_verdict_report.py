@@ -93,24 +93,35 @@ def test_advantage_arm_raises_on_unknown_axis():
 # ---------------------------------------------------------------------------
 # kill_clause_verdict
 # ---------------------------------------------------------------------------
-def _three_axis_comparisons(*, wiki_wins_all: bool) -> list[PairwiseComparison]:
-    if wiki_wins_all:
+def _three_axis_comparisons(*, wiki_wins: str) -> list[PairwiseComparison]:
+    """``wiki_wins``: "all", "some" (2 of 3), or "none"."""
+    if wiki_wins == "all":
         return [
             _cmp("contradiction_leak_rate", "wiki", "rag", 0.05, 0.30, p_value=0.001),
             _cmp("grounding_pass_rate", "wiki", "rag", 0.90, 0.60, p_value=0.001),
             _cmp("correct_refusal_rate", "wiki", "rag", 0.85, 0.50, p_value=0.001),
         ]
-    # wiki loses (or ties) on correct_refusal_rate -> kill clause fires
+    if wiki_wins == "some":
+        # wiki significantly wins two axes, ties correct_refusal_rate
+        return [
+            _cmp("contradiction_leak_rate", "wiki", "rag", 0.05, 0.30, p_value=0.001),
+            _cmp("grounding_pass_rate", "wiki", "rag", 0.90, 0.60, p_value=0.001),
+            _cmp("correct_refusal_rate", "wiki", "rag", 0.50, 0.50, p_value=1.0),
+        ]
+    # "none": one tie, one directional-but-not-significant edge, one tie --
+    # no axis clears the significance bar, so the kill clause fires
     return [
-        _cmp("contradiction_leak_rate", "wiki", "rag", 0.05, 0.30, p_value=0.001),
-        _cmp("grounding_pass_rate", "wiki", "rag", 0.90, 0.60, p_value=0.001),
+        _cmp("contradiction_leak_rate", "wiki", "rag", 0.30, 0.30, p_value=1.0),
+        _cmp("grounding_pass_rate", "wiki", "rag", 0.62, 0.60, p_value=0.40),
         _cmp("correct_refusal_rate", "wiki", "rag", 0.50, 0.50, p_value=1.0),
     ]
 
 
-def test_kill_clause_fires_when_wiki_lacks_advantage_on_any_axis():
+def test_kill_clause_fires_when_wiki_lacks_advantage_on_every_axis():
+    """ADR-0045: 'a non-significant advantage still kills' — the "none" fixture
+    includes a directionally-better-but-not-significant axis."""
     verdict = kill_clause_verdict(
-        _three_axis_comparisons(wiki_wins_all=False),
+        _three_axis_comparisons(wiki_wins="none"),
         wiki_arm="wiki",
         baseline_arm="rag",
     )
@@ -118,21 +129,33 @@ def test_kill_clause_fires_when_wiki_lacks_advantage_on_any_axis():
     assert verdict.clause_text == KILL_CLAUSE_TEXT
 
 
+def test_kill_clause_does_not_fire_on_a_partial_win():
+    """ADR-0045 Survival clause: an axis wiki significantly wins becomes the
+    stack's lead narrative, so a 2-of-3 win must survive — killing requires no
+    significant advantage on ANY axis, not "less than all three"."""
+    verdict = kill_clause_verdict(
+        _three_axis_comparisons(wiki_wins="some"),
+        wiki_arm="wiki",
+        baseline_arm="rag",
+    )
+    assert verdict.outcome == "survives_kill_clause"
+
+
 def test_kill_clause_does_not_fire_when_wiki_wins_all_three_axes():
     verdict = kill_clause_verdict(
-        _three_axis_comparisons(wiki_wins_all=True), wiki_arm="wiki", baseline_arm="rag"
+        _three_axis_comparisons(wiki_wins="all"), wiki_arm="wiki", baseline_arm="rag"
     )
     assert verdict.outcome == "survives_kill_clause"
 
 
 def test_kill_clause_raises_when_an_axis_comparison_is_missing():
-    comparisons = _three_axis_comparisons(wiki_wins_all=True)[:2]  # drop one axis
+    comparisons = _three_axis_comparisons(wiki_wins="all")[:2]  # drop one axis
     with pytest.raises(ValueError, match="missing"):
         kill_clause_verdict(comparisons, wiki_arm="wiki", baseline_arm="rag")
 
 
 def test_kill_clause_ignores_comparisons_for_other_arm_pairs():
-    comparisons = _three_axis_comparisons(wiki_wins_all=True) + [
+    comparisons = _three_axis_comparisons(wiki_wins="all") + [
         _cmp(
             "grounding_pass_rate", "hybrid", "dense_over_wiki", 0.5, 0.9, p_value=0.001
         )
@@ -231,7 +254,7 @@ def test_survival_entries_excludes_non_wiki_backed_arms():
 # Renderers
 # ---------------------------------------------------------------------------
 def test_render_axis_stratum_tables_groups_by_axis():
-    comparisons = _three_axis_comparisons(wiki_wins_all=True)
+    comparisons = _three_axis_comparisons(wiki_wins="all")
     text = render_axis_stratum_tables(comparisons)
     assert "### contradiction_leak_rate" in text
     assert "### grounding_pass_rate" in text
@@ -240,7 +263,7 @@ def test_render_axis_stratum_tables_groups_by_axis():
 
 def test_render_clause_walkthrough_quotes_all_three_clauses_verbatim():
     kill = kill_clause_verdict(
-        _three_axis_comparisons(wiki_wins_all=False),
+        _three_axis_comparisons(wiki_wins="none"),
         wiki_arm="wiki",
         baseline_arm="rag",
     )
@@ -292,7 +315,7 @@ def test_render_honest_limits_numbers_each_entry():
 
 def test_render_verdict_report_assembles_every_section_with_trust_note():
     kill = kill_clause_verdict(
-        _three_axis_comparisons(wiki_wins_all=True), wiki_arm="wiki", baseline_arm="rag"
+        _three_axis_comparisons(wiki_wins="all"), wiki_arm="wiki", baseline_arm="rag"
     )
     demote = demote_clause_verdict(
         _cmp("contradiction_leak_rate", "hybrid", "rag", 0.05, 0.30, p_value=0.001),
@@ -302,11 +325,11 @@ def test_render_verdict_report_assembles_every_section_with_trust_note():
     report_input = VerdictReportInput(
         title="Corpus v3 verdict",
         tldr="Placeholder TL;DR.",
-        comparisons=_three_axis_comparisons(wiki_wins_all=True),
+        comparisons=_three_axis_comparisons(wiki_wins="all"),
         kill=kill,
         demote=demote,
         survivals=survival_entries(
-            _three_axis_comparisons(wiki_wins_all=True),
+            _three_axis_comparisons(wiki_wins="all"),
             wiki_backed_arms=["wiki"],
             baseline_arm="rag",
         ),
