@@ -136,7 +136,9 @@ class IngestBatchResult:
     failed the grounding check (status=failed_grounding).  Added in Slice #4.
     `skipped_sources` lists IngestSourceResult entries for hash-match no-ops
     (Phase 3 amendment #93). Empty when no hash matches were detected.
-    `_llm_call_count` tracks total LLM calls for the batch_completed log entry.
+    `_llm_call_count` tracks total LLM calls for the batch_completed log entry
+    — classify/synthesis calls PLUS grounding-verify calls (issue #657 fixed
+    the latter being silently undercounted).
     """
 
     results: list[IngestSourceResult] = field(default_factory=list)
@@ -603,11 +605,19 @@ def _finalise_source_drafts(
     10-11. Under ``_index_lock``: delete orphans, then write pages.
 
     Returns:
-        (write_result, deleted, grounding_failed_slugs, grounding_log_entries)
-        where ``grounding_log_entries`` is a list of ``(slug, reason, claims)``
-        tuples for the caller to pass to ``log_event("ingest_grounding_failed"…)``.
-        Callers are responsible for emitting those log entries and appending
-        ``grounding_failed_slugs`` to ``batch.pages_with_failed_grounding``.
+        (write_result, deleted, grounding_failed_slugs, grounding_log_entries,
+        grounding_call_count) where ``grounding_log_entries`` is a list of
+        ``(slug, reason, claims)`` tuples for the caller to pass to
+        ``log_event("ingest_grounding_failed"…)``, and ``grounding_call_count``
+        is the number of ``grounding.verify()`` calls this call made (one per
+        draft, or 0 when ``sections`` is empty — ``verify()``'s documented
+        empty-sections short-circuit never constructs an LLM client; see
+        ``test_ingest_preserves_aliases.py``). Callers are responsible for
+        emitting the log entries, appending ``grounding_failed_slugs`` to
+        ``batch.pages_with_failed_grounding``, AND adding
+        ``grounding_call_count`` to ``batch._llm_call_count`` — before issue
+        #657 these calls were missing from the ``ingest_batch_completed``
+        ``llm_calls=`` count entirely.
     """
     # Step 6: Preserve ``created`` timestamp AND ``aliases`` (issue #406,
     # ADR-0030 curator field — the synthesis draft never carries aliases, so
@@ -647,9 +657,16 @@ def _finalise_source_drafts(
         drafts_with_source_hashes.append(draft.model_copy(update={"frontmatter": updated_fm}))
 
     # Step 9: Run grounding verifier on each draft (ADR-0004 fail-soft).
+    #
+    # grounding_call_count: verify() calls the LLM exactly once per draft
+    # UNLESS sections is empty, in which case its documented empty-sections
+    # short-circuit returns without constructing an LLM client at all (see
+    # grounding.verify's docstring) — so this mirrors that short-circuit
+    # rather than always counting len(drafts_with_source_hashes).
     drafts_with_grounding: list = []
     grounding_failed_slugs: list[str] = []
     grounding_log_entries: list[tuple[str, str, list]] = []
+    grounding_call_count = len(drafts_with_source_hashes) if sections else 0
     for draft in drafts_with_source_hashes:
         draft, grounding_failed = _verify_draft(draft, sections)
         drafts_with_grounding.append(draft)
@@ -674,7 +691,13 @@ def _finalise_source_drafts(
             wiki_dir=resolved_wiki_dir,
         )
 
-    return write_result, deleted, grounding_failed_slugs, grounding_log_entries
+    return (
+        write_result,
+        deleted,
+        grounding_failed_slugs,
+        grounding_log_entries,
+        grounding_call_count,
+    )
 
 
 def _resolve_draft_slugs(drafts: list, sections: list, used_slugs: set) -> list:
@@ -1014,16 +1037,21 @@ def ingest_sources(
         # Steps 6-11: finalise drafts (timestamp preservation, source_hashes,
         # grounding verify, orphan delete, write).  Shared with aingest_sources
         # via _finalise_source_drafts — behaviour is IDENTICAL in both paths.
-        write_result, deleted, grounding_failed_slugs, grounding_log_entries = (
-            _finalise_source_drafts(
-                drafts,
-                sections=sections,
-                source_name=source_name,
-                source_path=source_path,
-                docs_body_hash=docs_body_hash,
-                resolved_wiki_dir=resolved_wiki_dir,
-            )
+        (
+            write_result,
+            deleted,
+            grounding_failed_slugs,
+            grounding_log_entries,
+            grounding_call_count,
+        ) = _finalise_source_drafts(
+            drafts,
+            sections=sections,
+            source_name=source_name,
+            source_path=source_path,
+            docs_body_hash=docs_body_hash,
+            resolved_wiki_dir=resolved_wiki_dir,
         )
+        batch._llm_call_count += grounding_call_count
 
         for slug, reason_str, claims_str in grounding_log_entries:
             log_event(
@@ -1386,6 +1414,7 @@ async def aingest_sources(
                 deleted,
                 grounding_failed_slugs,
                 grounding_log_entries,
+                grounding_call_count,
             ) = await asyncio.to_thread(
                 _finalise_source_drafts,
                 drafts,
@@ -1409,6 +1438,7 @@ async def aingest_sources(
                 error_message=f"{type(exc).__name__}: {str(exc)[:200]}",
             )
             continue
+        batch._llm_call_count += grounding_call_count
 
         for slug_str, reason_str, claims_lst in grounding_log_entries:
             log_event(
