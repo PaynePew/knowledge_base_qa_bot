@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hybrid_kb.app.dense_index as hk_dense
 import markdown_kb.app.indexer as mk_indexer
+import vector_rag.app.indexer as vr_indexer
 from eval.corpus_v3 import stacks
 from eval.corpus_v3.models import RetrievedItem
 
@@ -63,14 +64,91 @@ def test_arm_registry_registers_dense_over_wiki_by_name():
     assert stacks.ARM_REGISTRY["dense_over_wiki"] is stacks.dense_over_wiki_retrieval
 
 
+def test_arm_registry_registers_all_four_arms_by_name():
+    """Issue #662 closes the registry gap: A, B, C, and dense-over-wiki."""
+    assert stacks.ARM_REGISTRY["wiki"] is stacks.stack_a_retrieval
+    assert stacks.ARM_REGISTRY["rag"] is stacks.stack_b_retrieval
+    assert stacks.ARM_REGISTRY["hybrid"] is stacks.stack_c_retrieval
+    assert stacks.ARM_REGISTRY["dense_over_wiki"] is stacks.dense_over_wiki_retrieval
+
+
 def test_arm_registry_entries_conform_to_the_common_callable_shape(
-    fake_dense_embeddings,
+    fake_dense_embeddings, fake_vector_index
 ):
     """Every registered arm returns ``list[RetrievedItem]`` given (query, k)."""
     _index()
+    stacks.index_docs_corpus()
     for name, arm in stacks.ARM_REGISTRY.items():
         items = arm("password reset", k=2)
         assert isinstance(items, list), f"{name} arm must return a list"
         assert all(isinstance(it, RetrievedItem) for it in items), (
             f"{name} arm must return RetrievedItems"
         )
+
+
+# ---------------------------------------------------------------------------
+# Stack A — Wiki + BM25
+# ---------------------------------------------------------------------------
+def test_stack_a_returns_normalised_retrieved_items():
+    """Stack A returns ``RetrievedItem``s over the corpus v3 wiki, BM25-ranked."""
+    stacks.index_wiki_corpus()
+    items = stacks.stack_a_retrieval("how do I reset my password", k=3)
+    assert items, "an in-scope query must retrieve at least one Section"
+    for item in items:
+        assert isinstance(item, RetrievedItem)
+        assert item.source_section_id
+        assert item.content
+
+
+def test_stack_a_indexes_entity_pages_alongside_concepts():
+    """``index_wiki_corpus`` scans BOTH concepts and entities (v2's tilt fix)."""
+    stacks.index_wiki_corpus()
+    assert any(s.file.startswith("acme-shop") for s in mk_indexer.sections), (
+        "the acme-shop entity page must be indexed alongside concept pages"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Stack B — Vector RAG (dense-over-docs)
+# ---------------------------------------------------------------------------
+def test_stack_b_returns_normalised_retrieved_items(fake_vector_index):
+    """Stack B returns ``RetrievedItem``s over the corpus v3 raw corpus."""
+    stacks.index_docs_corpus()
+    items = stacks.stack_b_retrieval("what are the store hours", k=3)
+    assert items, "an in-scope query must retrieve at least one Chunk"
+    for item in items:
+        assert isinstance(item, RetrievedItem)
+        assert item.source_section_id
+        assert item.content
+
+
+def test_index_docs_corpus_builds_over_the_fixture_corpus(fake_vector_index):
+    """``index_docs_corpus`` points ``DOCS_DIR`` at the corpus v3 fixtures."""
+    n_docs, n_chunks = stacks.index_docs_corpus()
+    assert n_docs > 0
+    assert n_chunks > 0
+    assert vr_indexer.DOCS_DIR == stacks.FIXTURES["corpus"]
+
+
+# ---------------------------------------------------------------------------
+# Stack C — Hybrid (BM25 + dense-over-wiki, RRF fused)
+# ---------------------------------------------------------------------------
+def test_stack_c_returns_normalised_retrieved_items(fake_dense_embeddings):
+    """Stack C fuses BM25 + dense over the SAME wiki corpus, RRF-ranked."""
+    stacks.index_wiki_corpus()
+    n = stacks.index_stack_c()
+    assert n == len(mk_indexer.sections)
+    items = stacks.stack_c_retrieval("how do I reset my password", k=3)
+    assert items, "an in-scope query must retrieve at least one fused Section"
+    for item in items:
+        assert isinstance(item, RetrievedItem)
+        assert item.source_section_id
+        assert item.content
+
+
+def test_stack_c_truncates_to_cutoff_k(fake_dense_embeddings):
+    """The fused, RRF-ranked list honours the cutoff ``k``."""
+    stacks.index_wiki_corpus()
+    stacks.index_stack_c()
+    assert len(stacks.stack_c_retrieval("return refund warranty", k=1)) <= 1
+    assert len(stacks.stack_c_retrieval("return refund warranty", k=3)) <= 3
