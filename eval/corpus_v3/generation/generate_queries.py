@@ -11,7 +11,10 @@ NOT run under pytest (``pyproject.toml``'s ``testpaths`` scopes collection to
 deterministic seams it composes (``targets``, ``prompts``, ``overlap``,
 ``qc``, ``artifact``) are unit-tested there; LLM output content is never
 asserted (CODING_STANDARD §6.2), mirroring
-``eval.paraphrase_comparison.generate_paraphrases``.
+``eval.paraphrase_comparison.generate_paraphrases``. This is a one-off script,
+so stdout via ``print`` is acceptable (CODING_STANDARD §5.1 -- the no-print
+rule is scoped to committed library code, same exemption
+``generate_paraphrases.py`` documents for itself).
 
 Pipeline:
 
@@ -75,9 +78,15 @@ OUTPUT_PATH = _PKG_ROOT / "queries.yaml"
 HUMAN_SLICE_PATH = _PKG_ROOT / "human_slice.yaml"
 
 GENERATOR_MODEL_A = "gpt-4o-mini"
-EMBEDDING_FAMILY_AVOIDED = (
-    "text-embedding-3-small"  # arm B's dense embeddings (ADR-0005)
-)
+
+# arm B's dense embedding model (ADR-0005) -- recorded in the artifact header
+# for audit, per PRD #654's "generating family recorded per query" spirit
+# applied at the run level too. NOT compared against ``GENERATOR_MODEL_A``
+# (see ``artifact.build_metadata``'s docstring: Family A is deliberately the
+# SAME vendor family as this embedding model, per ``generation/SPEC.md`` --
+# the multi-family requirement is that Family B differs from Family A, not
+# that Family A avoids this model).
+ARM_B_EMBEDDING_MODEL = "text-embedding-3-small"
 STACK_NAME = "corpus_v3_generation"
 LEDGER_PHASE = "query"
 
@@ -329,7 +338,7 @@ def main(argv: list[str] | None = None) -> int:
         counts=counts,
         family_a_model=GENERATOR_MODEL_A,
         family_b_source=family_b_source,
-        embedding_family=EMBEDDING_FAMILY_AVOIDED,
+        embedding_family=ARM_B_EMBEDDING_MODEL,
         generated_at=datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         cost_usd=totals.usd,
         prompt_template_version=PROMPT_TEMPLATE_VERSION,
