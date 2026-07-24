@@ -36,10 +36,12 @@ class _FakeLLM:
         self,
         *,
         reject_every: bool = False,
+        empty_key_tokens: bool = False,
         input_tokens: int = 100,
         output_tokens: int = 50,
     ):
         self.reject_every = reject_every
+        self.empty_key_tokens = empty_key_tokens
         self.input_tokens = input_tokens
         self.output_tokens = output_tokens
         self.calls = 0
@@ -47,6 +49,8 @@ class _FakeLLM:
     def invoke(self, prompt: str):
         self.calls += 1
         key_tokens = ["the", "a"] if self.reject_every else ["reference", "passage"]
+        if self.empty_key_tokens:
+            key_tokens = []
         draft = QueryDraft(
             text="What does the reference passage say?",
             key_tokens=key_tokens,
@@ -163,6 +167,32 @@ def test_run_generation_drops_qc_rejected_drafts_and_counts_them():
     }
     try:
         queries, counts = gq.run_generation(llm, ledger, cells=cells)
+    finally:
+        mod.derive_generation_targets = original
+
+    assert queries == []
+    assert counts[0].actual == 0
+    assert counts[0].qc_rejected == 2
+
+
+def test_run_generation_rejects_draft_violating_query_invariants():
+    """A draft that breaks a ``Query`` invariant (empty key_tokens on an
+    answerable slot — observed live mid-paid-run) is tallied as a rejection,
+    never allowed to abort the whole run."""
+    llm = _FakeLLM(empty_key_tokens=True)
+    ledger = gq.CostLedger()
+
+    import eval.corpus_v3.generation.generate_queries as mod
+
+    original = mod.derive_generation_targets
+    mod.derive_generation_targets = lambda groups: {
+        "factoid": [_target("factoid")],
+        "cross_doc": [],
+        "version_conflict": [],
+        "unanswerable": [],
+    }
+    try:
+        queries, counts = gq.run_generation(llm, ledger, cells=[("factoid", "en", 2)])
     finally:
         mod.derive_generation_targets = original
 

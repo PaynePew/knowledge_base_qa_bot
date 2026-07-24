@@ -202,15 +202,22 @@ def _generate_query(
     overlap_stratum = overlap.classify_overlap_stratum(
         draft.text, [target.reference_text]
     )
-    query = to_query(
-        draft,
-        query_id=query_id,
-        scenario_stratum=target.scenario_stratum,
-        language=language,
-        overlap_stratum=overlap_stratum,
-        gold_section_ids=target.gold_section_ids,
-        generating_family=model,
-    )
+    try:
+        query = to_query(
+            draft,
+            query_id=query_id,
+            scenario_stratum=target.scenario_stratum,
+            language=language,
+            overlap_stratum=overlap_stratum,
+            gold_section_ids=target.gold_section_ids,
+            generating_family=model,
+        )
+    except ValueError:
+        # The draft violates a Query invariant (observed live: a model
+        # returning empty key_tokens on an answerable slot). An invalid
+        # draft is a rejection to tally, not a reason to abort a paid run
+        # a thousand calls in.
+        return None
     verdict = qc.check_generated_query(query)
     return None if verdict.rejected else query
 
