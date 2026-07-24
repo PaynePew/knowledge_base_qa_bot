@@ -70,7 +70,8 @@ const GUARDRAILS = `硬性護欄（違反即視為失敗）：
 - 這是 GitHub Issues + gh 的專案，絕不執行任何 beads / bd 指令（bd init/update/comment/ready/close/prime 一律禁止）。
 - 絕不執行 git init、絕不初始化任何 issue tracker、絕不新增 .beads/.agents/.codex/AGENTS.md。
 - 只 commit 你這片 slice 真正需要動的檔；絕不 commit 或改動 CLAUDE.md、.claude/settings.json、.gitignore、其他 slice 的成果、ADR/CONTEXT/CODING_STANDARD、既有測試。
-- 絕不 push、絕不開 PR、絕不 merge、絕不 close issue（那是 merge 階段 / 人類的事）。`
+- 絕不 push、絕不開 PR、絕不 merge、絕不 close issue（那是 merge 階段 / 人類的事）。
+- 測試一律前景同步跑完（pytest 絕不用 run_in_background、絕不加 &）：subagent 等不到背景通知，會把「我在等測試」當成最終回報收工——實作因此永遠沒 commit（2026-07-23 #657 實測事故；此前 verdict 派工也中過同一坑）。`
 
 // build：同一 worktree 內 從 baseBranch 開分支 → implement → 自我精簡（review.md）
 const buildPrompt = (i) => `你在一個隔離 git worktree 內，獨自負責 GitHub issue #${i.id}（${i.title || 'untitled'}）。
