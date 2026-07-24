@@ -59,8 +59,10 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import importlib
 import os
 import sys
+import time
 from pathlib import Path
 
 from dotenv import find_dotenv, load_dotenv
@@ -172,6 +174,52 @@ def load_human_slice(path: Path = HUMAN_SLICE_PATH) -> list[Query]:
 # ---------------------------------------------------------------------------
 # Generation
 # ---------------------------------------------------------------------------
+# Bounded backoff for transient call failures: 5 attempts spanning ~2.5
+# minutes of sleep (plus each attempt's own client timeout). Long enough to
+# ride out a Wi-Fi flap or a brief API incident; short enough that a real
+# outage still fails the run within minutes (fail-fast, CODING_STANDARD §4.1).
+_TRANSIENT_RETRY_SLEEPS = (5.0, 15.0, 45.0, 90.0)
+
+
+def _is_transient(exc: BaseException) -> bool:
+    """True when ``exc`` is worth retrying: an SDK connection/timeout error
+    or a retryable HTTP status (408/429/5xx — includes Anthropic's 529
+    "overloaded"). Both generator SDKs (openai, anthropic) share this
+    exception taxonomy. Anything else — 4xx, auth, a programming bug — is
+    permanent and must raise immediately."""
+    connection_types: list[type] = []
+    status_types: list[type] = []
+    for sdk_name in ("openai", "anthropic"):  # function-scope: keep SDKs internal
+        try:
+            sdk = importlib.import_module(sdk_name)
+        except ImportError:
+            continue
+        connection_types.append(sdk.APIConnectionError)
+        status_types.append(sdk.APIStatusError)
+    if isinstance(exc, tuple(connection_types)):
+        return True
+    if isinstance(exc, tuple(status_types)):
+        status = exc.status_code
+        return status in (408, 429) or status >= 500
+    return False
+
+
+def _invoke_with_retry(llm, prompt):
+    """``llm.invoke`` with bounded backoff over transient failures. Observed
+    live: generation run 3 died ~1h into paid work when a network blip
+    (WinError 10060 connect timeout) outlasted the client's single SDK-level
+    retry — a transient outage must stall the run, not abort it and forfeit
+    the whole spend. Exhausting the schedule re-raises the original error."""
+    for sleep_s in _TRANSIENT_RETRY_SLEEPS:
+        try:
+            return llm.invoke(prompt)
+        except Exception as exc:
+            if not _is_transient(exc):
+                raise
+            time.sleep(sleep_s)
+    return llm.invoke(prompt)
+
+
 def _generate_query(
     llm,
     ledger: CostLedger,
@@ -188,7 +236,7 @@ def _generate_query(
     names the generating family for both the ledger record and the query's
     ``generating_family`` field."""
     prompt = build_prompt(target, language=language, variant_index=variant_index)
-    result = llm.invoke(prompt)
+    result = _invoke_with_retry(llm, prompt)
     record_usage_from_response(
         ledger,
         stack=STACK_NAME,

@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import anthropic
+import httpx
 import pytest
 import yaml
 
@@ -199,6 +201,99 @@ def test_run_generation_rejects_draft_violating_query_invariants():
     assert queries == []
     assert counts[0].actual == 0
     assert counts[0].qc_rejected == 2
+
+
+class _FlakyLLM(_FakeLLM):
+    """``_FakeLLM`` that raises ``errors`` (one per call, in order) before
+    every later call succeeds — the shape of a transient network blip
+    mid-run. ``attempts`` counts every ``invoke`` including the failures."""
+
+    def __init__(self, errors: list[Exception], **kwargs):
+        super().__init__(**kwargs)
+        self.errors = list(errors)
+        self.attempts = 0
+
+    def invoke(self, prompt: str):
+        self.attempts += 1
+        if self.errors:
+            raise self.errors.pop(0)
+        return super().invoke(prompt)
+
+
+def _connect_timeout() -> Exception:
+    return anthropic.APITimeoutError(
+        request=httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    )
+
+
+def _overloaded_529() -> Exception:
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    return anthropic.APIStatusError(
+        "overloaded", response=httpx.Response(529, request=request), body=None
+    )
+
+
+def _small_targets() -> dict:
+    return {
+        "factoid": [_target("factoid")],
+        "cross_doc": [],
+        "version_conflict": [],
+        "unanswerable": [],
+    }
+
+
+def test_run_generation_retries_transient_network_errors(monkeypatch):
+    """A transient failure mid-call (observed live: a WinError 10060 connect
+    timeout ~1h into the paid run) is retried with backoff until the network
+    recovers — the slot is filled, not the whole run aborted."""
+    sleeps: list[float] = []
+    monkeypatch.setattr(gq.time, "sleep", sleeps.append)
+    monkeypatch.setattr(gq, "derive_generation_targets", lambda groups: _small_targets())
+    llm = _FlakyLLM([_connect_timeout(), _overloaded_529()])
+    ledger = gq.CostLedger()
+
+    queries, counts = gq.run_generation(llm, ledger, cells=[("factoid", "en", 1)])
+
+    assert len(queries) == 1
+    assert counts[0].actual == 1
+    assert counts[0].qc_rejected == 0
+    assert llm.attempts == 3
+    assert len(sleeps) == 2
+
+
+def test_run_generation_reraises_when_transient_errors_outlast_retries(monkeypatch):
+    """An outage longer than the whole backoff schedule still fails fast
+    (bounded retry, CODING_STANDARD §4.1) — the run aborts with the original
+    error rather than looping forever."""
+    sleeps: list[float] = []
+    monkeypatch.setattr(gq.time, "sleep", sleeps.append)
+    monkeypatch.setattr(gq, "derive_generation_targets", lambda groups: _small_targets())
+    budget = 1 + len(gq._TRANSIENT_RETRY_SLEEPS)
+    llm = _FlakyLLM([_connect_timeout() for _ in range(budget + 5)])
+    ledger = gq.CostLedger()
+
+    with pytest.raises(anthropic.APIConnectionError):
+        gq.run_generation(llm, ledger, cells=[("factoid", "en", 1)])
+
+    assert llm.attempts == budget
+    assert len(sleeps) == len(gq._TRANSIENT_RETRY_SLEEPS)
+
+
+def test_run_generation_does_not_retry_non_transient_errors(monkeypatch):
+    """A non-transient failure (auth, 4xx, a programming bug) raises
+    immediately — retrying would only re-spend money on a call that can
+    never succeed."""
+    sleeps: list[float] = []
+    monkeypatch.setattr(gq.time, "sleep", sleeps.append)
+    monkeypatch.setattr(gq, "derive_generation_targets", lambda groups: _small_targets())
+    llm = _FlakyLLM([RuntimeError("malformed payload")])
+    ledger = gq.CostLedger()
+
+    with pytest.raises(RuntimeError):
+        gq.run_generation(llm, ledger, cells=[("factoid", "en", 1)])
+
+    assert llm.attempts == 1
+    assert sleeps == []
 
 
 def test_run_generation_windows_partition_one_id_space():
