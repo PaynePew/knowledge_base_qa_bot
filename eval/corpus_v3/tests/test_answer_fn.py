@@ -171,6 +171,34 @@ def test_answer_fn_wiki_arm_answers_through_the_real_query_surface(
     assert record.cited_source_ids == frozenset({"store-hours"})
 
 
+def test_answer_fn_populates_retrieved_source_ids_from_the_query_surface(
+    monkeypatch, fake_verifier
+):
+    """Issue #679: ``result["sources"]`` (previously discarded) is now parsed
+    into ``AnswerRecord.retrieved_source_ids`` -- the pool
+    ``content_axes.grounding_pass`` scores a citation against. A citation
+    that names one of the retrieved ids is grounded; one that names anything
+    else (like this fixture's fake, hand-authored citation token) is not --
+    exactly ``grounding_pass``'s own fabricated-citation case."""
+    stacks.index_wiki_corpus()
+    fake_verifier("store-hours")
+    monkeypatch.setattr(
+        mk_retrieval,
+        "get_llm",
+        lambda: _FakeSynthLLM("Hours are 9-6 weekdays. [Source: store-hours]"),
+    )
+
+    fn = answer_fn_module.build_answer_fn({"q1": STORE_HOURS_QUERY})
+    record = fn("q1", "wiki", [])
+
+    assert record.retrieved_source_ids  # something was actually retrieved
+    assert "store-hours#store-hours" in record.retrieved_source_ids
+    assert record.cited_source_ids == frozenset(
+        {"store-hours"}
+    )  # the fake's literal token
+    assert not record.cited_source_ids <= record.retrieved_source_ids  # not grounded
+
+
 def test_answer_fn_rag_arm_answers_through_the_real_query_surface(
     monkeypatch, fake_verifier, fake_vector_index
 ):

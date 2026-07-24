@@ -5,11 +5,8 @@ test -- it carries no ``test_*`` functions and is never collected by
 
     uv run python -m eval.corpus_v3.run_verdict --mode offline
     uv run python -m eval.corpus_v3.run_verdict --mode live --confirm-live \
-        --seed 42 --pilot-ledger path/to/pilot_ledger.json
-
-The CLI's ``--mode live`` path only runs the cost guard (see below); it
-always halts before spending anything, by design (see :data:`AnswerFn` and
-the "live-mode answering seam" section below for why).
+        --seed 42 --pilot-ledger path/to/pilot_ledger.json \
+        --planned-calls 25112
 
 Seeded (``--seed``, default :data:`DEFAULT_SEED`) and temperature pinned to
 :data:`LIVE_TEMPERATURE` (0) for every LLM call a live run makes --
@@ -33,19 +30,29 @@ from a caller-supplied PILOT ledger (``--pilot-ledger``, already-recorded
 query-phase calls from a small trial batch) scaled to the planned full-run
 call count; on any guard failure -- over budget, or no pilot sample to
 project from at all -- it halts and prints the projection instead of
-spending anything (issue #662 AC 2). Even a guard-cleared run cannot proceed
-today: wiring the real per-arm, in-process answering call through each app's
-public query surface (PRD #654: "through each app's public query function,
-not HTTP" -- the :data:`AnswerFn` seam below names its shape) is real
-production-adjacent integration work this issue leaves as an explicit,
-named follow-up rather than a silent partial implementation, consistent
-with this repo having no generated corpus v3 query set or recorded
-query-phase ledger sample yet (both are separate, still-unbuilt
-prerequisites this module's cost guard already refuses to guess past).
-There is no fallback to fake data on a guard-cleared run -- that would
-violate CODING_STANDARD §6.6's canonical-name guarantee (only a run backed
-by a real per-arm answering integration may ever write the canonical
-``VERDICT.md``).
+spending anything (issue #662 AC 2).
+
+Past the guard, issue #679 wires the real per-arm answering this module's
+docstring used to name as an explicit unwired follow-up
+(:mod:`eval.corpus_v3.live_runner`, imported lazily inside :func:`main` to
+avoid an import cycle -- ``live_runner`` also imports this module for
+:data:`AxisSample` / :data:`WIKI_BACKED_ARMS`): every English query
+(``generation/queries.yaml``, 3,636 = 909 x 4 strata) is answered by all four
+arms through :func:`eval.corpus_v3.answer_fn.build_answer_fn`'s real
+in-process seam, over production-isolated indexes built the same way
+``pilot_batch.py`` proved (:func:`eval.corpus_v3.stacks.isolate_production_paths`).
+Every answer is checkpointed to an append-only JSONL file as soon as it is
+produced and skipped on a later resume (the #672 lesson: a run lost hours in
+is a run that must cost minutes to retry, not its whole spend) with bounded
+transient-error retry (mirrors
+``generation.generate_queries._invoke_with_retry``) and a mid-run actual-spend
+abort against :data:`eval.corpus_v3.cost_guard.BUDGET_USD_CAP` (mirrors
+``pilot_batch.py``'s own guard). The content axes are scored from the real
+``AnswerRecord``s produced (``content_axes.grounding_pass`` /
+``correct_refusal`` / ``contradiction_leak``) and the canonical ``VERDICT.md``
+is rendered via the SAME ``verdict_report`` pipeline the offline tracer
+exercises -- CODING_STANDARD §6.6's canonical-name guarantee holds because
+only this real, answer_fn-backed path may ever write it.
 """
 
 from __future__ import annotations
@@ -91,6 +98,13 @@ PLANNED_LIVE_CALLS = POWER_SIZED_QUERIES_PER_ARM * 4
 _PKG_ROOT = Path(__file__).resolve().parent
 CANONICAL_REPORT_PATH = _PKG_ROOT / "VERDICT.md"
 OFFLINE_TRACER_REPORT_PATH = _PKG_ROOT / "VERDICT.offline-tracer.md"
+
+# --mode live defaults (issue #679). Defined here, not in ``live_runner.py``,
+# so ``_parse_args`` never needs to import that module (the import cycle
+# ``main`` avoids by importing ``live_runner`` lazily -- see module docstring).
+LIVE_QUERIES_PATH = _PKG_ROOT / "generation" / "queries.yaml"
+LIVE_CHECKPOINT_PATH = _PKG_ROOT / "live_run_checkpoint.jsonl"
+LIVE_LEDGER_OUT_PATH = _PKG_ROOT / "live_run_ledger.json"
 
 OFFLINE_TRACER_HEADER = (
     "⚠️ PLACEHOLDER — NOT A LIVE VERDICT RUN. Every answer scored below is a "
@@ -227,11 +241,18 @@ def _canned_axis_samples() -> list[AxisSample]:
     ]
 
 
-def _canned_decision_matrix() -> tuple[list[str], list[DecisionMatrixRow]]:
+def canned_decision_matrix() -> tuple[list[str], list[DecisionMatrixRow]]:
     """Mirrors eval/fairness_review/method-comparison.md's evidence-status
     rows (PRD #654 user story 24) -- a NEW artifact, not an edit to that
     file (executing the verdict's narrative rewrite is separate follow-up
-    work, PRD #654 § Out of Scope)."""
+    work, PRD #654 § Out of Scope).
+
+    Despite the name, this content is NOT specific to the offline tracer --
+    every row argues from external literature analogues or this run's OWN
+    contradiction-leak table, neither of which differs between an offline
+    tracer run and a real live run. ``live_runner.py`` (issue #679) reuses
+    this exact function for the canonical ``VERDICT.md`` rather than forking
+    a second copy of this prose."""
     columns = ["Evidence status"]
     rows = [
         DecisionMatrixRow(
@@ -276,7 +297,11 @@ def _canned_decision_matrix() -> tuple[list[str], list[DecisionMatrixRow]]:
     return columns, rows
 
 
-def _canned_honest_limits() -> list[str]:
+def canned_honest_limits() -> list[str]:
+    """The four honest-limits lines every corpus v3 verdict report states
+    regardless of whether it is the offline tracer or a real live run (issue
+    #679's ``live_runner.py`` prepends the run-specific dense_over_wiki
+    pre-LLM-gate caveat ahead of these, rather than duplicating this prose)."""
     return [
         "Every measured curated-layer analogue (GraphRAG, RAPTOR) is a "
         "structural analogue, not a markdown wiki -- the inference gap "
@@ -317,7 +342,7 @@ def build_offline_tracer_report() -> str:
         comparisons, wiki_backed_arms=WIKI_BACKED_ARMS, baseline_arm=BASELINE_ARM
     )
 
-    columns, rows = _canned_decision_matrix()
+    columns, rows = canned_decision_matrix()
 
     report_input = VerdictReportInput(
         title="Corpus v3 verdict report",
@@ -340,7 +365,7 @@ def build_offline_tracer_report() -> str:
         },
         decision_matrix_columns=columns,
         decision_matrix_rows=rows,
-        honest_limits=_canned_honest_limits(),
+        honest_limits=canned_honest_limits(),
         trust_note=OFFLINE_TRACER_HEADER,
     )
     return render_verdict_report(report_input)
@@ -360,6 +385,30 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=int,
         default=PLANNED_LIVE_CALLS,
         help="planned total query-phase LLM calls the cost guard projects spend for",
+    )
+    parser.add_argument(
+        "--queries",
+        type=Path,
+        default=LIVE_QUERIES_PATH,
+        help="--mode live: stratified query file to answer (en subset only)",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        type=Path,
+        default=LIVE_CHECKPOINT_PATH,
+        help="--mode live: append-only JSONL checkpoint (resumed automatically)",
+    )
+    parser.add_argument(
+        "--ledger-out",
+        type=Path,
+        default=LIVE_LEDGER_OUT_PATH,
+        help="--mode live: where the run's full cost ledger is committed",
+    )
+    parser.add_argument(
+        "--report-out",
+        type=Path,
+        default=CANONICAL_REPORT_PATH,
+        help="--mode live: where the canonical verdict report is written",
     )
     return parser.parse_args(argv)
 
@@ -390,16 +439,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     pilot_ledger = load_pilot_ledger(args.pilot_ledger)
     if not run_cost_guard(pilot_ledger, planned_calls=args.planned_calls):
         return 1
-    # Past the guard: the real per-arm answering integration (module
-    # docstring's AnswerFn seam) is not wired anywhere yet -- named,
-    # explicit follow-up work, not something this run silently fakes.
-    print(
-        "cost guard cleared, but the real per-arm answer_fn integration "
-        "(see module docstring: AnswerFn) is not wired yet -- this issue "
-        "leaves it as an explicit follow-up rather than faking a live run",
-        file=sys.stderr,
+    # Past the guard: the real per-arm answering integration (issue #679).
+    # Imported here, not at module top level, to avoid an import cycle --
+    # ``live_runner`` imports this module (for AxisSample / WIKI_BACKED_ARMS)
+    # and ``pilot_batch`` (for ledger_to_json), and ``pilot_batch`` already
+    # imports this module at its own top level.
+    from . import live_runner
+
+    return live_runner.run_live_verdict(
+        queries_path=args.queries,
+        checkpoint_path=args.checkpoint,
+        ledger_out_path=args.ledger_out,
+        report_out_path=args.report_out,
     )
-    return 3
 
 
 if __name__ == "__main__":

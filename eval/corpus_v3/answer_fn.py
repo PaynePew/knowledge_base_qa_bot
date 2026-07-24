@@ -205,6 +205,12 @@ def build_answer_fn(
     wired here per its own ``hooks.py`` docstring: "Call
     record_usage_from_response directly at those call sites when the
     harness wires this ledger into the corpus v3 runner").
+
+    The returned ``AnswerRecord.retrieved_source_ids`` (issue #679) is parsed
+    out of ``result["sources"]`` -- every app's ``query()`` return shape
+    already carries this list of ``{"source": <id>, ...}`` dicts. It is the
+    retrieved pool ``content_axes.grounding_pass`` needs to tell a supported
+    citation from a fabricated one, and was previously discarded here.
     """
 
     def answer_fn(
@@ -218,11 +224,17 @@ def build_answer_fn(
         text = query_text_by_id[query_id]
         with _instrumented(arm, ledger):
             result = ARM_QUERY_FNS[arm](text)
+        retrieved_source_ids = frozenset(
+            source["source"]
+            for source in result.get("sources", [])
+            if "source" in source
+        )
         return AnswerRecord(
             query_id=query_id,
             arm=arm,
             answer_text=result["answer"],
             cited_source_ids=parse_cited_source_ids(result["answer"]),
+            retrieved_source_ids=retrieved_source_ids,
         )
 
     return answer_fn
