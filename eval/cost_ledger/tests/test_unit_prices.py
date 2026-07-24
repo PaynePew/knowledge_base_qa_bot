@@ -14,6 +14,15 @@ def test_estimate_usd_known_model():
     assert estimate_usd("gpt-4o-mini", usage) == 0.75
 
 
+def test_estimate_usd_family_b_generator_model():
+    usage = UsageMetadata(
+        input_tokens=1_000_000, output_tokens=1_000_000, total_tokens=2_000_000
+    )
+    # claude-haiku-4-5 pinned: $1.00/1M input + $5.00/1M output (issue #672's
+    # Family B generator).
+    assert estimate_usd("claude-haiku-4-5", usage) == 6.00
+
+
 def test_estimate_usd_zero_usage_is_zero_cost():
     assert estimate_usd("gpt-4o-mini", UsageMetadata()) == 0.0
 

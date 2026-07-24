@@ -22,10 +22,14 @@ Pipeline:
        without it, and unlike the Phase 8 paraphrase generator there is no
        prior committed corpus v3 query file to fall back to QC-only mode
        over (this is the first-ever generation run). Nothing is written.
-    2. Load Family B: a human-written query slice
-       (``generation/human_slice.yaml``, ``generation/SPEC.md``'s
-       human-written-slice alternative to a second paid model family). Its
-       absence is a HARD refusal, not a silent Family-A-only fallback --
+    2. Resolve Family B (``generation/SPEC.md``'s two sanctioned options).
+       If ``ANTHROPIC_API_KEY`` is present, Family B is a second, non-OpenAI
+       model family (``GENERATOR_MODEL_B``): each cell's deterministic
+       enumeration is split between the families -- Family A generates
+       ``[0, ceil(n/2))``, Family B ``[ceil(n/2), n)`` -- so both families'
+       phrasing styles are represented in every stratum. Otherwise fall back
+       to the human-written slice (``generation/human_slice.yaml``). Neither
+       available is a HARD refusal, not a silent Family-A-only fallback --
        generating the whole set from one family would violate ADR-0045
        Prerequisite 3's multi-family requirement, and this project's honesty
        stance is to fail closed rather than write a known-biased artifact.
@@ -79,6 +83,18 @@ HUMAN_SLICE_PATH = _PKG_ROOT / "human_slice.yaml"
 
 GENERATOR_MODEL_A = "gpt-4o-mini"
 
+# Family B (ADR-0045 Prerequisite 3: a second, non-OpenAI family). Haiku 4.5
+# rather than an Opus-tier model for three build-time reasons: (1) the
+# pre-registered $10 cost guard -- ~2,200 Family-B calls on an Opus-tier
+# model project past the cap, while the whole two-family run on Haiku stays
+# well under it; (2) ``generation/SPEC.md``'s temperature-0 convention --
+# Claude 4.6+ models reject the ``temperature`` parameter outright, Haiku 4.5
+# still honors an explicit 0; (3) generating short adversarial questions is
+# not an intelligence-sensitive task. Free-text per SPEC's
+# ``generating_family`` note; re-pin ``eval/cost_ledger/unit_prices.py`` if
+# this changes.
+GENERATOR_MODEL_B = "claude-haiku-4-5"
+
 # arm B's dense embedding model (ADR-0005) -- recorded in the artifact header
 # for audit, per PRD #654's "generating family recorded per query" spirit
 # applied at the run level too. NOT compared against ``GENERATOR_MODEL_A``
@@ -119,6 +135,20 @@ def _get_family_a_llm():
     return llm.with_structured_output(QueryDraft, include_raw=True)
 
 
+def _get_family_b_llm():
+    """Return a ``GENERATOR_MODEL_B`` (Anthropic) client with the same
+    structured-output + raw-usage shape as :func:`_get_family_a_llm`, so
+    ``_generate_query`` drives both families through one seam."""
+    from langchain_anthropic import (  # function-scope: keep LangChain internal
+        ChatAnthropic,
+    )
+
+    llm = ChatAnthropic(
+        model=GENERATOR_MODEL_B, temperature=0.0, timeout=60, max_retries=1
+    )
+    return llm.with_structured_output(QueryDraft, include_raw=True)
+
+
 # ---------------------------------------------------------------------------
 # Family B — human-written slice
 # ---------------------------------------------------------------------------
@@ -147,20 +177,23 @@ def _generate_query(
     ledger: CostLedger,
     target: GenerationTarget,
     *,
+    model: str,
     language: Language,
     variant_index: int,
     query_id: str,
 ) -> Query | None:
     """Generate and QC-gate one query. Returns ``None`` (and records the
     rejection reasons via the caller's stats) when the QC gate rejects it —
-    a rejected draft is never returned for the caller to write."""
+    a rejected draft is never returned for the caller to write. ``model``
+    names the generating family for both the ledger record and the query's
+    ``generating_family`` field."""
     prompt = build_prompt(target, language=language, variant_index=variant_index)
     result = llm.invoke(prompt)
     record_usage_from_response(
         ledger,
         stack=STACK_NAME,
         phase=LEDGER_PHASE,
-        model=GENERATOR_MODEL_A,
+        model=model,
         response=result.get("raw"),
     )
     draft: QueryDraft | None = result.get("parsed")
@@ -169,15 +202,22 @@ def _generate_query(
     overlap_stratum = overlap.classify_overlap_stratum(
         draft.text, [target.reference_text]
     )
-    query = to_query(
-        draft,
-        query_id=query_id,
-        scenario_stratum=target.scenario_stratum,
-        language=language,
-        overlap_stratum=overlap_stratum,
-        gold_section_ids=target.gold_section_ids,
-        generating_family=GENERATOR_MODEL_A,
-    )
+    try:
+        query = to_query(
+            draft,
+            query_id=query_id,
+            scenario_stratum=target.scenario_stratum,
+            language=language,
+            overlap_stratum=overlap_stratum,
+            gold_section_ids=target.gold_section_ids,
+            generating_family=model,
+        )
+    except ValueError:
+        # The draft violates a Query invariant (observed live: a model
+        # returning empty key_tokens on an answerable slot). An invalid
+        # draft is a rejection to tally, not a reason to abort a paid run
+        # a thousand calls in.
+        return None
     verdict = qc.check_generated_query(query)
     return None if verdict.rejected else query
 
@@ -196,6 +236,7 @@ def run_generation(
     llm,
     ledger: CostLedger,
     *,
+    model: str = GENERATOR_MODEL_A,
     cells: list[tuple] | None = None,
 ) -> tuple[list[Query], list[StratumCount]]:
     """Generate every planned cell. Returns the accepted queries and a
@@ -235,6 +276,7 @@ def run_generation(
                 llm,
                 ledger,
                 target,
+                model=model,
                 language=language,
                 variant_index=idx,
                 query_id=query_id,
@@ -254,6 +296,39 @@ def run_generation(
             )
         )
     return queries, counts
+
+
+def _split_family_windows(
+    plan: list[tuple[ScenarioStratum, Language, int]],
+) -> tuple[list[tuple], list[tuple]]:
+    """Split every cell's enumeration between the two model families:
+    Family A generates ``[0, ceil(n/2))``, Family B ``[ceil(n/2), n)``.
+    Both families draw from the SAME deterministic sample (``target_n`` is
+    the full cell count in every window), so the split changes who phrases a
+    slot, never which reference Sections are targeted."""
+    a_windows = [(s, lang, n, 0, (n + 1) // 2) for s, lang, n in plan]
+    b_windows = [
+        (s, lang, n, (n + 1) // 2, n) for s, lang, n in plan if n > (n + 1) // 2
+    ]
+    return a_windows, b_windows
+
+
+def _take_pilot(windows: list[tuple], n_calls: int) -> tuple[list[tuple], list[tuple]]:
+    """Front-slice up to ``n_calls`` from ``windows``. Returns
+    ``(pilot_windows, remainder_windows)`` — disjoint sub-windows of the
+    input that together cover it exactly, so pilot and remainder partition
+    the id space (the invariant ``run_generation``'s windowing exists for)."""
+    pilot: list[tuple] = []
+    rest: list[tuple] = []
+    remaining = n_calls
+    for stratum, language, target, start, stop in windows:
+        take = min(stop - start, remaining)
+        remaining -= take
+        if take > 0:
+            pilot.append((stratum, language, target, start, start + take))
+        if start + take < stop:
+            rest.append((stratum, language, target, start + take, stop))
+    return pilot, rest
 
 
 # ---------------------------------------------------------------------------
@@ -281,40 +356,67 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    human_slice = load_human_slice(args.human_slice)
-    if not human_slice:
-        print(
-            f"Family B unavailable -- {args.human_slice.name} was not found and no "
-            "second, non-OpenAI model family is wired into this script. Generating "
-            "Family A (gpt-4o-mini) alone would violate ADR-0045 Prerequisite 3's "
-            "multi-family requirement, so this run refuses rather than writing a "
-            "biased query set. Author generation/human_slice.yaml (or wire a second "
-            "model family) before re-running, or label the issue ready-for-human."
-        )
-        return 1
-    family_b_source = "human"
+    use_model_b = bool(os.getenv("ANTHROPIC_API_KEY"))
+    human_slice: list[Query] = []
+    if use_model_b:
+        family_b_source = GENERATOR_MODEL_B
+        if args.human_slice.exists():
+            print(
+                f"Note: ANTHROPIC_API_KEY present -- Family B is "
+                f"{GENERATOR_MODEL_B}; {args.human_slice.name} is ignored."
+            )
+    else:
+        human_slice = load_human_slice(args.human_slice)
+        if not human_slice:
+            print(
+                f"Family B unavailable -- ANTHROPIC_API_KEY is absent and "
+                f"{args.human_slice.name} was not found. Generating Family A "
+                "(gpt-4o-mini) alone would violate ADR-0045 Prerequisite 3's "
+                "multi-family requirement, so this run refuses rather than "
+                "writing a biased query set. Supply ANTHROPIC_API_KEY (Family B "
+                f"= {GENERATOR_MODEL_B}) or author generation/human_slice.yaml "
+                "before re-running, or label the issue ready-for-human."
+            )
+            return 1
+        family_b_source = "human"
 
-    llm = _get_family_a_llm()
     ledger = CostLedger()
-
     plan = _plan_cells()
-    total_planned_calls = sum(count for _, _, count in plan)
-    pilot_n = min(args.pilot_calls, total_planned_calls)
-    # Windowed cells: pilot takes [0, take) of each cell's single
-    # deterministic enumeration; the remainder resumes at [take, count) so
-    # the two runs partition the id space (no duplicate query_ids, no
-    # silently dropped slots).
-    pilot_cells: list[tuple[ScenarioStratum, Language, int, int, int]] = []
-    remaining = pilot_n
-    for stratum, language, count in plan:
-        take = min(count, remaining)
-        if take > 0:
-            pilot_cells.append((stratum, language, count, 0, take))
-            remaining -= take
-        if remaining <= 0:
-            break
+    if use_model_b:
+        a_windows, b_windows = _split_family_windows(plan)
+        families = [
+            (GENERATOR_MODEL_A, _get_family_a_llm(), a_windows),
+            (GENERATOR_MODEL_B, _get_family_b_llm(), b_windows),
+        ]
+    else:
+        # Human-slice mode: Family A generates the whole plan; the human
+        # slice is merged in as-is (its ids live in the "human-" namespace).
+        full_windows = [(s, lang, n, 0, n) for s, lang, n in plan]
+        families = [(GENERATOR_MODEL_A, _get_family_a_llm(), full_windows)]
 
-    pilot_queries, pilot_counts = run_generation(llm, ledger, cells=pilot_cells)
+    total_planned_calls = sum(
+        stop - start
+        for _model, _llm, windows in families
+        for _s, _lang, _t, start, stop in windows
+    )
+    # Pilot split evenly across families so the mixed-price projection scales
+    # a pilot whose family mix matches the full plan's.
+    pilot_n = min(args.pilot_calls, total_planned_calls)
+    shares = [pilot_n // len(families)] * len(families)
+    for i in range(pilot_n % len(families)):
+        shares[i] += 1
+
+    queries: list[Query] = list(human_slice)
+    all_counts: list[StratumCount] = []
+    remainders: list[tuple] = []
+    for (model, llm, windows), share in zip(families, shares):
+        pilot_windows, rest_windows = _take_pilot(windows, share)
+        pilot_queries, pilot_counts = run_generation(
+            llm, ledger, model=model, cells=pilot_windows
+        )
+        queries.extend(pilot_queries)
+        all_counts.extend(pilot_counts)
+        remainders.append((model, llm, rest_windows))
 
     projection = ledger_cost_guard.project_spend(
         ledger, phase=LEDGER_PHASE, planned_calls=total_planned_calls
@@ -328,18 +430,15 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    pilot_taken = {(s, lang): stop for s, lang, _n, _start, stop in pilot_cells}
-    remaining_cells = [
-        (stratum, language, count, pilot_taken.get((stratum, language), 0), count)
-        for stratum, language, count in plan
-        if count > pilot_taken.get((stratum, language), 0)
-    ]
+    for model, llm, rest_windows in remainders:
+        rest_queries, rest_counts = run_generation(
+            llm, ledger, model=model, cells=rest_windows
+        )
+        queries.extend(rest_queries)
+        all_counts.extend(rest_counts)
 
-    rest_queries, rest_counts = run_generation(llm, ledger, cells=remaining_cells)
-
-    queries = list(human_slice) + pilot_queries + rest_queries
     counts_by_cell: dict[tuple[str, str], StratumCount] = {}
-    for c in pilot_counts + rest_counts:
+    for c in all_counts:
         key = (c.scenario_stratum, c.language)
         prior = counts_by_cell.get(key)
         if prior is None:
@@ -348,10 +447,10 @@ def main(argv: list[str] | None = None) -> int:
             counts_by_cell[key] = StratumCount(
                 scenario_stratum=c.scenario_stratum,
                 language=c.language,
-                # Each of pilot_counts/rest_counts carries only its OWN slice
-                # of the cell's full target (pilot_cells/remaining_cells split
-                # the original count) -- sum both slices to recover the true
-                # per-cell target, never just the first one seen.
+                # Every entry in all_counts carries only its OWN window of
+                # the cell's full target (pilot/rest x family A/B all slice
+                # the same enumeration) -- sum the windows to recover the
+                # true per-cell target, never just the first one seen.
                 target=prior.target + c.target,
                 actual=prior.actual + c.actual,
                 qc_rejected=prior.qc_rejected + c.qc_rejected,

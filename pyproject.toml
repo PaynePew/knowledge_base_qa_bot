@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Grounded Q&A bot over a small Markdown knowledge base. The active prototype lives in markdown_kb/ (BM25 over heading sections, Stack A). vector_rag/ (Stack B: FAISS over chunked raw Sources) is now a workspace member after its LangChain imports were migrated 0.x -> 1.x in Phase 8. The eval/paraphrase_comparison/ package runs both stacks in-process for the retrieval comparison."
 requires-python = ">=3.11"
 dependencies = [
+    "langchain-anthropic>=1.0,<2",
     "python-dotenv>=1.2.2",
 ]
 
