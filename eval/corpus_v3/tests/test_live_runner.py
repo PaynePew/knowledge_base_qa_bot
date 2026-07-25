@@ -426,6 +426,49 @@ def test_answer_with_retry_does_not_retry_a_non_retryable_llm_error(monkeypatch)
     assert sleeps == []
 
 
+def _llm_error_wrapping(status: int, sdk_exc_name: str) -> LLMError:
+    """Mimic the arms' ``raise LLMError(...) from exc`` chain (ADR-0015):
+    the original SDK exception lands on ``__cause__``."""
+    import openai
+
+    request = httpx.Request("POST", "https://api.openai.com/v1/chat/completions")
+    response = httpx.Response(status, request=request)
+    cause = getattr(openai, sdk_exc_name)("boom", response=response, body=None)
+    err = LLMError(retryable=False, message=f"LLM service error: {status}")
+    err.__cause__ = cause
+    return err
+
+
+def test_answer_with_retry_retries_llm_error_wrapping_a_5xx(monkeypatch):
+    """ADR-0015 maps every non-auth APIError to LLMError(retryable=False),
+    which buries retryable 5xx server errors. Observed live 2026-07-25: an
+    OpenAI 500 ("You can retry your request") crashed the run. The chained
+    SDK exception on __cause__ must be classified instead of the flag."""
+    sleeps: list[float] = []
+    monkeypatch.setattr(live_runner.time, "sleep", sleeps.append)
+    fn = _FlakyAnswerFn([_llm_error_wrapping(500, "InternalServerError")])
+
+    record = live_runner._answer_with_retry(fn, "q1", "rag")
+
+    assert record.answer_text == "ok"
+    assert fn.attempts == 2
+    assert len(sleeps) == 1
+
+
+def test_answer_with_retry_does_not_retry_llm_error_wrapping_an_auth_error(
+    monkeypatch,
+):
+    sleeps: list[float] = []
+    monkeypatch.setattr(live_runner.time, "sleep", sleeps.append)
+    fn = _FlakyAnswerFn([_llm_error_wrapping(401, "AuthenticationError")])
+
+    with pytest.raises(LLMError):
+        live_runner._answer_with_retry(fn, "q1", "rag")
+
+    assert fn.attempts == 1
+    assert sleeps == []
+
+
 # ---------------------------------------------------------------------------
 # run_live_verdict — end-to-end wiring over real fixtures, faked LLMs
 # ---------------------------------------------------------------------------

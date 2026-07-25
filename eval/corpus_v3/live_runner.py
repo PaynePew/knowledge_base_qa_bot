@@ -125,9 +125,23 @@ def _is_transient(exc: BaseException) -> bool:
     has already mapped SDK errors into ``LLMError`` (ADR-0015: rate-limit /
     timeout -> ``retryable=True``, auth / unexpected -> ``retryable=False``).
     Observed live 2026-07-25: an OpenAI 429 (daily request quota) surfaced
-    here as ``LLMError`` and crashed the run as "non-transient"."""
+    here as ``LLMError`` and crashed the run as "non-transient".
+
+    A ``retryable=False`` ``LLMError`` is NOT taken at its word: ADR-0015's
+    mapping sends every non-auth ``APIError`` down the ``retryable=False``
+    branch, which buries retryable 5xx server errors (observed live
+    2026-07-25 again: an OpenAI 500 whose own message says "You can retry
+    your request"). The arms raise ``LLMError ... from exc``, so the original
+    SDK exception is on ``__cause__`` -- classify THAT with the SDK rules
+    below instead of trusting the flag. The serving apps' fail-fast mapping
+    is correct for an HTTP caller; a multi-hour eval loop's retry policy is
+    deliberately more patient."""
     if isinstance(exc, LLMError):
-        return exc.retryable
+        if exc.retryable:
+            return True
+        if exc.__cause__ is None:
+            return False
+        exc = exc.__cause__  # fall through: classify the chained SDK error
     connection_types: list[type] = []
     status_types: list[type] = []
     for sdk_name in ("openai", "anthropic"):  # function-scope: keep SDKs internal
