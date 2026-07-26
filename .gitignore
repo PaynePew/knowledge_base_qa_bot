@@ -8,6 +8,12 @@
 # run, which clobbers .kb/index.json with a docs/-based index).
 .kb/
 
+# Corpus v3 live verdict run (eval/corpus_v3/, issue #679) transient state.
+# The committed deliverables — VERDICT.md and live_run_ledger.json — are tracked;
+# the per-answer resume checkpoint is machine-local run state, never committed
+# (review of ac9cc09, concern 1).
+eval/corpus_v3/live_run_checkpoint.jsonl
+
 # Phase 8 retrieval comparison (eval/paraphrase_comparison/) intermediate state.
 # The committed deliverables — queries.yaml, corpus/, wiki/, report.md, and the
 # FINAL charts/*.png — are tracked (force-added). These two are NOT: the

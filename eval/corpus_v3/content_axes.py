@@ -32,12 +32,18 @@ class AnswerRecord:
     """One retrieval arm's produced answer for one query -- the unit every
     content axis scores. ``cited_source_ids`` are the Section ids the
     answer's ``[Source: ...]`` citations name, already parsed out of the
-    answer text (not this module's concern how)."""
+    answer text (not this module's concern how). ``retrieved_source_ids`` are
+    the Section ids actually retrieved FOR this query by the answering arm --
+    ``grounding_pass``'s own ``retrieved_source_ids`` parameter is scored
+    against this set for a live run (issue #679); it defaults to an empty
+    frozenset for hand-authored records (offline tracer, this module's own
+    tests) that never populate it."""
 
     query_id: str
     arm: str
     answer_text: str
     cited_source_ids: frozenset[str] = field(default_factory=frozenset)
+    retrieved_source_ids: frozenset[str] = field(default_factory=frozenset)
 
 
 # ---------------------------------------------------------------------------

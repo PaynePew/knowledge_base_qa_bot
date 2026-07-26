@@ -1,7 +1,7 @@
 """Deep module per Ousterhout. Public surface: ``stack_a_retrieval``,
 ``stack_b_retrieval``, ``stack_c_retrieval``, ``dense_over_wiki_retrieval``,
 ``index_wiki_corpus``, ``index_dense_over_wiki``, ``index_docs_corpus``,
-``index_stack_c``, ``ARM_REGISTRY``, ``FIXTURES``.
+``index_stack_c``, ``isolate_production_paths``, ``ARM_REGISTRY``, ``FIXTURES``.
 
 Retrieval-arm adapters for the corpus v3 fair experiment (PRD #654, ADR-0045).
 Each arm is exposed as a plain callable ``(query: str, k: int) ->
@@ -33,6 +33,8 @@ whichever corpus-neutral Section id the retrieving stack natively returns.
 
 from __future__ import annotations
 
+import shutil
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -56,6 +58,39 @@ FIXTURES = {
     "wiki": _PKG_ROOT / "wiki",
     "corpus": _PKG_ROOT / "corpus",
 }
+
+
+# ---------------------------------------------------------------------------
+# Production isolation (shared -- issue #674's pilot_batch.py originated this
+# recipe as a private helper; issue #679's live runner needs the IDENTICAL
+# isolation, so it is extracted here as this package's one shared copy rather
+# than re-duplicated a second time. ``pilot_batch.py`` now calls this function
+# too; its own CLI behaviour is unchanged).
+# ---------------------------------------------------------------------------
+def isolate_production_paths(*, prefix: str = "corpus_v3_") -> Path:
+    """Redirect every persisted-index/log path global to a temp dir so no
+    caller can pollute production ``.kb/`` / ``wiki/`` (mirrors
+    ``eval.paraphrase_comparison.run_comparison._isolate_production_paths``
+    and this package's own test conftest). ``WIKI_DIR`` points at a COPY of
+    the wiki fixtures so query-time ``derived_from`` lookups resolve while the
+    committed fixtures stay read-only to this process (the #316/#307
+    seed-overwrite lesson).
+    """
+    import hybrid_kb.app.logger as hk_logger
+    import markdown_kb.app.logger as mk_logger
+    import vector_rag.app.logger as vr_logger
+
+    iso = Path(tempfile.mkdtemp(prefix=prefix))
+    wiki_copy = iso / "wiki"
+    shutil.copytree(FIXTURES["wiki"], wiki_copy)
+    mk_indexer.INDEX_PATH = iso / ".kb" / "index.json"
+    mk_indexer.WIKI_DIR = wiki_copy
+    mk_logger.LOG_PATH = wiki_copy / "log.md"
+    hk_dense.DENSE_INDEX_DIR = iso / ".kb" / "hybrid_dense"
+    hk_logger.LOG_PATH = iso / "hybrid_kb" / "log.md"
+    vr_indexer.FAISS_INDEX_DIR = iso / ".kb" / "faiss_index"
+    vr_logger.LOG_PATH = iso / "vector_rag" / "log.md"
+    return iso
 
 
 # ---------------------------------------------------------------------------

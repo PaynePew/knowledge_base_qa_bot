@@ -174,9 +174,17 @@ def test_main_live_mode_halts_on_cost_guard_failure(tmp_path, capsys):
     assert "cost guard" in capsys.readouterr().err
 
 
-def test_main_live_mode_past_the_guard_still_refuses_without_an_answer_fn(
-    tmp_path, capsys
+def test_main_live_mode_past_the_guard_runs_the_real_live_runner(
+    monkeypatch, tmp_path, capsys
 ):
+    """Issue #679: the exit-3 "not wired yet" stub is gone -- a guard-cleared
+    run now calls into ``live_runner.run_live_verdict``, which itself refuses
+    without ``OPENAI_API_KEY`` (see ``test_live_runner.py`` for the
+    fully-wired, fake-LLM-backed happy path). Every path arg here is pinned
+    to ``tmp_path`` -- NEVER rely on this CLI's production-path defaults in a
+    test; a guard that clears (as this pilot ledger does) would otherwise
+    walk straight into a real live run over the committed query set."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     pilot_path = tmp_path / "pilot.json"
     pilot_path.write_text(
         json.dumps(
@@ -195,6 +203,8 @@ def test_main_live_mode_past_the_guard_still_refuses_without_an_answer_fn(
         ),
         encoding="utf-8",
     )
+    queries_path = tmp_path / "queries.yaml"
+    queries_path.write_text("queries: []\n", encoding="utf-8")
     exit_code = run_verdict.main(
         [
             "--mode",
@@ -204,7 +214,15 @@ def test_main_live_mode_past_the_guard_still_refuses_without_an_answer_fn(
             str(pilot_path),
             "--planned-calls",
             "10",
+            "--queries",
+            str(queries_path),
+            "--checkpoint",
+            str(tmp_path / "checkpoint.jsonl"),
+            "--ledger-out",
+            str(tmp_path / "ledger.json"),
+            "--report-out",
+            str(tmp_path / "VERDICT.md"),
         ]
     )
-    assert exit_code == 3
-    assert "answer_fn" in capsys.readouterr().err
+    assert exit_code == 1
+    assert "OPENAI_API_KEY" in capsys.readouterr().err

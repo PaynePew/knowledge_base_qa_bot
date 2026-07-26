@@ -37,8 +37,9 @@ report covering issue #674's acceptance criteria:
        hard stop above ``cost_guard.BUDGET_USD_CAP``, and a mid-run abort if
        actual recorded spend ever crosses the cap.
 
-Production isolation mirrors ``eval.paraphrase_comparison.run_comparison
-._isolate_production_paths`` (and this package's test conftest): every
+Production isolation is ``stacks.isolate_production_paths`` (originated here
+as a private helper; issue #679 extracted it to ``stacks.py`` so the live
+runner can share the IDENTICAL recipe instead of a second copy): every
 persisted-index/log path global is redirected to a temp dir before any
 indexing, and ``WIKI_DIR`` points at a COPY of the wiki fixtures so
 query-time ``derived_from`` lookups see real pages while the committed
@@ -59,9 +60,7 @@ import datetime
 import json
 import math
 import os
-import shutil
 import sys
-import tempfile
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -233,7 +232,9 @@ def render_pilot_report(
         "enumeration; zh excluded because `PLANNED_LIVE_CALLS` is en-only).",
         f"- All 4 arms answered every query: {len(rows)} answers, "
         f"{totals.calls} recorded LLM calls, models {', '.join(models)}.",
-        f"- Pilot spend: ${totals.usd:.4f}" if totals.usd is not None else "- Pilot spend: unknown (unpriced model)",
+        f"- Pilot spend: ${totals.usd:.4f}"
+        if totals.usd is not None
+        else "- Pilot spend: unknown (unpriced model)",
         "",
         "## Per-arm results",
         "",
@@ -303,32 +304,6 @@ def render_pilot_report(
 # ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
-def _isolate_production_paths() -> Path:
-    """Redirect every persisted-index/log path global to a temp dir (mirrors
-    ``run_comparison._isolate_production_paths`` + this package's conftest).
-    ``WIKI_DIR`` points at a COPY of the wiki fixtures so query-time
-    ``derived_from`` lookups resolve while the committed fixtures stay
-    read-only to this process."""
-    import hybrid_kb.app.dense_index as hk_dense
-    import hybrid_kb.app.logger as hk_logger
-    import markdown_kb.app.indexer as mk_indexer
-    import markdown_kb.app.logger as mk_logger
-    import vector_rag.app.indexer as vr_indexer
-    import vector_rag.app.logger as vr_logger
-
-    iso = Path(tempfile.mkdtemp(prefix="corpus_v3_pilot_"))
-    wiki_copy = iso / "wiki"
-    shutil.copytree(stacks.FIXTURES["wiki"], wiki_copy)
-    mk_indexer.INDEX_PATH = iso / ".kb" / "index.json"
-    mk_indexer.WIKI_DIR = wiki_copy
-    mk_logger.LOG_PATH = wiki_copy / "log.md"
-    hk_dense.DENSE_INDEX_DIR = iso / ".kb" / "hybrid_dense"
-    hk_logger.LOG_PATH = iso / "hybrid_kb" / "log.md"
-    vr_indexer.FAISS_INDEX_DIR = iso / ".kb" / "faiss_index"
-    vr_logger.LOG_PATH = iso / "vector_rag" / "log.md"
-    return iso
-
-
 def _pilot_worst_case_usd(n_answers: int) -> float | None:
     per_call = estimate_usd(_PILOT_GUARD_MODEL, _WORST_CASE_USAGE)
     if per_call is None:
@@ -381,7 +356,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    iso = _isolate_production_paths()
+    iso = stacks.isolate_production_paths(prefix="corpus_v3_pilot_")
     print(f"production isolation: {iso}")
     wiki_sections, _ = stacks.index_wiki_corpus()
     dense_sections = stacks.index_dense_over_wiki()
@@ -394,9 +369,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     ledger = CostLedger()
-    answer_fn = build_answer_fn(
-        {q.query_id: q.text for q in subset}, ledger=ledger
-    )
+    answer_fn = build_answer_fn({q.query_id: q.text for q in subset}, ledger=ledger)
     rows: list[PilotRow] = []
     for arm in ARMS:
         for q in subset:
@@ -425,9 +398,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"arm {arm}: {len(subset)} answers done")
 
     summaries = summarize_arms(rows, ledger)
-    generated_at = datetime.datetime.now(datetime.UTC).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    )
+    generated_at = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
         # The committed report must not carry a machine-local absolute path.
         report_ledger_path = args.ledger_out.resolve().relative_to(Path.cwd())
