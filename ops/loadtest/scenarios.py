@@ -68,19 +68,19 @@ SCENARIOS: dict[str, ScenarioSpec] = {
     ),
     "S1_chat_c1": ScenarioSpec(
         scenario_id="S1_chat_c1",
-        description="Chat-only, stack=wiki, concurrency=1.",
+        description="Chat-only, stack=rag (default per issue #690), concurrency=1.",
         chat_concurrency=1,
         chat_requests_per_worker=20,
     ),
     "S1_chat_c6": ScenarioSpec(
         scenario_id="S1_chat_c6",
-        description="Chat-only, stack=wiki, concurrency=6 (== KB_MAX_INFLIGHT default).",
+        description="Chat-only, stack=rag (default per issue #690), concurrency=6 (== KB_MAX_INFLIGHT default).",
         chat_concurrency=6,
         chat_requests_per_worker=10,
     ),
     "S1_chat_c12": ScenarioSpec(
         scenario_id="S1_chat_c12",
-        description="Chat-only, stack=wiki, concurrency=12 (2x KB_MAX_INFLIGHT default; expect 503s past cap).",
+        description="Chat-only, stack=rag (default per issue #690), concurrency=12 (2x KB_MAX_INFLIGHT default; expect 503s past cap).",
         chat_concurrency=12,
         chat_requests_per_worker=8,
     ),

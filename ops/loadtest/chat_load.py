@@ -78,7 +78,11 @@ def run_chat_load(
     base_url: str,
     concurrency: int,
     requests_per_worker: int,
-    stack: str = "wiki",
+    # Issue #690 (post ADR-0045 / #681 kill clause): default flipped from
+    # "wiki" to "rag" so an unpinned scenario call models prod's actual
+    # default traffic. "wiki" and "hybrid" remain selectable by passing this
+    # parameter explicitly — it is the existing flag, not a removed one.
+    stack: str = "rag",
     timeout: float = 30.0,
 ) -> ChatLoadResult:
     """Drive ``concurrency`` workers, each firing ``requests_per_worker`` sequential
