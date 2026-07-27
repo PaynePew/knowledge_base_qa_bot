@@ -1,11 +1,59 @@
-# Why a Curated Wiki Layer? Industry Rationale and Measured Evidence vs Plain RAG
+# Why a Curated Governance Layer? Industry Rationale (Argued), Re-Scoped Post-Verdict
 
-> Research note, 2026-07-23. Primary-source survey of the rationale for LLM-maintained
-> curated-synthesis layers (Karpathy-style wiki, GraphRAG-style derived summaries) over
-> immutable raw sources, and the measured evidence that such layers beat plain
-> RAG-over-raw-chunks. Every claim carries its source; each is marked **MEASURED**
-> (numbers in a paper/benchmark) or **ARGUED** (rationale only, no measurement).
+> Research note, 2026-07-23; re-scoped 2026-07-27 after the corpus v3 verdict
+> (ADR-0045 → [`../corpus_v3/VERDICT.md`](../corpus_v3/VERDICT.md)). Primary-source
+> survey of the rationale for LLM-maintained curated-synthesis layers (Karpathy-style
+> wiki, GraphRAG-style derived summaries) over immutable raw sources. Originally framed
+> as evidence that such a layer beats plain RAG-over-raw-chunks; corpus v3 has since
+> measured that question directly for **this project's own wiki** and answered it
+> negatively (see §0). Everything below is retained as the **motivation record** for
+> why the governance layer (curation, provenance, contradiction management) was built
+> in the first place — not as evidence that it wins on retrieval or grounding. Every
+> claim still carries its original source and is marked **MEASURED** (numbers in a
+> paper/benchmark) or **ARGUED** (rationale only, no measurement) *for that source's
+> own system*; per §0's table, read every axis here as **argued** motivation for our
+> governance layer, since none of these sources measure this project's implementation.
 > Companion file: `literature.md` (separate agent, separate scope).
+
+---
+
+## 0. What changed after corpus v3
+
+This project's own pre-registered trial ([ADR-0045](../../project-docs/adr/0045-wiki-retrieval-arm-kill-criteria-preregistered.md))
+measured `stack=wiki` and `stack=hybrid` against `stack=rag` (dense retrieval over raw
+`docs/`) on an adversarial corpus built specifically for curation to earn its keep.
+Full report: [`../corpus_v3/VERDICT.md`](../corpus_v3/VERDICT.md); narrative rewrite:
+[`../../project-docs/why-wiki.md`](../../project-docs/why-wiki.md).
+
+- **Kill clause**: `wiki` killed — lost to `rag` on all three content axes
+  (contradiction-leak 0.032 vs 0.002, correct-refusal 0.845 vs 0.971, grounding-pass
+  0.726 vs 0.784; every McNemar p < 0.0001).
+- **Demote clause**: `hybrid` demoted — lost to `rag` on contradiction-leak rate
+  (0.032 vs 0.002), its own home axis.
+- **Survival clause**: no axis survived.
+- **Honest limits carried forward**: `dense_over_wiki` ran with no calibrated pre-LLM
+  refusal gate, so read its correct-refusal numbers as reflecting synthesis/grounding
+  refusal only, not an apples-to-apples gate comparison against `wiki` and `rag`; the
+  governance axis itself — whether curation saves operator time or catches errors a
+  flat corpus would miss — is unmeasured; the pre-registered zh slice never ran, so
+  the zh axis of this bilingual product is unmeasured too.
+
+Everything from here down is the pre-verdict research record, kept for provenance and
+re-scoped as motivation for the **governance** layer (curation, provenance,
+contradiction management) — not as evidence of retrieval or grounding quality for this
+project's implementation.
+
+## How to read sections 1–7
+
+Sections 1–7 are the original 2026-07-23 survey, unedited except where noted. Sections
+1–2 (Karpathy, claude-obsidian) argue for the **governance** properties this file is
+now scoped to: compounding cross-references, contradiction-flagging, human-auditable
+markdown. Sections 3–5 (GraphRAG, RAPTOR, Dense X) present measured **retrieval-quality**
+evidence for structural analogues to a curated wiki — not for this project's markdown
+wiki, and not for the governance axis. Read them as the historical reason the pattern
+seemed worth trying, not as a standing retrieval claim: corpus v3 has since tested that
+claim for this project's own implementation and it lost (§0). Section 8 (`Synthesis`)
+is the part substantively rewritten post-verdict.
 
 ---
 
@@ -192,37 +240,39 @@ answers **at a fixed token budget**, the same token-efficiency axis GraphRAG mea
 
 ---
 
-## 8. Synthesis
+## 8. Synthesis (re-scoped post-verdict)
 
-### (a) The industry's claimed value axes for a curated layer
+### (a) The industry's claimed value axes — governance vs retrieval-quality
 
-1. **Global / sensemaking / multi-hop questions** whose answer lives in no single chunk
-   (GraphRAG abstract; RAPTOR abstract; Karpathy's "synthesizing five documents").
-2. **Query-time token efficiency** — pay synthesis cost once at ingest, answer from
-   compact artifacts (GraphRAG Table 2; Dense X fixed-budget EM; Anthropic "without
-   keeping everything in the context window").
-3. **Compounding accumulation** — knowledge, cross-references, and flagged
-   contradictions persist and grow instead of being re-derived per query (Karpathy
-   gist; claude-obsidian README; Anthropic memory docs; MemGPT).
-4. **Dedup / contradiction control and human auditability** — the wiki is a readable,
-   diffable, lintable artifact a human can inspect and correct (Karpathy's lint
-   operation; claude-obsidian "stays healthy"; our layered design's immutable Sources
-   mirror the gist's raw/ layer).
-5. **Better retrieval units** — synthesized, self-contained units retrieve better than
-   arbitrary raw chunks (Dense X propositions; RAPTOR summaries).
+1. **Contradiction control** — the wiki's own home axis, and the one axis corpus v3
+   actually measured for this project: `wiki` 0.032 vs `rag` 0.002, `hybrid` 0.032 vs
+   `rag` 0.002 contradiction-leak rate, both McNemar p < 0.0001 — the curated layer
+   lost its own home axis (Karpathy's lint operation; claude-obsidian "stays healthy";
+   VERDICT.md). Auditability is a separate, unmeasured property — see item 2 below.
+2. **Compounding accumulation** and **human auditability** — the governance properties
+   this file is now scoped to motivate (Karpathy gist; claude-obsidian README;
+   Anthropic memory docs; MemGPT). No head-to-head benchmark found anywhere, for this
+   project or in the literature.
+3. **Global / sensemaking / multi-hop questions** (GraphRAG abstract; RAPTOR abstract;
+   Karpathy's "synthesizing five documents"), **query-time token efficiency** (GraphRAG
+   Table 2; Dense X fixed-budget EM), and **better retrieval units** (Dense X
+   propositions; RAPTOR summaries) — retrieval-quality claims from structural
+   analogues, not from this project's markdown wiki, and not tested outside corpus
+   v3's three content axes, which the wiki lost.
 
-### (b) Which axes are MEASURED vs only ARGUED
+### (b) Which axes are MEASURED vs only ARGUED — for THIS project
 
-| Axis | Status | Evidence |
+| Axis | Status for this project | Evidence |
 |---|---|---|
-| Global/sensemaking QA | **MEASURED** (LLM-judged preference) | GraphRAG 72–83% comprehensiveness win (2404.16130 Fig.2/T6) |
-| Multi-hop QA | **MEASURED** | RAPTOR +20% abs. QuALITY (2401.18059); HippoRAG2 70.27 vs 67.02 (2502.11371 §4.1) |
-| Token efficiency at query time | **MEASURED** | GraphRAG 9×–43× fewer tokens (T2); Dense X +4.9–7.8 EM at fixed budget (2312.06648) |
-| Better retrieval units via synthesis | **MEASURED** | Dense X Recall@5 +12.0/+9.3; RAPTOR SOTA on NarrativeQA/QASPER |
-| Article-level organization/coverage | **MEASURED** (with editor-flagged defects) | STORM +25%/+10% (2402.14207) |
-| Compounding cross-session memory | **ARGUED only** | Karpathy gist, claude-obsidian README, Anthropic memory docs — zero head-to-head numbers found |
-| Contradiction control / dedup | **ARGUED only** | Karpathy lint op; no measurement found |
-| Human auditability | **ARGUED only** | inherent to markdown artifact; no study found |
+| Contradiction control | **MEASURED — negative** | corpus v3: `wiki` 0.032 vs `rag` 0.002, `hybrid` 0.032 vs `rag` 0.002 contradiction-leak rate, both p < 0.0001 (VERDICT.md) |
+| Global/sensemaking QA | argued (analogue only) | GraphRAG 72–83% comprehensiveness win (2404.16130 Fig.2/T6) — a different system, not this wiki |
+| Multi-hop QA | argued (analogue only) | RAPTOR +20% abs. QuALITY (2401.18059); HippoRAG2 70.27 vs 67.02 (2502.11371 §4.1) — not this wiki |
+| Token efficiency at query time | argued (analogue only); a different quantity measured locally | GraphRAG 9×–43× fewer tokens (T2), Dense X +4.9–7.8 EM (2312.06648) are analogue papers; this project's own draft-input-tokens-per-stratum is measured locally (VERDICT.md decision matrix, `Query-time token efficiency` row; raw per-call usage in `eval/corpus_v3/live_run_ledger.json`) but is a cost figure, not a quality-win figure |
+| Better retrieval units via synthesis | argued (analogue only) | Dense X Recall@5 +12.0/+9.3; RAPTOR SOTA on NarrativeQA/QASPER — not this wiki |
+| Article-level organization/coverage | argued (analogue only, editor-flagged defects) | STORM +25%/+10% (2402.14207) |
+| Compounding cross-session memory | argued only | Karpathy gist, claude-obsidian README, Anthropic memory docs — zero head-to-head numbers found anywhere |
+| Human auditability | argued only | inherent to markdown artifact; no study found |
+| Known losses regardless of eval | directness (GraphRAG concedes; 2502.11371: RAG wins detail queries); build cost (LazyGraphRAG: full synthesis ≈1000× vector-index cost); update amplification + staleness window (ADR-0045 Consequences); summary hallucination amplification (2502.11371: 25% on unanswerable) | see (c) below |
 
 ### (c) Where plain RAG is documented to win
 
@@ -235,30 +285,31 @@ answers **at a fixed token budget**, the same token-efficiency axis GraphRAG mea
   queries (2502.11371 §4.3): summaries can amplify overconfidence.
 - **Freshness** — inferred from build-cost asymmetry, not directly measured (see §7).
 
-### (d) The honest one-paragraph "why wiki" for an interview
+This project's own corpus v3 trial reached the same conclusion for its own
+implementation: `rag` beat both `wiki` and `hybrid` on every measured content axis,
+including the curated layer's own home axis (VERDICT.md).
 
-> "The measured evidence says the two approaches are complementary, not that one kills
-> the other. Plain RAG demonstrably wins single-hop factoid lookup, directness,
-> freshness, and build cost — a systematic evaluation (arXiv:2502.11371) puts graph/
-> summary construction at ~57× RAG's build time and shows RAG ahead on detail queries.
-> But the same literature shows a derived synthesis layer wins exactly where raw chunks
-> structurally can't: Microsoft's GraphRAG (arXiv:2404.16130) wins 72–83% of
-> comprehensiveness judgments on corpus-level sensemaking questions and answers them
-> with 9–43× fewer query-time tokens from pre-built summaries; RAPTOR
-> (arXiv:2401.18059) adds +20% absolute on QuALITY by retrieving recursive summaries;
-> Dense X (arXiv:2312.06648) shows synthesized retrieval units beat raw chunks at a
-> fixed token budget. Our wiki layer is the Karpathy-pattern instantiation of that
-> measured idea — 'compile' sources once into a curated, cross-referenced layer so
-> multi-document synthesis is paid at ingest, not per query — with two properties the
-> papers' graph indexes lack: it's human-auditable markdown, and Sources stay immutable
-> so every synthesized claim remains traceable. I'd be equally upfront about the
-> honest caveats: the 'knowledge compounds' benefit itself is argued by Karpathy,
-> claude-obsidian, and Anthropic's memory-tool docs but not yet benchmarked
-> head-to-head; STORM's editors documented bias transfer and fact over-association in
-> LLM synthesis; and Microsoft's own LazyGraphRAG showed eager whole-corpus
-> summarization can be 1000× costlier than necessary — which is why we keep BM25 over
-> raw Sections as the factoid path and treat the wiki as a curated layer on top, not a
-> replacement."
+### (d) The honest one-paragraph "why wiki" for an interview (rewritten post-verdict)
+
+> "The measured evidence — the literature's and now our own — says plain RAG wins
+> where it structurally should: single-hop factoid lookup, directness, freshness, and
+> build cost. A systematic evaluation (arXiv:2502.11371) puts graph/summary
+> construction at ~57× RAG's build time and shows RAG ahead on detail queries. Our own
+> pre-registered trial (ADR-0045 → VERDICT.md) ran 3,636 queries across four arms on an
+> adversarial corpus built specifically for curation to earn its keep, and `rag` beat
+> both `wiki` and `hybrid` on every one of the three content axes we measured —
+> including contradiction-leak rate, the curated layer's own home axis. So I don't
+> claim our wiki wins on retrieval or grounding quality; the data says it doesn't. What
+> I'd still defend is the governance motivation: Karpathy's pattern and Microsoft's
+> GraphRAG argue that a curated, cross-referenced, human-auditable layer catches
+> contradictions and compounds knowledge in ways a flat chunk store can't — but that's
+> an argued case from the literature, not a measured one, for our implementation. We
+> kept the layer because the Hybrid stack and the Operator Console depend on it, and
+> because the governance axis itself — whether curation actually saves operator time or
+> catches errors on a churny corpus — is a different, still-unmeasured question. If
+> asked to bet, I'd deploy `rag` by default and treat the wiki as an opt-in governance
+> workflow for corpora that are contradiction-prone, low-churn, and have a real curator
+> — not as a retrieval upgrade."
 
 ---
 
@@ -273,5 +324,11 @@ answers **at a fixed token budget**, the same token-efficiency axis GraphRAG mea
 - GraphRAG "empowerment" metric results and MemGPT's quantitative tables not
   extracted (abstract-level only).
 - No paper found (searched, not exhaustively) that benchmarks a *Karpathy-style
-  markdown wiki* head-to-head against plain RAG; the measured evidence is all from
-  structural analogues (graph summaries, summary trees, propositions).
+  markdown wiki* head-to-head against plain RAG; the measured evidence in sections 1–7
+  is all from structural analogues (graph summaries, summary trees, propositions).
+  This project's own corpus v3 trial (ADR-0045 → [`../corpus_v3/VERDICT.md`](../corpus_v3/VERDICT.md))
+  is now that head-to-head benchmark for our own implementation specifically —
+  3,636 queries, `wiki`/`hybrid` vs `rag` — and the result is negative (§0). That
+  fills the gap this bullet describes for our project; it does not extend to the
+  general literature claim about Karpathy-style wikis at large, which remains
+  untested outside analogues.
