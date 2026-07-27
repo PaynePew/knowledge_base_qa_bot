@@ -61,8 +61,14 @@ def test_axis_sample_to_comparison_raises_on_an_empty_stratum():
 
 
 def test_axis_sample_to_comparison_empty_stratum_error_names_the_stratum_and_queries_fix():
+    """The caller (e.g. live_runner.build_live_verdict_report) is the one
+    that knows which real stratum an axis draws from -- correct_refusal_rate
+    from the unanswerable stratum, per build_axis_samples's own docstring --
+    so this passes that realistic (axis, stratum) pairing through explicitly,
+    rather than a mismatched combination that could never occur in real
+    code."""
     sample = run_verdict.AxisSample(
-        axis="contradiction_leak_rate",
+        axis="correct_refusal_rate",
         arm_a="wiki",
         arm_b="rag",
         outcomes_a=[],

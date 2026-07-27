@@ -193,6 +193,36 @@ def test_build_axis_samples_scores_grounding_refusal_and_leak_axes():
     assert leak.outcomes_b == [1, 0]  # rag cites the leak id on the factoid query
 
 
+def _grounded_record(arm: str, query_id: str, source_id: str) -> AnswerRecord:
+    return _record(
+        arm, query_id, cited=frozenset({source_id}), retrieved=frozenset({source_id})
+    )
+
+
+def test_build_live_verdict_report_empty_stratum_error_names_the_real_stratum():
+    """Verdict follow-up on issue #683 finding 2: build_live_verdict_report's
+    own ``to_comparison()`` call site never passed a ``stratum`` kwarg, so
+    the empty-stratum ValueError always reported the misleading default
+    ``stratum='macro'`` -- even though the axis actually starved of data is
+    ``correct_refusal_rate``, whose real, documented subset
+    (``build_axis_samples``'s own docstring) is the ``unanswerable``
+    stratum. A query set with no unanswerable queries at all must raise
+    naming ``unanswerable``, not the generic ``macro`` default."""
+    source_id = "gift_card_faq.md#expiration"
+    queries = [_query("factoid-en-0000", "factoid", gold=[source_id])]
+    records = {
+        (arm, "factoid-en-0000"): _grounded_record(arm, "factoid-en-0000", source_id)
+        for arm in ("wiki", "hybrid", "dense_over_wiki", "rag")
+    }
+    ledger = CostLedger()
+
+    with pytest.raises(ValueError, match="unanswerable") as exc_info:
+        live_runner.build_live_verdict_report(queries, records, ledger)
+
+    assert "correct_refusal_rate" in str(exc_info.value)
+    assert "macro" not in str(exc_info.value)
+
+
 # ---------------------------------------------------------------------------
 # run_live_answering — happy path, skip, mid-run abort, resume
 # ---------------------------------------------------------------------------
