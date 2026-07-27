@@ -28,6 +28,16 @@ toggle:
 > stacks directly (different corpora, different units) was the cross-corpus reading
 > explicitly rejected in [ADR-0018](project-docs/adr/0018-hybrid-retrieval-third-stack-rrf-over-wiki.md).
 
+> **Wiki is a governance demo, not a measured retrieval win.** A
+> pre-registered kill-criteria trial
+> ([ADR-0045](project-docs/adr/0045-wiki-retrieval-arm-kill-criteria-preregistered.md)
+> → [`VERDICT.md`](eval/corpus_v3/VERDICT.md), $3.97 spend, 3,636 queries × 4
+> arms) killed `stack=wiki` as a standalone retrieval option and demoted the
+> curated `wiki/` layer: RAG (dense retrieval over raw `docs/`) beat both
+> wiki-backed stacks on every measured content axis. The layer stays live as
+> the substrate for the Hybrid stack and the Operator Console's curation
+> workflow (upload, ingest, lint, reconcile) — see Evaluation below.
+
 **Live demo: <https://ask-wiki-rag.paynepew.dev>.** Reader at `/`, Operator
 Console at `/console`.
 
@@ -272,23 +282,76 @@ knowledge_base_qa_bot/
 └── .env.example      # Copy to .env and add your OpenAI key
 ```
 
-## Evaluation: three stacks, measured
+## Evaluation: the corpus v3 verdict
 
-Does a curated Wiki + BM25 actually out-retrieve plain Vector RAG on the same raw
-corpus, and where does Hybrid land? The benchmark answers it with real numbers
-rather than assertion.
+A pre-registered kill-criteria trial decided the wiki retrieval arm's fate
+before the run started, so the outcome couldn't be rationalized after the
+fact —
+[ADR-0045](project-docs/adr/0045-wiki-retrieval-arm-kill-criteria-preregistered.md)
+fixed the kill/demote/survive clauses and the significance bar in advance.
+Corpus v3 is adversarial by design (redundant, contradictory, and
+version-evolving Sources — the track where curation is supposed to earn its
+keep) and it ran for real: 3,636 English queries × 4 arms (`wiki`, `rag`,
+`hybrid`, plus `dense_over_wiki`, the missing-cell control that isolates
+corpus effect from algorithm effect), $3.97 in query-phase spend, 24,863 LLM
+calls. Full report and per-axis tables:
+[`eval/corpus_v3/VERDICT.md`](eval/corpus_v3/VERDICT.md).
 
-**Test set.** 260 queries over one 20-Source / ~51-Gold-Section corpus:
-**250 Core paraphrases** (5 LLM-generated rewrite types × 50) plus **10
-hand-written structural probes** (2 types × 5). A "hit" requires the retrieved
-unit to match the gold section _and_ share content key-tokens, so a
-right-document-wrong-content result is a miss.
+**Kill clause: `wiki` killed.** `stack=wiki` needed a significant advantage
+over `stack=rag` (dense retrieval over raw `docs/`) on all three content
+axes to survive. It lost all three — every McNemar p < 0.0001:
 
-**Method.** Each arm overfetches a deep candidate pool once per query, decoupled
-from the cutoff; hit-rate is reported across a sweep (hit@{1,3,5,10}) plus MRR. A
-three-way **Cochran's Q** omnibus gates **post-hoc pairwise McNemar** (with Holm
-correction), so no pairwise claim is made unless the omnibus first says some arm
-differs. The dense arms use real OpenAI `text-embedding-3-small`.
+| Axis | wiki | rag | n |
+| --- | --- | --- | --- |
+| contradiction-leak rate (lower is better) | 0.032 | 0.002 | 3,636 |
+| correct-refusal rate | 0.845 | 0.971 | 909 |
+| grounding-pass rate | 0.726 | 0.784 | 2,727 |
+
+`stack=wiki` is retired as a standalone retrieval option.
+
+**Demote clause: `hybrid` demoted.** `stack=hybrid` needed a significant
+advantage over `stack=rag` on contradiction-leak rate — the curated layer's
+own home axis — and instead measured significantly *worse* (0.032 vs 0.002,
+McNemar p < 0.0001). The wiki layer is repositioned honestly: a
+demonstration artifact of the KB-governance workflow (curation, provenance,
+the Operator Console), not a measured quality win. The code stays — the
+Hybrid stack and the Console still depend on it — but every narrative claim
+of retrieval or grounding superiority is retracted here and in
+[`eval/fairness_review/method-comparison.md`](eval/fairness_review/method-comparison.md).
+
+No axis survived: no wiki-backed stack significantly beat `rag` on any
+measured axis.
+
+**Honest limits.** `dense_over_wiki` ran with no calibrated pre-LLM refusal
+gate, so its correct-refusal numbers reflect synthesis/grounding refusal
+only, not an apples-to-apples gate comparison against `wiki` and `rag`. The
+governance axis itself — whether the curation workflow saves operator time
+or catches errors a flat corpus would miss — remains unmeasured; corpus v3
+tested content-quality axes only.
+
+### Earlier eval (v2, superseded on content-quality axes)
+
+Before corpus v3 existed, a smaller 260-query eval over one 20-Source /
+~51-Gold-Section clean FAQ corpus asked a narrower question: on natural
+paraphrases, over a corpus with no contradictions to resolve, does a curated
+Wiki + BM25 out-retrieve plain Vector RAG, and where does Hybrid land? That
+question was never a test of the wiki's real value proposition — curation
+paying off on redundant, contradictory, versioned corpora — because a small
+clean corpus is a track where curation cannot show value (ADR-0045). It
+stands as a retrieval-arm comparison at small scale; the corpus v3 verdict
+above supersedes it on every content-quality claim.
+
+**Test set.** 260 queries: **250 Core paraphrases** (5 LLM-generated rewrite
+types × 50) plus **10 hand-written structural probes** (2 types × 5). A "hit"
+requires the retrieved unit to match the gold section _and_ share content
+key-tokens, so a right-document-wrong-content result is a miss.
+
+**Method.** Each arm overfetches a deep candidate pool once per query,
+decoupled from the cutoff; hit-rate is reported across a sweep
+(hit@{1,3,5,10}) plus MRR. A three-way **Cochran's Q** omnibus gates
+**post-hoc pairwise McNemar** (with Holm correction), so no pairwise claim is
+made unless the omnibus first says some arm differs. The dense arms use real
+OpenAI `text-embedding-3-small`.
 
 **Core results (macro-average hit@3, real embeddings):**
 
@@ -300,37 +363,24 @@ differs. The dense arms use real OpenAI `text-embedding-3-small`.
 The omnibus is significant (Cochran's Q = 7.95, p = 0.019). After Holm
 correction, the **only** pairwise gap that survives is **Hybrid > Wiki**
 (p = 0.010); Wiki↔RAG (p = 0.077) and Hybrid↔RAG (p = 0.71) are statistically
-indistinguishable. On natural paraphrases the three stacks land close together.
-The structural probes are where they separate.
-
-**What the per-type data shows:**
-
-- **Synonyms and unseen jargon are Wiki's weak spot.** When a query uses
-  vocabulary absent from the source, keyword BM25 can miss where vector
-  similarity matches: synonym_swap Wiki 0.84 vs RAG 0.94, with the
-  industry-jargon probe the extreme (Wiki 0.40 vs RAG 1.00, Hybrid 0.60). Hybrid
-  recovers part of RAG's edge while keeping wiki-Section citations.
-- **Cost is asymmetric, and the headline numbers hide it.** Wiki pays a one-shot
-  LLM synthesis cost at ingest and then retrieves for free; RAG and Hybrid pay a
-  per-query embedding cost forever. The retrieval scores don't capture this; the
-  report's cost log does.
-- **Citation quality is Wiki's structural edge.** Wiki and Hybrid cite a stable
-  `filename#heading` with `sources:` provenance that is grounding-checked at
-  ingest; RAG cites raw chunks by similarity, usually losing section boundaries.
+indistinguishable at this scale. The structural probes are where the arms
+separate: synonym and unseen-jargon queries are Wiki's weak spot
+(synonym_swap Wiki 0.84 vs RAG 0.94; industry-jargon Wiki 0.40 vs RAG 1.00,
+Hybrid 0.60) — but none of this speaks to the contradiction-control,
+correct-refusal, or grounding-pass axes corpus v3 measured, where the wiki
+lost.
 
 ![Core hit rate by paraphrase type, three stacks](eval/paraphrase_comparison/charts/core_hit_rate_at_3.png)
 
 ![Structural probes expose each architecture's limit](eval/paraphrase_comparison/charts/probes_hit_rate_at_3.png)
 
-The honest reading: at this corpus scale (curated FAQ / policy, well under ~1000
-pages), the differences on natural questions are small and mostly don't survive
-correction. Wiki trades a few points of recall for zero per-query cost, an
-inspectable index, and structured provenance; Hybrid buys back most of that
-recall while keeping the wiki-Section citation. The full methodology, statistical
-tests, cost log, and disclosed limitations are in
+The full v2 methodology, statistical tests, cost log, and disclosed
+limitations are in
 [`eval/paraphrase_comparison/report.md`](eval/paraphrase_comparison/report.md);
-the design rationale is in [`why-wiki.md`](project-docs/why-wiki.md). To
-regenerate the corpus and re-run the comparison, see the maintainer runbook at
+the harness-bias audit that qualifies these numbers is in
+[`eval/fairness_review/verdict.md`](eval/fairness_review/verdict.md). To
+regenerate the corpus and re-run the comparison, see the maintainer runbook
+at
 [`eval/paraphrase_comparison/README.md`](eval/paraphrase_comparison/README.md).
 
 ### A fourth arm we measured but ship turned off: the cross-encoder reranker
@@ -451,6 +501,15 @@ knowledge base"_,而不是亂猜。
 > `wiki/` Sections,而不是 `docs/` chunk。兩條臂都回傳 wiki Section、id 對齊,所以融合
 > 乾淨、wiki 引用也保得住。把 Wiki 與 RAG 兩套引擎直接合併(不同語料、不同單位)是被
 > [ADR-0018](project-docs/adr/0018-hybrid-retrieval-third-stack-rrf-over-wiki.md) 明確否決的跨語料讀法。
+
+> **Wiki 是治理示範,不是量測出來的檢索勝出。** 一個事先登記判準的
+> 殺/降級試驗
+> ([ADR-0045](project-docs/adr/0045-wiki-retrieval-arm-kill-criteria-preregistered.md)
+> → [`VERDICT.md`](eval/corpus_v3/VERDICT.md),花費 $3.97、3,636 筆查詢
+> × 4 條臂)判 `stack=wiki` 淘汰(不再是獨立檢索選項)、`wiki/` 精選層降級:
+> RAG(在原始 `docs/` 上做密集檢索)在每一個有量測的內容軸上都贏過兩套
+> wiki-backed 引擎。這個層留著,是因為 Hybrid 引擎與 Operator Console 的
+> 策展工作流(上傳、ingest、lint、reconcile)還依賴它 —— 細節見下方「評測」。
 
 **線上 Demo:<https://ask-wiki-rag.paynepew.dev>。** Reader 在 `/`,
 Operator Console 在 `/console`。
@@ -669,20 +728,67 @@ knowledge_base_qa_bot/
 └── .env.example      # 複製成 .env 並填入你的 OpenAI key
 ```
 
-## 評測:三套引擎,用數字說話
+## 評測:corpus v3 的判決
 
-精選 Wiki + BM25 真的能在同一份原始語料上贏過一般的 Vector RAG 嗎 —— 而 Hybrid
-又落在哪裡?這個基準用真實數字回答,而不是嘴上說說。
+一個事先登記好判準的殺/降級試驗,在正式開跑前就定好 wiki 檢索臂的命運,結果
+自然無法事後合理化 ——
+[ADR-0045](project-docs/adr/0045-wiki-retrieval-arm-kill-criteria-preregistered.md)
+把殺/降級/存活三個條款與顯著水準都預先寫死。corpus v3 刻意設計成對抗性語料
+(冗餘、互相矛盾、版本演進的 Sources —— 策展理應在這裡回本的賽道),而且是真的
+跑了一輪:3,636 筆英文查詢 × 4 條臂(`wiki`、`rag`、`hybrid`,外加補上 2×2
+缺角的對照臂 `dense_over_wiki`,把語料效應與演算法效應分開),查詢階段花費
+$3.97,共 24,863 次 LLM 呼叫。完整報告與逐軸表格見
+[`eval/corpus_v3/VERDICT.md`](eval/corpus_v3/VERDICT.md)。
 
-**測試資料量。** 在一份 20-Source / 約 51 個 Gold Section 的語料上,共 260 筆
-查詢:**250 筆 Core 改寫**(5 種 LLM 生成的改寫類型 × 50)加上 **10 筆手寫的結構
-性探針**(2 種 × 5)。「命中」必須是檢索結果的來源符合 gold section **且**內容共享
-關鍵詞,所以「文件對、內容不對」算未命中。
+**殺條款:`wiki` 被殺。** `stack=wiki` 得在三個內容軸上都對 `stack=rag`
+(在原始 `docs/` 上做密集檢索)顯著勝出才能存活。結果三軸全輸,每一個
+McNemar p 都 < 0.0001:
 
-**方法。** 每套引擎每筆查詢只 overfetch 一次深層候選池,與最終 cutoff 解耦;命中率
-跨 cutoff 報告(hit@{1,3,5,10})並附 MRR。三方 **Cochran's Q** omnibus 把關事後的
-配對 **McNemar**(加 Holm 校正)—— omnibus 先說「有某套引擎不一樣」,才會做任何
-配對宣稱。密集臂使用真實的 OpenAI `text-embedding-3-small`。
+| 軸 | wiki | rag | n |
+| --- | --- | --- | --- |
+| 矛盾洩漏率(contradiction-leak,越低越好) | 0.032 | 0.002 | 3,636 |
+| 正確拒答率(correct-refusal) | 0.845 | 0.971 | 909 |
+| grounding 通過率 | 0.726 | 0.784 | 2,727 |
+
+`stack=wiki` 就此從獨立檢索選項中退役。
+
+**降級條款:`hybrid` 被降級。** `stack=hybrid` 得在矛盾洩漏率 —— 精選層自己
+的主場軸 —— 上顯著勝過 `stack=rag`,結果反而顯著更差(0.032 對 0.002,
+McNemar p < 0.0001)。wiki 層被誠實地重新定位:它是 KB 治理工作流(策展、
+出處、Operator Console)的示範產物,不是量測出來的品質勝出。程式碼保留 ——
+Hybrid 引擎與 Console 都還依賴它 —— 但任何「檢索或 grounding 上勝出」的敘事,
+在這裡以及
+[`eval/fairness_review/method-comparison.md`](eval/fairness_review/method-comparison.md)
+中都已撤回。
+
+沒有任何一軸存活:沒有一套 wiki-backed 引擎在任何有量測的軸上顯著贏過
+`rag`。
+
+**誠實的限制。** `dense_over_wiki` 跑的時候沒有校正過的 LLM 前置拒答閘門,
+所以它的正確拒答率只反映合成/grounding 層的拒答,不是跟 `wiki`、`rag` 對等
+的閘門比較。治理軸本身 —— 策展工作流是否真的省下操作者的時間、或抓到一份
+未策展語料會漏掉的錯誤 —— 仍未量測;corpus v3 只測了內容品質軸。
+
+### 較早的評測(v2,在內容品質軸上已被取代)
+
+在 corpus v3 存在之前,一個較小的 260 筆查詢評測,在一份 20-Source / 約
+51-Gold-Section 的乾淨 FAQ 語料上,問了一個較窄的問題:在自然改寫、且沒有
+矛盾要解決的語料上,精選 Wiki + BM25 是否真能贏過一般的 Vector RAG,Hybrid
+又落在哪裡?這個問題從來就不是在測 wiki 真正的價值主張 —— 策展在冗餘、
+矛盾、版本演進語料上回本 —— 因為小而乾淨的語料正是策展無法展現價值的賽道
+(ADR-0045)。它作為小規模下的檢索臂比較仍然成立;上方 corpus v3 的判決在
+所有內容品質主張上都已取代它。
+
+**測試資料量。** 260 筆查詢:**250 筆 Core 改寫**(5 種 LLM 生成的改寫類型
+× 50)加上 **10 筆手寫的結構性探針**(2 種 × 5)。「命中」必須是檢索結果的
+來源符合 gold section **且**內容共享關鍵詞,所以「文件對、內容不對」算
+未命中。
+
+**方法。** 每套引擎每筆查詢只 overfetch 一次深層候選池,與最終 cutoff
+解耦;命中率跨 cutoff 報告(hit@{1,3,5,10})並附 MRR。三方 **Cochran's Q**
+omnibus 把關事後的配對 **McNemar**(加 Holm 校正)—— omnibus 先說「有某套
+引擎不一樣」,才會做任何配對宣稱。密集臂使用真實的 OpenAI
+`text-embedding-3-small`。
 
 **Core 結果(macro 平均 hit@3,真實 embedding):**
 
@@ -691,35 +797,23 @@ knowledge_base_qa_bot/
 | hit@3 | 0.880 | **0.936** | 0.924 |
 | MRR | 0.807 | **0.863** | 0.849 |
 
-omnibus 顯著(Cochran's Q = 7.95,p = 0.019)。經 Holm 校正後,**唯一**存活的配對
-差異是 **Hybrid > Wiki**(p = 0.010);Wiki↔RAG(p = 0.077)與 Hybrid↔RAG
-(p = 0.71)在統計上無法區分。在自然改寫上三套引擎相當接近 —— 真正拉開差距的是
-結構性探針。
-
-**逐型別數據顯示:**
-
-- **同義詞與沒見過的行話是 Wiki 的弱點。** 當查詢用了來源中沒出現的詞彙,關鍵詞
-  BM25 可能漏掉、而向量相似度能命中:synonym_swap Wiki 0.84 vs RAG 0.94,而「行話」
-  探針是極端例子(Wiki 0.40 vs RAG 1.00,Hybrid 0.60)。Hybrid 在保留 wiki-Section
-  引用的同時,補回了 RAG 的部分優勢。
-- **成本是不對稱的,而頭條數字藏住了它。** Wiki 在 ingest 付一次性的 LLM 合成成本,
-  之後檢索免費;RAG 與 Hybrid 則每次查詢都要付 embedding 成本。檢索分數看不出這點
-  —— 報告的 cost log 看得出。
-- **引用品質是 Wiki 的結構性優勢。** Wiki 與 Hybrid 引用穩定的 `filename#heading`,
-  並帶有在 ingest 時做過 grounding 檢查的 `sources:` 出處;RAG 以相似度引用原始
-  chunk,通常會遺失章節邊界。
+omnibus 顯著(Cochran's Q = 7.95,p = 0.019)。經 Holm 校正後,**唯一**存活
+的配對差異是 **Hybrid > Wiki**(p = 0.010);Wiki↔RAG(p = 0.077)與
+Hybrid↔RAG(p = 0.71)在這個規模下統計上無法區分。結構性探針上三套引擎才
+真正拉開差距:同義詞與沒見過的行話是 Wiki 的弱點(synonym_swap Wiki 0.84
+vs RAG 0.94;行話探針 Wiki 0.40 vs RAG 1.00、Hybrid 0.60)—— 但這些都與
+corpus v3 量測、且 wiki 落敗的矛盾控制、正確拒答、grounding 通過三軸無關。
 
 ![三套引擎逐型別的 hit rate](eval/paraphrase_comparison/charts/core_hit_rate_at_3.png)
 
 ![結構性探針暴露各自架構的極限](eval/paraphrase_comparison/charts/probes_hit_rate_at_3.png)
 
-誠實的解讀:在這個語料規模(精選 FAQ / 政策,遠低於約 1000 頁),自然問題上的差異
-很小,且多半撐不過校正。Wiki 用幾個百分點的 recall,換到每次查詢零成本、可檢視的
-索引、以及結構化出處;Hybrid 則買回大部分 recall,又保住 wiki-Section 引用。完整
-的方法、統計檢定、成本紀錄與誠實的限制說明,都在
+完整的 v2 方法、統計檢定、成本紀錄與已揭露的限制,都在
 [`eval/paraphrase_comparison/report.md`](eval/paraphrase_comparison/report.md);
-設計取捨見 [`why-wiki.md`](project-docs/why-wiki.md)。若要重新產生語料並重跑比較,
-請見維護者操作手冊 [`eval/paraphrase_comparison/README.md`](eval/paraphrase_comparison/README.md)。
+為這些數字加上但書的 harness 偏誤稽核在
+[`eval/fairness_review/verdict.md`](eval/fairness_review/verdict.md)。若要
+重新產生語料並重跑比較,請見維護者操作手冊
+[`eval/paraphrase_comparison/README.md`](eval/paraphrase_comparison/README.md)。
 
 ### 我們量測了、卻選擇關掉的第四條臂:cross-encoder reranker
 
