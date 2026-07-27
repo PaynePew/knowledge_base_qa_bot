@@ -37,6 +37,27 @@ def test_axis_sample_to_comparison_computes_rates_and_a_real_p_value():
     assert comparison.test_name == "mcnemar"
 
 
+def test_axis_sample_to_comparison_guards_an_empty_stratum():
+    """Issue #683 item 3: a small/custom query subset can leave a whole
+    stratum empty (e.g. no unanswerable queries -- correct_refusal_rate has
+    nothing to score). ``to_comparison`` must report "no evidence" (n=0,
+    rate 0.0, p=1.0 -- mcnemar_exact_p's own n_d==0 convention) instead of
+    raising."""
+    sample = run_verdict.AxisSample(
+        axis="correct_refusal_rate",
+        arm_a="wiki",
+        arm_b="rag",
+        outcomes_a=[],
+        outcomes_b=[],
+    )
+    comparison = sample.to_comparison()
+    assert comparison.n == 0
+    assert comparison.rate_a == 0.0
+    assert comparison.rate_b == 0.0
+    assert comparison.p_value == 1.0
+    assert comparison.significant() is False
+
+
 # ---------------------------------------------------------------------------
 # load_pilot_ledger / run_cost_guard
 # ---------------------------------------------------------------------------

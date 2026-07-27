@@ -143,7 +143,25 @@ class AxisSample:
     outcomes_b: Sequence[int]
 
     def to_comparison(self, *, stratum: str = "macro") -> PairwiseComparison:
+        """Issue #683 item 3: an empty stratum (e.g. a small/custom query
+        subset with no ``unanswerable`` queries at all -- nothing for
+        ``correct_refusal_rate`` to score) reports "no evidence" -- rate 0.0,
+        ``p_value=1.0`` -- rather than raising. ``p_value=1.0`` mirrors
+        ``statistics.mcnemar_exact_p``'s own convention for zero discordant
+        pairs: no data means no evidence of a difference, never a crash."""
         n = len(self.outcomes_a)
+        if n == 0:
+            return PairwiseComparison(
+                axis=self.axis,
+                stratum=stratum,
+                arm_a=self.arm_a,
+                arm_b=self.arm_b,
+                rate_a=0.0,
+                rate_b=0.0,
+                n=0,
+                p_value=1.0,
+                test_name="mcnemar",
+            )
         result = mcnemar_test(list(self.outcomes_a), list(self.outcomes_b))
         return PairwiseComparison(
             axis=self.axis,
