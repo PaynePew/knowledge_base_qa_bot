@@ -82,7 +82,15 @@ def main(base: str) -> None:
             # frames {"text": ...}; the `done` frame carries {"grounding": {...}}.
             answer_parts: list[str] = []
             grounding = None
-            with c.stream("POST", "/chat/stream", json={"query": q}) as r:
+            # Issue #681 (ADR-0045 kill clause): the gateway's stack-less
+            # default flipped wiki -> rag. This probe's query-borne phase
+            # targets the #577-hardened wiki drafter/judge prompt-assembly
+            # path (the attack docs above are ingested into the wiki corpus),
+            # so the stack is pinned explicitly rather than relying on the
+            # default.
+            with c.stream(
+                "POST", "/chat/stream?stack=wiki", json={"query": q}
+            ) as r:
                 for line in r.iter_lines():
                     if not line.startswith("data: "):
                         continue
