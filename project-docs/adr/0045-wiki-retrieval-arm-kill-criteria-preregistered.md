@@ -34,10 +34,10 @@ Significance means a paired test on the shared query set (McNemar or bootstrap o
 
 ## Postscript — verdict executed (2026-07-27)
 
-Corpus v3 ran 2026-07-25/26 (PR #680; canonical record `eval/corpus_v3/VERDICT.md`). Both clauses in this ADR's Decision section triggered, and there is zero survival: `rag` (dense-over-raw-docs, stack B) won all three content axes — contradiction-leak rate, grounding pass rate, correct-refusal rate — each significant at McNemar p<0.0001 against every wiki-backed arm (`wiki`, `hybrid`, `dense_over_wiki`).
+Corpus v3 ran 2026-07-25/26 (PR #680; canonical record `eval/corpus_v3/VERDICT.md`). Both clauses in this ADR's Decision section triggered, and there is zero survival: `rag` (dense-over-raw-docs, stack B) won all three content axes — contradiction-leak rate, grounding pass rate, correct-refusal rate — each significant at McNemar p<0.0001 against every wiki-backed arm (`wiki`, `hybrid`, `dense_over_wiki`); `dense_over_wiki`'s correct-refusal comparison carries the Honest limits #1 caveat below (no calibrated pre-LLM refusal gate), so read that one axis as directional, not apples-to-apples.
 
-- **Kill clause: triggered.** `stack=wiki` showed no significant advantage over `stack=rag` on any of the three content axes; the retrieval arm is killed per this ADR's stated consequence.
-- **Demote clause: triggered.** `hybrid` showed no significant advantage over `rag` on contradiction-leak rate, the curated layer's home axis; the wiki layer demotes per this ADR's stated consequence.
+- **Kill clause: triggered.** `stack=wiki` showed no significant advantage over `stack=rag` on any of the three content axes; the retrieval arm is killed per this ADR's stated consequence. (This clause rests on `wiki` only — `dense_over_wiki`'s caveated numbers are not part of its evidentiary basis.)
+- **Demote clause: triggered.** `hybrid` showed no significant advantage over `rag` on contradiction-leak rate, the curated layer's home axis; the wiki layer demotes per this ADR's stated consequence. (This clause rests on `hybrid` only, likewise unaffected by the `dense_over_wiki` caveat.)
 - **Survival clause: not met.** No wiki-backed stack significantly beat `rag` on any axis.
 
 **Execution** (all merged 2026-07-27, narrative following the verdict as this ADR's Consequences require):
@@ -56,4 +56,4 @@ Corpus v3 ran 2026-07-25/26 (PR #680; canonical record `eval/corpus_v3/VERDICT.m
 **Still open**, per this ADR's own Consequences and `VERDICT.md`'s honest-limits section:
 
 - The governance axis is unmeasured — corpus v3 tested content-quality axes only.
-- The pre-registered zh query slice (this ADR's Prerequisite 3; relaxed power target, ~$0.9 estimated cost) was never run. The `rag` recommendation is validated for the English slice only.
+- The pre-registered zh query slice (this ADR's Prerequisite 3; relaxed power target, ~$0.9 estimated cost — unit economics from the live run: $3.9675 / 3,636 en queries × 800 zh queries ≈ $0.87) was never run. The `rag` recommendation is validated for the English slice only.
