@@ -8,6 +8,10 @@ ledger-replay reconstruction directly).
 
 from __future__ import annotations
 
+import json
+
+import pytest
+
 from eval.corpus_v3 import checkpoint
 
 
@@ -105,6 +109,39 @@ def test_replay_ledger_reconstructs_totals_from_checkpoint_rows():
     totals = ledger.totals(stack="wiki", phase="query")
     assert totals.calls == 2
     assert totals.total_tokens == 120 + 350
+
+
+def test_load_checkpoint_skips_a_torn_final_line_with_a_warning(tmp_path, capsys):
+    """Issue #683 item 1: a crash mid-``fh.write`` can leave the last JSONL
+    line truncated (e.g. process killed after the OS buffered a partial
+    write but before the next newline). That is a normal resume scenario,
+    not corruption -- the two complete rows ahead of it must still load."""
+    path = tmp_path / "checkpoint.jsonl"
+    row1 = checkpoint.CheckpointRow(query_id="q1", arm="wiki", answer_text="a1")
+    row2 = checkpoint.CheckpointRow(query_id="q1", arm="rag", answer_text="a2")
+    checkpoint.append_checkpoint_row(path, row1)
+    checkpoint.append_checkpoint_row(path, row2)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write('{"query_id": "q2", "arm": "wiki", "answer_te')  # torn, no newline
+
+    loaded = checkpoint.load_checkpoint(path)
+
+    assert loaded == [row1, row2]
+    assert "torn" in capsys.readouterr().err
+
+
+def test_load_checkpoint_raises_on_a_torn_line_that_is_not_last(tmp_path):
+    """A torn line BEFORE the final one is real corruption (the append-only
+    write already completed later rows), not a crash-mid-write tail -- fail
+    fast per CODING_STANDARD §4.1 rather than silently dropping data."""
+    path = tmp_path / "checkpoint.jsonl"
+    row2 = checkpoint.CheckpointRow(query_id="q1", arm="rag", answer_text="a2")
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write('{"query_id": "q1", "arm": "wiki", "answer_te\n')  # torn, not last
+        fh.write(json.dumps(row2.to_json_dict()) + "\n")
+
+    with pytest.raises(json.JSONDecodeError):
+        checkpoint.load_checkpoint(path)
 
 
 def test_ledger_call_dicts_matches_checkpoint_row_ledger_calls_shape(tmp_path):

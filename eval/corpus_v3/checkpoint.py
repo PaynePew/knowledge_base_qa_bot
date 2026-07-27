@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -78,14 +79,35 @@ class CheckpointRow:
 
 def load_checkpoint(path: Path) -> list[CheckpointRow]:
     """Load every row of an existing checkpoint file, or ``[]`` if ``path``
-    does not exist yet (a fresh run, not an error)."""
+    does not exist yet (a fresh run, not an error).
+
+    A torn FINAL line (``append_checkpoint_row``'s ``fsync`` happened, but
+    the process was killed before the trailing newline landed -- issue #683
+    item 1) is skipped with a warning rather than raised: every row ahead of
+    it already durably answered its ``(query_id, arm)`` pair, and a resume
+    must not lose them over one incomplete tail write. A torn line that is
+    NOT last means the append-only write already completed later rows around
+    it -- real corruption, not a crash-mid-write tail -- so that still raises
+    (CODING_STANDARD §4.1 fail-fast)."""
     if not path.exists():
         return []
+    lines = path.read_text(encoding="utf-8").splitlines()
+    last_index = len(lines) - 1
     rows = []
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for i, line in enumerate(lines):
         line = line.strip()
-        if line:
+        if not line:
+            continue
+        try:
             rows.append(CheckpointRow.from_json_dict(json.loads(line)))
+        except json.JSONDecodeError:
+            if i != last_index:
+                raise
+            print(
+                f"checkpoint {path}: skipping a torn final line "
+                "(crash mid-write) -- resuming from the last complete row",
+                file=sys.stderr,
+            )
     return rows
 
 
