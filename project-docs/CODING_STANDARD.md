@@ -2,7 +2,7 @@
 
 How code is shaped in this repo, what conventions hold across modules, what design patterns are in play, and what tooling enforces them. This file is **not the spec** — that lives in `project-docs/prd.md` and `project-docs/adr/*.md` / `CONTEXT.md`. This file is the **consistency layer** that keeps the spec implementable across slices without drifting.
 
-> **Freshness**: last reconciled through **ADR-0045** (2026-07-23). If `project-docs/adr/` holds a newer Accepted ADR than this stamp, this file is stale — reconcile per §0.3.
+> **Freshness**: last reconciled through **ADR-0045** (2026-07-27). If `project-docs/adr/` holds a newer Accepted ADR than this stamp, this file is stale — reconcile per §0.3.
 
 ## 0. Reading order
 
@@ -423,6 +423,8 @@ target-version = "py311"
 select = ["E", "F", "I", "B", "UP", "SIM"]
 ignore = []
 ```
+
+In this repo, `line-length = 100` is actually enforced today via a root `.ruff.toml` (see that file's header for the config-resolution rule it corrects), not the per-package `[tool.ruff]` block shown above, except for `markdown_kb`, `gateway`, `kb_mcp`, and `kb_cli`, which pin their own `[tool.ruff]` in `pyproject.toml` and are unaffected by the root file.
 
 Commands: `uv run ruff format .`, `uv run ruff check .`.
 

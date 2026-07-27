@@ -1,13 +1,15 @@
-# Repo-wide ruff config (issue #690 rework). ruff resolves the "closest"
-# ruff.toml / .ruff.toml / pyproject.toml walking up from each file, and a
-# pyproject.toml with no [tool.ruff] table still counts as the closest config
-# (it does not keep climbing). Before this file existed, any path with no
-# local pyproject.toml of its own (eval/corpus_v3, eval/cost_ledger,
-# project-docs/, ops/, deploy/, ...) climbed all the way to the workspace
-# root pyproject.toml - which has no [tool.ruff] section - and silently fell
-# back to ruff's built-in 88-col default instead of this repo's documented
-# 100 (CODING_STANDARD 8.1). That mismatch produced false format drift on PR
-# #684 and again on #686.
+# Repo-wide ruff config (issue #690 rework). Ruff resolves the closest
+# ruff.toml / .ruff.toml / pyproject.toml **containing a [tool.ruff] table**
+# walking up from each file. A ruff.toml or .ruff.toml counts unconditionally
+# once found, but a pyproject.toml with no [tool.ruff] table does NOT stop
+# the walk - ruff skips over it and keeps climbing toward the next candidate
+# further up the tree. Before this file existed, any path with no local
+# pyproject.toml of its own (eval/corpus_v3, eval/cost_ledger,
+# project-docs/, ops/, deploy/, ...) climbed past the workspace root
+# pyproject.toml too - it also has no [tool.ruff] section - found nothing
+# further up, and silently fell back to ruff's built-in 88-col default
+# instead of this repo's documented 100 (CODING_STANDARD 8.1). That mismatch
+# produced false format drift on PR #684 and again on #686.
 #
 # A prior fix for this (issue #690) added a standalone pyproject.toml under
 # each of eval/corpus_v3 and eval/cost_ledger to pin line-length=100. An
@@ -20,9 +22,14 @@
 # gap with no uv side effect.
 #
 # The four workspace members that already carry their own [tool.ruff] in
-# their pyproject.toml (markdown_kb, gateway, kb_mcp, kb_cli) are closer to
-# their own files than this root file and are unaffected. vector_rag,
-# hybrid_kb, and eval/paraphrase_comparison each have a pyproject.toml of
-# their own (no [tool.ruff] table) and are likewise closer than this file, so
-# they are also unaffected - out of scope for this rework.
+# their pyproject.toml (markdown_kb, gateway, kb_mcp, kb_cli) stop the walk
+# at their own file and are unaffected by this one. vector_rag, hybrid_kb,
+# and eval/paraphrase_comparison each have a pyproject.toml of their own,
+# but it has no [tool.ruff] table - so per the rule above the walk does NOT
+# stop there. It climbs past them and resolves to THIS root file instead
+# (verified: from inside vector_rag/, `ruff check --verbose` logs this
+# .ruff.toml as the resolved config, not vector_rag/pyproject.toml, and
+# `--show-settings` reports line_length = 100 from it) - which is why the
+# initial 100-col sweep (PR #694) legitimately reformatted their files too;
+# they were never out of scope.
 line-length = 100
