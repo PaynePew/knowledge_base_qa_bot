@@ -288,6 +288,18 @@ def leak_source_ids_for_query(
     if group.adversarial_class == "redundancy":
         return frozenset()
     all_ids = frozenset(s.source_id for s in group.sections)
+    # Design note (issue #683 item 4): a cross_doc query drawn from a
+    # contradiction/version_evolution group cites EVERY side of that group in
+    # its OWN gold_section_ids (generation/targets.py's dedup/
+    # conflict-comparison case -- the honest cross_doc answer names both
+    # conflicting sides, or the full version history, not just one). None of
+    # the three "empty" branches above catch that case (it resolves to
+    # exactly one group, and that group is not `redundancy`), so it falls
+    # through to here -- but the subtraction below still nets to an empty
+    # set, because `gold_section_ids` already equals the group's full id set.
+    # That is legitimate, not a bug: citing every side IS the leak-free
+    # answer for a cross_doc query, so there is nothing left over to count as
+    # a leak (see test_leak_ids_for_contradiction_cross_doc_citing_both_sides_is_empty).
     return all_ids - frozenset(query.gold_section_ids)
 
 
