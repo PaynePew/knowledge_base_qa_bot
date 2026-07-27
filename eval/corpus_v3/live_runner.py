@@ -64,6 +64,7 @@ import importlib
 import os
 import sys
 import time
+import traceback
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -288,6 +289,24 @@ def leak_source_ids_for_query(
     if group.adversarial_class == "redundancy":
         return frozenset()
     all_ids = frozenset(s.source_id for s in group.sections)
+    # Design note (issue #683 item 4, corrected): a cross_doc query drawn
+    # from a `contradiction` group cites EVERY side of that group in its OWN
+    # gold_section_ids (generation/targets.py's conflict-comparison case --
+    # the honest cross_doc answer names both conflicting sides, not just
+    # one). `redundancy` cross_doc queries never reach this line (the
+    # `redundancy` branch above already returns empty), and
+    # `version_evolution` NEVER produces a cross_doc query at all --
+    # generation/targets.py only buckets `redundancy`/`contradiction` groups
+    # into "cross_doc"; `version_evolution` groups only ever feed
+    # "version_conflict", whose gold_section_ids names just the newest
+    # version, not the group's full id set (see
+    # test_leak_ids_for_version_conflict_is_the_superseded_versions, where
+    # the subtraction below correctly nets to the superseded versions, NOT
+    # empty). So the only case reaching here where the subtraction nets to
+    # empty is `contradiction`'s cross_doc case: `gold_section_ids` already
+    # equals the group's full id set, so citing every side IS the leak-free
+    # answer and there is nothing left over to count as a leak (see
+    # test_leak_ids_for_contradiction_cross_doc_citing_both_sides_is_empty).
     return all_ids - frozenset(query.gold_section_ids)
 
 
@@ -405,6 +424,19 @@ def _grounded_correct_counts(
     return counts
 
 
+# The real per-query subset each axis's outcomes are drawn from
+# (build_axis_samples's own docstring: correct_refusal_rate is unanswerable-
+# only, grounding_pass_rate is answerable-only, contradiction_leak_rate spans
+# every query). Threaded into to_comparison() so an empty-stratum ValueError
+# names the stratum that is ACTUALLY starved of data, not the generic
+# "macro" default -- verdict follow-up on issue #683 finding 2.
+_STRATUM_BY_AXIS: dict[str, str] = {
+    "grounding_pass_rate": "answerable",
+    "correct_refusal_rate": "unanswerable",
+    "contradiction_leak_rate": "macro",
+}
+
+
 def build_live_verdict_report(
     queries: Sequence[Query],
     records_by_arm_query: Mapping[tuple[str, str], AnswerRecord],
@@ -416,7 +448,9 @@ def build_live_verdict_report(
     -- CODING_STANDARD §6.6's canonical-name guarantee: only an answer_fn
     -backed run may write this file without a placeholder header."""
     samples = build_axis_samples(queries, records_by_arm_query)
-    comparisons = [s.to_comparison() for s in samples]
+    comparisons = [
+        s.to_comparison(stratum=_STRATUM_BY_AXIS[s.axis]) for s in samples
+    ]
 
     kill = kill_clause_verdict(comparisons, wiki_arm="wiki", baseline_arm=BASELINE_ARM)
     demote_comparison = next(
@@ -531,14 +565,54 @@ def run_live_verdict(
 
     answer_fn = build_answer_fn({q.query_id: q.text for q in queries}, ledger=ledger)
 
-    result = run_live_answering(
-        queries,
-        ledger=ledger,
-        checkpoint_path=checkpoint_path,
-        answer_fn=answer_fn,
-        already_done=done,
-        cap_usd=cap_usd,
-    )
+    try:
+        result = run_live_answering(
+            queries,
+            ledger=ledger,
+            checkpoint_path=checkpoint_path,
+            answer_fn=answer_fn,
+            already_done=done,
+            cap_usd=cap_usd,
+        )
+    except LLMError as exc:
+        # Issue #683 item 2 / finding 3 (adversarial-verified MEDIUM): only
+        # LLMError -- the arms' own exception type, wrapping every SYNTHESIS
+        # call via _call_llm_with_error_handling's ADR-0015 mapping -- gets
+        # this clean, actionable message. This is NOT the only exception type
+        # _answer_with_retry's exhausted-schedule / non-transient re-raise
+        # can produce: query-time EMBEDDING calls (hybrid / dense_over_wiki's
+        # FAISS similarity search embedding the query text) are not routed
+        # through that mapping at all, so a raw openai.* error from an
+        # embedding-call outage falls through to the generic branch below
+        # instead -- the safe direction (more diagnostic detail, never a
+        # false "intact" claim), not a gap this branch needs to cover. Every
+        # row answered before this point is already durably checkpointed
+        # (checkpoint.py's append-per-answer contract), so THIS specific
+        # failure mode really is a clean, resumable halt, not data loss.
+        print(
+            f"live run: answering failed -- {exc} -- halting; the "
+            "checkpoint is intact, mark the issue ready-for-human rather "
+            "than resuming blindly",
+            file=sys.stderr,
+        )
+        return 1
+    except Exception:
+        # Anything OTHER than the known LLM-path failure -- e.g. an OSError
+        # out of append_checkpoint_row itself (disk full mid-write), or a
+        # genuine programming error -- must never be blanket-reassured as
+        # "the checkpoint is intact": that claim is only true for the
+        # LLMError branch above. Print the full traceback (not just
+        # str(exc)) so a multi-hour AFK run's failure is diagnosable instead
+        # of a bare one-line message with no stack.
+        traceback.print_exc()
+        print(
+            "live run: answering failed with an unexpected error (see "
+            "traceback above, not the known retry-exhaustion path) -- "
+            "halting; checkpoint integrity is NOT guaranteed, inspect "
+            f"{checkpoint_path} before resuming",
+            file=sys.stderr,
+        )
+        return 1
     if result.aborted:
         print(f"live run: {result.abort_reason}", file=sys.stderr)
         return 1

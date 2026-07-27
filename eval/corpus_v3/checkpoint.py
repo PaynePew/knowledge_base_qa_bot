@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -78,15 +79,87 @@ class CheckpointRow:
 
 def load_checkpoint(path: Path) -> list[CheckpointRow]:
     """Load every row of an existing checkpoint file, or ``[]`` if ``path``
-    does not exist yet (a fresh run, not an error)."""
+    does not exist yet (a fresh run, not an error).
+
+    A torn FINAL line (``append_checkpoint_row``'s ``fsync`` happened, but
+    the process was killed before the trailing newline landed -- issue #683
+    item 1) is skipped with a warning rather than raised: every row ahead of
+    it already durably answered its ``(query_id, arm)`` pair, and a resume
+    must not lose them over one incomplete tail write. A torn line that is
+    NOT last means the append-only write already completed later rows around
+    it -- real corruption, not a crash-mid-write tail -- so that still raises
+    (CODING_STANDARD §4.1 fail-fast)."""
     if not path.exists():
         return []
+    lines = path.read_text(encoding="utf-8").splitlines()
+    last_index = len(lines) - 1
     rows = []
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for i, line in enumerate(lines):
         line = line.strip()
-        if line:
+        if not line:
+            continue
+        try:
             rows.append(CheckpointRow.from_json_dict(json.loads(line)))
+        except json.JSONDecodeError:
+            if i != last_index:
+                raise
+            print(
+                f"checkpoint {path}: skipping a torn final line "
+                "(crash mid-write) -- resuming from the last complete row",
+                file=sys.stderr,
+            )
     return rows
+
+
+def _truncate_torn_tail(path: Path) -> None:
+    """If ``path``'s last byte is not a newline -- a previous
+    :func:`append_checkpoint_row` was interrupted mid-write, before the
+    trailing newline landed -- truncate the file back to the end of its last
+    complete line (issue #683 finding 1, adversarial-verified HIGH).
+
+    Without this, the next append's ``"a"`` mode would concatenate the new
+    row's JSON directly onto the torn partial one, producing a single
+    invalid line that is no longer LAST. :func:`load_checkpoint`'s torn-tail
+    tolerance only forgives a torn line that IS last (its own docstring); a
+    torn line buried mid-file is real corruption and raises forever --
+    turning one already-lost row into every row appended after it also
+    becoming unrecoverable.
+
+    This is a pure trailing-byte check, not a JSON-validity check: it always
+    truncates when the last byte isn't ``b"\\n"`` or ``b"\\r"``, even if the
+    dangling content happens to parse as complete JSON. ``append_checkpoint_row``
+    always terminates its own writes with ``"\\n"``, so a missing trailing
+    terminator can only mean an interrupted write -- there is no legitimate
+    case where a complete row is deliberately left unterminated. The
+    discarded partial row is not newly lost data: :func:`load_checkpoint`
+    already treats a torn final line as unrecoverable and skips it the same
+    way.
+
+    ``b"\\r"`` counts as a complete terminator too, alongside ``b"\\n"``,
+    for a Windows-specific reason: ``append_checkpoint_row`` opens in TEXT
+    mode, so on Windows every ``"\\n"`` it writes lands on disk as ``"\\r\\n"``.
+    A crash torn exactly between those two bytes leaves the file ending in a
+    lone ``b"\\r"`` with the row's own JSON content already fully written --
+    only the newline SEQUENCE is torn, not the row. :func:`load_checkpoint`
+    reads with universal newlines, so it already treats that lone ``\\r`` as
+    a line terminator and durably counts the row as done; if this function
+    disagreed and truncated it away, a durably-committed, already-answered
+    ``(query_id, arm)`` pair would be silently dropped from disk and never
+    re-answered (the caller's in-memory ``done`` set still has it marked
+    answered from the earlier load). The truncation-point search below
+    mirrors this: it looks for the last ``b"\\n"`` OR ``b"\\r"`` -- not just
+    ``b"\\n"`` -- so a genuinely torn LATER row never wipes out an earlier
+    row whose only terminator is a lone ``\\r``. Neither byte can appear
+    inside a row's own JSON content (``json.dumps`` always escapes control
+    characters), so both are unambiguous row-boundary markers.
+    """
+    data = path.read_bytes()
+    if not data or data.endswith((b"\n", b"\r")):
+        return
+    # 0 when neither terminator exists anywhere in the file.
+    truncate_at = max(data.rfind(b"\n"), data.rfind(b"\r")) + 1
+    with path.open("r+b") as fh:
+        fh.truncate(truncate_at)
 
 
 def append_checkpoint_row(path: Path, row: CheckpointRow) -> None:
@@ -94,6 +167,8 @@ def append_checkpoint_row(path: Path, row: CheckpointRow) -> None:
     append-only durability property issue #679 AC 2 requires (never
     write-at-end; a crash after this call has already banked the answer)."""
     path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        _truncate_torn_tail(path)
     with path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(row.to_json_dict()) + "\n")
         fh.flush()

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import anthropic
 import httpx
+import openai
 import hybrid_kb.app.query as hybrid_query
 import markdown_kb.app.retrieval as mk_retrieval
 import pytest
@@ -190,6 +191,36 @@ def test_build_axis_samples_scores_grounding_refusal_and_leak_axes():
     leak = by_axis["contradiction_leak_rate"]
     assert leak.outcomes_a == [0, 0]  # wiki never cites the OTHER side
     assert leak.outcomes_b == [1, 0]  # rag cites the leak id on the factoid query
+
+
+def _grounded_record(arm: str, query_id: str, source_id: str) -> AnswerRecord:
+    return _record(
+        arm, query_id, cited=frozenset({source_id}), retrieved=frozenset({source_id})
+    )
+
+
+def test_build_live_verdict_report_empty_stratum_error_names_the_real_stratum():
+    """Verdict follow-up on issue #683 finding 2: build_live_verdict_report's
+    own ``to_comparison()`` call site never passed a ``stratum`` kwarg, so
+    the empty-stratum ValueError always reported the misleading default
+    ``stratum='macro'`` -- even though the axis actually starved of data is
+    ``correct_refusal_rate``, whose real, documented subset
+    (``build_axis_samples``'s own docstring) is the ``unanswerable``
+    stratum. A query set with no unanswerable queries at all must raise
+    naming ``unanswerable``, not the generic ``macro`` default."""
+    source_id = "gift_card_faq.md#expiration"
+    queries = [_query("factoid-en-0000", "factoid", gold=[source_id])]
+    records = {
+        (arm, "factoid-en-0000"): _grounded_record(arm, "factoid-en-0000", source_id)
+        for arm in ("wiki", "hybrid", "dense_over_wiki", "rag")
+    }
+    ledger = CostLedger()
+
+    with pytest.raises(ValueError, match="unanswerable") as exc_info:
+        live_runner.build_live_verdict_report(queries, records, ledger)
+
+    assert "correct_refusal_rate" in str(exc_info.value)
+    assert "macro" not in str(exc_info.value)
 
 
 # ---------------------------------------------------------------------------
@@ -511,6 +542,84 @@ def test_run_live_verdict_refuses_without_an_api_key(monkeypatch, tmp_path):
 
     assert exit_code == 1
     assert not (tmp_path / "VERDICT.md").exists()
+
+
+class _AlwaysTimingOutLLM:
+    """Every ``.invoke()`` call times out -- forces ``_answer_with_retry`` to
+    exhaust its full backoff schedule (issue #683 item 2)."""
+
+    def invoke(self, messages):
+        raise openai.APITimeoutError(
+            request=httpx.Request("POST", "https://api.openai.com/v1/chat/completions")
+        )
+
+
+def test_run_live_verdict_exits_cleanly_when_retries_are_exhausted(
+    monkeypatch, tmp_path, fake_vector_index, capsys
+):
+    """Issue #683 item 2: an outage that outlasts the bounded retry schedule
+    must surface as a clean ``exit(1)`` with an actionable stderr message --
+    not an unhandled traceback -- so an AFK live run fails loud without
+    dumping a Python stack trace instead of guidance."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
+    monkeypatch.setattr(live_runner.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(
+        grounding_module,
+        "get_verifier_llm",
+        lambda: _FakeVerifierLLM(_passing_result("store-hours")),
+    )
+    for module in (mk_retrieval, vr_retrieval, hybrid_query):
+        monkeypatch.setattr(module, "get_llm", lambda: _AlwaysTimingOutLLM())
+    report_out = tmp_path / "VERDICT.md"
+
+    exit_code = live_runner.run_live_verdict(
+        queries_path=_small_queries_path(tmp_path),
+        checkpoint_path=tmp_path / "checkpoint.jsonl",
+        ledger_out_path=tmp_path / "ledger.json",
+        report_out_path=report_out,
+    )
+
+    assert exit_code == 1
+    assert not report_out.exists()
+    err = capsys.readouterr().err
+    assert "retries" in err or "retry" in err
+    assert "ready-for-human" in err  # mirrors the mid-run spend-abort message
+
+
+def _raise_runtime_error(*_args, **_kwargs):
+    raise RuntimeError("boom: programming bug")
+
+
+def test_run_live_verdict_preserves_traceback_for_an_unexpected_error(
+    monkeypatch, tmp_path, fake_vector_index, capsys
+):
+    """Issue #683 finding 3 (adversarial-verified MEDIUM): the handler around
+    run_live_answering used to catch bare ``Exception``, discard the
+    traceback, and unconditionally claim "the checkpoint is intact" -- false
+    when the exception came from append_checkpoint_row itself (e.g. a
+    disk-full OSError), and undiagnosable for a genuine programming error on
+    a multi-hour AFK run. Only the arms' own LLMError (the known,
+    already-retried-and-exhausted failure mode -- see the timeout-path test
+    above) gets the clean actionable message; anything else must print the
+    full traceback and must NOT claim the checkpoint is intact."""
+    _install_fakes(monkeypatch, fake_vector_index)
+    monkeypatch.setattr(live_runner, "run_live_answering", _raise_runtime_error)
+    report_out = tmp_path / "VERDICT.md"
+
+    exit_code = live_runner.run_live_verdict(
+        queries_path=_small_queries_path(tmp_path),
+        checkpoint_path=tmp_path / "checkpoint.jsonl",
+        ledger_out_path=tmp_path / "ledger.json",
+        report_out_path=report_out,
+    )
+
+    assert exit_code == 1
+    assert not report_out.exists()
+    err = capsys.readouterr().err
+    assert "Traceback" in err
+    assert "RuntimeError" in err
+    assert "boom: programming bug" in err
+    assert "checkpoint is intact" not in err
 
 
 def test_run_live_verdict_writes_report_ledger_and_checkpoint(

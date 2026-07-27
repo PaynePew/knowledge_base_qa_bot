@@ -37,6 +37,48 @@ def test_axis_sample_to_comparison_computes_rates_and_a_real_p_value():
     assert comparison.test_name == "mcnemar"
 
 
+def test_axis_sample_to_comparison_raises_on_an_empty_stratum():
+    """Issue #683 finding 2 (adversarial-verified MEDIUM): a small/custom
+    query subset can leave a whole stratum empty (e.g. no unanswerable
+    queries -- correct_refusal_rate has nothing to score). The old fix
+    fabricated a PairwiseComparison (rate 0.0 vs 0.0, p=1.0, "mcnemar") for a
+    test that never ran; because the rates are equal, significant_advantage()
+    reads False, so a ZERO-observation axis silently counted toward
+    ADR-0045's pre-registered kill clause and the report rendered a fake
+    "mcnemar p=1.0000, n=0" row. A pre-registered verdict clause must never
+    be satisfied (or blocked) by data that doesn't exist -- fail fast with an
+    actionable, axis-named error instead, naming the stratum and pointing at
+    the fix (a fuller --queries set, or excluding the axis explicitly)."""
+    sample = run_verdict.AxisSample(
+        axis="correct_refusal_rate",
+        arm_a="wiki",
+        arm_b="rag",
+        outcomes_a=[],
+        outcomes_b=[],
+    )
+    with pytest.raises(ValueError, match="correct_refusal_rate"):
+        sample.to_comparison(stratum="unanswerable")
+
+
+def test_axis_sample_to_comparison_empty_stratum_error_names_the_stratum_and_queries_fix():
+    """The caller (e.g. live_runner.build_live_verdict_report) is the one
+    that knows which real stratum an axis draws from -- correct_refusal_rate
+    from the unanswerable stratum, per build_axis_samples's own docstring --
+    so this passes that realistic (axis, stratum) pairing through explicitly,
+    rather than a mismatched combination that could never occur in real
+    code."""
+    sample = run_verdict.AxisSample(
+        axis="correct_refusal_rate",
+        arm_a="wiki",
+        arm_b="rag",
+        outcomes_a=[],
+        outcomes_b=[],
+    )
+    with pytest.raises(ValueError, match="unanswerable") as exc_info:
+        sample.to_comparison(stratum="unanswerable")
+    assert "--queries" in str(exc_info.value)
+
+
 # ---------------------------------------------------------------------------
 # load_pilot_ledger / run_cost_guard
 # ---------------------------------------------------------------------------
