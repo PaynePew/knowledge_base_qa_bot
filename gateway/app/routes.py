@@ -33,6 +33,13 @@ bytes; Import stays unchanged).
 Issue #533 (ADR-0036 §6) — ``POST /upload`` gains an optional
 ``overwrite_relpath`` form field, forwarded verbatim to ``upload_files``;
 the destination-aware overwrite guard lives entirely in the deep module.
+Issue #681 (ADR-0045 kill clause) — the ``stack`` default flips from
+``wiki`` to ``rag``: a stack-less request now dispatches to
+``vector_rag.app.retrieval.stream_query``. ``stack=wiki`` remains an
+accepted, fully-dispatched value (the Console/QA-filing loop still depend
+on it); it is just no longer the default. ``middleware.py::_stack_param``
+carries a matching default so the over-cap degraded-serving gate (scoped
+to ``stack=wiki`` only) does not misfire on a now-rag-default request.
 
 All streaming complexity lives in the per-stack ``stream_query()`` functions and
 the shared ``markdown_kb.app.sse.events_for_result()`` serializer; this module is
@@ -175,7 +182,7 @@ _STACK_STREAM_FN: dict[str, Callable[[str], Iterator[dict]]] = {
 def chat_stream(
     req: ChatRequest,
     request: Request,
-    stack: str = "wiki",
+    stack: str = "rag",
     session: str | None = None,
 ) -> StreamingResponse:
     """Stream a grounded answer as SSE events.
@@ -262,9 +269,17 @@ def chat_stream(
 
     Args:
         req: ChatRequest body with ``query`` field.
-        stack: Query param selecting the Retrieval Stack (default ``wiki``).
-            ``wiki``   — Wiki BM25 stack (markdown_kb).
-            ``rag``    — Vector RAG stack (vector_rag).
+        stack: Query param selecting the Retrieval Stack (default ``rag`` —
+            issue #681, ADR-0045 kill clause: corpus v3 found no significant
+            advantage for ``stack=wiki`` over ``stack=rag`` on any content
+            axis, so ``stack=wiki`` is retired as the DEFAULT standalone
+            retrieval option. It remains an ACCEPTED value — the Console and
+            the QA-filing/governance loop still depend on it (ADR-0045's
+            wiki-layer distinction) — just no longer what a stack-less
+            request receives.
+            ``wiki``   — Wiki BM25 stack (markdown_kb). Still dispatched when
+                explicitly requested; never the default.
+            ``rag``    — Vector RAG stack (vector_rag). Default.
             ``hybrid`` — Hybrid stack: BM25 + dense fused over the wiki Section
                 corpus (hybrid_kb, ADR-0018). Never files (``done.filed`` null,
                 like rag); citations carry a resolvable wiki-page ``path``.

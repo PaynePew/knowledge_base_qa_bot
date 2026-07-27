@@ -358,15 +358,24 @@ _DEGRADABLE_STREAM_PATH = "/chat/stream"
 
 
 def _stack_param(scope: Scope) -> str:
-    """Return the ``stack`` query-param value, defaulting to ``"wiki"`` — the
-    ``POST /chat/stream`` route's own default (``gateway/app/routes.py``).
+    """Return the ``stack`` query-param value, defaulting to ``"rag"`` — the
+    ``POST /chat/stream`` route's own default (``gateway/app/routes.py``,
+    issue #681 / ADR-0045 kill clause: the default flipped from ``wiki`` to
+    ``rag``).
 
     Needed at the ASGI layer (issue #598 Slice B), before FastAPI parses the
     request, to decide whether an over-cap ``/chat/stream`` request can be
-    admitted degraded instead of hard-503'd.
+    admitted degraded instead of hard-503'd. This default MUST track the
+    route's default: ``_can_serve_degraded`` below only admits a request
+    degraded when it resolves to ``stack=="wiki"`` (the one stack with a
+    no-LLM fallback) — if this default drifted out of sync with the route's,
+    a stack-less request would dispatch to one stack while this ASGI-layer
+    check believed it was another, either wrongly hard-503'ing a wiki
+    request or, worse, admitting a non-wiki request past the budget cap for
+    an uncounted real LLM call (see ``_can_serve_degraded`` docstring).
     """
     values = parse_qs(scope.get("query_string", b"").decode("latin-1")).get("stack")
-    return values[0] if values else "wiki"
+    return values[0] if values else "rag"
 
 
 def _can_serve_degraded(path: str, scope: Scope) -> bool:
