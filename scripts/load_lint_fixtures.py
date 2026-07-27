@@ -93,14 +93,10 @@ def load_fixtures(wiki_dir: Path) -> None:
             if not existing.endswith("\n"):
                 existing += "\n"
             log_path.write_text(existing + log_entries, encoding="utf-8")
-            print(
-                f"Log entries appended to {log_path} ({len(log_entries.splitlines())} lines)"
-            )
+            print(f"Log entries appended to {log_path} ({len(log_entries.splitlines())} lines)")
         else:
             log_path.write_text(log_entries, encoding="utf-8")
-            print(
-                f"Log file created at {log_path} ({len(log_entries.splitlines())} lines)"
-            )
+            print(f"Log file created at {log_path} ({len(log_entries.splitlines())} lines)")
     else:
         print(f"WARNING: log_entries.txt not found at {_FIXTURES_LOG}", file=sys.stderr)
 

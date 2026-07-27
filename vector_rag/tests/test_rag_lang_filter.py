@@ -129,8 +129,7 @@ def test_chinese_query_retrieves_only_zh_chunks(mixed_index):
     results = vr_indexer.search_with_distance("退款需要多久", k=5)
     assert results, "Chinese query should retrieve at least one Chunk"
     assert _langs_of([c for c, _ in results]) == {"zh"}, (
-        "Chinese query must return only zh Chunks, got "
-        f"{[(c.source, c.lang) for c, _ in results]}"
+        f"Chinese query must return only zh Chunks, got {[(c.source, c.lang) for c, _ in results]}"
     )
 
 
@@ -139,8 +138,7 @@ def test_english_query_retrieves_only_en_chunks(mixed_index):
     results = vr_indexer.search_with_distance("how long do refunds take", k=5)
     assert results, "English query should retrieve at least one Chunk"
     assert _langs_of([c for c, _ in results]) == {"en"}, (
-        "English query must return only en Chunks, got "
-        f"{[(c.source, c.lang) for c, _ in results]}"
+        f"English query must return only en Chunks, got {[(c.source, c.lang) for c, _ in results]}"
     )
 
 
@@ -174,9 +172,7 @@ def test_zh_query_on_en_only_index_returns_cannot_confirm(en_only_index, monkeyp
     assert gate["sources"] == []
 
 
-def test_public_query_on_en_only_index_in_zh_is_cannot_confirm(
-    en_only_index, monkeypatch
-):
+def test_public_query_on_en_only_index_in_zh_is_cannot_confirm(en_only_index, monkeypatch):
     """End-to-end parity: the public ``query`` returns Cannot Confirm for a zh
     query against an en-only index, with NO LLM call (the gate early-exits)."""
     monkeypatch.setenv("KB_RAG_DISTANCE_THRESHOLD", "1000.0")

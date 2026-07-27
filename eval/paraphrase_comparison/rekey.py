@@ -166,9 +166,7 @@ def _render_rekeyed_yaml(
     """
     metadata = {
         **original_meta,
-        "generated_at": datetime.datetime.now(datetime.UTC).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        ),
+        "generated_at": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "corpus_snapshot_git_sha": _corpus_snapshot_sha(_PKG_ROOT),
         "total": len(paraphrases),
         "cost_usd": "n/a (offline re-key)",

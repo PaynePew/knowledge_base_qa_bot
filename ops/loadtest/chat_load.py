@@ -6,12 +6,19 @@ browser tabs generate concurrent load, and keeps this module dependency-free
 beyond ``httpx``, already a repo dev dependency).
 
 Queries are a fixed rotation of questions verified (issue #600 implementation
-pass, against the committed ``markdown_kb`` BM25 index) to retrieve non-empty,
-above-threshold sections — so every request reaches the draft+verify LLM path
-instead of the pre-LLM Cannot-Confirm short-circuit. Fidelity of the *answer*
-text doesn't matter here (the fake upstream returns a canned stub); reaching
-the same code path real traffic reaches is what matters for a memory
-characterization.
+pass, against the committed ``markdown_kb`` BM25 index under stack=wiki) to
+retrieve non-empty, above-threshold sections — so every request reaches the
+draft+verify LLM path instead of the pre-LLM Cannot-Confirm short-circuit.
+That retrieval-clearance guarantee was established for stack=wiki only;
+scenarios here now default to stack=rag (issue #690), and equivalent
+clearance against the rag retriever has not been re-verified. Fidelity of
+the *answer* text doesn't matter here (the fake upstream returns a canned
+stub); reaching the same code path real traffic reaches is what matters for
+a memory characterization.
+
+Note: the committed ``ops/loadtest/results/S1_*.json`` baselines were
+measured at stack=wiki, so rag-era reruns under the same scenario_id are not
+directly comparable to them.
 """
 
 from __future__ import annotations
@@ -43,9 +50,7 @@ class ChatLoadResult:
     errors: list[str] = field(default_factory=list)
 
 
-def _one_request(
-    base_url: str, query: str, stack: str, timeout: float
-) -> tuple[bool, str | None]:
+def _one_request(base_url: str, query: str, stack: str, timeout: float) -> tuple[bool, str | None]:
     """POST one chat/stream request, consume the SSE body, report ok/error.
 
     ``ok`` means HTTP 200 and a terminal ``done`` event was observed before
@@ -67,9 +72,7 @@ def _one_request(
                 for line in resp.iter_lines():
                     if line.startswith("event:") and "done" in line:
                         saw_done = True
-                return (
-                    (True, None) if saw_done else (False, "stream_closed_without_done")
-                )
+                return (True, None) if saw_done else (False, "stream_closed_without_done")
     except httpx.HTTPError as exc:
         return False, f"{type(exc).__name__}"
 
@@ -78,7 +81,11 @@ def run_chat_load(
     base_url: str,
     concurrency: int,
     requests_per_worker: int,
-    stack: str = "wiki",
+    # Issue #690 (post ADR-0045 / #681 kill clause): default flipped from
+    # "wiki" to "rag" so an unpinned scenario call models prod's actual
+    # default traffic. "wiki" and "hybrid" remain selectable by passing this
+    # parameter explicitly — it is the existing flag, not a removed one.
+    stack: str = "rag",
     timeout: float = 30.0,
 ) -> ChatLoadResult:
     """Drive ``concurrency`` workers, each firing ``requests_per_worker`` sequential

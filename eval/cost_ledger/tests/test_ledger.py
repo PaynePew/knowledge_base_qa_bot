@@ -23,9 +23,7 @@ def _usage(input_tokens: int, output_tokens: int) -> UsageMetadata:
 def test_record_rejects_a_phase_outside_build_query_update():
     ledger = CostLedger()
     with pytest.raises(ValueError, match="phase"):
-        ledger.record(
-            stack="A", phase="ingest", model="gpt-4o-mini", usage=_usage(1, 1)
-        )
+        ledger.record(stack="A", phase="ingest", model="gpt-4o-mini", usage=_usage(1, 1))
 
 
 def test_calls_returns_every_recorded_call_in_order():
@@ -43,9 +41,7 @@ def test_calls_property_is_a_copy():
     ledger.record(stack="A", phase="build", model="gpt-4o-mini", usage=_usage(1, 1))
     snapshot = ledger.calls
     snapshot.append(snapshot[0])  # mutate the returned copy
-    assert len(ledger.calls) == 1, (
-        "mutating the returned list must not affect the ledger"
-    )
+    assert len(ledger.calls) == 1, "mutating the returned list must not affect the ledger"
 
 
 def test_totals_aggregates_calls_and_tokens_for_one_stack_and_phase():
@@ -86,9 +82,7 @@ def test_totals_on_empty_ledger_is_zero_calls_and_none_usd():
 
 def test_totals_usd_sums_only_priced_calls():
     ledger = CostLedger()
-    ledger.record(
-        stack="A", phase="build", model="gpt-4o-mini", usage=_usage(1_000_000, 0)
-    )
+    ledger.record(stack="A", phase="build", model="gpt-4o-mini", usage=_usage(1_000_000, 0))
     ledger.record(
         stack="A",
         phase="build",
@@ -107,9 +101,7 @@ def test_totals_usd_sums_only_priced_calls():
 
 def test_totals_usd_is_none_when_no_matching_call_is_priced():
     ledger = CostLedger()
-    ledger.record(
-        stack="A", phase="build", model="some-unpinned-finetune", usage=_usage(10, 10)
-    )
+    ledger.record(stack="A", phase="build", model="some-unpinned-finetune", usage=_usage(10, 10))
     assert ledger.totals(stack="A").usd is None
 
 

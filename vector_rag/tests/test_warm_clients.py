@@ -57,9 +57,7 @@ def test_warm_llm_client_pings_the_singleton_with_bounded_tokens(monkeypatch):
 def test_warm_llm_client_swallows_failure_and_logs_it(monkeypatch, tmp_path):
     log_path = tmp_path / "vector_rag" / "log.md"
     monkeypatch.setattr(logger_module, "LOG_PATH", log_path)
-    monkeypatch.setattr(
-        retrieval_module, "get_llm", lambda: _FakeLLM(raises=RuntimeError("boom"))
-    )
+    monkeypatch.setattr(retrieval_module, "get_llm", lambda: _FakeLLM(raises=RuntimeError("boom")))
 
     retrieval_module.warm_llm_client()  # must not raise
 

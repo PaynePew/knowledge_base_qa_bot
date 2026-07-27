@@ -22,9 +22,7 @@ NEGATIVE_CASES_ZH: list[NegativeCase] = [
     NegativeCase("附近有哪些餐廳？", "local/geo search", "clearly_out_of_scope"),
     NegativeCase("明天天氣如何？", "weather", "clearly_out_of_scope"),
     NegativeCase("如何投資股票市場？", "finance", "clearly_out_of_scope"),
-    NegativeCase(
-        "幫我寫一首關於貓的詩。", "open-ended generation", "clearly_out_of_scope"
-    ),
+    NegativeCase("幫我寫一首關於貓的詩。", "open-ended generation", "clearly_out_of_scope"),
     NegativeCase("法國的首都是哪裡？", "general trivia", "clearly_out_of_scope"),
     NegativeCase("如何製作酸種麵包？", "cooking", "clearly_out_of_scope"),
     NegativeCase("推薦一部好看的動作片。", "entertainment", "clearly_out_of_scope"),
@@ -37,28 +35,16 @@ NEGATIVE_CASES_ZH: list[NegativeCase] = [
     # --- adjacent-absent: shares 繁中 commerce vocab, but the specific answer is
     #     absent from the enlarged corpus (the topics below are deliberately NOT
     #     covered by any corpus_zh file)
-    NegativeCase(
-        "你們有跟競品比價嗎？", "no price-match policy in KB", "adjacent_absent"
-    ),
-    NegativeCase(
-        "我的訂單可以包裝成禮物嗎？", "no gift-wrap info in KB", "adjacent_absent"
-    ),
-    NegativeCase(
-        "每次購買可以累積多少會員點數？", "no loyalty program in KB", "adjacent_absent"
-    ),
+    NegativeCase("你們有跟競品比價嗎？", "no price-match policy in KB", "adjacent_absent"),
+    NegativeCase("我的訂單可以包裝成禮物嗎？", "no gift-wrap info in KB", "adjacent_absent"),
+    NegativeCase("每次購買可以累積多少會員點數？", "no loyalty program in KB", "adjacent_absent"),
     NegativeCase("有提供學生折扣嗎？", "no discount policy in KB", "adjacent_absent"),
     NegativeCase(
         "下單後可以變更收件地址嗎？",
         "no address-change policy in KB",
         "adjacent_absent",
     ),
-    NegativeCase(
-        "你們有提供訂閱制方案嗎？", "no subscription info in KB", "adjacent_absent"
-    ),
-    NegativeCase(
-        "可以到實體門市自取嗎？", "no store-pickup info in KB", "adjacent_absent"
-    ),
-    NegativeCase(
-        "大量採購有優惠嗎？", "no bulk-order pricing in KB", "adjacent_absent"
-    ),
+    NegativeCase("你們有提供訂閱制方案嗎？", "no subscription info in KB", "adjacent_absent"),
+    NegativeCase("可以到實體門市自取嗎？", "no store-pickup info in KB", "adjacent_absent"),
+    NegativeCase("大量採購有優惠嗎？", "no bulk-order pricing in KB", "adjacent_absent"),
 ]

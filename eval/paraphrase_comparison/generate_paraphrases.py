@@ -68,9 +68,7 @@ PROBES_PATH = _PKG_ROOT / "probes.yaml"
 GENERATOR_MODEL = "gpt-4o-mini"
 TEMPERATURE = 0.7
 SEED = 42
-PER_TYPE_COUNT = (
-    8  # Core types; total core = 5 × 8 = 40 (+ 10 probes → 50, within ~39-54)
-)
+PER_TYPE_COUNT = 8  # Core types; total core = 5 × 8 = 40 (+ 10 probes → 50, within ~39-54)
 
 CORE_TYPES = tuple(CORE_TEMPLATES.keys())
 PROBE_TYPES = tuple(t for t in PARAPHRASE_TYPES if t not in CORE_TEMPLATES)
@@ -266,9 +264,7 @@ def render_queries_yaml(
     metadata = {
         "generator_model": generator_model,
         **({"critic_model": critic_model} if critic_model else {}),
-        "generated_at": datetime.datetime.now(datetime.UTC).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        ),
+        "generated_at": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "seed": SEED,
         "temperature": TEMPERATURE,
         "prompt_template_version": TEMPLATE_VERSION,
@@ -310,22 +306,16 @@ def run_qc(paraphrases: list[Paraphrase]) -> list[qc.QcVerdict]:
     """
     docs_bodies = _docs_section_bodies()
     wiki_bodies = [
-        _concept_body(s.concept_slug)
-        for s in sampling.load_gold_sections(corpus_dir=CORPUS_DIR)
+        _concept_body(s.concept_slug) for s in sampling.load_gold_sections(corpus_dir=CORPUS_DIR)
     ]
     idf = qc.build_idf([body for _, body in docs_bodies.values()] + wiki_bodies)
-    return [
-        qc.check_key_tokens(p.paraphrase_id, sorted(p.key_tokens), idf)
-        for p in paraphrases
-    ]
+    return [qc.check_key_tokens(p.paraphrase_id, sorted(p.key_tokens), idf) for p in paraphrases]
 
 
 def _print_qc(verdicts: list[qc.QcVerdict]) -> None:
     rejected = [v for v in verdicts if v.rejected]
     flagged = [v for v in verdicts if v.flagged_tokens and not v.rejected]
-    print(
-        f"  QC: {len(verdicts)} checked, {len(rejected)} rejected, {len(flagged)} flagged."
-    )
+    print(f"  QC: {len(verdicts)} checked, {len(rejected)} rejected, {len(flagged)} flagged.")
     for v in rejected:
         print(f"    REJECT {v.paraphrase_id}: {'; '.join(v.reasons)}")
     for v in flagged:
@@ -358,9 +348,7 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     args = parser.parse_args(argv)
-    load_dotenv(
-        find_dotenv(usecwd=True)
-    )  # pick up OPENAI_API_KEY from a repo-root .env
+    load_dotenv(find_dotenv(usecwd=True))  # pick up OPENAI_API_KEY from a repo-root .env
 
     if args.freeze and (args.qc_only or not os.getenv("OPENAI_API_KEY")):
         # --freeze without a live generation run: just freeze the corpus and exit.
@@ -383,9 +371,7 @@ def main(argv: list[str] | None = None) -> int:
     # AC3: freeze the corpus snapshot from docs/fake-docs/ before sampling so
     # the comparison always operates on the frozen copy, not mutable demo content.
     n_frozen = freeze_corpus()
-    print(
-        f"Corpus frozen: {n_frozen} file(s) copied from {FAKE_DOCS_DIR} → {CORPUS_DIR}."
-    )
+    print(f"Corpus frozen: {n_frozen} file(s) copied from {FAKE_DOCS_DIR} → {CORPUS_DIR}.")
     core = generate_core(args.per_type)
     verdicts = run_qc(core)
     _print_qc(verdicts)
@@ -396,9 +382,7 @@ def main(argv: list[str] | None = None) -> int:
     full_set = core + probes
     # Cost is recorded by the live caller's billing; this offline-safe script does
     # not estimate it — a real run wires the token usage through here.
-    write_text_atomic(
-        QUERIES_PATH, render_queries_yaml(full_set, cost_usd="see run log")
-    )
+    write_text_atomic(QUERIES_PATH, render_queries_yaml(full_set, cost_usd="see run log"))
     print(
         f"Wrote {len(full_set)} Paraphrases to {QUERIES_PATH.name} ({len(core)} core + {len(probes)} probes)."
     )

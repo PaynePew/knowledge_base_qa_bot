@@ -132,9 +132,7 @@ def test_query_returns_grounded_cited_answer(wired_corpus, monkeypatch):
     """An in-scope query yields a grounded answer carrying a [Source: ...] citation."""
     fake_llm = FakeLLM(f"Refunds take about a week. [Source: {REFUND_ID}]")
     _patch_llm(monkeypatch, fake_llm)
-    monkeypatch.setattr(
-        query_module.grounding_module, "verify", lambda d, s: _approved()
-    )
+    monkeypatch.setattr(query_module.grounding_module, "verify", lambda d, s: _approved())
 
     result = query_module.query("how long do refunds take")
 
@@ -150,9 +148,7 @@ def test_query_sources_have_citation_shape(wired_corpus, monkeypatch):
     """Sources mirror the cross-stack citation shape: source + heading + content."""
     fake_llm = FakeLLM(f"Refunds take about a week. [Source: {REFUND_ID}]")
     _patch_llm(monkeypatch, fake_llm)
-    monkeypatch.setattr(
-        query_module.grounding_module, "verify", lambda d, s: _approved()
-    )
+    monkeypatch.setattr(query_module.grounding_module, "verify", lambda d, s: _approved())
 
     result = query_module.query("how long do refunds take")
 
@@ -166,9 +162,7 @@ def test_query_prompt_is_built_from_retrieved_wiki_sections(wired_corpus, monkey
     """The grounded prompt CONTEXT is filled from the fused wiki Sections (reuse)."""
     fake_llm = FakeLLM(f"Refunds take about a week. [Source: {REFUND_ID}]")
     _patch_llm(monkeypatch, fake_llm)
-    monkeypatch.setattr(
-        query_module.grounding_module, "verify", lambda d, s: _approved()
-    )
+    monkeypatch.setattr(query_module.grounding_module, "verify", lambda d, s: _approved())
 
     query_module.query("how long do refunds take")
 
@@ -180,9 +174,7 @@ def test_query_prompt_is_built_from_retrieved_wiki_sections(wired_corpus, monkey
 # ===========================================================================
 # AC3 — sub-threshold query → exact Cannot Confirm sentinel, NO LLM call
 # ===========================================================================
-def test_query_sub_threshold_returns_cannot_confirm_without_llm(
-    wired_corpus, monkeypatch
-):
+def test_query_sub_threshold_returns_cannot_confirm_without_llm(wired_corpus, monkeypatch):
     """Pre-LLM OR-gate refuses an out-of-scope query → sentinel, no synthesis call.
 
     Forcing the dense ceiling to 0 (dense can never clear) isolates the BM25 arm; a
@@ -210,9 +202,7 @@ def test_query_cannot_confirm_phrase_is_the_shared_sentinel():
 # ===========================================================================
 # AC5 — post-LLM grounding rejection → Cannot Confirm parity with the stacks
 # ===========================================================================
-def test_query_grounding_rejection_replaces_with_cannot_confirm(
-    wired_corpus, monkeypatch
-):
+def test_query_grounding_rejection_replaces_with_cannot_confirm(wired_corpus, monkeypatch):
     """A draft the verifier rejects is replaced by the Cannot Confirm sentinel.
 
     Parity with vector_rag/markdown_kb: the main LLM still runs once (the verifier
@@ -220,9 +210,7 @@ def test_query_grounding_rejection_replaces_with_cannot_confirm(
     """
     fake_llm = FakeLLM("Refunds are instant and we also ship to Mars for free.")
     _patch_llm(monkeypatch, fake_llm)
-    monkeypatch.setattr(
-        query_module.grounding_module, "verify", lambda d, s: _rejected()
-    )
+    monkeypatch.setattr(query_module.grounding_module, "verify", lambda d, s: _rejected())
 
     result = query_module.query("how long do refunds take")
 
@@ -232,9 +220,7 @@ def test_query_grounding_rejection_replaces_with_cannot_confirm(
     assert fake_llm.call_count == 1, "the main LLM runs once; the verifier is the gate"
 
 
-def test_query_llm_self_refusal_short_circuits_to_cannot_confirm(
-    wired_corpus, monkeypatch
-):
+def test_query_llm_self_refusal_short_circuits_to_cannot_confirm(wired_corpus, monkeypatch):
     """When the model itself emits the Cannot Confirm phrase, skip the verifier."""
     fake_llm = FakeLLM(query_module.CANNOT_CONFIRM_PHRASE)
     _patch_llm(monkeypatch, fake_llm)

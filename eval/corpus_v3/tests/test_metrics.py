@@ -96,9 +96,7 @@ def test_reciprocal_rank_at_rank_one():
 
 def test_reciprocal_rank_at_rank_two_is_one_half():
     items = [_item("other#a", "noise"), _item(GOLD, "refund and packaging")]
-    assert reciprocal_rank_at_k(items, [GOLD], KEY_TOKENS, HIT_AT_3) == pytest.approx(
-        0.5
-    )
+    assert reciprocal_rank_at_k(items, [GOLD], KEY_TOKENS, HIT_AT_3) == pytest.approx(0.5)
 
 
 def test_reciprocal_rank_at_rank_three_is_one_third():
@@ -107,9 +105,7 @@ def test_reciprocal_rank_at_rank_three_is_one_third():
         _item("other#b", "noise"),
         _item(GOLD, "refund and packaging"),
     ]
-    assert reciprocal_rank_at_k(items, [GOLD], KEY_TOKENS, HIT_AT_3) == pytest.approx(
-        1 / 3
-    )
+    assert reciprocal_rank_at_k(items, [GOLD], KEY_TOKENS, HIT_AT_3) == pytest.approx(1 / 3)
 
 
 def test_reciprocal_rank_no_hit_in_top_k_is_zero():

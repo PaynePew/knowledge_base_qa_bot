@@ -58,9 +58,7 @@ class GuardResult:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
-def project_spend(
-    ledger: CostLedger, *, phase: str, planned_calls: int
-) -> CostProjection:
+def project_spend(ledger: CostLedger, *, phase: str, planned_calls: int) -> CostProjection:
     """Project ``planned_calls`` worth of ``phase`` spend from the ledger's
     ALREADY-RECORDED per-call average for that phase (issue #662 AC 2:
     "project total spend from the ledger's per-query averages").
@@ -89,9 +87,7 @@ def project_spend(
     )
 
 
-def check_cost_guard(
-    projection: CostProjection, *, cap_usd: float = BUDGET_USD_CAP
-) -> GuardResult:
+def check_cost_guard(projection: CostProjection, *, cap_usd: float = BUDGET_USD_CAP) -> GuardResult:
     """Gate a live run on ``projection`` (issue #662 AC 2: "if projected spend
     exceeds $10 USD, stop ... instead of running").
 

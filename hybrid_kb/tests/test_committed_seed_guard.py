@@ -42,9 +42,7 @@ def _bm25_ids() -> set[str]:
 def test_committed_seed_metadata(fake_embeddings):
     """The committed seed carries the expected dense-over-wiki metadata."""
     metadata = json.loads(
-        (_COMMITTED_DENSE_DIR / dense_index.METADATA_FILENAME).read_text(
-            encoding="utf-8"
-        )
+        (_COMMITTED_DENSE_DIR / dense_index.METADATA_FILENAME).read_text(encoding="utf-8")
     )
     assert metadata["embedding_model"] == dense_index.EMBEDDING_MODEL, (
         "committed seed must be embedded with text-embedding-3-small (model parity)"

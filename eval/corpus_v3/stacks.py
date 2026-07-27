@@ -218,9 +218,7 @@ def index_stack_c() -> int:
     return index_dense_over_wiki()
 
 
-def _fused_wiki_sections(
-    query: str, *, candidate_depth: int, top_k: int
-) -> list[Section]:
+def _fused_wiki_sections(query: str, *, candidate_depth: int, top_k: int) -> list[Section]:
     """Overfetch both arms and RRF-fuse to ``top_k`` wiki Sections — Stack C's pool."""
     bm25_ranked: list[Section] = [
         section for section, _score in mk_indexer.search(query, k=candidate_depth)

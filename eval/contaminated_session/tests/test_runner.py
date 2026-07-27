@@ -52,9 +52,7 @@ def test_offline_run_writes_only_tracer_not_canonical(tmp_path, monkeypatch):
 
     assert exit_code == 0
     assert tracer_report.exists(), "tracer report not written"
-    assert not canonical_report.exists(), (
-        "no-key run must NOT write canonical report.md"
-    )
+    assert not canonical_report.exists(), "no-key run must NOT write canonical report.md"
     content = tracer_report.read_text(encoding="utf-8")
     assert content.split("\n")[0] == runner.OFFLINE_TRACER_HEADER
 

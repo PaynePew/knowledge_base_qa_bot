@@ -88,9 +88,7 @@ def main(base: str) -> None:
             # path (the attack docs above are ingested into the wiki corpus),
             # so the stack is pinned explicitly rather than relying on the
             # default.
-            with c.stream(
-                "POST", "/chat/stream?stack=wiki", json={"query": q}
-            ) as r:
+            with c.stream("POST", "/chat/stream?stack=wiki", json={"query": q}) as r:
                 for line in r.iter_lines():
                     if not line.startswith("data: "):
                         continue

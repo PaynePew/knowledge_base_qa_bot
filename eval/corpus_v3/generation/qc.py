@@ -56,9 +56,7 @@ def check_generated_query(query: Query) -> GenerationQcVerdict:
     reasons: list[str] = []
 
     if not query.generating_family.strip():
-        reasons.append(
-            "generating_family is empty — every generated query must record its source"
-        )
+        reasons.append("generating_family is empty — every generated query must record its source")
 
     if query.key_tokens:
         surviving = [tok for tok in query.key_tokens if tokenize(tok)]
@@ -67,9 +65,7 @@ def check_generated_query(query: Query) -> GenerationQcVerdict:
 
     detected = detect_lang(query.text)
     if detected != query.language:
-        reasons.append(
-            f"language={query.language!r} but query text detect_lang's as {detected!r}"
-        )
+        reasons.append(f"language={query.language!r} but query text detect_lang's as {detected!r}")
 
     return GenerationQcVerdict(
         query_id=query.query_id,

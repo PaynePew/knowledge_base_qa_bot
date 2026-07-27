@@ -69,9 +69,7 @@ def parse_cited_source_ids(answer_text: str) -> frozenset[str]:
     parses to an empty ``frozenset``, matching ``AnswerRecord``'s own default
     and ``content_axes.grounding_pass``'s "no citation -> not grounded" rule.
     """
-    return frozenset(
-        match.group(1).strip() for match in _CITATION_RE.finditer(answer_text)
-    )
+    return frozenset(match.group(1).strip() for match in _CITATION_RE.finditer(answer_text))
 
 
 # ---------------------------------------------------------------------------
@@ -163,9 +161,7 @@ def _instrumented(arm: str, ledger: CostLedger | None) -> Iterator[None]:
     setattr(
         verifier_module,
         verifier_attr,
-        instrument_structured_output(
-            original_verifier_getter, ledger, stack=arm, phase="query"
-        ),
+        instrument_structured_output(original_verifier_getter, ledger, stack=arm, phase="query"),
     )
     try:
         yield
@@ -213,21 +209,15 @@ def build_answer_fn(
     citation from a fabricated one, and was previously discarded here.
     """
 
-    def answer_fn(
-        query_id: str, arm: str, retrieved_items: list[RetrievedItem]
-    ) -> AnswerRecord:
+    def answer_fn(query_id: str, arm: str, retrieved_items: list[RetrievedItem]) -> AnswerRecord:
         del retrieved_items  # unused -- see docstring above
         if arm not in ARM_QUERY_FNS:
-            raise ValueError(
-                f"unknown arm {arm!r}; expected one of {sorted(ARM_QUERY_FNS)}"
-            )
+            raise ValueError(f"unknown arm {arm!r}; expected one of {sorted(ARM_QUERY_FNS)}")
         text = query_text_by_id[query_id]
         with _instrumented(arm, ledger):
             result = ARM_QUERY_FNS[arm](text)
         retrieved_source_ids = frozenset(
-            source["source"]
-            for source in result.get("sources", [])
-            if "source" in source
+            source["source"] for source in result.get("sources", []) if "source" in source
         )
         return AnswerRecord(
             query_id=query_id,

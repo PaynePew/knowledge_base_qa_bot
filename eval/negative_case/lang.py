@@ -59,7 +59,5 @@ def resolve_lang(lang: str | None = None) -> LangConfig:
     chosen = (lang or os.getenv(ENV_VAR) or DEFAULT_LANG).lower()
     if chosen not in _CONFIGS:
         supported = ", ".join(sorted(_CONFIGS))
-        raise ValueError(
-            f"Unsupported {ENV_VAR}={chosen!r}; supported languages: {supported}."
-        )
+        raise ValueError(f"Unsupported {ENV_VAR}={chosen!r}; supported languages: {supported}.")
     return _CONFIGS[chosen]

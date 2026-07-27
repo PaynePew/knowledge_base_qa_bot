@@ -41,9 +41,7 @@ def test_freeze_corpus_copies_all_md_files(tmp_source: Path, tmp_dest: Path) -> 
     assert (tmp_dest / "beta.md").exists()
 
 
-def test_freeze_corpus_overwrites_existing_file(
-    tmp_source: Path, tmp_dest: Path
-) -> None:
+def test_freeze_corpus_overwrites_existing_file(tmp_source: Path, tmp_dest: Path) -> None:
     """A pre-existing file in dest is overwritten with the source version."""
     (tmp_dest / "alpha.md").write_text("OLD CONTENT", encoding="utf-8")
     freeze_corpus(source_dir=tmp_source, dest_dir=tmp_dest)
@@ -59,9 +57,7 @@ def test_freeze_corpus_removes_stale_files(tmp_source: Path, tmp_dest: Path) -> 
     assert not (tmp_dest / "stale.md").exists()
 
 
-def test_freeze_corpus_creates_dest_if_missing(
-    tmp_path: Path, tmp_source: Path
-) -> None:
+def test_freeze_corpus_creates_dest_if_missing(tmp_path: Path, tmp_source: Path) -> None:
     """freeze_corpus() creates dest_dir if it does not yet exist."""
     dest = tmp_path / "new_corpus"
     assert not dest.exists()
@@ -79,9 +75,7 @@ def test_freeze_corpus_raises_on_missing_source(tmp_dest: Path) -> None:
 def test_freeze_corpus_returns_file_count(tmp_source: Path, tmp_dest: Path) -> None:
     """Return value equals the number of *.md files in source_dir."""
     # Add a third file to source.
-    (tmp_source / "gamma.md").write_text(
-        "# Gamma\n\nGamma content.\n", encoding="utf-8"
-    )
+    (tmp_source / "gamma.md").write_text("# Gamma\n\nGamma content.\n", encoding="utf-8")
     n = freeze_corpus(source_dir=tmp_source, dest_dir=tmp_dest)
     assert n == 3
 

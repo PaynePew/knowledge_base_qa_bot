@@ -16,9 +16,7 @@ from eval.paraphrase_comparison import runner
 from eval.paraphrase_comparison.run_comparison import main
 
 
-def test_offline_run_writes_only_tracer_not_canonical(
-    tmp_path, fake_vector_index, monkeypatch
-):
+def test_offline_run_writes_only_tracer_not_canonical(tmp_path, fake_vector_index, monkeypatch):
     """A --fake-embeddings run must not clobber the canonical report.md / charts/.
 
     AC#1 + AC#5 (issue #328): the offline tracer path receives all output;

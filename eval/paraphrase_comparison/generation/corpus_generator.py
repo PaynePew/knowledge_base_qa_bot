@@ -147,9 +147,7 @@ DOC_SPECS: tuple[DocSpec, ...] = (
                 "Warranty length for electronics vs the ACME Basics private label.",
             ),
             SectionSpec("Filing a Claim", "Steps and turnaround for a warranty claim."),
-            SectionSpec(
-                "Exclusions", "What voids warranty coverage and the paid-repair path."
-            ),
+            SectionSpec("Exclusions", "What voids warranty coverage and the paid-repair path."),
         ),
     ),
     # -----------------------------------------------------------------------
@@ -170,15 +168,9 @@ DOC_SPECS: tuple[DocSpec, ...] = (
         sections=(
             SectionSpec("Registration", "Email, Google, and LINE sign-up methods."),
             SectionSpec("Password Rules", "Minimum length and character classes."),
-            SectionSpec(
-                "Two-Step Verification", "SMS and authenticator-app second factors."
-            ),
-            SectionSpec(
-                "Login Protection", "Failed-attempt lockout threshold and duration."
-            ),
-            SectionSpec(
-                "Account Deletion", "Grace period and cancellation of deletion."
-            ),
+            SectionSpec("Two-Step Verification", "SMS and authenticator-app second factors."),
+            SectionSpec("Login Protection", "Failed-attempt lockout threshold and duration."),
+            SectionSpec("Account Deletion", "Grace period and cancellation of deletion."),
         ),
     ),
     DocSpec(
@@ -195,9 +187,7 @@ DOC_SPECS: tuple[DocSpec, ...] = (
                 "Convenience Store Payment Codes",
                 "Per-order limit and payment deadline for store codes.",
             ),
-            SectionSpec(
-                "Cash on Delivery", "Eligibility, per-order limit, and handling fee."
-            ),
+            SectionSpec("Cash on Delivery", "Eligibility, per-order limit, and handling fee."),
             SectionSpec("Not Accepted", "Payment methods ACME Shop does not accept."),
         ),
     ),
@@ -209,9 +199,7 @@ DOC_SPECS: tuple[DocSpec, ...] = (
                 "Standard Shipping",
                 "Domestic delivery times, fee, and free-shipping threshold.",
             ),
-            SectionSpec(
-                "Express Delivery", "Express timing, fee, cutoff, and exclusions."
-            ),
+            SectionSpec("Express Delivery", "Express timing, fee, cutoff, and exclusions."),
             SectionSpec("Dispatch Time", "Time from payment to dispatch."),
             SectionSpec("Tracking", "Tracking notifications and update timing."),
         ),
@@ -221,13 +209,9 @@ DOC_SPECS: tuple[DocSpec, ...] = (
         title="Convenience Store Pickup",
         sections=(
             SectionSpec("Fee", "Pickup fee and the shared free-shipping threshold."),
-            SectionSpec(
-                "Pickup Flow & Deadline", "SMS notification and the 7-day hold."
-            ),
+            SectionSpec("Pickup Flow & Deadline", "SMS notification and the 7-day hold."),
             SectionSpec("Item Restrictions", "Weight and size limits."),
-            SectionSpec(
-                "Cash on Delivery", "Combining store pickup with cash on delivery."
-            ),
+            SectionSpec("Cash on Delivery", "Combining store pickup with cash on delivery."),
         ),
     ),
     DocSpec(
@@ -245,9 +229,7 @@ DOC_SPECS: tuple[DocSpec, ...] = (
         title="International Shipping",
         sections=(
             SectionSpec("Destinations", "Countries and regions ACME ships to."),
-            SectionSpec(
-                "Delivery Times", "Business-day ranges for Asia and North America."
-            ),
+            SectionSpec("Delivery Times", "Business-day ranges for Asia and North America."),
             SectionSpec("Fees", "Starting fees by region; no free shipping."),
             SectionSpec("Duties & Taxes", "DDU terms — recipient pays duties."),
             SectionSpec("Excluded Items", "Liquids and battery products excluded."),
@@ -257,15 +239,9 @@ DOC_SPECS: tuple[DocSpec, ...] = (
         basename="order_management.md",
         title="Order Management",
         sections=(
-            SectionSpec(
-                "Cancelling an Order", "Self-service cancellation before dispatch."
-            ),
-            SectionSpec(
-                "Modifying an Order", "Address and payment-method change windows."
-            ),
-            SectionSpec(
-                "Order History & Invoices", "Retention period and e-invoice download."
-            ),
+            SectionSpec("Cancelling an Order", "Self-service cancellation before dispatch."),
+            SectionSpec("Modifying an Order", "Address and payment-method change windows."),
+            SectionSpec("Order History & Invoices", "Retention period and e-invoice download."),
         ),
     ),
     DocSpec(
@@ -273,13 +249,9 @@ DOC_SPECS: tuple[DocSpec, ...] = (
         title="Refunds & Returns",
         sections=(
             SectionSpec("Refund Window", "The 14-day post-delivery request window."),
-            SectionSpec(
-                "Conditions", "Unused condition, packaging, proof of purchase."
-            ),
+            SectionSpec("Conditions", "Unused condition, packaging, proof of purchase."),
             SectionSpec("Process", "Request steps, review time, and refund timing."),
-            SectionSpec(
-                "Return Shipping", "Who pays return shipping; no restocking fee."
-            ),
+            SectionSpec("Return Shipping", "Who pays return shipping; no restocking fee."),
             SectionSpec("Non-Refundable Items", "Digital, customized, opened items."),
         ),
     ),
@@ -287,12 +259,8 @@ DOC_SPECS: tuple[DocSpec, ...] = (
         basename="damaged_items.md",
         title="Damaged Items",
         sections=(
-            SectionSpec(
-                "Reporting Deadline & Method", "48-hour photo report via My Orders."
-            ),
-            SectionSpec(
-                "Resolution Options", "Free replacement or full refund choices."
-            ),
+            SectionSpec("Reporting Deadline & Method", "48-hour photo report via My Orders."),
+            SectionSpec("Resolution Options", "Free replacement or full refund choices."),
             SectionSpec("Replacement Timing", "Dispatch timing after approval."),
             SectionSpec(
                 "Difference from Regular Returns",
@@ -304,9 +272,7 @@ DOC_SPECS: tuple[DocSpec, ...] = (
         basename="membership_points.md",
         title="Membership & Reward Points",
         sections=(
-            SectionSpec(
-                "Earning Points", "Earn rate, eligible amounts, credit timing."
-            ),
+            SectionSpec("Earning Points", "Earn rate, eligible amounts, credit timing."),
             SectionSpec("Redeeming Points", "Redemption rate and per-order cap."),
             SectionSpec("Expiry", "12-month validity and balance lookup."),
             SectionSpec("Referrals", "Referral bonus conditions."),
@@ -318,9 +284,7 @@ DOC_SPECS: tuple[DocSpec, ...] = (
         basename="gift_cards.md",
         title="Gift Cards",
         sections=(
-            SectionSpec(
-                "Denominations & Delivery", "Digital denominations and email delivery."
-            ),
+            SectionSpec("Denominations & Delivery", "Digital denominations and email delivery."),
             SectionSpec("Validity", "No expiry under Taiwan voucher rules."),
             SectionSpec(
                 "Gift Cards and Reward Points",
@@ -343,12 +307,8 @@ DOC_SPECS: tuple[DocSpec, ...] = (
         basename="subscription_orders.md",
         title="Subscription Orders",
         sections=(
-            SectionSpec(
-                "Eligible Items & Cycles", "Consumables and 30/60/90-day cycles."
-            ),
-            SectionSpec(
-                "Subscription Benefits", "Per-cycle discount and free shipping."
-            ),
+            SectionSpec("Eligible Items & Cycles", "Consumables and 30/60/90-day cycles."),
+            SectionSpec("Subscription Benefits", "Per-cycle discount and free shipping."),
             SectionSpec("Pausing", "Pause limit and the 24-hour cutoff."),
             SectionSpec("Cancelling", "Cancellation cutoff and prorated refunds."),
             SectionSpec("Reactivating", "Current-price reactivation."),
@@ -508,9 +468,7 @@ def main(argv: list[str] | None = None) -> int:
         help=f"Output directory (default: {FAKE_DOCS_DIR}).",
     )
     args = parser.parse_args(argv)
-    load_dotenv(
-        find_dotenv(usecwd=True)
-    )  # pick up OPENAI_API_KEY from a repo-root .env
+    load_dotenv(find_dotenv(usecwd=True))  # pick up OPENAI_API_KEY from a repo-root .env
 
     output_dir = Path(args.output_dir)
 
@@ -554,9 +512,7 @@ def main(argv: list[str] | None = None) -> int:
             )
 
     total_gold = sum(d.gold_section_count for d in targets)
-    print(
-        f"\nDone: {len(targets)} doc(s) written, {total_gold} Gold Section(s) across targets."
-    )
+    print(f"\nDone: {len(targets)} doc(s) written, {total_gold} Gold Section(s) across targets.")
     if not args.live:
         print(
             "\nNote: scaffold mode writes stub content only. "
@@ -568,9 +524,7 @@ def main(argv: list[str] | None = None) -> int:
     from eval.paraphrase_comparison.generation.sampling import derive_gold_sections  # noqa: PLC0415
 
     derived = derive_gold_sections(output_dir)
-    print(
-        f"\nderive_gold_sections sees {len(derived)} Gold Section(s) in {output_dir}."
-    )
+    print(f"\nderive_gold_sections sees {len(derived)} Gold Section(s) in {output_dir}.")
     return 0
 
 

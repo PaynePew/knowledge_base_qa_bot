@@ -148,9 +148,7 @@ class HitRateAtK(BaseMetric):
         key_tokens: list[str] = list(meta.get("key_tokens", []))
 
         self.score = hit_at_k(items, gold_section_id, key_tokens, k=self.k)
-        self.reciprocal_rank = reciprocal_rank_at_k(
-            items, gold_section_id, key_tokens, k=self.k
-        )
+        self.reciprocal_rank = reciprocal_rank_at_k(items, gold_section_id, key_tokens, k=self.k)
         self.success = self.score >= self.threshold
         self.reason = (
             f"hit@{self.k}=1: a top-{self.k} item matched gold "

@@ -57,9 +57,7 @@ class QueryOutcome:
     reciprocal_rank: float
 
 
-def evaluate_query(
-    query: Query, items: Sequence[RetrievedItem], arm: str
-) -> QueryOutcome:
+def evaluate_query(query: Query, items: Sequence[RetrievedItem], arm: str) -> QueryOutcome:
     """Score ``arm``'s retrieved ``items`` for ``query`` into a stratum-tagged outcome."""
     gold = query.gold_section_ids
     tokens = query.key_tokens
@@ -116,9 +114,7 @@ def group_by_stratum(
     return groups
 
 
-def arm_metric_means(
-    outcomes: Sequence[QueryOutcome], metric: MetricName
-) -> dict[str, float]:
+def arm_metric_means(outcomes: Sequence[QueryOutcome], metric: MetricName) -> dict[str, float]:
     """Mean of ``metric`` per arm over ``outcomes`` (a flat, unstratified mean)."""
     if not outcomes:
         raise ValueError("arm_metric_means needs at least one outcome")
@@ -155,10 +151,7 @@ def macro_metrics(
     if not per_stratum:
         raise ValueError("macro_metrics needs at least one outcome")
     arms = sorted({outcome.arm for outcome in outcomes})
-    return {
-        arm: mean(cell[arm] for cell in per_stratum.values() if arm in cell)
-        for arm in arms
-    }
+    return {arm: mean(cell[arm] for cell in per_stratum.values() if arm in cell) for arm in arms}
 
 
 def winning_arm(arm_scores: dict[str, float]) -> str:

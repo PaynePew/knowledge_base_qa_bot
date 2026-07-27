@@ -24,7 +24,11 @@ cgroup v1) + kind v0.32.0 + kubectl v1.34.1: cluster create ~1 min, pod
 Ready in 48 s (including the GHCR pull), `/healthz` 200 via
 `localhost:8080`, grounded `/chat/stream` answer with citation identical in
 shape to the VPS tenant, and the self-healing demo below (replacement pod
-Ready seconds after a kill, healthz 200 again).
+Ready seconds after a kill, healthz 200 again). The smoke curl below is
+stack-less, so it exercises whichever stack the gateway currently defaults
+to — as of ADR-0045 / issue #681 that default is `rag` (it was `wiki` at
+the verification date above); `stack=wiki` / `stack=hybrid` remain reachable
+via the query param for a citation-shape comparison.
 
 Prereqs: Docker Desktop running; `kubectl` + `kind` installed (kind lands via
 WinGet at `$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Kubernetes.kind_*\kind.exe`

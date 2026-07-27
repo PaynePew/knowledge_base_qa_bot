@@ -80,8 +80,6 @@ def test_resolve_gold_sections_unmapped_id_falls_back_to_itself():
     """An id absent from the table (e.g. Stack B's native docs chunk id) still resolves."""
     gold_map = gold.build_gold_map(WIKI_DIR)
 
-    resolved = gold.resolve_gold_sections(
-        gold_map, "unrelated_docs.md#unrelated-heading"
-    )
+    resolved = gold.resolve_gold_sections(gold_map, "unrelated_docs.md#unrelated-heading")
 
     assert resolved == frozenset({"unrelated_docs.md#unrelated-heading"})

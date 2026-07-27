@@ -127,9 +127,7 @@ def test_flipped_true_when_clean_answers_but_contaminated_falls_to_cannot_confir
 
 def test_evaluate_case_computes_drift_against_literal_followup(two_topic_corpus):
     index_corpus(two_topic_corpus)
-    case = _synthetic_case(
-        name="synthetic-drift", note="drift probe", followup_question="aardvark"
-    )
+    case = _synthetic_case(name="synthetic-drift", note="drift probe", followup_question="aardvark")
     rewrite_fn = _stub_rewrite_returning(
         contaminated_text="aardvark zebra octopus", clean_text="aardvark"
     )

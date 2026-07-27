@@ -53,7 +53,7 @@ BASE=https://<deployed-host>            # operator only
 #    stack-less default is now rag) so this exercises the #577-hardened wiki
 #    drafter/judge prompt-assembly path where the attack docs above land.
 curl -sS "$BASE/chat/stream?stack=wiki" -H 'content-type: application/json' \
-  -d '{"question":"<attack query>"}' | grep -iE 'cannot confirm|<expected on-topic fact>'
+  -d '{"query":"<attack query>"}' | grep -iE 'cannot confirm|<expected on-topic fact>'
 ```
 
 Record the outcome per carrier in the PR / verify-verdict. Reset the box

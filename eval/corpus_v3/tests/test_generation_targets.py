@@ -103,9 +103,7 @@ def test_every_group_yields_exactly_one_unanswerable_target():
 
 def test_unanswerable_target_prefers_a_non_gold_section_as_distractor():
     buckets = derive_generation_targets(_ALL_GROUPS)
-    version_unanswerable = next(
-        t for t in buckets["unanswerable"] if t.group_id == "version-group"
-    )
+    version_unanswerable = next(t for t in buckets["unanswerable"] if t.group_id == "version-group")
     # v1.md#h3 is NOT gold (only v2 is) -- it is the natural near-miss distractor.
     assert version_unanswerable.reference_ids == ["v1.md#h3"]
 

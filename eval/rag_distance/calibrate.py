@@ -125,9 +125,7 @@ def recommend(points: Sequence[CeilingPoint]) -> CeilingPoint:
         boundary, the most robust single value).
     """
     best_j = max(p.youden_j for p in points)
-    optimal = sorted(
-        (p for p in points if p.youden_j == best_j), key=lambda p: p.ceiling
-    )
+    optimal = sorted((p for p in points if p.youden_j == best_j), key=lambda p: p.ceiling)
     for p in optimal:
         if p.ceiling == CURRENT_DEFAULT:
             return p
@@ -352,9 +350,7 @@ def main() -> None:
         render_report(points, best, positive, negative, lang=cfg.lang),
         encoding="utf-8",
     )
-    print(
-        f"[{cfg.lang}] Recommended ceiling: {best.ceiling} (Youden J = {best.youden_j:.2f})"
-    )
+    print(f"[{cfg.lang}] Recommended ceiling: {best.ceiling} (Youden J = {best.youden_j:.2f})")
     print(f"Report written to {report_path}")
 
 

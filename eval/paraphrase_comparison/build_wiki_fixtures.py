@@ -185,9 +185,7 @@ def build_offline(*, overwrite_existing: bool = False) -> tuple[int, int, int]:
     entities = 0
     preserved = 0
     for md_file in sorted(CORPUS_DIR.glob("*.md")):
-        sections = [
-            s for s in parse_markdown(md_file, source_id=None) if s.content.strip()
-        ]
+        sections = [s for s in parse_markdown(md_file, source_id=None) if s.content.strip()]
         if md_file.name in ENTITY_SOURCES:
             entity_path = entity_dir / f"{ENTITY_SLUG}.md"
             if entity_path.exists() and not overwrite_existing:
@@ -227,9 +225,7 @@ def _build_online() -> tuple[int, int]:
     _lg.LOG_PATH = iso / "log.md"
     if WIKI_DIR.exists():
         shutil.rmtree(WIKI_DIR)
-    res = _ingest.ingest_sources(
-        None, docs_dir=CORPUS_DIR, wiki_dir=WIKI_DIR, force=True
-    )
+    res = _ingest.ingest_sources(None, docs_dir=CORPUS_DIR, wiki_dir=WIKI_DIR, force=True)
     if res.failed_sources:
         raise RuntimeError(f"/ingest failed for Sources: {res.failed_sources}")
     concepts = len(list((WIKI_DIR / "concepts").glob("*.md")))
@@ -238,9 +234,7 @@ def _build_online() -> tuple[int, int]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    load_dotenv(
-        find_dotenv(usecwd=True)
-    )  # pick up OPENAI_API_KEY from a repo-root .env
+    load_dotenv(find_dotenv(usecwd=True))  # pick up OPENAI_API_KEY from a repo-root .env
     args = argv if argv is not None else sys.argv[1:]
     offline = "--offline" in args
     overwrite = "--overwrite" in args

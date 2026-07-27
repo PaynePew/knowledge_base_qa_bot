@@ -64,9 +64,7 @@ def test_record_usage_from_response_reads_raw_dict_shape():
     ledger = CostLedger()
     raw = {"usage_metadata": {"input_tokens": 4, "output_tokens": 2, "total_tokens": 6}}
 
-    record_usage_from_response(
-        ledger, stack="B", phase="build", model="gpt-4o-mini", response=raw
-    )
+    record_usage_from_response(ledger, stack="B", phase="build", model="gpt-4o-mini", response=raw)
 
     assert ledger.totals(stack="B", phase="build").total_tokens == 6
 
@@ -76,9 +74,7 @@ def test_record_usage_from_response_none_records_zero_token_call():
     axis must not silently drop it."""
     ledger = CostLedger()
 
-    record_usage_from_response(
-        ledger, stack="A", phase="build", model="gpt-4o-mini", response=None
-    )
+    record_usage_from_response(ledger, stack="A", phase="build", model="gpt-4o-mini", response=None)
 
     totals = ledger.totals(stack="A", phase="build")
     assert totals.calls == 1
@@ -116,9 +112,7 @@ def test_instrumented_getter_records_each_invoke_call():
 def test_instrumented_getter_resolves_model_from_client_when_not_given():
     ledger = CostLedger()
     fake_llm = _FakeLLM(model_name="gpt-4o")
-    instrumented_get_llm = instrument_invoke(
-        lambda: fake_llm, ledger, stack="A", phase="build"
-    )
+    instrumented_get_llm = instrument_invoke(lambda: fake_llm, ledger, stack="A", phase="build")
 
     instrumented_get_llm().invoke("x")
 
@@ -286,12 +280,8 @@ def test_instrumented_client_delegates_other_attributes_unchanged():
             return f"chain-for-{schema}"
 
     fake_llm = _FakeLLMWithExtra()
-    instrumented_get_llm = instrument_invoke(
-        lambda: fake_llm, ledger, stack="A", phase="build"
-    )
+    instrumented_get_llm = instrument_invoke(lambda: fake_llm, ledger, stack="A", phase="build")
 
     proxy = instrumented_get_llm()
-    assert (
-        proxy.with_structured_output("GroundingResult") == "chain-for-GroundingResult"
-    )
+    assert proxy.with_structured_output("GroundingResult") == "chain-for-GroundingResult"
     assert ledger.calls == [], "non-.invoke() attribute access must not record a call"

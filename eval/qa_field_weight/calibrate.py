@@ -167,12 +167,8 @@ class WeightPoint:
     """One row of the sweep: the two competing rates at a candidate weight."""
 
     weight: float
-    own_question_hit_rate: (
-        float  # own-question probe still retrievable (higher is better)
-    )
-    pollution_rate: (
-        float  # fraction of top-k that is noise/distractor (lower is better)
-    )
+    own_question_hit_rate: float  # own-question probe still retrievable (higher is better)
+    pollution_rate: float  # fraction of top-k that is noise/distractor (lower is better)
 
     @property
     def separation(self) -> float:
@@ -180,17 +176,13 @@ class WeightPoint:
         return self.own_question_hit_rate - self.pollution_rate
 
 
-def _pollution_rate(
-    hits: Sequence[tuple[indexer.Section, float]], real_file: str
-) -> float:
+def _pollution_rate(hits: Sequence[tuple[indexer.Section, float]], real_file: str) -> float:
     if not hits:
         return 0.0
     return sum(1 for sec, _ in hits if sec.file != real_file) / len(hits)
 
 
-def _own_question_hit(
-    hits: Sequence[tuple[indexer.Section, float]], own_question_id: str
-) -> bool:
+def _own_question_hit(hits: Sequence[tuple[indexer.Section, float]], own_question_id: str) -> bool:
     return any(sec.id == own_question_id for sec, _ in hits)
 
 
@@ -237,9 +229,7 @@ def recommend(points: Sequence[WeightPoint]) -> WeightPoint:
     floor = max(p.own_question_hit_rate for p in points)
     safe = [p for p in points if p.own_question_hit_rate == floor]
     best_separation = max(p.separation for p in safe)
-    optimal = sorted(
-        (p for p in safe if p.separation == best_separation), key=lambda p: p.weight
-    )
+    optimal = sorted((p for p in safe if p.separation == best_separation), key=lambda p: p.weight)
     return optimal[len(optimal) // 2]
 
 
@@ -273,9 +263,7 @@ def score_margin_by_weight(
     return rows
 
 
-def render_calibration_report(
-    points: Sequence[WeightPoint], recommended: WeightPoint
-) -> str:
+def render_calibration_report(points: Sequence[WeightPoint], recommended: WeightPoint) -> str:
     """Render the sweep + recommendation as Markdown."""
     lines = [
         "# QA_QUESTION_TOKEN_WEIGHT calibration (#578)",
@@ -366,9 +354,7 @@ def main() -> None:
     points = sweep(real_file, own_question_id)
     best = recommend(points)
     REPORT_PATH.write_text(render_calibration_report(points, best), encoding="utf-8")
-    print(
-        f"Recommended QA_QUESTION_TOKEN_WEIGHT: {best.weight} (separation={best.separation:.2f})"
-    )
+    print(f"Recommended QA_QUESTION_TOKEN_WEIGHT: {best.weight} (separation={best.separation:.2f})")
     print(f"Report written to {REPORT_PATH}")
 
 

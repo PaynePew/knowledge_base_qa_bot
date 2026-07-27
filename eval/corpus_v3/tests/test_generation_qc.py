@@ -64,9 +64,7 @@ def test_unanswerable_query_with_no_key_tokens_is_not_flagged_for_stopwords():
 
 
 def test_language_mismatch_en_labelled_zh_is_rejected():
-    verdict = check_generated_query(
-        _query(text="How long is the return window?", language="zh")
-    )
+    verdict = check_generated_query(_query(text="How long is the return window?", language="zh"))
     assert verdict.rejected is True
     assert any("detect_lang" in reason for reason in verdict.reasons)
 
@@ -96,8 +94,6 @@ def test_correctly_labelled_zh_query_passes_the_language_gate():
 
 
 def test_multiple_failures_are_all_reported():
-    verdict = check_generated_query(
-        _query(generating_family="", key_tokens=["the", "a"])
-    )
+    verdict = check_generated_query(_query(generating_family="", key_tokens=["the", "a"]))
     assert verdict.rejected is True
     assert len(verdict.reasons) == 2

@@ -31,9 +31,7 @@ from .conftest import FakeLLMResponse
 
 
 class _FakeLLM:
-    CANNED_ANSWER = (
-        "Refunds take 5-7 business days. [Source: refund_policy.md#refund-timeline]"
-    )
+    CANNED_ANSWER = "Refunds take 5-7 business days. [Source: refund_policy.md#refund-timeline]"
 
     def __init__(self):
         self.call_count = 0
@@ -73,12 +71,9 @@ def test_retrieve_and_gate_lazy_loads_from_disk_when_vectorstore_is_none(
     gate = retrieval._retrieve_and_gate("How long do refunds take?")
 
     assert gate["early_exit"] is False, (
-        f"Expected no early_exit after lazy-load, got reason="
-        f"{gate['grounding_outcome'].reason}"
+        f"Expected no early_exit after lazy-load, got reason={gate['grounding_outcome'].reason}"
     )
-    assert len(gate["chunks"]) > 0, (
-        "Lazy-loaded index must return Chunks, not index_missing"
-    )
+    assert len(gate["chunks"]) > 0, "Lazy-loaded index must return Chunks, not index_missing"
     assert gate["grounding_outcome"].reason != "index_missing", (
         "Reason must NOT be index_missing when a persisted index is on disk"
     )
@@ -90,9 +85,7 @@ def test_retrieve_and_gate_populates_vectorstore_after_lazy_load(indexed_corpus)
 
     retrieval._retrieve_and_gate("any question")
 
-    assert indexer.vectorstore is not None, (
-        "lazy-load must repopulate indexer.vectorstore"
-    )
+    assert indexer.vectorstore is not None, "lazy-load must repopulate indexer.vectorstore"
 
 
 def test_query_lazy_loads_and_returns_answer(indexed_corpus, monkeypatch):
@@ -146,17 +139,13 @@ def test_retrieve_and_gate_returns_index_missing_when_no_disk_index(
 # ---------------------------------------------------------------------------
 
 
-def test_retrieve_and_gate_no_double_load_when_vectorstore_populated(
-    indexed_corpus, monkeypatch
-):
+def test_retrieve_and_gate_no_double_load_when_vectorstore_populated(indexed_corpus, monkeypatch):
     """_retrieve_and_gate does NOT call load_vector_index when vectorstore is set.
 
     When the index is already in memory (e.g. after a POST /index in the same
     process), a second call must NOT re-load from disk.
     """
-    assert indexer.vectorstore is not None, (
-        "indexed_corpus fixture must populate vectorstore"
-    )
+    assert indexer.vectorstore is not None, "indexed_corpus fixture must populate vectorstore"
 
     load_calls = {"count": 0}
     original_load = indexer.load_vector_index

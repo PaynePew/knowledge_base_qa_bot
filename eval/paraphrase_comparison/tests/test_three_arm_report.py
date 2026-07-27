@@ -42,8 +42,7 @@ def _stack_scores(name: str, hit: float, mrr: float) -> StackScores:
 def _sweep_scores(name: str, base: float) -> SweepScores:
     """A SweepScores whose hit/MRR climb with the cutoff (monotone, like real data)."""
     hit_by_cutoff = {
-        c: {t: min(1.0, base + 0.05 * c) for t in PARAPHRASE_TYPES}
-        for c in SWEEP_CUTOFFS
+        c: {t: min(1.0, base + 0.05 * c) for t in PARAPHRASE_TYPES} for c in SWEEP_CUTOFFS
     }
     mrr_by_cutoff = {c: {t: base for t in PARAPHRASE_TYPES} for c in SWEEP_CUTOFFS}
     return SweepScores(
@@ -157,12 +156,8 @@ def _para(pid: str, ptype: str = "synonym_swap") -> Paraphrase:
     )
 
 
-_MATCH = RetrievedItem(
-    source_section_id="gold.md#x", content="foo bar", heading_path=[]
-)
-_MISS = RetrievedItem(
-    source_section_id="other.md#y", content="baz qux", heading_path=[]
-)
+_MATCH = RetrievedItem(source_section_id="gold.md#x", content="foo bar", heading_path=[])
+_MISS = RetrievedItem(source_section_id="other.md#y", content="baz qux", heading_path=[])
 
 
 def test_score_three_arms_reads_multiple_cutoffs_from_one_pool():

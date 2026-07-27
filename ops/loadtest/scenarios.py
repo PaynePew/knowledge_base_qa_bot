@@ -68,19 +68,19 @@ SCENARIOS: dict[str, ScenarioSpec] = {
     ),
     "S1_chat_c1": ScenarioSpec(
         scenario_id="S1_chat_c1",
-        description="Chat-only, stack=wiki, concurrency=1.",
+        description="Chat-only, stack=rag (default per issue #690), concurrency=1.",
         chat_concurrency=1,
         chat_requests_per_worker=20,
     ),
     "S1_chat_c6": ScenarioSpec(
         scenario_id="S1_chat_c6",
-        description="Chat-only, stack=wiki, concurrency=6 (== KB_MAX_INFLIGHT default).",
+        description="Chat-only, stack=rag (default per issue #690), concurrency=6 (== KB_MAX_INFLIGHT default).",
         chat_concurrency=6,
         chat_requests_per_worker=10,
     ),
     "S1_chat_c12": ScenarioSpec(
         scenario_id="S1_chat_c12",
-        description="Chat-only, stack=wiki, concurrency=12 (2x KB_MAX_INFLIGHT default; expect 503s past cap).",
+        description="Chat-only, stack=rag (default per issue #690), concurrency=12 (2x KB_MAX_INFLIGHT default; expect 503s past cap).",
         chat_concurrency=12,
         chat_requests_per_worker=8,
     ),
@@ -173,18 +173,14 @@ def run_scenario(
             transcribe_result: TranscribeLoadResult | None = None
             wall_start = time.monotonic()
             try:
-                wait_for_health(
-                    base_gateway_url, timeout=30.0, proc=proc, log_path=log_path
-                )
+                wait_for_health(base_gateway_url, timeout=30.0, proc=proc, log_path=log_path)
                 time.sleep(spec.settle_sec)
 
                 sampler = MemorySampler(proc.pid)
                 sampler.start()
                 try:
                     if spec.chat_concurrency > 0 and spec.run_import:
-                        chat_result, import_result = _run_concurrently(
-                            base_gateway_url, spec
-                        )
+                        chat_result, import_result = _run_concurrently(base_gateway_url, spec)
                     elif spec.chat_concurrency > 0 and spec.run_transcribe:
                         chat_result, transcribe_result = _run_chat_and_transcribe(
                             base_gateway_url, spec
@@ -196,9 +192,7 @@ def run_scenario(
                             spec.chat_requests_per_worker,
                         )
                     elif spec.run_import:
-                        import_result = run_import_load(
-                            base_gateway_url, spec.import_files
-                        )
+                        import_result = run_import_load(base_gateway_url, spec.import_files)
                     elif spec.run_transcribe:
                         transcribe_result = run_transcribe_load(
                             base_gateway_url, spec.transcribe_pages
@@ -231,9 +225,7 @@ def run_scenario(
     }
 
 
-def _run_concurrently(
-    base_url: str, spec: ScenarioSpec
-) -> tuple[ChatLoadResult, ImportLoadResult]:
+def _run_concurrently(base_url: str, spec: ScenarioSpec) -> tuple[ChatLoadResult, ImportLoadResult]:
     """Run chat load and an import batch on two threads, both blocking until done."""
     with ThreadPoolExecutor(max_workers=2) as pool:
         chat_future = pool.submit(
@@ -258,7 +250,5 @@ def _run_chat_and_transcribe(
             spec.chat_concurrency,
             spec.chat_requests_per_worker,
         )
-        transcribe_future = pool.submit(
-            run_transcribe_load, base_url, spec.transcribe_pages
-        )
+        transcribe_future = pool.submit(run_transcribe_load, base_url, spec.transcribe_pages)
         return chat_future.result(), transcribe_future.result()

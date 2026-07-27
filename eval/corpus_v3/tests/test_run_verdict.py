@@ -165,9 +165,7 @@ def test_main_offline_mode_writes_the_tracer_report(tmp_path, monkeypatch):
 
     assert exit_code == 0
     assert out_path.exists()
-    assert out_path.read_text(encoding="utf-8").startswith(
-        run_verdict.OFFLINE_TRACER_HEADER
-    )
+    assert out_path.read_text(encoding="utf-8").startswith(run_verdict.OFFLINE_TRACER_HEADER)
 
 
 def test_main_live_mode_without_confirm_live_refuses_to_run(capsys):
@@ -216,9 +214,7 @@ def test_main_live_mode_halts_on_cost_guard_failure(tmp_path, capsys):
     assert "cost guard" in capsys.readouterr().err
 
 
-def test_main_live_mode_past_the_guard_runs_the_real_live_runner(
-    monkeypatch, tmp_path, capsys
-):
+def test_main_live_mode_past_the_guard_runs_the_real_live_runner(monkeypatch, tmp_path, capsys):
     """Issue #679: the exit-3 "not wired yet" stub is gone -- a guard-cleared
     run now calls into ``live_runner.run_live_verdict``, which itself refuses
     without ``OPENAI_API_KEY`` (see ``test_live_runner.py`` for the

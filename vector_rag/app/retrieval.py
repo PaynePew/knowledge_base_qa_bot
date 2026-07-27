@@ -68,9 +68,7 @@ from .logger import log_event
 # It is duplicated here (not imported) to keep the apps decoupled; the
 # SYSTEM_PROMPT drift smoke test pins both literals against markdown_kb's.
 CANNOT_CONFIRM_PHRASE = "I cannot confirm from the knowledge base."
-NOT_INDEXED_MESSAGE = (
-    "The knowledge base has not been indexed yet. Call POST /index first."
-)
+NOT_INDEXED_MESSAGE = "The knowledge base has not been indexed yet. Call POST /index first."
 
 # Whitelist roots a clickable citation ``path`` may live under — must mirror the
 # keys of ``markdown_kb.app.read._WHITELIST_ROOTS`` (the gate GET /read/file uses).
@@ -147,9 +145,7 @@ def warm_llm_client() -> None:
         get_llm().invoke("Hi", max_tokens=1)
         log_event("startup_warmup", "client=rag_llm status=ok")
     except Exception as exc:
-        log_event(
-            "startup_warmup", f"client=rag_llm status=failed exc={type(exc).__name__}"
-        )
+        log_event("startup_warmup", f"client=rag_llm status=failed exc={type(exc).__name__}")
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +187,9 @@ def build_prompt(question: str, chunks: list[Chunk]) -> str:
 
     for chunk in chunks:
         breadcrumb = " > ".join(chunk.heading_path)
-        block = f"[Source: {chunk.source}]\nHeading: {breadcrumb}\n{wrap_untrusted(chunk.content)}\n"
+        block = (
+            f"[Source: {chunk.source}]\nHeading: {breadcrumb}\n{wrap_untrusted(chunk.content)}\n"
+        )
         parts.append(block)
 
     parts.append(f"\nQUESTION:\n{question}")
@@ -367,9 +365,7 @@ def _retrieve_and_gate(question: str) -> dict:
         log_event("chat_fallback", f'"{truncated}" reason=retrieval_empty')
         return {
             "sources": [],
-            "grounding_outcome": GroundingOutcome(
-                passed=False, reason="retrieval_empty"
-            ),
+            "grounding_outcome": GroundingOutcome(passed=False, reason="retrieval_empty"),
             "early_exit": True,
             "answer": CANNOT_CONFIRM_PHRASE,
             "chunks": [],
@@ -420,9 +416,7 @@ def _retrieve_and_gate(question: str) -> dict:
         )
         return {
             "sources": sources,
-            "grounding_outcome": GroundingOutcome(
-                passed=False, reason="below_threshold"
-            ),
+            "grounding_outcome": GroundingOutcome(passed=False, reason="below_threshold"),
             "early_exit": True,
             "answer": CANNOT_CONFIRM_PHRASE,
             "chunks": [],
@@ -513,17 +507,13 @@ def _call_llm_with_error_handling(question: str, prompt_text: str) -> str:
             message="LLM service temporarily unavailable, please retry.",
         ) from exc
     except openai.AuthenticationError as exc:
-        log_event(
-            "chat_error", f'"{truncated}" kind=openai_auth exc={type(exc).__name__}'
-        )
+        log_event("chat_error", f'"{truncated}" kind=openai_auth exc={type(exc).__name__}')
         raise LLMError(
             retryable=False,
             message="LLM service auth failed (check OPENAI_API_KEY).",
         ) from exc
     except openai.APIError as exc:
-        log_event(
-            "chat_error", f'"{truncated}" kind=openai_api exc={type(exc).__name__}'
-        )
+        log_event("chat_error", f'"{truncated}" kind=openai_api exc={type(exc).__name__}')
         raise LLMError(
             retryable=False,
             message=f"LLM service error: {exc!s}",

@@ -82,10 +82,7 @@ def _make_app() -> FastAPI:
         vector = [0.0] * dim
         return {
             "object": "list",
-            "data": [
-                {"object": "embedding", "index": i, "embedding": vector}
-                for i in range(n)
-            ],
+            "data": [{"object": "embedding", "index": i, "embedding": vector} for i in range(n)],
             "model": body.get("model", "text-embedding-3-small"),
             "usage": {"prompt_tokens": 1, "total_tokens": 1},
         }
@@ -108,9 +105,7 @@ def run_fake_upstream(port: int, host: str = "127.0.0.1") -> Iterator[str]:
     """
     config = uvicorn.Config(_make_app(), host=host, port=port, log_level="warning")
     server = uvicorn.Server(config)
-    thread = threading.Thread(
-        target=server.run, name="loadtest-fake-upstream", daemon=True
-    )
+    thread = threading.Thread(target=server.run, name="loadtest-fake-upstream", daemon=True)
     thread.start()
     deadline = time.monotonic() + 10.0
     while not server.started and time.monotonic() < deadline:

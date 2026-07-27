@@ -254,9 +254,7 @@ def build_spotcheck_subset(
     # qualifies for multiple zones is judged once but counts toward each.
     by_key: dict[tuple[str, str], dict] = {}
 
-    def _add(
-        v: _ParaphraseVerdict, stack: str, item: RetrievedItem, hit: bool, zone: str
-    ):
+    def _add(v: _ParaphraseVerdict, stack: str, item: RetrievedItem, hit: bool, zone: str):
         key = (v.paraphrase.paraphrase_id, stack)
         entry = by_key.setdefault(
             key,
@@ -322,9 +320,7 @@ def _control_items(
     """
     rng = random.Random(seed)
     clear_hits = [
-        v
-        for v in verdicts
-        if v.b_item is not None and v.b_hit and v.b_overlap > marginal_threshold
+        v for v in verdicts if v.b_item is not None and v.b_hit and v.b_overlap > marginal_threshold
     ]
     clear_misses = [v for v in verdicts if v.b_item is not None and not v.b_hit]
     clear_hits.sort(key=lambda v: v.paraphrase.paraphrase_id)
@@ -429,8 +425,7 @@ def _aggregate(
             size_by_zone[zone] += 1
             agree_by_zone[zone].append(agrees)
     agreement = {
-        z: (sum(flags) / len(flags) if flags else 0.0)
-        for z, flags in agree_by_zone.items()
+        z: (sum(flags) / len(flags) if flags else 0.0) for z, flags in agree_by_zone.items()
     }
     return SpotcheckResult(
         judge_model=judge_model,
@@ -511,6 +506,4 @@ def _parse_verdict(text: str) -> JudgeVerdict:
             reasoning=str(data.get("reasoning", "")).strip(),
         )
     except (ValueError, AttributeError):
-        return JudgeVerdict(
-            answers=False, reasoning=f"unparseable judge reply: {text[:120]}"
-        )
+        return JudgeVerdict(answers=False, reasoning=f"unparseable judge reply: {text[:120]}")

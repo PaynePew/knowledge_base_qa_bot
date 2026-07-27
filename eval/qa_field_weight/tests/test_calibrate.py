@@ -25,18 +25,10 @@ def test_weight_point_separation_is_the_difference():
 def test_recommend_picks_plateau_median_among_floor_holding_points():
     """Weights that drop the own-question floor are disqualified outright."""
     points = [
-        WeightPoint(
-            weight=0.0, own_question_hit_rate=0.0, pollution_rate=0.0
-        ),  # floor broken
-        WeightPoint(
-            weight=0.2, own_question_hit_rate=1.0, pollution_rate=0.1
-        ),  # optimal plateau
-        WeightPoint(
-            weight=0.5, own_question_hit_rate=1.0, pollution_rate=0.1
-        ),  # optimal plateau
-        WeightPoint(
-            weight=1.0, own_question_hit_rate=1.0, pollution_rate=0.1
-        ),  # optimal plateau
+        WeightPoint(weight=0.0, own_question_hit_rate=0.0, pollution_rate=0.0),  # floor broken
+        WeightPoint(weight=0.2, own_question_hit_rate=1.0, pollution_rate=0.1),  # optimal plateau
+        WeightPoint(weight=0.5, own_question_hit_rate=1.0, pollution_rate=0.1),  # optimal plateau
+        WeightPoint(weight=1.0, own_question_hit_rate=1.0, pollution_rate=0.1),  # optimal plateau
     ]
     # optimal (floor-holding, best separation) = [0.2, 0.5, 1.0]; median → 0.5.
     assert recommend(points).weight == 0.5

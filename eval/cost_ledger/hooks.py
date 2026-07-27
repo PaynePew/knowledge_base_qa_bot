@@ -48,9 +48,7 @@ def record_usage_from_response(
     ledger: CostLedger, *, stack: str, phase: str, model: str, response: object
 ) -> None:
     """Record one call's usage, extracted from `response`, into `ledger`."""
-    ledger.record(
-        stack=stack, phase=phase, model=model, usage=_extract_usage_metadata(response)
-    )
+    ledger.record(stack=stack, phase=phase, model=model, usage=_extract_usage_metadata(response))
 
 
 class _InvokeRecordingProxy:
@@ -59,9 +57,7 @@ class _InvokeRecordingProxy:
     delegates to the wrapped client unchanged — this proxy only observes the
     ``.invoke`` seam."""
 
-    def __init__(
-        self, llm: Any, ledger: CostLedger, *, stack: str, phase: str, model: str
-    ) -> None:
+    def __init__(self, llm: Any, ledger: CostLedger, *, stack: str, phase: str, model: str) -> None:
         self._llm = llm
         self._ledger = ledger
         self._stack = stack
@@ -192,8 +188,6 @@ def instrument_invoke(
     def wrapped_getter() -> Any:
         llm = getter()
         resolved_model = model or getattr(llm, "model_name", None) or "unknown"
-        return _InvokeRecordingProxy(
-            llm, ledger, stack=stack, phase=phase, model=resolved_model
-        )
+        return _InvokeRecordingProxy(llm, ledger, stack=stack, phase=phase, model=resolved_model)
 
     return wrapped_getter

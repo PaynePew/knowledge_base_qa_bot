@@ -93,9 +93,7 @@ def wilson_ci(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
     z2 = z * z
     denominator = 1.0 + z2 / n
     center = (p_hat + z2 / (2 * n)) / denominator
-    half_width = (
-        z * math.sqrt(p_hat * (1.0 - p_hat) / n + z2 / (4 * n * n)) / denominator
-    )
+    half_width = z * math.sqrt(p_hat * (1.0 - p_hat) / n + z2 / (4 * n * n)) / denominator
     lo = max(0.0, center - half_width)
     hi = min(1.0, center + half_width)
     return lo, hi

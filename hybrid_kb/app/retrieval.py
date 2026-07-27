@@ -133,9 +133,7 @@ def reciprocal_rank_fusion(
 
     for ranked in (ranked_a, ranked_b):
         for rank, section in enumerate(ranked, start=1):
-            fused_scores[section.id] = fused_scores.get(section.id, 0.0) + 1.0 / (
-                k + rank
-            )
+            fused_scores[section.id] = fused_scores.get(section.id, 0.0) + 1.0 / (k + rank)
             section_by_id.setdefault(section.id, section)
 
     # ``section_by_id`` iterates in first-seen (insertion) order; ``sorted`` is
@@ -159,9 +157,7 @@ def _bm25_arm_clears(top_score: float | None, lang: str) -> bool:
     """
     if top_score is None:
         return False
-    threshold = (
-        _bm25_gate._SCORE_THRESHOLD_ZH if lang == "zh" else _bm25_gate._SCORE_THRESHOLD
-    )
+    threshold = _bm25_gate._SCORE_THRESHOLD_ZH if lang == "zh" else _bm25_gate._SCORE_THRESHOLD
     return top_score >= threshold
 
 
@@ -289,9 +285,7 @@ def retrieve_and_gate(
     # object wins via ``section_by_id.setdefault``) and untouched by this guard.
     live_bm25_ids = {section.id for section in _bm25_indexer.sections}
     dense_ranked = [
-        (section, distance)
-        for section, distance in dense_ranked
-        if section.id in live_bm25_ids
+        (section, distance) for section, distance in dense_ranked if section.id in live_bm25_ids
     ]
 
     # Each arm's NATIVE top score: BM25's highest score (search returns
@@ -316,9 +310,7 @@ def retrieve_and_gate(
         deep_fused = reciprocal_rank_fusion(
             bm25_pool, dense_pool, k=RRF_K, top_k=max(rerank_depth, top_k)
         )
-        sections = rerank.rerank(
-            question, [section for section, _ in deep_fused], top_n=top_k
-        )
+        sections = rerank.rerank(question, [section for section, _ in deep_fused], top_n=top_k)
     else:
         fused = reciprocal_rank_fusion(bm25_pool, dense_pool, k=RRF_K, top_k=top_k)
         sections = [section for section, _ in fused]

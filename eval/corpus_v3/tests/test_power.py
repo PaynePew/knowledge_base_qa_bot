@@ -144,8 +144,6 @@ def test_per_stratum_requirements_applies_base_inputs_to_every_stratum():
 def test_per_stratum_requirements_honours_per_stratum_override():
     strata = ["factoid", "zh_factoid"]
     zh_inputs = _inputs(power=0.60, mdd=0.10)  # relaxed zh gate
-    results = per_stratum_requirements(
-        _inputs(), strata, overrides={"zh_factoid": zh_inputs}
-    )
+    results = per_stratum_requirements(_inputs(), strata, overrides={"zh_factoid": zh_inputs})
     assert results["zh_factoid"].inputs == zh_inputs
     assert results["zh_factoid"].required_n < results["factoid"].required_n

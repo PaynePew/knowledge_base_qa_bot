@@ -51,9 +51,7 @@ def test_zh_clearly_out_of_scope_is_refused():
 
 def test_zh_collect_scores_separates_positive_from_clearly_oos():
     """collect_scores over the zh sets: positives retrieve, clearly-oos negatives don't."""
-    positive, negative = collect_scores(
-        CORPUS_DIR_ZH, POSITIVE_CASES_ZH, NEGATIVE_CASES_ZH
-    )
+    positive, negative = collect_scores(CORPUS_DIR_ZH, POSITIVE_CASES_ZH, NEGATIVE_CASES_ZH)
     assert len(positive) == len(POSITIVE_CASES_ZH)
     # Every in-scope query retrieves something (non-zero); a value < 0.5 is a real
     # over-refusal finding the calibration reports, not a test failure.

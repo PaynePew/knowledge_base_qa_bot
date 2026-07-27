@@ -85,9 +85,7 @@ def test_vr_wrapper_timeout_raises_llmerror_retryable_true(indexed_corpus, monke
     assert exc_info.value.retryable is True
 
 
-def test_vr_wrapper_rate_limit_raises_llmerror_retryable_true(
-    indexed_corpus, monkeypatch
-):
+def test_vr_wrapper_rate_limit_raises_llmerror_retryable_true(indexed_corpus, monkeypatch):
     """RateLimitError → LLMError(retryable=True) in vector_rag wrapper."""
     fake_llm = ErrorLLM(_rate_limit_error())
     monkeypatch.setattr(retrieval_module, "get_llm", lambda: fake_llm)
@@ -98,9 +96,7 @@ def test_vr_wrapper_rate_limit_raises_llmerror_retryable_true(
     assert exc_info.value.retryable is True
 
 
-def test_vr_wrapper_auth_error_raises_llmerror_retryable_false(
-    indexed_corpus, monkeypatch
-):
+def test_vr_wrapper_auth_error_raises_llmerror_retryable_false(indexed_corpus, monkeypatch):
     """AuthenticationError → LLMError(retryable=False) in vector_rag wrapper."""
     fake_llm = ErrorLLM(_auth_error())
     monkeypatch.setattr(retrieval_module, "get_llm", lambda: fake_llm)
@@ -111,9 +107,7 @@ def test_vr_wrapper_auth_error_raises_llmerror_retryable_false(
     assert exc_info.value.retryable is False
 
 
-def test_vr_wrapper_api_error_raises_llmerror_retryable_false(
-    indexed_corpus, monkeypatch
-):
+def test_vr_wrapper_api_error_raises_llmerror_retryable_false(indexed_corpus, monkeypatch):
     """Generic APIError → LLMError(retryable=False) in vector_rag wrapper."""
     fake_llm = ErrorLLM(_api_error())
     monkeypatch.setattr(retrieval_module, "get_llm", lambda: fake_llm)

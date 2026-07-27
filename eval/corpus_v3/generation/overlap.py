@@ -59,9 +59,7 @@ def lexical_overlap_ratio(query_text: str, reference_texts: list[str]) -> float:
     """
     query_tokens = set(tokenize(query_text))
     if not query_tokens:
-        raise ValueError(
-            "lexical_overlap_ratio: query_text has no tokens after tokenisation"
-        )
+        raise ValueError("lexical_overlap_ratio: query_text has no tokens after tokenisation")
     reference_tokens: set[str] = set()
     for text in reference_texts:
         reference_tokens.update(tokenize(text))

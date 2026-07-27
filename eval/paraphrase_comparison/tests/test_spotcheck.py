@@ -71,9 +71,7 @@ def test_marginal_zone_picks_correct_id_with_overlap_at_or_below_threshold():
     a = _retriever({para.text: [_item(GOLD, "issued a refund yesterday")]})  # 1 token
     b = _retriever({para.text: [_item(GOLD, "refund packaging receipt thirty")]})  # >1
 
-    subset = build_spotcheck_subset(
-        [para], a, b, zones=(ZONE_MARGINAL,), marginal_threshold=1
-    )
+    subset = build_spotcheck_subset([para], a, b, zones=(ZONE_MARGINAL,), marginal_threshold=1)
     marginal_a = [it for it in subset if it.stack == "Stack A"]
     assert marginal_a, "Stack A top-1 with single-token overlap is a marginal hit"
     assert ZONE_MARGINAL in marginal_a[0].zones
@@ -93,9 +91,7 @@ def test_marginal_zone_excludes_zero_overlap_clear_miss():
 def test_disagreement_zone_when_stack_top1_verdicts_differ():
     para = _para("syn-3")
     # Stack A hits (gold + token), Stack B misses (wrong id) -> disagreement.
-    a = _retriever(
-        {para.text: [_item(GOLD, "refund and packaging within thirty days")]}
-    )
+    a = _retriever({para.text: [_item(GOLD, "refund and packaging within thirty days")]})
     b = _retriever({para.text: [_item(OTHER, "fast delivery options")]})
     subset = build_spotcheck_subset([para], a, b, zones=(ZONE_DISAGREEMENT,))
     stacks = {it.stack for it in subset}
@@ -149,12 +145,8 @@ def test_control_zone_is_seeded_and_reproducible():
 def test_item_in_multiple_zones_carries_all_zones():
     # A marginal hit on Stack A that also disagrees with Stack B.
     para = _para("syn-5")
-    a = _retriever(
-        {para.text: [_item(GOLD, "a single refund mention")]}
-    )  # marginal hit
-    b = _retriever(
-        {para.text: [_item(OTHER, "shipping speeds")]}
-    )  # miss -> disagreement
+    a = _retriever({para.text: [_item(GOLD, "a single refund mention")]})  # marginal hit
+    b = _retriever({para.text: [_item(OTHER, "shipping speeds")]})  # miss -> disagreement
     subset = build_spotcheck_subset(
         [para], a, b, zones=(ZONE_MARGINAL, ZONE_DISAGREEMENT), marginal_threshold=1
     )
@@ -184,9 +176,7 @@ class _StubJudgeClient:
         self.calls.append({"model": model, "messages": messages})
         # Echo a verdict the module's _parse_verdict can read.
         user = messages[0]["content"]
-        answers = next(
-            (v for substring, v in self._answers.items() if substring in user), False
-        )
+        answers = next((v for substring, v in self._answers.items() if substring in user), False)
         return _StubResponse(answers)
 
 

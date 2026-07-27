@@ -275,9 +275,7 @@ def leak_source_ids_for_query(
     """
     if not query.gold_section_ids:
         return frozenset()
-    matched = [
-        group_lookup[gid] for gid in query.gold_section_ids if gid in group_lookup
-    ]
+    matched = [group_lookup[gid] for gid in query.gold_section_ids if gid in group_lookup]
     if not matched:
         return frozenset()
     # AdversarialGroup carries list fields, so it is not hashable -- compare
@@ -417,9 +415,9 @@ def _grounded_correct_counts(
                 continue
             record = records_by_arm_query[(arm, q.query_id)]
             leak_ids = leak_source_ids_for_query(q, lookup)
-            if grounding_pass(
-                record, record.retrieved_source_ids
-            ) and not contradiction_leak(record, leak_ids):
+            if grounding_pass(record, record.retrieved_source_ids) and not contradiction_leak(
+                record, leak_ids
+            ):
                 counts[arm] += 1
     return counts
 
@@ -448,9 +446,7 @@ def build_live_verdict_report(
     -- CODING_STANDARD §6.6's canonical-name guarantee: only an answer_fn
     -backed run may write this file without a placeholder header."""
     samples = build_axis_samples(queries, records_by_arm_query)
-    comparisons = [
-        s.to_comparison(stratum=_STRATUM_BY_AXIS[s.axis]) for s in samples
-    ]
+    comparisons = [s.to_comparison(stratum=_STRATUM_BY_AXIS[s.axis]) for s in samples]
 
     kill = kill_clause_verdict(comparisons, wiki_arm="wiki", baseline_arm=BASELINE_ARM)
     demote_comparison = next(
@@ -472,9 +468,7 @@ def build_live_verdict_report(
     totals = ledger.totals(phase="query")
     per_arm_usd = {arm: ledger.totals(stack=arm, phase="query").usd for arm in arms}
     cost_per_grounded_correct = {
-        arm: cost_per_grounded_correct_answer(
-            per_arm_usd[arm] or 0.0, grounded_correct[arm]
-        )
+        arm: cost_per_grounded_correct_answer(per_arm_usd[arm] or 0.0, grounded_correct[arm])
         for arm in arms
     }
     # corpus v3's build phase is hand-authored (build_corpus.py's own

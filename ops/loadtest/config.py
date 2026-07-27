@@ -30,9 +30,7 @@ KNOWN_KNOBS: dict[str, Knob] = {
     "KB_MAX_INFLIGHT": Knob(
         "KB_MAX_INFLIGHT", 6, "general read semaphore (gateway/app/middleware.py)"
     ),
-    "KB_MAX_ADMIN": Knob(
-        "KB_MAX_ADMIN", 2, "admin/mutate semaphore (gateway/app/middleware.py)"
-    ),
+    "KB_MAX_ADMIN": Knob("KB_MAX_ADMIN", 2, "admin/mutate semaphore (gateway/app/middleware.py)"),
     "KB_SSE_MAX_CONCURRENT": Knob(
         "KB_SSE_MAX_CONCURRENT", 6, "SSE-specific cap (gateway/app/sse_capacity.py)"
     ),

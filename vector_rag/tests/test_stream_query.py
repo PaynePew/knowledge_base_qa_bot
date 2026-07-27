@@ -160,9 +160,7 @@ def test_stream_query_index_missing_yields_two_dicts(fake_embeddings, monkeypatc
     assert sentinel_llm.call_count == 0, "LLM must not be called on early-exit path"
 
 
-def test_stream_query_index_missing_first_yield_sources_ready(
-    fake_embeddings, monkeypatch
-):
+def test_stream_query_index_missing_first_yield_sources_ready(fake_embeddings, monkeypatch):
     """On index-missing path, first yield has _phase='sources_ready'."""
     indexer.vectorstore = None
     monkeypatch.setattr(retrieval, "get_llm", lambda: FakeLLM())
@@ -171,9 +169,7 @@ def test_stream_query_index_missing_first_yield_sources_ready(
     assert results[0].get("_phase") == "sources_ready"
 
 
-def test_stream_query_index_missing_full_result_not_indexed(
-    fake_embeddings, monkeypatch
-):
+def test_stream_query_index_missing_full_result_not_indexed(fake_embeddings, monkeypatch):
     """On index-missing path, second yield has passed=False reason=index_missing."""
     indexer.vectorstore = None
     monkeypatch.setattr(retrieval, "get_llm", lambda: FakeLLM())
@@ -184,9 +180,7 @@ def test_stream_query_index_missing_full_result_not_indexed(
     assert full["grounding_outcome"].reason == "index_missing"
 
 
-def test_stream_query_index_missing_emits_cannot_confirm_phrase(
-    fake_embeddings, monkeypatch
-):
+def test_stream_query_index_missing_emits_cannot_confirm_phrase(fake_embeddings, monkeypatch):
     """On index-missing path, stream second yield answer is CANNOT_CONFIRM_PHRASE (not NOT_INDEXED_MESSAGE).
 
     Issue #138 — SSE uniformity: all 5 CC reasons must stream CANNOT_CONFIRM_PHRASE
@@ -225,9 +219,7 @@ def test_stream_query_empty_retrieval_no_llm_call(indexed_corpus, monkeypatch):
     assert sentinel_llm.call_count == 0
 
 
-def test_stream_query_empty_retrieval_full_result_cannot_confirm(
-    indexed_corpus, monkeypatch
-):
+def test_stream_query_empty_retrieval_full_result_cannot_confirm(indexed_corpus, monkeypatch):
     """On empty-retrieval path, second yield is Cannot Confirm."""
     monkeypatch.setattr(indexer, "search_with_distance", lambda q, k=3: [])
     monkeypatch.setattr(retrieval, "get_llm", lambda: FakeLLM())
@@ -269,9 +261,7 @@ def test_stream_query_sources_have_no_derived_from_field(indexed_corpus, monkeyp
 
     for result in results:
         for src in result.get("sources", []):
-            assert "derived_from" not in src, (
-                f"RAG source must not carry 'derived_from': {src}"
-            )
+            assert "derived_from" not in src, f"RAG source must not carry 'derived_from': {src}"
 
 
 def test_stream_query_sources_have_required_fields(indexed_corpus, monkeypatch):

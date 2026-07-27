@@ -104,9 +104,7 @@ def contradiction_leak(answer: AnswerRecord, leak_source_ids: Iterable[str]) -> 
 # ---------------------------------------------------------------------------
 # Public API — cost x quality (PRD #654 user story 21)
 # ---------------------------------------------------------------------------
-def cost_per_grounded_correct_answer(
-    total_usd: float, grounded_correct_count: int
-) -> float | None:
+def cost_per_grounded_correct_answer(total_usd: float, grounded_correct_count: int) -> float | None:
     """PRD #654 user story 21: total cost divided by the count of grounded
     AND correct answers -- the metric where cost and quality argue in the
     same chart.
@@ -117,9 +115,7 @@ def cost_per_grounded_correct_answer(
     error condition.
     """
     if grounded_correct_count < 0:
-        raise ValueError(
-            f"grounded_correct_count must be >= 0, got {grounded_correct_count!r}"
-        )
+        raise ValueError(f"grounded_correct_count must be >= 0, got {grounded_correct_count!r}")
     if grounded_correct_count == 0:
         return None
     return total_usd / grounded_correct_count

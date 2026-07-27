@@ -102,15 +102,11 @@ def test_faiss_lang_tag_survives_persistence_roundtrip(tmp_path, fake_embeddings
     _write_corpus(docs_dir)
 
     indexer.build_index(docs_dir)
-    before = {
-        k: d.metadata.get("lang") for k, d in indexer.vectorstore.docstore._dict.items()
-    }
+    before = {k: d.metadata.get("lang") for k, d in indexer.vectorstore.docstore._dict.items()}
 
     indexer.vectorstore = None
     indexer.load_vector_index()
-    after = {
-        k: d.metadata.get("lang") for k, d in indexer.vectorstore.docstore._dict.items()
-    }
+    after = {k: d.metadata.get("lang") for k, d in indexer.vectorstore.docstore._dict.items()}
 
     assert before == after, "lang tag must round-trip through the persisted index"
     assert all(v in ("zh", "en") for v in after.values())

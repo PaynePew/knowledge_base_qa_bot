@@ -91,9 +91,7 @@ def render_charts(
             continue
         types = present
         c_hit = {t: stack_c.by_type.get(t, 0.0) for t in types} if three_arms else None
-        c_mrr = (
-            {t: stack_c.mrr_by_type.get(t, 0.0) for t in types} if three_arms else None
-        )
+        c_mrr = {t: stack_c.mrr_by_type.get(t, 0.0) for t in types} if three_arms else None
         written.append(
             _grouped_bar(
                 charts_dir / f"{family}_hit_rate_at_{k}.png",
@@ -185,10 +183,7 @@ def _diverging_delta(
 ) -> Path:
     """Horizontal diverging bar of Δ = B − A per type, coloured by winner; atomic-write."""
     deltas = [b_by_type[t] - a_by_type[t] for t in types]
-    colors = [
-        _COLOR_STACK_B if d > 0 else _COLOR_STACK_A if d < 0 else _COLOR_TIE
-        for d in deltas
-    ]
+    colors = [_COLOR_STACK_B if d > 0 else _COLOR_STACK_A if d < 0 else _COLOR_TIE for d in deltas]
     fig, ax = plt.subplots(figsize=(7.0, max(3.0, 0.7 * len(types) + 1.5)))
     positions = range(len(types))
     ax.barh(list(positions), deltas, color=colors)
@@ -206,9 +201,7 @@ def _diverging_delta(
 # ---------------------------------------------------------------------------
 def _savefig_atomic(fig, path: Path) -> Path:
     """Save ``fig`` to ``path`` via tmp + ``replace_atomic`` (CODING_STANDARD §2.6)."""
-    fd, tmp_name = tempfile.mkstemp(
-        dir=path.parent, suffix=".tmp", prefix=f"{path.stem}_"
-    )
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, suffix=".tmp", prefix=f"{path.stem}_")
     os.close(fd)  # matplotlib opens the file itself; we only needed a unique name
     try:
         fig.savefig(tmp_name, format="png", dpi=120)

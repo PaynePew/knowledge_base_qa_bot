@@ -155,9 +155,7 @@ def _get_family_a_llm():
     docstring, which names this exact call site)."""
     from langchain_openai import ChatOpenAI  # function-scope: keep LangChain internal
 
-    llm = ChatOpenAI(
-        model=GENERATOR_MODEL_A, temperature=0.0, timeout=60, max_retries=1
-    )
+    llm = ChatOpenAI(model=GENERATOR_MODEL_A, temperature=0.0, timeout=60, max_retries=1)
     return llm.with_structured_output(QueryDraft, include_raw=True)
 
 
@@ -169,9 +167,7 @@ def _get_family_b_llm():
         ChatAnthropic,
     )
 
-    llm = ChatAnthropic(
-        model=GENERATOR_MODEL_B, temperature=0.0, timeout=60, max_retries=1
-    )
+    llm = ChatAnthropic(model=GENERATOR_MODEL_B, temperature=0.0, timeout=60, max_retries=1)
     return llm.with_structured_output(QueryDraft, include_raw=True)
 
 
@@ -271,9 +267,7 @@ def _generate_query(
     draft: QueryDraft | None = result.get("parsed")
     if draft is None:
         return None  # structured-output parse failure — treated as a reject
-    overlap_stratum = overlap.classify_overlap_stratum(
-        draft.text, [target.reference_text]
-    )
+    overlap_stratum = overlap.classify_overlap_stratum(draft.text, [target.reference_text])
     try:
         query = to_query(
             draft,
@@ -433,9 +427,7 @@ def _split_family_windows(
     the full cell count in every window), so the split changes who phrases a
     slot, never which reference Sections are targeted."""
     a_windows = [(s, lang, n, 0, (n + 1) // 2) for s, lang, n in plan]
-    b_windows = [
-        (s, lang, n, (n + 1) // 2, n) for s, lang, n in plan if n > (n + 1) // 2
-    ]
+    b_windows = [(s, lang, n, (n + 1) // 2, n) for s, lang, n in plan if n > (n + 1) // 2]
     return a_windows, b_windows
 
 
@@ -495,9 +487,7 @@ def _backfill(args: argparse.Namespace) -> int:
         )
         return 1
     plan = _plan_cells()
-    counts_by_cell = {
-        (c["scenario_stratum"], c["language"]): dict(c) for c in metadata["counts"]
-    }
+    counts_by_cell = {(c["scenario_stratum"], c["language"]): dict(c) for c in metadata["counts"]}
     for stratum, language, n in plan:
         recorded = counts_by_cell.get((stratum, language))
         # A zero-target cell writes no count row (its zero-width window is
@@ -519,10 +509,7 @@ def _backfill(args: argparse.Namespace) -> int:
         return [
             (s, lang, n, start, stop)
             for s, lang, n, start, stop in windows
-            if any(
-                f"{s}-{lang}-{i:04d}" not in existing_ids
-                for i in range(start, stop)
-            )
+            if any(f"{s}-{lang}-{i:04d}" not in existing_ids for i in range(start, stop))
         ]
 
     family_jobs = []
@@ -584,9 +571,7 @@ def _backfill(args: argparse.Namespace) -> int:
             language=c["language"],
             target=counts_by_cell[(c["scenario_stratum"], c["language"])]["target"],
             actual=counts_by_cell[(c["scenario_stratum"], c["language"])]["actual"],
-            qc_rejected=counts_by_cell[(c["scenario_stratum"], c["language"])][
-                "qc_rejected"
-            ],
+            qc_rejected=counts_by_cell[(c["scenario_stratum"], c["language"])]["qc_rejected"],
         )
         for c in metadata["counts"]  # preserve the artifact's cell order
     ]
@@ -595,9 +580,7 @@ def _backfill(args: argparse.Namespace) -> int:
         family_a_model=metadata["generator_family_a"],
         family_b_source=metadata["generator_family_b"],
         embedding_family=metadata["embedding_family_avoided"],
-        generated_at=datetime.datetime.now(datetime.UTC).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        ),
+        generated_at=datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         cost_usd=total_usd,
         prompt_template_version=metadata["prompt_template_version"],
     )
@@ -606,9 +589,7 @@ def _backfill(args: argparse.Namespace) -> int:
         encoding="utf-8",
     )
     unfilled = sum(
-        c["target"] - c["actual"]
-        for c in counts_by_cell.values()
-        if c["actual"] < c["target"]
+        c["target"] - c["actual"] for c in counts_by_cell.values() if c["actual"] < c["target"]
     )
     cost_note = (
         f"(cost ${total_usd:.2f}, backfill ${backfill_usd:.2f})"
@@ -650,9 +631,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    load_dotenv(
-        find_dotenv(usecwd=True)
-    )  # pick up OPENAI_API_KEY from a repo-root .env
+    load_dotenv(find_dotenv(usecwd=True))  # pick up OPENAI_API_KEY from a repo-root .env
 
     if args.backfill:
         # Key requirements differ per shorted family; _backfill checks them.
@@ -708,9 +687,7 @@ def main(argv: list[str] | None = None) -> int:
         families = [(GENERATOR_MODEL_A, _get_family_a_llm(), full_windows)]
 
     total_planned_calls = sum(
-        stop - start
-        for _model, _llm, windows in families
-        for _s, _lang, _t, start, stop in windows
+        stop - start for _model, _llm, windows in families for _s, _lang, _t, start, stop in windows
     )
     # Pilot split evenly across families so the mixed-price projection scales
     # a pilot whose family mix matches the full plan's.
@@ -724,9 +701,7 @@ def main(argv: list[str] | None = None) -> int:
     remainders: list[tuple] = []
     for (model, llm, windows), share in zip(families, shares):
         pilot_windows, rest_windows = _take_pilot(windows, share)
-        pilot_queries, pilot_counts = run_generation(
-            llm, ledger, model=model, cells=pilot_windows
-        )
+        pilot_queries, pilot_counts = run_generation(llm, ledger, model=model, cells=pilot_windows)
         queries.extend(pilot_queries)
         all_counts.extend(pilot_counts)
         remainders.append((model, llm, rest_windows))
@@ -744,9 +719,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     for model, llm, rest_windows in remainders:
-        rest_queries, rest_counts = run_generation(
-            llm, ledger, model=model, cells=rest_windows
-        )
+        rest_queries, rest_counts = run_generation(llm, ledger, model=model, cells=rest_windows)
         queries.extend(rest_queries)
         all_counts.extend(rest_counts)
 
@@ -781,9 +754,7 @@ def main(argv: list[str] | None = None) -> int:
         prompt_template_version=PROMPT_TEMPLATE_VERSION,
     )
 
-    args.output.write_text(
-        render_query_artifact(queries, metadata=metadata), encoding="utf-8"
-    )
+    args.output.write_text(render_query_artifact(queries, metadata=metadata), encoding="utf-8")
     print(
         f"Wrote {len(queries)} queries to {args.output.name} (cost ${totals.usd:.2f})"
         if totals.usd is not None

@@ -55,9 +55,7 @@ def test_chat_refund_query_live(monkeypatch):
     client = TestClient(app)
     resp = client.post("/chat", json={"query": "How long do refunds take?"})
 
-    assert resp.status_code == 200, (
-        f"Expected HTTP 200, got {resp.status_code}: {resp.text}"
-    )
+    assert resp.status_code == 200, f"Expected HTTP 200, got {resp.status_code}: {resp.text}"
     body = resp.json()
 
     assert "[Source:" in body.get("answer", ""), (

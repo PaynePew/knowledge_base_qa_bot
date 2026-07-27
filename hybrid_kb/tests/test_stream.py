@@ -128,9 +128,7 @@ def test_stream_query_yields_sources_partial_then_full(wired_corpus, monkeypatch
     """The first yield is the sources-ready partial; the second is the full result."""
     fake_llm = FakeLLM(f"Refunds take about a week. [Source: {REFUND_ID}]")
     _patch_llm(monkeypatch, fake_llm)
-    monkeypatch.setattr(
-        query_module.grounding_module, "verify", lambda d, s: _approved()
-    )
+    monkeypatch.setattr(query_module.grounding_module, "verify", lambda d, s: _approved())
 
     gen = query_module.stream_query("how long do refunds take")
 
@@ -139,9 +137,7 @@ def test_stream_query_yields_sources_partial_then_full(wired_corpus, monkeypatch
     assert partial["sources"], "the partial must carry the citation sources first"
     assert partial["early_exit"] is False
     # No LLM call may have happened yet — sources are emitted BEFORE synthesis.
-    assert fake_llm.call_count == 0, (
-        "sources-first: no LLM call before the partial yield"
-    )
+    assert fake_llm.call_count == 0, "sources-first: no LLM call before the partial yield"
 
     full = next(gen)
     assert "[Source:" in full["answer"]
@@ -156,9 +152,7 @@ def test_stream_query_full_result_shape_matches_query(wired_corpus, monkeypatch)
     """The full result dict mirrors query()'s shape so the shared serializer works."""
     fake_llm = FakeLLM(f"Refunds take about a week. [Source: {REFUND_ID}]")
     _patch_llm(monkeypatch, fake_llm)
-    monkeypatch.setattr(
-        query_module.grounding_module, "verify", lambda d, s: _approved()
-    )
+    monkeypatch.setattr(query_module.grounding_module, "verify", lambda d, s: _approved())
 
     *_, full = list(query_module.stream_query("how long do refunds take"))
 
@@ -172,9 +166,7 @@ def test_stream_query_sources_carry_clickable_wiki_path(wired_corpus, monkeypatc
     """An in-scope hybrid source carries a resolvable ``wiki/...`` path (clickable)."""
     fake_llm = FakeLLM(f"Refunds take about a week. [Source: {REFUND_ID}]")
     _patch_llm(monkeypatch, fake_llm)
-    monkeypatch.setattr(
-        query_module.grounding_module, "verify", lambda d, s: _approved()
-    )
+    monkeypatch.setattr(query_module.grounding_module, "verify", lambda d, s: _approved())
 
     partial = next(query_module.stream_query("how long do refunds take"))
 
@@ -183,18 +175,14 @@ def test_stream_query_sources_carry_clickable_wiki_path(wired_corpus, monkeypatc
         "a wiki-typed Section must expose a resolvable wiki-page path so the "
         "reader UI renders a clickable citation (AC3 / #266 parity)"
     )
-    assert "\\" not in src["path"], (
-        "path must be forward-slashed (a /read/file relpath)"
-    )
+    assert "\\" not in src["path"], "path must be forward-slashed (a /read/file relpath)"
 
 
 def test_query_sources_carry_clickable_wiki_path(wired_corpus, monkeypatch):
     """Non-streaming query() shares the same clickable-path source shape."""
     fake_llm = FakeLLM(f"Refunds take about a week. [Source: {REFUND_ID}]")
     _patch_llm(monkeypatch, fake_llm)
-    monkeypatch.setattr(
-        query_module.grounding_module, "verify", lambda d, s: _approved()
-    )
+    monkeypatch.setattr(query_module.grounding_module, "verify", lambda d, s: _approved())
 
     result = query_module.query("how long do refunds take")
 
@@ -205,9 +193,7 @@ def test_query_sources_carry_clickable_wiki_path(wired_corpus, monkeypatch):
 # ===========================================================================
 # AC3 parity — pre-LLM OR-gate refuses → sentinel on the stream, NO LLM call
 # ===========================================================================
-def test_stream_query_sub_threshold_streams_cannot_confirm_without_llm(
-    wired_corpus, monkeypatch
-):
+def test_stream_query_sub_threshold_streams_cannot_confirm_without_llm(wired_corpus, monkeypatch):
     """Pre-LLM gate refuses an out-of-scope query → sentinel, no synthesis call.
 
     The partial yield carries ``early_exit=True`` so the Gateway skips the

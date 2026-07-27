@@ -132,14 +132,10 @@ def test_save_load_roundtrip_returns_same_neighbours(indexed_synthetic):
     assert dense_index.vectorstore is not None, "load must repopulate the index"
 
     after = [s.id for s in dense_index.search("refund", k=2)]
-    assert after == before, (
-        f"reload must return the same neighbours; {before=} {after=}"
-    )
+    assert after == before, f"reload must return the same neighbours; {before=} {after=}"
 
 
-def test_reload_does_not_reembed_corpus(
-    indexed_synthetic, fake_embeddings, monkeypatch
-):
+def test_reload_does_not_reembed_corpus(indexed_synthetic, fake_embeddings, monkeypatch):
     """load_dense_index reconstructs the index without calling embed_documents."""
     dense_index.vectorstore = None
     calls = {"docs": 0}

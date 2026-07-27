@@ -25,9 +25,7 @@ class CostLedger:
     def __init__(self) -> None:
         self._calls: list[LedgerCall] = []
 
-    def record(
-        self, *, stack: str, phase: str, model: str, usage: UsageMetadata
-    ) -> None:
+    def record(self, *, stack: str, phase: str, model: str, usage: UsageMetadata) -> None:
         """Record one LLM call.
 
         Raises ``ValueError`` when `phase` is not one of the PRD's three
@@ -36,9 +34,7 @@ class CostLedger:
         """
         if phase not in PHASES:
             raise ValueError(f"phase must be one of {sorted(PHASES)}, got {phase!r}")
-        self._calls.append(
-            LedgerCall(stack=stack, phase=phase, model=model, usage=usage)
-        )
+        self._calls.append(LedgerCall(stack=stack, phase=phase, model=model, usage=usage))
 
     @property
     def calls(self) -> list[LedgerCall]:
@@ -46,9 +42,7 @@ class CostLedger:
         returned list does not affect the ledger."""
         return list(self._calls)
 
-    def totals(
-        self, *, stack: str | None = None, phase: str | None = None
-    ) -> StackPhaseTotals:
+    def totals(self, *, stack: str | None = None, phase: str | None = None) -> StackPhaseTotals:
         """Aggregate every recorded call matching the given filter.
 
         Either or both of `stack` / `phase` may be omitted to aggregate
@@ -61,8 +55,7 @@ class CostLedger:
         matching = [
             c
             for c in self._calls
-            if (stack is None or c.stack == stack)
-            and (phase is None or c.phase == phase)
+            if (stack is None or c.stack == stack) and (phase is None or c.phase == phase)
         ]
         return _aggregate(
             stack if stack is not None else "*",
@@ -75,9 +68,7 @@ class CostLedger:
         grouped: dict[tuple[str, str], list[LedgerCall]] = defaultdict(list)
         for c in self._calls:
             grouped[(c.stack, c.phase)].append(c)
-        return {
-            key: _aggregate(key[0], key[1], group) for key, group in grouped.items()
-        }
+        return {key: _aggregate(key[0], key[1], group) for key, group in grouped.items()}
 
 
 def _aggregate(stack: str, phase: str, calls: Iterable[LedgerCall]) -> StackPhaseTotals:

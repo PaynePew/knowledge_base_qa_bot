@@ -83,9 +83,7 @@ def _install_fake_embeddings() -> None:
             docs = self._docs
             if filter:
                 docs = [
-                    d
-                    for d in docs
-                    if all(d.metadata.get(fk) == fv for fk, fv in filter.items())
+                    d for d in docs if all(d.metadata.get(fk) == fv for fk, fv in filter.items())
                 ]
             q = set(tokenize(query))
             scored = [(d, len(q & set(tokenize(d.page_content)))) for d in docs]
@@ -241,9 +239,7 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     args = parser.parse_args(argv)
-    load_dotenv(
-        find_dotenv(usecwd=True)
-    )  # pick up OPENAI_API_KEY from a repo-root .env
+    load_dotenv(find_dotenv(usecwd=True))  # pick up OPENAI_API_KEY from a repo-root .env
 
     fake = args.fake_embeddings or not os.getenv("OPENAI_API_KEY")
     mode = "fake" if fake else "real"

@@ -22,9 +22,7 @@ from eval.corpus_v3.content_axes import (
 
 
 def _answer(text: str, cited: frozenset[str] = frozenset()) -> AnswerRecord:
-    return AnswerRecord(
-        query_id="q1", arm="wiki", answer_text=text, cited_source_ids=cited
-    )
+    return AnswerRecord(query_id="q1", arm="wiki", answer_text=text, cited_source_ids=cited)
 
 
 # ---------------------------------------------------------------------------
@@ -40,9 +38,7 @@ def test_is_refusal_false_for_a_grounded_answer():
 
 def test_is_refusal_does_not_match_a_paraphrase():
     """Contract is the LITERAL sentinel (ADR-0001), not fuzzy matching."""
-    assert (
-        is_refusal(_answer("I cannot confirm this from the knowledge base.")) is False
-    )
+    assert is_refusal(_answer("I cannot confirm this from the knowledge base.")) is False
 
 
 # ---------------------------------------------------------------------------
@@ -65,9 +61,7 @@ def test_grounding_pass_false_with_no_citations():
 
 def test_grounding_pass_false_on_a_fabricated_citation():
     """A citation naming an id outside the retrieved pool is unsupported."""
-    answer = _answer(
-        "Hours are 9-6. [Source: made-up.md#h]", frozenset({"made-up.md#h"})
-    )
+    answer = _answer("Hours are 9-6. [Source: made-up.md#h]", frozenset({"made-up.md#h"}))
     assert grounding_pass(answer, retrieved_source_ids=["a.md#h"]) is False
 
 
@@ -126,9 +120,7 @@ def test_contradiction_leak_false_when_only_the_current_version_is_cited():
 def test_contradiction_leak_false_on_refusal():
     """A refusal asserts nothing, so it cannot leak."""
     answer = _answer(CANNOT_CONFIRM_PHRASE)
-    leaked = contradiction_leak(
-        answer, leak_source_ids={"return_shipping_v1.md#label-cost"}
-    )
+    leaked = contradiction_leak(answer, leak_source_ids={"return_shipping_v1.md#label-cost"})
     assert leaked is False
 
 

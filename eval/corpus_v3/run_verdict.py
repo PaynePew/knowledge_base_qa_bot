@@ -212,9 +212,7 @@ def run_cost_guard(pilot_ledger: CostLedger, *, planned_calls: int) -> bool:
     of running, on any guard failure -- including "no pilot sample at all").
     """
     try:
-        projection = project_spend(
-            pilot_ledger, phase="query", planned_calls=planned_calls
-        )
+        projection = project_spend(pilot_ledger, phase="query", planned_calls=planned_calls)
     except ValueError as exc:
         print(
             f"cost guard: {exc} -- halting; mark the issue ready-for-human",
@@ -356,9 +354,7 @@ def build_offline_tracer_report() -> str:
     samples = _canned_axis_samples()
     comparisons = [s.to_comparison() for s in samples]
 
-    kill = kill_clause_verdict(
-        comparisons, wiki_arm=WIKI_ARM, baseline_arm=BASELINE_ARM
-    )
+    kill = kill_clause_verdict(comparisons, wiki_arm=WIKI_ARM, baseline_arm=BASELINE_ARM)
     demote_comparison = next(
         c
         for c in comparisons

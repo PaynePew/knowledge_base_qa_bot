@@ -17,9 +17,7 @@ POSITIVE_CASES: list[PositiveCase] = [
     PositiveCase("How long does standard shipping take?", "delivery estimates"),
     PositiveCase("Is expedited shipping available?", "delivery estimates / expedited"),
     PositiveCase("Do you ship internationally?", "international shipping"),
-    PositiveCase(
-        "Who pays customs duties on international orders?", "international shipping"
-    ),
+    PositiveCase("Who pays customs duties on international orders?", "international shipping"),
     PositiveCase("How do I reset my password?", "password reset"),
     PositiveCase("How do I close my account?", "closing account"),
     PositiveCase("What happens to my data when I close my account?", "closing account"),

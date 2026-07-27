@@ -264,9 +264,7 @@ def answer_over_sections(question: str, sections: list[Section]) -> dict:
         return {
             "answer": CANNOT_CONFIRM_PHRASE,
             "sources": sources,
-            "grounding_outcome": GroundingOutcome(
-                passed=False, reason="retrieval_empty"
-            ),
+            "grounding_outcome": GroundingOutcome(passed=False, reason="retrieval_empty"),
         }
     return _draft_and_verify(question, sections, sources)
 
@@ -409,9 +407,7 @@ def _draft_and_verify(
         return {
             "answer": CANNOT_CONFIRM_PHRASE,
             "sources": sources,
-            "grounding_outcome": GroundingOutcome(
-                passed=False, reason="claim_unsupported"
-            ),
+            "grounding_outcome": GroundingOutcome(passed=False, reason="claim_unsupported"),
         }
 
     # Post-LLM Grounding Check (ADR-0004 layer 3). Section satisfies CitableContent,
@@ -465,17 +461,13 @@ def _call_llm_with_error_handling(question: str, prompt_text: str) -> str:
             message="LLM service temporarily unavailable, please retry.",
         ) from exc
     except openai.AuthenticationError as exc:
-        log_event(
-            "chat_error", f'"{truncated}" kind=openai_auth exc={type(exc).__name__}'
-        )
+        log_event("chat_error", f'"{truncated}" kind=openai_auth exc={type(exc).__name__}')
         raise LLMError(
             retryable=False,
             message="LLM service auth failed (check OPENAI_API_KEY).",
         ) from exc
     except openai.APIError as exc:
-        log_event(
-            "chat_error", f'"{truncated}" kind=openai_api exc={type(exc).__name__}'
-        )
+        log_event("chat_error", f'"{truncated}" kind=openai_api exc={type(exc).__name__}')
         raise LLMError(
             retryable=False,
             message=f"LLM service error: {exc!s}",
