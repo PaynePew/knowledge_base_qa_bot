@@ -111,6 +111,39 @@
   }
   .mast-toggle button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
 
+  /* Governance-mode demo entry (issue #687, ADR-0045 demote clause) — a
+     separate pill, deliberately NOT a third segment of .mast-toggle. The
+     quality toggle compares retrieval arms (RAG vs Hybrid); this control
+     demonstrates the KB-governance workflow (curation, provenance, filing)
+     over the same wiki corpus, and stays visually + semantically distinct
+     from that comparison: --warn (the Console's badge-warn token, #9a640f)
+     rather than the toggle's neutral ink/surface pairing, so it never reads
+     as a third quality option. */
+  .mast-governance {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: var(--fs-2xs); letter-spacing: .04em;
+    color: var(--warn);
+    background: transparent;
+    border: 1px solid var(--warn); border-radius: 4px;
+    padding: 5px 10px; cursor: pointer;
+    transition: color .15s ease, border-color .15s ease, background .15s ease;
+  }
+  .mast-governance:hover, .mast-governance:focus-visible {
+    background: rgba(154, 100, 15, .12);
+  }
+  /* :focus-visible keeps a real outline (rather than outline: none) because the
+     [aria-pressed="true"] rule below shares its background/color property with
+     the hover/focus rule above at equal specificity -- source order made it win
+     whenever the active pill was tabbed to, so the focus-visible background tint
+     was silently overridden back to the resting pressed look (WCAG 2.4.7: a
+     keyboard user tabbing to the already-active pill saw zero visual change).
+     outline is a property neither the pressed rule nor the hover rule touches,
+     so it survives every state combination. */
+  .mast-governance:focus-visible {
+    outline: 2px solid var(--warn); outline-offset: 2px;
+  }
+  .mast-governance[aria-pressed="true"] { background: var(--warn); color: var(--surface); }
+
   /* ── Stream ──────────────────────────────────────────── */
   .stream {
     flex: 1;
@@ -906,6 +939,20 @@ var REASON_TEXT = {
     en: "The knowledge base index has not been built yet.",
     zh: "知識庫索引尚未建立。",
   },
+  /* Degraded serving (issue #598 Slice B) -- the verifier never ran, so
+     neither reason is a claim_supported/claim_unsupported outcome. Without
+     these keys renderAnswerFoot's REASON_TEXT[reason] lookup falls back to
+     the raw machine identifier (index.html renderAnswerFoot), so an
+     over-cap Governance-mode visitor would see e.g. "degraded_budget_exhausted"
+     printed verbatim as the verdict line. */
+  degraded_budget_exhausted: {
+    en: "Today's demo budget was exhausted — this answer was served from curated sources without calling the LLM.",
+    zh: "今日示範額度已用盡——本次答案改由精選來源提供,未呼叫 LLM。",
+  },
+  degraded_cached_qa: {
+    en: "This answer replays a previously filed, already-verified answer — no new LLM call was made.",
+    zh: "此答案取自先前已歸檔並驗證過的紀錄——未再呼叫 LLM。",
+  },
 };
 
 /* ── TEACHING MAP ──────────────────────────────────────────────────────────────
@@ -959,12 +1006,20 @@ var TEACHING = {
    Hybrid fuses keyword + semantic retrieval over the SAME curated wiki layer
    (ADR-0018), so its copy reflects the union, not a new corpus.
 
-   Issue #681 (ADR-0045 kill clause): the wiki entry is retired along with the
-   standalone Wiki toggle — corpus v3 found no significant stack=wiki
-   advantage over stack=rag on any content axis, so wiki is no longer offered
-   as a selectable retrieval arm here. Retrieval-quality copy for BOTH
-   remaining stacks (rag, hybrid) is purely descriptive, per the ADR-0045
-   demote clause: no narrative claim of superiority for hybrid. */
+   Issue #681 (ADR-0045 kill clause): wiki is retired as an unlabeled PEER
+   inside the quality toggle — corpus v3 found no significant stack=wiki
+   advantage over stack=rag on any content axis, so it is not offered as a
+   selectable retrieval-quality option here. Retrieval-quality copy for BOTH
+   quality-toggle stacks (rag, hybrid) is purely descriptive, per the
+   ADR-0045 demote clause: no narrative claim of superiority for hybrid.
+
+   Issue #687 (ADR-0045 demote clause, restoring the wiki entry under a new
+   frame): a ``wiki`` entry comes back here, but reached ONLY via the
+   separate Governance-mode demo control (.mast-governance / govBtn — see
+   build()), never via the quality toggle. Its copy makes no retrieval/
+   grounding claim at all — it frames stack=wiki as a demonstration of the
+   KB-governance workflow (curation, provenance, filing) and points to the
+   corpus v3 verdict for where retrieval quality is actually measured. */
 var STACK_META = {
   rag: {
     label: "RAG",
@@ -978,6 +1033,13 @@ var STACK_META = {
     sub: {
       en: "Answers fuse keyword and semantic retrieval over the curated wiki layer and are checked against every cited record — if the sources don’t support a claim, the bot says so instead of guessing.",
       zh: "答案融合關鍵字與語意檢索、涵蓋整個策展 wiki 層,並逐一比對每筆引用來源——來源若不支持某項說法,機器人會直說,而不是硬猜。",
+    },
+  },
+  wiki: {
+    label: "Governance",
+    sub: {
+      en: "This is a demo of the KB-governance workflow, not a retrieval-quality option: a grounded answer here also files a draft QA page for a curator to promote or demote in the console. Retrieval quality for this corpus is measured on RAG and Hybrid — see the corpus v3 verdict.",
+      zh: "這是 KB 治理工作流程的示範,並非檢索品質選項:在此模式下,一則有據答案也會歸檔為草稿 QA 頁面,供策展者在 console 決定提升或退回。此語料的檢索品質數據落在 RAG 與 Hybrid 上——詳見 corpus v3 verdict。",
     },
   },
 };
@@ -1064,6 +1126,8 @@ var CHROME = {
     loopAxes: "Coverage · Freshness · Coherence · Lifecycle",
     errTitle: "Service interrupted", errDefault: "An unexpected error occurred.",
     tryAgain: "Try again", langToggle: "中文", langToggleAria: "切換為中文",
+    govToggle: "Governance demo",
+    govAria: "Governance demo: KB curation and filing workflow, not a retrieval-quality option",
     noticeLabel: "Notice",
     budgetBody: "Daily demo budget reached — it resets every day, please come back tomorrow.",
     feedbackPrompt: "Was this helpful?", feedbackUpAria: "Mark as helpful", feedbackDownAria: "Mark as not helpful",
@@ -1090,6 +1154,8 @@ var CHROME = {
     loopAxes: "涵蓋度 · 新鮮度 · 一致性 · 生命週期",
     errTitle: "服務中斷", errDefault: "發生未預期的錯誤。",
     tryAgain: "再試一次", langToggle: "EN", langToggleAria: "Switch to English",
+    govToggle: "治理示範",
+    govAria: "治理示範模式:知識庫策展與歸檔流程,並非檢索品質選項",
     noticeLabel: "提示",
     budgetBody: "今日示範額度已滿,每日重置 — 歡迎明天再來試。",
     feedbackPrompt: "這個答案有幫助嗎?", feedbackUpAria: "標記為有幫助", feedbackDownAria: "標記為沒有幫助",
@@ -1102,9 +1168,11 @@ function t(key) { return (CHROME[uiLang] || CHROME.en)[key]; }
 /* ── STATE ───────────────────────────────────────────────────────────────── */
 /* Issue #681 (ADR-0045 kill clause): default active stack is rag, mirroring
    the server-side POST /chat/stream default flip (gateway/app/routes.py).
-   Wiki is no longer offered as a standalone toggle option (see build() —
-   the mast-toggle group is [segRag, segHybrid] only); the wiki layer
-   remains as the hybrid embedding substrate and governance/Console surface. */
+   Wiki is no longer offered inside the quality toggle (see build() — the
+   mast-toggle group is [segRag, segHybrid] only); the wiki layer remains as
+   the hybrid embedding substrate and governance/Console surface. Issue #687
+   (ADR-0045 demote clause): stack=wiki is reachable again, but only via the
+   separate Governance-mode demo control (govBtn), never via mast-toggle. */
 var stack = "rag";
 var answerEl = null, answerBody = null, verifyEl = null;
 /* Accumulates the current answer's plain text across onToken calls so onDone
@@ -1121,7 +1189,7 @@ var currentQuery = "";
 /* Phase 11 Slice 4: session id captured from done.session; echoed on next request.
    Never cleared — stack toggle preserves history across RAG↔Hybrid switches. */
 var sessionId = null;
-var stream, segRag, segHybrid, input;
+var stream, segRag, segHybrid, govBtn, input;
 /* In-flight request tracking. Each request gets a monotonically increasing
    sequence; only the latest renders. A new request aborts the previous fetch
    (stops the server stream too) so two overlapping streams can never interleave
@@ -1145,6 +1213,18 @@ function build() {
   segHybrid = el("button", { type: "button", text: "Hybrid", onclick: function() { setStack("hybrid"); } });
   sendBtn = el("button", { class: "send", type: "button", text: t("ask"), onclick: submit });
   input.addEventListener("keydown", function(e) { if (e.key === "Enter") submit(); });
+
+  /* Governance-mode demo entry (issue #687, ADR-0045 demote clause) — a
+     standalone pill, deliberately separate from the mast-toggle group above
+     (not appended to it, not sharing its class). Toggling it drives the same
+     setStack() dispatch as the quality segments (§12.3 — the stack toggle
+     maps to the stack query param), but frames the destination as a
+     governance-workflow demo rather than a third retrieval-quality choice. */
+  govBtn = el("button", {
+    class: "mast-governance", type: "button", "aria-pressed": "false",
+    "aria-label": t("govAria"), text: t("govToggle"),
+    onclick: function() { setStack(stack === "wiki" ? "rag" : "wiki"); },
+  });
 
   /* zh/en chrome toggle — the label names the language a click switches TO. The
      choice syncs with the Console via the shared kb-console-lang key. */
@@ -1171,6 +1251,7 @@ function build() {
       "RAG",
     ),
     el("div", { class: "mast-toggle", role: "tablist" }, segRag, segHybrid),
+    govBtn,
     langBtn,
     consoleBtn,
   );
@@ -1195,6 +1276,7 @@ function build() {
 function syncSeg() {
   segRag.setAttribute("aria-pressed", String(stack === "rag"));
   segHybrid.setAttribute("aria-pressed", String(stack === "hybrid"));
+  govBtn.setAttribute("aria-pressed", String(stack === "wiki"));
 }
 
 /* Flip the chrome language, persist it (shared with the Console), and relocalize
@@ -1209,6 +1291,7 @@ function toggleLang() {
 function applyReaderLang() {
   document.documentElement.setAttribute("lang", uiLang);
   if (langBtn) { langBtn.textContent = t("langToggle"); langBtn.setAttribute("aria-label", t("langToggleAria")); }
+  if (govBtn) { govBtn.textContent = t("govToggle"); govBtn.setAttribute("aria-label", t("govAria")); }
   if (sendBtn) sendBtn.textContent = t("ask");
   if (input) input.setAttribute("placeholder", t("placeholder"));
   if (hintEl) hintEl.replaceChildren(el("span", { text: t("hintPre") }), el("kbd", { text: "↵" }), el("span", { text: t("hintPost") }));
@@ -1417,8 +1500,13 @@ function onQuery(text) {
   clearEmptyState();
   clearIndicator();
   removeCursors();
+  /* Tag with the STACK_META label (e.g. "Governance"), not the raw stack id --
+     stack="wiki" rendered as an uppercased "· WIKI" via the .label CSS
+     text-transform, recreating the unlabeled-peer look issue #687 exists to
+     avoid. rag/hybrid render identically either way (their labels are already
+     "RAG"/"Hybrid", case-equivalent to the raw ids under the same transform). */
   var entry = el("div", { class: "entry" },
-    makeLabel(t("queryLabel"), { tag: stack }),
+    makeLabel(t("queryLabel"), { tag: (STACK_META[stack] || STACK_META.rag).label }),
     el("div", { class: "query", text: text }),
   );
   add(entry);
