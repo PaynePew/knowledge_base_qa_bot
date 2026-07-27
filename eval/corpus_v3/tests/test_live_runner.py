@@ -556,6 +556,42 @@ def test_run_live_verdict_exits_cleanly_when_retries_are_exhausted(
     assert "ready-for-human" in err  # mirrors the mid-run spend-abort message
 
 
+def _raise_runtime_error(*_args, **_kwargs):
+    raise RuntimeError("boom: programming bug")
+
+
+def test_run_live_verdict_preserves_traceback_for_an_unexpected_error(
+    monkeypatch, tmp_path, fake_vector_index, capsys
+):
+    """Issue #683 finding 3 (adversarial-verified MEDIUM): the handler around
+    run_live_answering used to catch bare ``Exception``, discard the
+    traceback, and unconditionally claim "the checkpoint is intact" -- false
+    when the exception came from append_checkpoint_row itself (e.g. a
+    disk-full OSError), and undiagnosable for a genuine programming error on
+    a multi-hour AFK run. Only the arms' own LLMError (the known,
+    already-retried-and-exhausted failure mode -- see the timeout-path test
+    above) gets the clean actionable message; anything else must print the
+    full traceback and must NOT claim the checkpoint is intact."""
+    _install_fakes(monkeypatch, fake_vector_index)
+    monkeypatch.setattr(live_runner, "run_live_answering", _raise_runtime_error)
+    report_out = tmp_path / "VERDICT.md"
+
+    exit_code = live_runner.run_live_verdict(
+        queries_path=_small_queries_path(tmp_path),
+        checkpoint_path=tmp_path / "checkpoint.jsonl",
+        ledger_out_path=tmp_path / "ledger.json",
+        report_out_path=report_out,
+    )
+
+    assert exit_code == 1
+    assert not report_out.exists()
+    err = capsys.readouterr().err
+    assert "Traceback" in err
+    assert "RuntimeError" in err
+    assert "boom: programming bug" in err
+    assert "checkpoint is intact" not in err
+
+
 def test_run_live_verdict_writes_report_ledger_and_checkpoint(
     monkeypatch, tmp_path, fake_vector_index
 ):

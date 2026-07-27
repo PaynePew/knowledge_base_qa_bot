@@ -64,6 +64,7 @@ import importlib
 import os
 import sys
 import time
+import traceback
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -552,18 +553,36 @@ def run_live_verdict(
             already_done=done,
             cap_usd=cap_usd,
         )
-    except Exception as exc:
-        # Issue #683 item 2: _answer_with_retry (module docstring) re-raises
-        # the original error once its bounded backoff schedule is exhausted
-        # -- an outage that outlasts every retry, or a non-transient error
-        # that never qualified for one. Every row answered before this point
-        # is already durably checkpointed (checkpoint.py's append-per-answer
-        # contract), so this is a clean, resumable halt, not data loss --
-        # surface it as one, instead of an unhandled traceback.
+    except LLMError as exc:
+        # Issue #683 item 2 / finding 3 (adversarial-verified MEDIUM): only
+        # LLMError -- the arms' own exception type, and the ONLY thing
+        # _answer_with_retry's exhausted-schedule / non-transient re-raise
+        # can produce past _call_llm_with_error_handling's ADR-0015 mapping
+        # -- gets this clean, actionable message. Every row answered before
+        # this point is already durably checkpointed (checkpoint.py's
+        # append-per-answer contract), so THIS specific failure mode really
+        # is a clean, resumable halt, not data loss.
         print(
             f"live run: answering failed -- {exc} -- halting; the "
             "checkpoint is intact, mark the issue ready-for-human rather "
             "than resuming blindly",
+            file=sys.stderr,
+        )
+        return 1
+    except Exception:
+        # Anything OTHER than the known LLM-path failure -- e.g. an OSError
+        # out of append_checkpoint_row itself (disk full mid-write), or a
+        # genuine programming error -- must never be blanket-reassured as
+        # "the checkpoint is intact": that claim is only true for the
+        # LLMError branch above. Print the full traceback (not just
+        # str(exc)) so a multi-hour AFK run's failure is diagnosable instead
+        # of a bare one-line message with no stack.
+        traceback.print_exc()
+        print(
+            "live run: answering failed with an unexpected error (see "
+            "traceback above, not the known retry-exhaustion path) -- "
+            "halting; checkpoint integrity is NOT guaranteed, inspect "
+            f"{checkpoint_path} before resuming",
             file=sys.stderr,
         )
         return 1
