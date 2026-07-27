@@ -373,9 +373,22 @@ def _stack_param(scope: Scope) -> str:
     check believed it was another, either wrongly hard-503'ing a wiki
     request or, worse, admitting a non-wiki request past the budget cap for
     an uncounted real LLM call (see ``_can_serve_degraded`` docstring).
+
+    Duplicate ``stack`` params (issue #689) MUST resolve the same way here
+    as in the route, since this layer's degraded-admission decision has to
+    track the route's actual dispatch: FastAPI binds the route's ``stack``
+    query param off Starlette's ``QueryParams``, whose ``.get()`` returns
+    the LAST occurrence of a repeated key (verified against the installed
+    ``starlette`` build, not assumed). This function used to take
+    ``values[0]`` (the FIRST occurrence) instead, so
+    ``?stack=wiki&stack=rag`` over an exhausted cap made this ASGI layer
+    believe the request was degradable wiki (admitting it, uncharged) while
+    the route actually dispatched ``rag`` — a real, uncounted LLM call past
+    the budget cap this middleware exists to enforce. Taking the LAST value
+    here, matching the route, closes that gap without any route-side change.
     """
     values = parse_qs(scope.get("query_string", b"").decode("latin-1")).get("stack")
-    return values[0] if values else "rag"
+    return values[-1] if values else "rag"
 
 
 def _can_serve_degraded(path: str, scope: Scope) -> bool:
