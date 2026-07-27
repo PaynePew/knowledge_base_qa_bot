@@ -41,9 +41,7 @@ DOCS_DIR = REPO_ROOT / "docs"
 
 # Single-page committed scanned fixture whose page 0 is repeated to build the
 # in-memory multi-page source — never written back, never committed.
-_SOURCE_FIXTURE = (
-    REPO_ROOT / "markdown_kb" / "tests" / "fixtures" / "raw_import" / "image_only.pdf"
-)
+_SOURCE_FIXTURE = REPO_ROOT / "markdown_kb" / "tests" / "fixtures" / "raw_import" / "image_only.pdf"
 
 
 @dataclass

@@ -116,9 +116,7 @@ def evaluate_case(
     ONLY LLM call (when ``rewrite_fn`` is the real ``rewrite_query``) is the
     contaminated arm.
     """
-    contaminated_rewrite = rewrite_fn(
-        case.followup_question, history=case.contaminated_history
-    )
+    contaminated_rewrite = rewrite_fn(case.followup_question, history=case.contaminated_history)
     clean_rewrite = rewrite_fn(case.followup_question, history=case.clean_history)
     drift = compute_drift(case.followup_question, contaminated_rewrite)
     return ContaminatedSessionOutcome(

@@ -52,11 +52,7 @@ def to_markdown_table(results: list[dict[str, Any]]) -> str:
             else "-"
         )
         imp = r.get("import_load")
-        import_cell = (
-            f"{imp['status']} ({imp['files_done']}/{imp['files_total']})"
-            if imp
-            else "-"
-        )
+        import_cell = f"{imp['status']} ({imp['files_done']}/{imp['files_total']})" if imp else "-"
         transcribe = r.get("transcribe_load")
         transcribe_cell = (
             f"{transcribe['status']} (pages {transcribe['pages_done']}/{transcribe['pages_total']})"

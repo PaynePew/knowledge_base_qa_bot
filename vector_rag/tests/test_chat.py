@@ -186,9 +186,7 @@ def test_chat_empty_retrieval_returns_cannot_confirm(indexed_corpus, monkeypatch
 # ---------------------------------------------------------------------------
 # Post-LLM grounding rejection → Cannot Confirm
 # ---------------------------------------------------------------------------
-def test_chat_grounding_rejection_replaces_with_cannot_confirm(
-    indexed_corpus, monkeypatch
-):
+def test_chat_grounding_rejection_replaces_with_cannot_confirm(indexed_corpus, monkeypatch):
     fake_llm = FakeLLM("Refunds take 3 days and we ship to Mars for free.")
     client = _make_client(monkeypatch, fake_llm)
 

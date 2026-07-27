@@ -63,8 +63,7 @@ def build_prompt(target: GenerationTarget, *, language: str, variant_index: int)
     """
     if language not in _LANGUAGE_NAME:
         raise ValueError(
-            f"build_prompt: unknown language {language!r}, "
-            f"expected one of {sorted(_LANGUAGE_NAME)}"
+            f"build_prompt: unknown language {language!r}, expected one of {sorted(_LANGUAGE_NAME)}"
         )
     instruction = _STRATUM_INSTRUCTION[target.scenario_stratum]
     return (

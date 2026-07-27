@@ -29,9 +29,7 @@ from eval.corpus_v3.models import RetrievedItem
 from eval.corpus_v3.query_schema import Query
 
 
-def _outcome(
-    query_id, scenario, overlap, language, arm, hit1, hit3, rr
-) -> QueryOutcome:
+def _outcome(query_id, scenario, overlap, language, arm, hit1, hit3, rr) -> QueryOutcome:
     return QueryOutcome(
         query_id=query_id,
         stratum=Stratum(scenario, overlap, language),
@@ -135,9 +133,7 @@ def test_group_by_language_pools_across_scenario_and_overlap():
 def test_group_by_scenario_and_overlap_are_selectable_axes():
     outcomes = [
         _outcome("q1", "factoid", "high_overlap", "en", "stack_a", 1.0, 1.0, 1.0),
-        _outcome(
-            "q2", "version_conflict", "low_overlap", "en", "stack_a", 0.0, 0.0, 0.0
-        ),
+        _outcome("q2", "version_conflict", "low_overlap", "en", "stack_a", 0.0, 0.0, 0.0),
     ]
     assert set(group_by_stratum(outcomes, key=BY_SCENARIO)) == {
         "factoid",
@@ -167,12 +163,8 @@ def test_macro_winner_differs_from_a_stratum_winner():
         _outcome("q1", "factoid", "high_overlap", "en", "stack_b", 0.0, 0.0, 0.0),
         _outcome("q2", "cross_doc", "high_overlap", "en", "stack_a", 1.0, 1.0, 1.0),
         _outcome("q2", "cross_doc", "high_overlap", "en", "stack_b", 0.0, 0.0, 0.0),
-        _outcome(
-            "q3", "version_conflict", "low_overlap", "zh", "stack_a", 0.0, 0.0, 0.0
-        ),
-        _outcome(
-            "q3", "version_conflict", "low_overlap", "zh", "stack_b", 1.0, 1.0, 1.0
-        ),
+        _outcome("q3", "version_conflict", "low_overlap", "zh", "stack_a", 0.0, 0.0, 0.0),
+        _outcome("q3", "version_conflict", "low_overlap", "zh", "stack_b", 1.0, 1.0, 1.0),
     ]
 
     per_stratum = stratified_metrics(outcomes, "hit_at_3")

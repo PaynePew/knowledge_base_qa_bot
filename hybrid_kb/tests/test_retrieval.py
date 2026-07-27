@@ -336,8 +336,7 @@ def orphaned_dense_id_corpus(fake_embeddings):
     live = [
         _wiki_section(
             "refund-policy#refund-policy",
-            "Refund policy: refunds are processed within seven business days after "
-            "approval.",
+            "Refund policy: refunds are processed within seven business days after approval.",
             ["Refund Policy"],
         ),
         _wiki_section(
@@ -375,9 +374,7 @@ def _exact_dense_query_for(section: Section) -> str:
     return dense_index._embed_text(section)
 
 
-def test_dense_only_orphan_id_dropped_before_gate_and_fusion(
-    orphaned_dense_id_corpus, monkeypatch
-):
+def test_dense_only_orphan_id_dropped_before_gate_and_fusion(orphaned_dense_id_corpus, monkeypatch):
     """An orphaned dense-only id cannot pass the OR-gate alone or enter fusion.
 
     The query is the orphan's exact embedded text, so — WITHOUT the guard —
@@ -403,9 +400,7 @@ def test_dense_only_orphan_id_dropped_before_gate_and_fusion(
     assert result["grounding_outcome"].reason == "below_threshold"
 
 
-def test_still_live_page_dense_hit_unaffected_by_the_guard(
-    orphaned_dense_id_corpus, monkeypatch
-):
+def test_still_live_page_dense_hit_unaffected_by_the_guard(orphaned_dense_id_corpus, monkeypatch):
     """A page present in BOTH arms still clears the gate and reaches fusion.
 
     Proves the guard is a pure membership filter, not a blanket dense
@@ -540,9 +535,7 @@ def test_rerank_off_by_default_is_plain_fusion(wired_corpus, monkeypatch):
     """Flag off (the default) → the reranker is never invoked; result == plain RRF."""
     invoked = []
     monkeypatch.setattr(retrieval.rerank, "is_enabled", lambda: False)
-    monkeypatch.setattr(
-        retrieval.rerank, "rerank", lambda *a, **k: invoked.append(1) or []
-    )
+    monkeypatch.setattr(retrieval.rerank, "rerank", lambda *a, **k: invoked.append(1) or [])
     result = retrieval.retrieve_and_gate("how long do refunds take")
     assert invoked == [], "reranker must not run when the flag is off"
     assert result["sections"], "plain fusion still returns Sections"
@@ -560,16 +553,12 @@ def test_rerank_on_reorders_fused_pool_without_touching_gate(wired_corpus, monke
     assert off["sections"][0].id != "privacy-policy#privacy-policy"
 
     monkeypatch.setattr(retrieval.rerank, "is_enabled", lambda: True)
-    monkeypatch.setattr(
-        retrieval.rerank, "get_cross_encoder", lambda: _PinEncoder("Privacy")
-    )
+    monkeypatch.setattr(retrieval.rerank, "get_cross_encoder", lambda: _PinEncoder("Privacy"))
     on = retrieval.retrieve_and_gate(query)
 
     assert on["sections"][0].id == "privacy-policy#privacy-policy", "rerank reordered"
     assert len(on["sections"]) <= retrieval.DEFAULT_TOP_K
-    assert on["grounding_outcome"] == off["grounding_outcome"], (
-        "gate unaffected by rerank"
-    )
+    assert on["grounding_outcome"] == off["grounding_outcome"], "gate unaffected by rerank"
 
 
 def test_rerank_scores_deep_pool_before_the_top_k_cut(wired_corpus, monkeypatch):

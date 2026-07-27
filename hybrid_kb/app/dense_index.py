@@ -205,9 +205,7 @@ def _embed_text(section: Section) -> str:
     wiki Section carries at least a heading, so full 1:1 coverage of the BM25 id
     set is guaranteed.
     """
-    breadcrumb = (
-        " > ".join(section.heading_path) if section.heading_path else section.heading
-    )
+    breadcrumb = " > ".join(section.heading_path) if section.heading_path else section.heading
     body = section.content.strip()
     if body and breadcrumb:
         return f"{breadcrumb}\n{body}"
@@ -441,9 +439,7 @@ def load_dense_index(index_dir: Path | None = None) -> int:
     metadata_path = index_dir / METADATA_FILENAME
     if not metadata_path.exists():
         # Present-but-incomplete index — fail fast rather than serve empty.
-        raise RuntimeError(
-            f"persisted dense index at {index_dir} is missing {METADATA_FILENAME}"
-        )
+        raise RuntimeError(f"persisted dense index at {index_dir} is missing {METADATA_FILENAME}")
 
     # Let json.JSONDecodeError propagate — a corrupt metadata file is fail-fast.
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))

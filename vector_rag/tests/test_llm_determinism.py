@@ -27,6 +27,4 @@ def test_rag_draft_llm_pinned_to_temperature_zero_and_seed(monkeypatch):
     llm = retrieval_module.get_llm()
 
     assert llm.temperature == 0, "RAG draft LLM must be deterministic (temperature=0)"
-    assert llm.seed == retrieval_module._RAG_DRAFT_LLM_SEED, (
-        "RAG draft LLM must pin the fixed seed"
-    )
+    assert llm.seed == retrieval_module._RAG_DRAFT_LLM_SEED, "RAG draft LLM must pin the fixed seed"

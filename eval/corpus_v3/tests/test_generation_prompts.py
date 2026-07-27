@@ -55,9 +55,7 @@ def test_prompt_carries_the_variant_index():
     ],
 )
 def test_each_stratum_carries_its_distinguishing_instruction(stratum, keyword):
-    prompt = build_prompt(
-        _target(scenario_stratum=stratum), language="en", variant_index=0
-    )
+    prompt = build_prompt(_target(scenario_stratum=stratum), language="en", variant_index=0)
     assert keyword in prompt
 
 

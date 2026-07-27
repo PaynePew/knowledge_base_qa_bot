@@ -64,10 +64,7 @@ def run_negative_case(
 
     return NegativeCaseReport(
         rate=correct_refusal_rate(o for _, o in outcomes),
-        by_category={
-            cat: correct_refusal_rate(outs)
-            for cat, outs in sorted(per_category.items())
-        },
+        by_category={cat: correct_refusal_rate(outs) for cat, outs in sorted(per_category.items())},
         outcomes=outcomes,
     )
 

@@ -68,18 +68,14 @@ FIXTURES = {
 # file STARTS with '---', so it never populates Section.metadata for these
 # pages; the Stack A adapter parses the `sources:` list directly here to bridge
 # wiki-slug ids to docs Gold Section ids.
-_SOURCES_BLOCK_RE = re.compile(
-    r"^sources:\s*\n((?:[ \t]*-[ \t]*\S+.*\n)+)", re.MULTILINE
-)
+_SOURCES_BLOCK_RE = re.compile(r"^sources:\s*\n((?:[ \t]*-[ \t]*\S+.*\n)+)", re.MULTILINE)
 _SOURCE_ITEM_RE = re.compile(r"^[ \t]*-[ \t]*(\S+)", re.MULTILINE)
 
 
 # ---------------------------------------------------------------------------
 # Stack A — Wiki + BM25 (markdown_kb)
 # ---------------------------------------------------------------------------
-def _wiki_section_to_item(
-    section: Section, file_to_gold: dict[str, str]
-) -> RetrievedItem:
+def _wiki_section_to_item(section: Section, file_to_gold: dict[str, str]) -> RetrievedItem:
     """Normalise a wiki Section to a docs-Gold-Section-granular ``RetrievedItem``.
 
     Maps the Section's wiki-slug ``file`` back to the docs Gold Section id via the
@@ -219,9 +215,7 @@ def stack_c_retrieval(
     return [_wiki_section_to_item(section, file_to_gold) for section in fused]
 
 
-def _fused_wiki_sections(
-    query: str, *, candidate_depth: int, top_k: int
-) -> list[Section]:
+def _fused_wiki_sections(query: str, *, candidate_depth: int, top_k: int) -> list[Section]:
     """Overfetch both arms and RRF-fuse to ``top_k`` wiki Sections — Stack C's pool.
 
     The fusion prefix shared by :func:`stack_c_retrieval` and
@@ -262,8 +256,6 @@ def stack_c_rerank_retrieval(
     Gold Section id exactly like Stack A / Stack C.
     """
     file_to_gold = _wiki_slug_to_gold_section()
-    pool = _fused_wiki_sections(
-        query, candidate_depth=candidate_depth, top_k=rerank_depth
-    )
+    pool = _fused_wiki_sections(query, candidate_depth=candidate_depth, top_k=rerank_depth)
     reranked = hk_rerank.rerank(query, pool, top_n=k)
     return [_wiki_section_to_item(section, file_to_gold) for section in reranked]

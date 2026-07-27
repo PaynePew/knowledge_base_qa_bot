@@ -63,21 +63,13 @@ def test_ensure_indexes_loaded_idempotent_when_warm(monkeypatch):
     monkeypatch.setattr(dense_index, "vectorstore", object())
 
     # Intercept any load attempt — both should be completely bypassed.
-    monkeypatch.setattr(
-        bm25_indexer, "load_index_json", lambda: load_json_calls.append(1)
-    )
-    monkeypatch.setattr(
-        dense_index, "load_dense_index", lambda: load_dense_calls.append(1)
-    )
+    monkeypatch.setattr(bm25_indexer, "load_index_json", lambda: load_json_calls.append(1))
+    monkeypatch.setattr(dense_index, "load_dense_index", lambda: load_dense_calls.append(1))
 
     # First call — both arms warm; must be a no-op.
     query_module.ensure_indexes_loaded()
-    assert load_json_calls == [], (
-        "load_index_json must be skipped when BM25 arm is warm"
-    )
-    assert load_dense_calls == [], (
-        "load_dense_index must be skipped when dense arm is warm"
-    )
+    assert load_json_calls == [], "load_index_json must be skipped when BM25 arm is warm"
+    assert load_dense_calls == [], "load_dense_index must be skipped when dense arm is warm"
 
     # Second call — still warm; still no-op.
     query_module.ensure_indexes_loaded()

@@ -20,9 +20,7 @@ def test_every_case_has_a_unique_name():
 
 def test_contaminated_history_turns_match_conversation_store_shape():
     for case in CASES:
-        assert case.contaminated_history, (
-            f"{case.name}: contaminated_history must be non-empty"
-        )
+        assert case.contaminated_history, f"{case.name}: contaminated_history must be non-empty"
         for turn in case.contaminated_history:
             assert set(turn) == _REQUIRED_TURN_KEYS, (
                 f"{case.name}: turn {turn!r} missing/extra keys vs "

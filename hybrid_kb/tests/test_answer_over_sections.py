@@ -72,9 +72,7 @@ class _FakeVerifierLLM:
 def _passing_result(cited_id: str) -> GroundingResult:
     return GroundingResult(
         reasoning="ok",
-        claims=[
-            GroundingClaim(text="ok", supported=True, citing_section_ids=[cited_id])
-        ],
+        claims=[GroundingClaim(text="ok", supported=True, citing_section_ids=[cited_id])],
         unsupported_claims=[],
         passed=True,
     )
@@ -115,24 +113,18 @@ def test_answers_over_a_caller_supplied_section_pool(
     fake_llm = FakeLLM(f"Refunds take about a week. [Source: {REFUND_ID}]")
     _patch_llm(monkeypatch, fake_llm)
 
-    result = query_module.answer_over_sections(
-        "how long do refunds take", [_REFUND_SECTION]
-    )
+    result = query_module.answer_over_sections("how long do refunds take", [_REFUND_SECTION])
 
     assert result["answer"] == f"Refunds take about a week. [Source: {REFUND_ID}]"
     assert result["grounding_outcome"].passed is True
     assert fake_llm.call_count == 1
 
 
-def test_sources_mirror_the_shared_citation_shape(
-    monkeypatch, fake_verifier, wired_bm25_sections
-):
+def test_sources_mirror_the_shared_citation_shape(monkeypatch, fake_verifier, wired_bm25_sections):
     fake_verifier(REFUND_ID)
     _patch_llm(monkeypatch, FakeLLM(f"Refunds take a week. [Source: {REFUND_ID}]"))
 
-    result = query_module.answer_over_sections(
-        "how long do refunds take", [_REFUND_SECTION]
-    )
+    result = query_module.answer_over_sections("how long do refunds take", [_REFUND_SECTION])
 
     sources = result["sources"]
     assert sources
@@ -155,18 +147,14 @@ def test_empty_section_pool_refuses_without_an_llm_call(monkeypatch):
     assert sentinel.call_count == 0
 
 
-def test_grounding_verifier_failure_still_returns_cannot_confirm(
-    monkeypatch, wired_bm25_sections
-):
+def test_grounding_verifier_failure_still_returns_cannot_confirm(monkeypatch, wired_bm25_sections):
     monkeypatch.setattr(
         grounding_module,
         "get_verifier_llm",
         lambda: _FakeVerifierLLM(
             GroundingResult(
                 reasoning="unsupported",
-                claims=[
-                    GroundingClaim(text="x", supported=False, citing_section_ids=[])
-                ],
+                claims=[GroundingClaim(text="x", supported=False, citing_section_ids=[])],
                 unsupported_claims=["x"],
                 passed=False,
             )
@@ -174,9 +162,7 @@ def test_grounding_verifier_failure_still_returns_cannot_confirm(
     )
     _patch_llm(monkeypatch, FakeLLM(f"Refunds take a week. [Source: {REFUND_ID}]"))
 
-    result = query_module.answer_over_sections(
-        "how long do refunds take", [_REFUND_SECTION]
-    )
+    result = query_module.answer_over_sections("how long do refunds take", [_REFUND_SECTION])
 
     assert result["answer"] == query_module.CANNOT_CONFIRM_PHRASE
     assert result["grounding_outcome"].passed is False

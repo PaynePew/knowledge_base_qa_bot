@@ -155,9 +155,7 @@ def test_build_axis_samples_scores_grounding_refusal_and_leak_axes():
             "rag",
             "factoid-en-0000",
             cited=frozenset({"gift_card_terms.md#expiration"}),  # the OTHER side
-            retrieved=frozenset(
-                {"gift_card_terms.md#expiration", "gift_card_faq.md#expiration"}
-            ),
+            retrieved=frozenset({"gift_card_terms.md#expiration", "gift_card_faq.md#expiration"}),
         ),
         ("wiki", "unanswerable-en-0000"): _record(
             "wiki", "unanswerable-en-0000", answer_text=CANNOT_CONFIRM_PHRASE
@@ -180,9 +178,7 @@ def test_build_axis_samples_scores_grounding_refusal_and_leak_axes():
 
     grounding = by_axis["grounding_pass_rate"]
     assert grounding.outcomes_a == [1]  # wiki: cited subset of retrieved
-    assert grounding.outcomes_b == [
-        1
-    ]  # rag: citation is also within its own retrieved pool
+    assert grounding.outcomes_b == [1]  # rag: citation is also within its own retrieved pool
 
     refusal = by_axis["correct_refusal_rate"]
     assert refusal.outcomes_a == [1]  # wiki correctly refused the unanswerable query
@@ -194,9 +190,7 @@ def test_build_axis_samples_scores_grounding_refusal_and_leak_axes():
 
 
 def _grounded_record(arm: str, query_id: str, source_id: str) -> AnswerRecord:
-    return _record(
-        arm, query_id, cited=frozenset({source_id}), retrieved=frozenset({source_id})
-    )
+    return _record(arm, query_id, cited=frozenset({source_id}), retrieved=frozenset({source_id}))
 
 
 def test_build_live_verdict_report_empty_stratum_error_names_the_real_stratum():
@@ -265,9 +259,7 @@ def test_run_live_answering_skips_pairs_already_in_already_done(tmp_path):
 
     def fn(query_id, arm, retrieved_items):
         calls.append((query_id, arm))
-        ledger.record(
-            stack=arm, phase="query", model="gpt-4o-mini", usage=UsageMetadata()
-        )
+        ledger.record(stack=arm, phase="query", model="gpt-4o-mini", usage=UsageMetadata())
         return AnswerRecord(query_id=query_id, arm=arm, answer_text="a")
 
     result = live_runner.run_live_answering(
@@ -695,9 +687,7 @@ def test_run_live_verdict_resumes_and_spends_nothing_new_when_already_complete(
 # ---------------------------------------------------------------------------
 # run_verdict.main wiring (issue #679: the exit-3 stub is gone)
 # ---------------------------------------------------------------------------
-def test_main_live_mode_without_api_key_refuses_past_the_guard(
-    monkeypatch, tmp_path, capsys
-):
+def test_main_live_mode_without_api_key_refuses_past_the_guard(monkeypatch, tmp_path, capsys):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     pilot_path = tmp_path / "pilot.json"
     pilot_path.write_text(

@@ -27,9 +27,7 @@ def test_derive_gold_sections_parses_corpus():
     from eval.paraphrase_comparison.generation.sampling import derive_gold_sections
 
     sections = derive_gold_sections(_CORPUS_DIR, entity_sources=_ENTITY_SOURCES)
-    assert len(sections) >= 39, (
-        f"Expected ≥39 Gold Sections from corpus, got {len(sections)}"
-    )
+    assert len(sections) >= 39, f"Expected ≥39 Gold Sections from corpus, got {len(sections)}"
 
 
 def test_derive_gold_sections_excludes_entity_sources():
@@ -37,9 +35,7 @@ def test_derive_gold_sections_excludes_entity_sources():
     from eval.paraphrase_comparison.generation.sampling import derive_gold_sections
 
     sections = derive_gold_sections(_CORPUS_DIR, entity_sources=_ENTITY_SOURCES)
-    entity_ids = {
-        s.section_id for s in sections if s.section_id.startswith("warranty.md")
-    }
+    entity_ids = {s.section_id for s in sections if s.section_id.startswith("warranty.md")}
     assert not entity_ids, f"Entity sections must be excluded: {entity_ids}"
 
 
@@ -71,12 +67,10 @@ def test_derive_gold_sections_is_deterministic():
     from eval.paraphrase_comparison.generation.sampling import derive_gold_sections
 
     first = [
-        s.section_id
-        for s in derive_gold_sections(_CORPUS_DIR, entity_sources=_ENTITY_SOURCES)
+        s.section_id for s in derive_gold_sections(_CORPUS_DIR, entity_sources=_ENTITY_SOURCES)
     ]
     second = [
-        s.section_id
-        for s in derive_gold_sections(_CORPUS_DIR, entity_sources=_ENTITY_SOURCES)
+        s.section_id for s in derive_gold_sections(_CORPUS_DIR, entity_sources=_ENTITY_SOURCES)
     ]
     assert first == second
 
@@ -85,9 +79,7 @@ def test_load_gold_sections_derives_from_corpus():
     """load_gold_sections() with corpus_dir derives sections rather than reading YAML."""
     from eval.paraphrase_comparison.generation.sampling import load_gold_sections
 
-    sections = load_gold_sections(
-        corpus_dir=_CORPUS_DIR, entity_sources=_ENTITY_SOURCES
-    )
+    sections = load_gold_sections(corpus_dir=_CORPUS_DIR, entity_sources=_ENTITY_SOURCES)
     assert len(sections) >= 39
     # No section should have warranty.md as its source
     assert all(not s.section_id.startswith("warranty.md") for s in sections)
@@ -97,9 +89,7 @@ def test_gold_section_has_no_multi_sub_fact_field():
     """GoldSection dataclass has no multi_sub_fact field (dropped in issue #142)."""
     from eval.paraphrase_comparison.generation.sampling import GoldSection
 
-    s = GoldSection(
-        section_id="returns_policy.md#return-window", concept_slug="return-window"
-    )
+    s = GoldSection(section_id="returns_policy.md#return-window", concept_slug="return-window")
     assert not hasattr(s, "multi_sub_fact"), (
         "multi_sub_fact was dropped (issue #142); GoldSection must not have this field"
     )

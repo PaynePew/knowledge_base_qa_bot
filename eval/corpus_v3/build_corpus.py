@@ -597,16 +597,9 @@ def render_wiki_concept(group: AdversarialGroup, raw_texts: dict[str, str]) -> s
         "     Manual edits will be overwritten on next ingest — edit the "
         "Source instead. -->"
     )
-    fm_block = (
-        "---\n"
-        + yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True)
-        + "---"
-    )
+    fm_block = "---\n" + yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True) + "---"
     citations = "\n".join(f"[Source: {sid}]" for sid in group.gold_section_ids)
-    return (
-        f"{sentinel}\n\n{fm_block}\n\n# {group.wiki_title}\n\n{group.wiki_body}\n\n"
-        f"{citations}\n"
-    )
+    return f"{sentinel}\n\n{fm_block}\n\n# {group.wiki_title}\n\n{group.wiki_body}\n\n{citations}\n"
 
 
 # ---------------------------------------------------------------------------
@@ -635,9 +628,7 @@ def write_corpus_fixtures(ledger: CostLedger | None = None) -> CostLedger:
             raw_texts[section.basename] = text
             (CORPUS_DIR / section.basename).write_text(text, encoding="utf-8")
         wiki_text = render_wiki_concept(group, raw_texts)
-        (WIKI_CONCEPTS_DIR / f"{group.group_id}.md").write_text(
-            wiki_text, encoding="utf-8"
-        )
+        (WIKI_CONCEPTS_DIR / f"{group.group_id}.md").write_text(wiki_text, encoding="utf-8")
         ledger.record(
             stack="wiki_curation",
             phase="build",

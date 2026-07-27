@@ -146,9 +146,7 @@ def generate_core_via_synthesizer(
     out: list[Paraphrase] = []
     for ptype in _CORE_TYPES:
         # Deterministic sha256-keyed sampling (same convention as original).
-        sections = sampling.sample_sections(
-            gold, seed=ptype, count=config.per_type_count
-        )
+        sections = sampling.sample_sections(gold, seed=ptype, count=config.per_type_count)
 
         contexts, source_files = build_section_contexts(sections, docs_bodies)
 
@@ -161,9 +159,7 @@ def generate_core_via_synthesizer(
         filtered = post_filter_by_score(goldens, threshold=config.quality_threshold)
 
         id_prefix = ptype.replace("_", "-")[:8]  # short prefix for readability
-        paraphrases = goldens_to_queries(
-            filtered, paraphrase_type=ptype, id_prefix=id_prefix
-        )  # type: ignore[arg-type]
+        paraphrases = goldens_to_queries(filtered, paraphrase_type=ptype, id_prefix=id_prefix)  # type: ignore[arg-type]
 
         # Re-key Key Tokens deterministically from Section body IDF (issue #139).
         rekeyed: list[Paraphrase] = []
@@ -247,15 +243,11 @@ def main(argv: list[str] | None = None) -> int:
     # --- live generation path (issue #145 handoff) ---
     print("Phase 8.5 S6: DeepEval Synthesizer live generation (issue #144/145)")
     print("  Generator: gpt-4o | Critic: gpt-4o-mini (same-family, PRD #137)")
-    print(
-        f"  Per-type count: {args.per_type} | Quality threshold: {args.quality_threshold}"
-    )
+    print(f"  Per-type count: {args.per_type} | Quality threshold: {args.quality_threshold}")
 
     # AC3: freeze corpus snapshot from docs/fake-docs/
     n_frozen = freeze_corpus()
-    print(
-        f"Corpus frozen: {n_frozen} file(s) copied from {FAKE_DOCS_DIR} → {CORPUS_DIR}."
-    )
+    print(f"Corpus frozen: {n_frozen} file(s) copied from {FAKE_DOCS_DIR} → {CORPUS_DIR}.")
 
     # Fail fast BEFORE the paid generation: run_qc (below) reads a concept Wiki
     # Page for every Gold Section, so stale/absent fixtures would crash QC only

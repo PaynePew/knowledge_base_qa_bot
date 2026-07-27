@@ -91,17 +91,13 @@ class _FakeVerifierLLM:
         self._result = result
 
     def with_structured_output(self, schema, **kwargs):
-        return _FakeVerifierChain(
-            self._result, include_raw=bool(kwargs.get("include_raw"))
-        )
+        return _FakeVerifierChain(self._result, include_raw=bool(kwargs.get("include_raw")))
 
 
 def _passing_result(cited_id: str) -> GroundingResult:
     return GroundingResult(
         reasoning="Claim traces to the cited section.",
-        claims=[
-            GroundingClaim(text="ok", supported=True, citing_section_ids=[cited_id])
-        ],
+        claims=[GroundingClaim(text="ok", supported=True, citing_section_ids=[cited_id])],
         unsupported_claims=[],
         passed=True,
     )
@@ -126,15 +122,13 @@ def fake_verifier(monkeypatch):
 # ---------------------------------------------------------------------------
 def test_parse_cited_source_ids_extracts_multiple_ids():
     text = "A fact. [Source: a.md#h] Another fact. [Source: b.md#h2]"
-    assert answer_fn_module.parse_cited_source_ids(text) == frozenset(
-        {"a.md#h", "b.md#h2"}
-    )
+    assert answer_fn_module.parse_cited_source_ids(text) == frozenset({"a.md#h", "b.md#h2"})
 
 
 def test_parse_cited_source_ids_strips_whitespace():
-    assert answer_fn_module.parse_cited_source_ids(
-        "Hours. [Source:  a.md#h ]"
-    ) == frozenset({"a.md#h"})
+    assert answer_fn_module.parse_cited_source_ids("Hours. [Source:  a.md#h ]") == frozenset(
+        {"a.md#h"}
+    )
 
 
 def test_parse_cited_source_ids_empty_for_a_refusal():
@@ -151,9 +145,7 @@ def test_arm_query_fns_cover_the_same_four_arms_as_stacks_registry():
 # ---------------------------------------------------------------------------
 # build_answer_fn — per-arm happy path (real query() surface, fake LLM)
 # ---------------------------------------------------------------------------
-def test_answer_fn_wiki_arm_answers_through_the_real_query_surface(
-    monkeypatch, fake_verifier
-):
+def test_answer_fn_wiki_arm_answers_through_the_real_query_surface(monkeypatch, fake_verifier):
     stacks.index_wiki_corpus()
     fake_verifier("store-hours")
     monkeypatch.setattr(
@@ -193,9 +185,7 @@ def test_answer_fn_populates_retrieved_source_ids_from_the_query_surface(
 
     assert record.retrieved_source_ids  # something was actually retrieved
     assert "store-hours#store-hours" in record.retrieved_source_ids
-    assert record.cited_source_ids == frozenset(
-        {"store-hours"}
-    )  # the fake's literal token
+    assert record.cited_source_ids == frozenset({"store-hours"})  # the fake's literal token
     assert not record.cited_source_ids <= record.retrieved_source_ids  # not grounded
 
 
@@ -207,9 +197,7 @@ def test_answer_fn_rag_arm_answers_through_the_real_query_surface(
     monkeypatch.setattr(
         vr_retrieval,
         "get_llm",
-        lambda: _FakeSynthLLM(
-            "Hours are 9-6 weekdays. [Source: store_hours_a.md#weekday-hours]"
-        ),
+        lambda: _FakeSynthLLM("Hours are 9-6 weekdays. [Source: store_hours_a.md#weekday-hours]"),
     )
 
     fn = answer_fn_module.build_answer_fn({"q1": STORE_HOURS_QUERY})
@@ -219,9 +207,7 @@ def test_answer_fn_rag_arm_answers_through_the_real_query_surface(
     assert record.cited_source_ids == frozenset({"store_hours_a.md#weekday-hours"})
 
 
-def test_answer_fn_hybrid_arm_answers_through_the_real_query_surface(
-    monkeypatch, fake_verifier
-):
+def test_answer_fn_hybrid_arm_answers_through_the_real_query_surface(monkeypatch, fake_verifier):
     stacks.index_wiki_corpus()
     stacks.index_stack_c()
     fake_verifier("store-hours")
@@ -257,9 +243,7 @@ def test_answer_fn_dense_over_wiki_arm_answers_through_its_own_synthesis(
     assert record.cited_source_ids == frozenset({"store-hours"})
 
 
-def test_answer_fn_dense_over_wiki_never_invokes_reciprocal_rank_fusion(
-    monkeypatch, fake_verifier
-):
+def test_answer_fn_dense_over_wiki_never_invokes_reciprocal_rank_fusion(monkeypatch, fake_verifier):
     """ADR-0045 Prerequisite 1: this arm must bypass RRF entirely."""
     stacks.index_wiki_corpus()
     stacks.index_dense_over_wiki()
@@ -292,9 +276,7 @@ def test_wiki_arm_refusal_passes_through_with_no_llm_call(monkeypatch):
 
     monkeypatch.setattr(mk_retrieval, "get_llm", _boom)
 
-    fn = answer_fn_module.build_answer_fn(
-        {"q1": "zzqx completely unrelated gibberish qwzt"}
-    )
+    fn = answer_fn_module.build_answer_fn({"q1": "zzqx completely unrelated gibberish qwzt"})
     record = fn("q1", "wiki", [])
 
     assert record.answer_text == CANNOT_CONFIRM_PHRASE
@@ -304,9 +286,7 @@ def test_wiki_arm_refusal_passes_through_with_no_llm_call(monkeypatch):
 # ---------------------------------------------------------------------------
 # Cost ledger wiring (issue #657's hooks, wired here per its own docstring)
 # ---------------------------------------------------------------------------
-def test_answer_fn_records_query_phase_usage_into_the_ledger(
-    monkeypatch, fake_verifier
-):
+def test_answer_fn_records_query_phase_usage_into_the_ledger(monkeypatch, fake_verifier):
     stacks.index_wiki_corpus()
     fake_verifier("store-hours")
     monkeypatch.setattr(
@@ -330,9 +310,7 @@ def test_answer_fn_records_query_phase_usage_into_the_ledger(
     assert totals.output_tokens == 40 + _VERIFIER_USAGE["output_tokens"]
 
 
-def test_answer_fn_records_the_grounding_verify_call_per_arm(
-    monkeypatch, fake_verifier
-):
+def test_answer_fn_records_the_grounding_verify_call_per_arm(monkeypatch, fake_verifier):
     """The verify leg is attributed to the SAME (stack=arm, phase=query) cell
     as its synthesis call, with the verifier's own token usage — not dropped,
     not zero-token (hooks.py's structured-output surface, closed by #674)."""
@@ -355,9 +333,7 @@ def test_answer_fn_records_the_grounding_verify_call_per_arm(
     assert verify_calls[0].model == "gpt-4o-mini"
 
 
-def test_answer_fn_restores_the_original_getter_after_each_call(
-    monkeypatch, fake_verifier
-):
+def test_answer_fn_restores_the_original_getter_after_each_call(monkeypatch, fake_verifier):
     """Wrap-then-restore: the app's real getter is back in place after the call."""
     stacks.index_wiki_corpus()
     fake_verifier("store-hours")

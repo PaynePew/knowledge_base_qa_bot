@@ -56,8 +56,5 @@ def test_dense_build_over_real_wiki_smoke():
 
     # Built ids are a subset of the committed BM25 wiki ids (same-corpus invariant
     # holds for the freshly real-embedded index too).
-    bm25_ids = {
-        s["id"]
-        for s in json.loads(_COMMITTED_BM25_INDEX.read_text("utf-8"))["sections"]
-    }
+    bm25_ids = {s["id"] for s in json.loads(_COMMITTED_BM25_INDEX.read_text("utf-8"))["sections"]}
     assert {s.id for s, _ in results} <= bm25_ids

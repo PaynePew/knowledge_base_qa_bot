@@ -30,42 +30,28 @@ CORPUS_DIR = Path(__file__).resolve().parents[1] / "corpus"
 # ---------------------------------------------------------------------------
 # Rebuildability (AC 1)
 # ---------------------------------------------------------------------------
-def test_regenerating_reproduces_the_committed_fixtures_byte_for_byte(
-    tmp_path, monkeypatch
-):
+def test_regenerating_reproduces_the_committed_fixtures_byte_for_byte(tmp_path, monkeypatch):
     """Re-running the build script over a fresh tmp dir produces output
     byte-identical to the committed fixtures — fixed timestamp, real content
     hashes, no wall-clock or random input, so "rebuildable" is a real claim,
     not aspirational."""
     monkeypatch.setattr(build_corpus, "CORPUS_DIR", tmp_path / "corpus")
-    monkeypatch.setattr(
-        build_corpus, "WIKI_CONCEPTS_DIR", tmp_path / "wiki" / "concepts"
-    )
+    monkeypatch.setattr(build_corpus, "WIKI_CONCEPTS_DIR", tmp_path / "wiki" / "concepts")
 
     build_corpus.write_corpus_fixtures()
 
     for group in ADVERSARIAL_GROUPS:
         for section in group.sections:
             committed = (CORPUS_DIR / section.basename).read_text(encoding="utf-8")
-            regenerated = (tmp_path / "corpus" / section.basename).read_text(
-                encoding="utf-8"
-            )
-            assert regenerated == committed, (
-                f"{section.basename} drifted from regeneration"
-            )
+            regenerated = (tmp_path / "corpus" / section.basename).read_text(encoding="utf-8")
+            assert regenerated == committed, f"{section.basename} drifted from regeneration"
         wiki_name = f"{group.group_id}.md"
         committed_wiki = (WIKI_DIR / "concepts" / wiki_name).read_text(encoding="utf-8")
-        regenerated_wiki = (tmp_path / "wiki" / "concepts" / wiki_name).read_text(
-            encoding="utf-8"
-        )
-        assert regenerated_wiki == committed_wiki, (
-            f"{wiki_name} drifted from regeneration"
-        )
+        regenerated_wiki = (tmp_path / "wiki" / "concepts" / wiki_name).read_text(encoding="utf-8")
+        assert regenerated_wiki == committed_wiki, f"{wiki_name} drifted from regeneration"
 
 
-def test_write_corpus_fixtures_never_writes_outside_its_own_fixture_dirs(
-    tmp_path, monkeypatch
-):
+def test_write_corpus_fixtures_never_writes_outside_its_own_fixture_dirs(tmp_path, monkeypatch):
     """Production isolation: redirecting CORPUS_DIR/WIKI_CONCEPTS_DIR to tmp
     and regenerating touches nothing else under tmp_path."""
     corpus_dir = tmp_path / "corpus"
@@ -76,22 +62,16 @@ def test_write_corpus_fixtures_never_writes_outside_its_own_fixture_dirs(
     build_corpus.write_corpus_fixtures()
 
     written = {p for p in tmp_path.rglob("*") if p.is_file()}
-    outside = {
-        p for p in written if corpus_dir not in p.parents and wiki_dir not in p.parents
-    }
+    outside = {p for p in written if corpus_dir not in p.parents and wiki_dir not in p.parents}
     assert not outside, f"wrote outside the fixture dirs: {outside}"
 
 
 # ---------------------------------------------------------------------------
 # Per-class instance-count floor (AC 2)
 # ---------------------------------------------------------------------------
-@pytest.mark.parametrize(
-    "adversarial_class", ["redundancy", "contradiction", "version_evolution"]
-)
+@pytest.mark.parametrize("adversarial_class", ["redundancy", "contradiction", "version_evolution"])
 def test_each_adversarial_class_meets_the_minimum_instance_floor(adversarial_class):
-    count = sum(
-        1 for g in ADVERSARIAL_GROUPS if g.adversarial_class == adversarial_class
-    )
+    count = sum(1 for g in ADVERSARIAL_GROUPS if g.adversarial_class == adversarial_class)
     assert count >= MIN_INSTANCES_PER_CLASS, (
         f"{adversarial_class} has only {count} instances, "
         f"below the {MIN_INSTANCES_PER_CLASS} floor (issue #661 AC 2)"
@@ -134,9 +114,7 @@ def test_contradiction_groups_cover_both_conflicting_raw_ids_without_a_winner():
 
     for group in groups:
         assert gold_map[group.group_id] == frozenset(group.gold_section_ids)
-        assert len(group.gold_section_ids) == 2, (
-            "a contradiction pair has exactly two sides"
-        )
+        assert len(group.gold_section_ids) == 2, "a contradiction pair has exactly two sides"
         # Neither raw id is preferred: both resolve through the same wiki id.
         for raw_id in group.gold_section_ids:
             resolved = gold.resolve_gold_sections(gold_map, raw_id)
@@ -145,9 +123,7 @@ def test_contradiction_groups_cover_both_conflicting_raw_ids_without_a_winner():
 
 def test_version_evolution_groups_give_gold_coverage_to_only_the_newest_id():
     gold_map = gold.build_gold_map(WIKI_DIR)
-    groups = [
-        g for g in ADVERSARIAL_GROUPS if g.adversarial_class == "version_evolution"
-    ]
+    groups = [g for g in ADVERSARIAL_GROUPS if g.adversarial_class == "version_evolution"]
     assert groups
 
     for group in groups:
@@ -156,9 +132,7 @@ def test_version_evolution_groups_give_gold_coverage_to_only_the_newest_id():
         )
         newest_id = group.gold_section_ids[0]
         older_ids = [s.source_id for s in group.sections if s.source_id != newest_id]
-        assert older_ids, (
-            "a version_evolution group must have at least one superseded version"
-        )
+        assert older_ids, "a version_evolution group must have at least one superseded version"
 
         assert gold_map[group.group_id] == frozenset({newest_id})
         resolved_newest = gold.resolve_gold_sections(gold_map, newest_id)
@@ -174,31 +148,21 @@ def test_version_evolution_groups_give_gold_coverage_to_only_the_newest_id():
 # ---------------------------------------------------------------------------
 # Build-cost ledger (AC 3)
 # ---------------------------------------------------------------------------
-def test_write_corpus_fixtures_records_one_real_zero_build_entry_per_group(
-    tmp_path, monkeypatch
-):
+def test_write_corpus_fixtures_records_one_real_zero_build_entry_per_group(tmp_path, monkeypatch):
     monkeypatch.setattr(build_corpus, "CORPUS_DIR", tmp_path / "corpus")
-    monkeypatch.setattr(
-        build_corpus, "WIKI_CONCEPTS_DIR", tmp_path / "wiki" / "concepts"
-    )
+    monkeypatch.setattr(build_corpus, "WIKI_CONCEPTS_DIR", tmp_path / "wiki" / "concepts")
 
     ledger = build_corpus.write_corpus_fixtures(CostLedger())
 
     totals = ledger.totals(stack="wiki_curation", phase="build")
     assert totals.calls == len(ADVERSARIAL_GROUPS)
     assert totals.total_tokens == 0
-    assert (
-        totals.usd is None
-    )  # unpriced offline-deterministic model, not a fabricated 0.0
+    assert totals.usd is None  # unpriced offline-deterministic model, not a fabricated 0.0
 
 
-def test_write_build_cost_report_is_committed_and_matches_regeneration(
-    tmp_path, monkeypatch
-):
+def test_write_build_cost_report_is_committed_and_matches_regeneration(tmp_path, monkeypatch):
     monkeypatch.setattr(build_corpus, "CORPUS_DIR", tmp_path / "corpus")
-    monkeypatch.setattr(
-        build_corpus, "WIKI_CONCEPTS_DIR", tmp_path / "wiki" / "concepts"
-    )
+    monkeypatch.setattr(build_corpus, "WIKI_CONCEPTS_DIR", tmp_path / "wiki" / "concepts")
     ledger = build_corpus.write_corpus_fixtures(CostLedger())
     report_path = tmp_path / "BUILD_COST.offline-tracer.md"
 

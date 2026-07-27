@@ -142,9 +142,7 @@ def render_rerank_chart(output: Path = OUTPUT) -> Path:
         fontsize=10,
     )
 
-    fd, tmp_name = tempfile.mkstemp(
-        dir=output.parent, suffix=".tmp", prefix=f"{output.stem}_"
-    )
+    fd, tmp_name = tempfile.mkstemp(dir=output.parent, suffix=".tmp", prefix=f"{output.stem}_")
     os.close(fd)
     try:
         fig.savefig(tmp_name, format="png", dpi=120)

@@ -43,9 +43,7 @@ class ChatLoadResult:
     errors: list[str] = field(default_factory=list)
 
 
-def _one_request(
-    base_url: str, query: str, stack: str, timeout: float
-) -> tuple[bool, str | None]:
+def _one_request(base_url: str, query: str, stack: str, timeout: float) -> tuple[bool, str | None]:
     """POST one chat/stream request, consume the SSE body, report ok/error.
 
     ``ok`` means HTTP 200 and a terminal ``done`` event was observed before
@@ -67,9 +65,7 @@ def _one_request(
                 for line in resp.iter_lines():
                     if line.startswith("event:") and "done" in line:
                         saw_done = True
-                return (
-                    (True, None) if saw_done else (False, "stream_closed_without_done")
-                )
+                return (True, None) if saw_done else (False, "stream_closed_without_done")
     except httpx.HTTPError as exc:
         return False, f"{type(exc).__name__}"
 

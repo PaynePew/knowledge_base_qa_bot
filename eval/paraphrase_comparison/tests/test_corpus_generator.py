@@ -135,9 +135,7 @@ def test_doc_spec_basenames_have_no_forbidden_chars() -> None:
     The importer rejects filenames with these characters; the generator must
     not produce them.
     """
-    bad = [
-        d.basename for d in DOC_SPECS if any(c in d.basename for c in ("/", "#", ":"))
-    ]
+    bad = [d.basename for d in DOC_SPECS if any(c in d.basename for c in ("/", "#", ":"))]
     assert not bad, f"Basenames with forbidden chars (/, #, :): {bad}"
 
 

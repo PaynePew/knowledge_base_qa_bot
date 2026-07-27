@@ -105,9 +105,7 @@ def _redirect_paths_to_tmp(tmp_path, monkeypatch):
     (parse warnings land there) to tmp. Resets the in-memory index globals on
     teardown so tests never bleed into each other.
     """
-    monkeypatch.setattr(
-        dense_index, "DENSE_INDEX_DIR", tmp_path / ".kb" / "hybrid_dense"
-    )
+    monkeypatch.setattr(dense_index, "DENSE_INDEX_DIR", tmp_path / ".kb" / "hybrid_dense")
     monkeypatch.setattr(hk_logger, "LOG_PATH", tmp_path / "hybrid_kb" / "log.md")
     monkeypatch.setattr(mk_logger, "LOG_PATH", tmp_path / "wiki" / "log.md")
     # Keep the reranker (ADR-0019) OFF by default so the suite is deterministic

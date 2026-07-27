@@ -156,9 +156,7 @@ def test_kill_clause_raises_when_an_axis_comparison_is_missing():
 
 def test_kill_clause_ignores_comparisons_for_other_arm_pairs():
     comparisons = _three_axis_comparisons(wiki_wins="all") + [
-        _cmp(
-            "grounding_pass_rate", "hybrid", "dense_over_wiki", 0.5, 0.9, p_value=0.001
-        )
+        _cmp("grounding_pass_rate", "hybrid", "dense_over_wiki", 0.5, 0.9, p_value=0.001)
     ]
     verdict = kill_clause_verdict(comparisons, wiki_arm="wiki", baseline_arm="rag")
     assert verdict.outcome == "survives_kill_clause"
@@ -170,26 +168,20 @@ def test_kill_clause_ignores_comparisons_for_other_arm_pairs():
 # ---------------------------------------------------------------------------
 def test_demote_clause_fires_on_a_non_significant_difference():
     """ADR-0045: 'ties and non-significant differences both demote'."""
-    comparison = _cmp(
-        "contradiction_leak_rate", "hybrid", "rag", 0.10, 0.12, p_value=0.60
-    )
+    comparison = _cmp("contradiction_leak_rate", "hybrid", "rag", 0.10, 0.12, p_value=0.60)
     verdict = demote_clause_verdict(comparison, hybrid_arm="hybrid", baseline_arm="rag")
     assert verdict.outcome == "demoted"
     assert verdict.clause_text == DEMOTE_CLAUSE_TEXT
 
 
 def test_demote_clause_fires_on_an_exact_tie():
-    comparison = _cmp(
-        "contradiction_leak_rate", "hybrid", "rag", 0.10, 0.10, p_value=1.0
-    )
+    comparison = _cmp("contradiction_leak_rate", "hybrid", "rag", 0.10, 0.10, p_value=1.0)
     verdict = demote_clause_verdict(comparison, hybrid_arm="hybrid", baseline_arm="rag")
     assert verdict.outcome == "demoted"
 
 
 def test_demote_clause_does_not_fire_on_a_significant_hybrid_advantage():
-    comparison = _cmp(
-        "contradiction_leak_rate", "hybrid", "rag", 0.05, 0.30, p_value=0.001
-    )
+    comparison = _cmp("contradiction_leak_rate", "hybrid", "rag", 0.05, 0.30, p_value=0.001)
     verdict = demote_clause_verdict(comparison, hybrid_arm="hybrid", baseline_arm="rag")
     assert verdict.outcome == "retains_narrative_claim"
 
@@ -201,9 +193,7 @@ def test_demote_clause_raises_on_the_wrong_axis():
 
 
 def test_demote_clause_raises_on_a_mismatched_arm_pair():
-    comparison = _cmp(
-        "contradiction_leak_rate", "wiki", "rag", 0.05, 0.30, p_value=0.001
-    )
+    comparison = _cmp("contradiction_leak_rate", "wiki", "rag", 0.05, 0.30, p_value=0.001)
     with pytest.raises(ValueError, match="arms"):
         demote_clause_verdict(comparison, hybrid_arm="hybrid", baseline_arm="rag")
 
@@ -232,21 +222,15 @@ def test_survival_entries_finds_significant_wins_over_baseline():
 
 def test_survival_entries_excludes_non_significant_wins():
     comparisons = [_cmp("grounding_pass_rate", "wiki", "rag", 0.7, 0.6, p_value=0.5)]
-    entries = survival_entries(
-        comparisons, wiki_backed_arms=["wiki"], baseline_arm="rag"
-    )
+    entries = survival_entries(comparisons, wiki_backed_arms=["wiki"], baseline_arm="rag")
     assert entries == []
 
 
 def test_survival_entries_excludes_non_wiki_backed_arms():
     comparisons = [
-        _cmp(
-            "grounding_pass_rate", "dense_docs_variant", "rag", 0.9, 0.6, p_value=0.001
-        )
+        _cmp("grounding_pass_rate", "dense_docs_variant", "rag", 0.9, 0.6, p_value=0.001)
     ]
-    entries = survival_entries(
-        comparisons, wiki_backed_arms=["wiki", "hybrid"], baseline_arm="rag"
-    )
+    entries = survival_entries(comparisons, wiki_backed_arms=["wiki", "hybrid"], baseline_arm="rag")
     assert entries == []
 
 
@@ -306,9 +290,7 @@ def test_render_decision_matrix_tags_every_cell():
 
 
 def test_render_honest_limits_numbers_each_entry():
-    text = render_honest_limits(
-        ["Structural analogues only.", "MDD is calculated, not cited."]
-    )
+    text = render_honest_limits(["Structural analogues only.", "MDD is calculated, not cited."])
     assert "1. Structural analogues only." in text
     assert "2. MDD is calculated, not cited." in text
 
@@ -337,9 +319,7 @@ def test_render_verdict_report_assembles_every_section_with_trust_note():
         amortization_curves={"wiki": {10: 0.44}},
         decision_matrix_columns=["wiki"],
         decision_matrix_rows=[
-            DecisionMatrixRow(
-                label="Row", cells={"wiki": DecisionMatrixCell("x", "argued")}
-            )
+            DecisionMatrixRow(label="Row", cells={"wiki": DecisionMatrixCell("x", "argued")})
         ],
         honest_limits=["Limit one."],
         trust_note="⚠️ PLACEHOLDER — NOT REAL DATA.",

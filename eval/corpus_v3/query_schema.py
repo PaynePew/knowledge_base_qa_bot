@@ -93,8 +93,7 @@ def _validate(query: Query) -> None:
         )
     if query.language not in LANGUAGES:
         raise ValueError(
-            f"query {query.query_id!r}: language must be one of "
-            f"{LANGUAGES}, got {query.language!r}"
+            f"query {query.query_id!r}: language must be one of {LANGUAGES}, got {query.language!r}"
         )
     if query.scenario_stratum != "unanswerable" and not query.gold_section_ids:
         raise ValueError(
@@ -102,9 +101,7 @@ def _validate(query: Query) -> None:
             f"{query.scenario_stratum!r} requires at least one gold_section_id"
         )
     if query.gold_section_ids and not query.key_tokens:
-        raise ValueError(
-            f"query {query.query_id!r}: has gold_section_ids but no key_tokens"
-        )
+        raise ValueError(f"query {query.query_id!r}: has gold_section_ids but no key_tokens")
 
 
 # ---------------------------------------------------------------------------
@@ -152,9 +149,7 @@ def query_from_dict(entry: dict) -> Query:
 def dump_queries(queries: list[Query], path: Path) -> None:
     """Serialise ``queries`` to YAML at ``path`` (round-trips with :func:`load_queries`)."""
     data = {"queries": [query_to_dict(q) for q in queries]}
-    path.write_text(
-        yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8"
-    )
+    path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
 
 def load_queries(path: Path) -> list[Query]:

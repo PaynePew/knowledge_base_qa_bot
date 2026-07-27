@@ -90,9 +90,7 @@ PER_STRATUM_DEFAULT = 8
 # Worst-case per-LLM-call token assumption for the PRE-SPEND pilot guard
 # (deliberately fat: observed corpus v3 answer calls run ~1-2k in / a few
 # hundred out). Only used before any money moves; the report states actuals.
-_WORST_CASE_USAGE = UsageMetadata(
-    input_tokens=4_000, output_tokens=800, total_tokens=4_800
-)
+_WORST_CASE_USAGE = UsageMetadata(input_tokens=4_000, output_tokens=800, total_tokens=4_800)
 _WORST_CASE_CALLS_PER_ANSWER = 3
 _PILOT_GUARD_MODEL = "gpt-4o-mini"
 
@@ -180,9 +178,7 @@ def summarize_arms(rows: list[PilotRow], ledger: CostLedger) -> list[ArmSummary]
                 usd=totals.usd,
                 negatives=len(negatives),
                 negatives_refused=sum(r.refused for r in negatives),
-                negatives_refused_pre_llm=sum(
-                    r.refused and r.llm_calls == 0 for r in negatives
-                ),
+                negatives_refused_pre_llm=sum(r.refused and r.llm_calls == 0 for r in negatives),
                 answerable=len(answerable),
                 answerable_answered=sum(not r.refused for r in answerable),
             )
@@ -381,9 +377,7 @@ def main(argv: list[str] | None = None) -> int:
                     query_id=q.query_id,
                     arm=arm,
                     stratum=q.scenario_stratum,
-                    refused=record.answer_text.strip().startswith(
-                        CANNOT_CONFIRM_PHRASE
-                    ),
+                    refused=record.answer_text.strip().startswith(CANNOT_CONFIRM_PHRASE),
                     llm_calls=calls_after - calls_before,
                 )
             )
@@ -419,9 +413,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     totals = ledger.totals(phase="query")
-    corrected = corrected_planned_calls(
-        rows, ledger, planned_answers=PLANNED_LIVE_CALLS
-    )
+    corrected = corrected_planned_calls(rows, ledger, planned_answers=PLANNED_LIVE_CALLS)
     spend = f"${totals.usd:.4f}" if totals.usd is not None else "unknown"
     print(
         f"pilot done: {len(rows)} answers, {totals.calls} LLM calls, "

@@ -43,9 +43,7 @@ import vector_rag.app.logger as vr_logger  # noqa: E402
 REAL_DOCS = Path(__file__).resolve().parents[2] / "docs"
 # 3-Source hermetic fixture: keeps tests stable regardless of docs/ growth.
 # issue #142: docs/fake-docs/ is now part of docs/, so REAL_DOCS is 20 files.
-_FIXTURE_DOCS = (
-    Path(__file__).resolve().parents[2] / "markdown_kb" / "tests" / "fixtures" / "docs"
-)
+_FIXTURE_DOCS = Path(__file__).resolve().parents[2] / "markdown_kb" / "tests" / "fixtures" / "docs"
 
 
 @dataclass(frozen=True)

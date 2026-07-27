@@ -41,12 +41,8 @@ def _para(pid: str, ptype: str = "synonym_swap") -> Paraphrase:
     )
 
 
-_MATCH = RetrievedItem(
-    source_section_id="gold.md#x", content="foo bar", heading_path=[]
-)
-_MISS = RetrievedItem(
-    source_section_id="other.md#y", content="baz qux", heading_path=[]
-)
+_MATCH = RetrievedItem(source_section_id="gold.md#x", content="foo bar", heading_path=[])
+_MISS = RetrievedItem(source_section_id="other.md#y", content="baz qux", heading_path=[])
 
 
 # ---------------------------------------------------------------------------
@@ -195,9 +191,7 @@ def test_run_comparison_with_rerank_renders_focused_section(
     assert "Cochran's Q" in report
 
 
-def test_run_comparison_without_rerank_has_no_focused_section(
-    tmp_path, fake_vector_index
-):
+def test_run_comparison_without_rerank_has_no_focused_section(tmp_path, fake_vector_index):
     """The default 3-arm run must not render the reranker section."""
     report_path = tmp_path / "report.md"
     run_comparison(report_path=report_path, embedding_mode="fake")

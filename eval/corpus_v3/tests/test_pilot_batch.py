@@ -98,9 +98,7 @@ def test_summarize_arms_classifies_pre_llm_and_post_grounding_refusals():
     ]
     ledger = CostLedger()
     for _ in range(4):
-        ledger.record(
-            stack="wiki", phase="query", model="gpt-4o-mini", usage=UsageMetadata()
-        )
+        ledger.record(stack="wiki", phase="query", model="gpt-4o-mini", usage=UsageMetadata())
 
     (summary,) = pilot_batch.summarize_arms(rows, ledger)
 
@@ -121,13 +119,9 @@ def test_corrected_planned_calls_scales_by_measured_calls_per_answer():
     ]
     ledger = CostLedger()
     for _ in range(6):
-        ledger.record(
-            stack="wiki", phase="query", model="gpt-4o-mini", usage=UsageMetadata()
-        )
+        ledger.record(stack="wiki", phase="query", model="gpt-4o-mini", usage=UsageMetadata())
 
-    corrected = pilot_batch.corrected_planned_calls(
-        rows, ledger, planned_answers=1000
-    )
+    corrected = pilot_batch.corrected_planned_calls(rows, ledger, planned_answers=1000)
 
     assert corrected == 1500  # 6 calls / 4 answers = 1.5 per answer
 

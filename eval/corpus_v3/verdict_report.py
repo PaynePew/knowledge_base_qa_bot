@@ -28,9 +28,7 @@ from typing import Literal
 
 ALPHA = 0.05
 
-AxisName = Literal[
-    "contradiction_leak_rate", "grounding_pass_rate", "correct_refusal_rate"
-]
+AxisName = Literal["contradiction_leak_rate", "grounding_pass_rate", "correct_refusal_rate"]
 REQUIRED_AXES: frozenset[str] = frozenset(
     {"contradiction_leak_rate", "grounding_pass_rate", "correct_refusal_rate"}
 )
@@ -185,9 +183,7 @@ def kill_clause_verdict(
             f"kill_clause_verdict missing {wiki_arm!r} vs {baseline_arm!r} "
             f"comparisons for axes: {sorted(missing)}"
         )
-    advantage_on_any = any(
-        by_axis[axis].significant_advantage(wiki_arm) for axis in REQUIRED_AXES
-    )
+    advantage_on_any = any(by_axis[axis].significant_advantage(wiki_arm) for axis in REQUIRED_AXES)
     killed = not advantage_on_any
     return ClauseVerdict(
         clause="kill",
@@ -354,9 +350,7 @@ def render_cost_chapter(
     lines += ["| Arm | USD / grounded-correct answer |", "|---|---|"]
     for arm in sorted(cost_per_grounded_correct):
         value = cost_per_grounded_correct[arm]
-        rendered = (
-            "n/a (0 grounded-correct answers)" if value is None else f"${value:.4f}"
-        )
+        rendered = "n/a (0 grounded-correct answers)" if value is None else f"${value:.4f}"
         lines.append(f"| {arm} | {rendered} |")
     lines.append("")
 
@@ -382,9 +376,7 @@ def render_decision_matrix(columns: list[str], rows: list[DecisionMatrixRow]) ->
     lines.append("|---|" + "---|" * len(columns))
     for row in rows:
         cells = [
-            _tag(row.cells[col].value, row.cells[col].evidence_grade)
-            if col in row.cells
-            else "—"
+            _tag(row.cells[col].value, row.cells[col].evidence_grade) if col in row.cells else "—"
             for col in columns
         ]
         lines.append(f"| {row.label} | " + " | ".join(cells) + " |")
@@ -438,9 +430,7 @@ def render_verdict_report(report_input: VerdictReportInput) -> str:
     sections.append("")
     sections.append(render_axis_stratum_tables(report_input.comparisons))
     sections.append(
-        render_clause_walkthrough(
-            report_input.kill, report_input.demote, report_input.survivals
-        )
+        render_clause_walkthrough(report_input.kill, report_input.demote, report_input.survivals)
     )
     sections.append(
         render_cost_chapter(

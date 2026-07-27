@@ -108,9 +108,7 @@ def recommend(points: Sequence[ThresholdPoint]) -> ThresholdPoint:
         the most robust single value).
     """
     best_j = max(p.youden_j for p in points)
-    optimal = sorted(
-        (p for p in points if p.youden_j == best_j), key=lambda p: p.threshold
-    )
+    optimal = sorted((p for p in points if p.youden_j == best_j), key=lambda p: p.threshold)
     for p in optimal:
         if p.threshold == CURRENT_DEFAULT:
             return p
@@ -322,9 +320,7 @@ def main() -> None:
     cfg = resolve_lang()
     thresholds = DEFAULT_THRESHOLDS_ZH if cfg.lang == "zh" else DEFAULT_THRESHOLDS
     with _isolate_production_paths():
-        positive, negative = collect_scores(
-            cfg.corpus_dir, cfg.positive_cases, cfg.negative_cases
-        )
+        positive, negative = collect_scores(cfg.corpus_dir, cfg.positive_cases, cfg.negative_cases)
     points = sweep(positive, negative, thresholds)
     best = recommend(points)
     report_path = REPORT_PATH.with_name(f"calibration_report{cfg.report_suffix}.md")
@@ -332,10 +328,7 @@ def main() -> None:
         render_calibration_report(points, best, positive, negative, lang=cfg.lang),
         encoding="utf-8",
     )
-    print(
-        f"[{cfg.lang}] Recommended threshold: {best.threshold} "
-        f"(Youden J = {best.youden_j:.2f})"
-    )
+    print(f"[{cfg.lang}] Recommended threshold: {best.threshold} (Youden J = {best.youden_j:.2f})")
     print(f"Report written to {report_path}")
 
 

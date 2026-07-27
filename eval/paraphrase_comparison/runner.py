@@ -301,9 +301,7 @@ def score_stack(
         metric.measure(case)
         per_type_hits[para.paraphrase_type].append(metric.score)
         per_type_rr[para.paraphrase_type].append(metric.reciprocal_rank)
-    by_type = {
-        ptype: sum(scores) / len(scores) for ptype, scores in per_type_hits.items()
-    }
+    by_type = {ptype: sum(scores) / len(scores) for ptype, scores in per_type_hits.items()}
     mrr_by_type = {ptype: sum(rrs) / len(rrs) for ptype, rrs in per_type_rr.items()}
     n_by_type = {ptype: len(scores) for ptype, scores in per_type_hits.items()}
     return StackScores(
@@ -398,9 +396,7 @@ def score_three_arms(
         for name, retrieve in arms:
             items = retrieve(para.text, deep_pool)  # one deep pass per arm
             for cutoff in cutoffs:
-                hit_acc[name][cutoff][ptype].append(
-                    hit_at_k(items, gold, key_tokens, k=cutoff)
-                )
+                hit_acc[name][cutoff][ptype].append(hit_at_k(items, gold, key_tokens, k=cutoff))
                 rr_acc[name][cutoff][ptype].append(
                     reciprocal_rank_at_k(items, gold, key_tokens, k=cutoff)
                 )
@@ -412,12 +408,8 @@ def score_three_arms(
         return SweepScores(
             stack=name,
             cutoffs=cutoffs,
-            hit_by_cutoff={
-                c: {t: _mean(v) for t, v in hit_acc[name][c].items()} for c in cutoffs
-            },
-            mrr_by_cutoff={
-                c: {t: _mean(v) for t, v in rr_acc[name][c].items()} for c in cutoffs
-            },
+            hit_by_cutoff={c: {t: _mean(v) for t, v in hit_acc[name][c].items()} for c in cutoffs},
+            mrr_by_cutoff={c: {t: _mean(v) for t, v in rr_acc[name][c].items()} for c in cutoffs},
             n_by_type=dict(n_by_type),
         )
 
@@ -432,13 +424,9 @@ def score_three_arms(
 
     primary = (_primary("Stack A"), _primary("Stack B"), _primary("Stack C"))
     sweep = (_sweep("Stack A"), _sweep("Stack B"), _sweep("Stack C"))
-    core_stats = _compute_core_stats(
-        paired_at_primary["Stack A"], paired_at_primary["Stack B"]
-    )
+    core_stats = _compute_core_stats(paired_at_primary["Stack A"], paired_at_primary["Stack B"])
     three_arm = _compute_three_arm_stats(paired_at_primary, primary_cutoff)
-    return ThreeArmScoring(
-        primary=primary, sweep=sweep, core_stats=core_stats, three_arm=three_arm
-    )
+    return ThreeArmScoring(primary=primary, sweep=sweep, core_stats=core_stats, three_arm=three_arm)
 
 
 def _compute_three_arm_stats(
@@ -538,20 +526,12 @@ def score_rerank_comparison(
 
         for cutoff in cutoffs:
             hit_c[cutoff][ptype].append(hit_at_k(items_c, gold, key_tokens, k=cutoff))
-            rr_c[cutoff][ptype].append(
-                reciprocal_rank_at_k(items_c, gold, key_tokens, k=cutoff)
-            )
+            rr_c[cutoff][ptype].append(reciprocal_rank_at_k(items_c, gold, key_tokens, k=cutoff))
             hit_d[cutoff][ptype].append(hit_at_k(items_d, gold, key_tokens, k=cutoff))
-            rr_d[cutoff][ptype].append(
-                reciprocal_rank_at_k(items_d, gold, key_tokens, k=cutoff)
-            )
+            rr_d[cutoff][ptype].append(reciprocal_rank_at_k(items_d, gold, key_tokens, k=cutoff))
         if ptype in CORE_PARAPHRASE_TYPES:
-            paired_c[ptype].append(
-                int(hit_at_k(items_c, gold, key_tokens, k=primary_cutoff))
-            )
-            paired_d[ptype].append(
-                int(hit_at_k(items_d, gold, key_tokens, k=primary_cutoff))
-            )
+            paired_c[ptype].append(int(hit_at_k(items_c, gold, key_tokens, k=primary_cutoff)))
+            paired_d[ptype].append(int(hit_at_k(items_d, gold, key_tokens, k=primary_cutoff)))
 
     def _primary(name, hit_acc, rr_acc) -> StackScores:
         return StackScores(
@@ -566,12 +546,8 @@ def score_rerank_comparison(
         return SweepScores(
             stack=name,
             cutoffs=cutoffs,
-            hit_by_cutoff={
-                c: {t: _mean(v) for t, v in hit_acc[c].items()} for c in cutoffs
-            },
-            mrr_by_cutoff={
-                c: {t: _mean(v) for t, v in rr_acc[c].items()} for c in cutoffs
-            },
+            hit_by_cutoff={c: {t: _mean(v) for t, v in hit_acc[c].items()} for c in cutoffs},
+            mrr_by_cutoff={c: {t: _mean(v) for t, v in rr_acc[c].items()} for c in cutoffs},
             n_by_type=dict(n_by_type),
         )
 
@@ -761,20 +737,12 @@ def _render_setup(
     # drifts from the data after a regeneration (issue #145).
     paras = load_paraphrases()
     n_sources = len(list(stacks.FIXTURES["corpus"].glob("*.md")))
-    core_per = {
-        t: sum(p.paraphrase_type == t for p in paras) for t in CORE_PARAPHRASE_TYPES
-    }
-    probe_per = {
-        t: sum(p.paraphrase_type == t for p in paras) for t in PROBE_PARAPHRASE_TYPES
-    }
+    core_per = {t: sum(p.paraphrase_type == t for p in paras) for t in CORE_PARAPHRASE_TYPES}
+    probe_per = {t: sum(p.paraphrase_type == t for p in paras) for t in PROBE_PARAPHRASE_TYPES}
     n_core, n_probes = sum(core_per.values()), sum(probe_per.values())
     core_sz, probe_sz = sorted(set(core_per.values())), sorted(set(probe_per.values()))
-    core_mult = (
-        f"× {core_sz[0]}" if len(core_sz) == 1 else f"× {core_sz[0]}–{core_sz[-1]}"
-    )
-    probe_mult = (
-        f"× {probe_sz[0]}" if len(probe_sz) == 1 else f"× {probe_sz[0]}–{probe_sz[-1]}"
-    )
+    core_mult = f"× {core_sz[0]}" if len(core_sz) == 1 else f"× {core_sz[0]}–{core_sz[-1]}"
+    probe_mult = f"× {probe_sz[0]}" if len(probe_sz) == 1 else f"× {probe_sz[0]}–{probe_sz[-1]}"
     judge_cost_line = (
         f"| L2 cross-family judge Spot-check ({spotcheck.judge_model}) | "
         f"{spotcheck.total_size} item(s) judged; per-call Anthropic cost |\n"
@@ -968,8 +936,7 @@ def _render_cutoff_sweep(
         "a single-cutoff ceiling hid a real difference (the reason the Phase 8 "
         "hit@3 report is superseded).",
         "",
-        "| Cutoff | hit_rate (A) | hit_rate (B) | hit_rate (C) | "
-        "MRR (A) | MRR (B) | MRR (C) |",
+        "| Cutoff | hit_rate (A) | hit_rate (B) | hit_rate (C) | MRR (A) | MRR (B) | MRR (C) |",
         "|---|---|---|---|---|---|---|",
     ]
     for cutoff in cutoffs:
@@ -980,8 +947,7 @@ def _render_cutoff_sweep(
         mb = _macro_average(sweep_b.mrr_by_cutoff[cutoff], CORE_PARAPHRASE_TYPES)
         mc = _macro_average(sweep_c.mrr_by_cutoff[cutoff], CORE_PARAPHRASE_TYPES)
         lines.append(
-            f"| hit@{cutoff} | {ha:.3f} | {hb:.3f} | {hc:.3f} | "
-            f"{ma:.3f} | {mb:.3f} | {mc:.3f} |"
+            f"| hit@{cutoff} | {ha:.3f} | {hb:.3f} | {hc:.3f} | {ma:.3f} | {mb:.3f} | {mc:.3f} |"
         )
     return "\n".join(lines)
 
@@ -1022,9 +988,7 @@ def _render_three_arm_stats(three_arm: ThreeArmStats) -> str:
         three_arm.pair_holm_p,
     ):
         pair_sig = "✓" if (sig and holm_p < 0.05) else "—"
-        lines.append(
-            f"| {label} | {b} | {c} | {raw_p:.4f} | {holm_p:.4f} | {pair_sig} |"
-        )
+        lines.append(f"| {label} | {b} | {c} | {raw_p:.4f} | {holm_p:.4f} | {pair_sig} |")
     lines += [
         "",
         "> **Interpretation.** Cochran's Q is the omnibus for 3+ related binary "
@@ -1074,14 +1038,8 @@ def _render_statistical_tests(core_stats: CoreStats, k: int) -> str:
     # Power note derived from the actual per-Core-type sample size (issue #145),
     # so it never claims "underpowered, regenerate" once the Demo tier is reached.
     _paras = load_paraphrases()
-    _core_ns = sorted(
-        {sum(p.paraphrase_type == t for p in _paras) for t in CORE_PARAPHRASE_TYPES}
-    )
-    _n_desc = (
-        f"{_core_ns[0]}"
-        if _core_ns[0] == _core_ns[-1]
-        else f"{_core_ns[0]}–{_core_ns[-1]}"
-    )
+    _core_ns = sorted({sum(p.paraphrase_type == t for p in _paras) for t in CORE_PARAPHRASE_TYPES})
+    _n_desc = f"{_core_ns[0]}" if _core_ns[0] == _core_ns[-1] else f"{_core_ns[0]}–{_core_ns[-1]}"
     _power_note = (
         f"At n≈{_n_desc} per type the 95% Wilson CIs (see table) are tight enough to "
         "support a per-type claim; a non-significant result then means the two Stacks "
@@ -1118,9 +1076,7 @@ def _embed_family_charts(section_title: str, chart_files: list[Path]) -> str:
 # ---------------------------------------------------------------------------
 # Reranker section (Stack C vs Stack C + rerank) — ADR-0019 / #310
 # ---------------------------------------------------------------------------
-def _render_rerank_section(
-    comparison: RerankComparison | None, offline: bool = False
-) -> str:
+def _render_rerank_section(comparison: RerankComparison | None, offline: bool = False) -> str:
     """Render the focused Stack C vs Stack C + rerank section (ADR-0019, #310).
 
     A self-contained within-Hybrid paired comparison appended after the Structural
@@ -1159,18 +1115,10 @@ def _render_rerank_section(
         "|---|---|---|---|---|",
     ]
     for cutoff in comparison.sweep_c.cutoffs:
-        hc = _macro_average(
-            comparison.sweep_c.hit_by_cutoff[cutoff], CORE_PARAPHRASE_TYPES
-        )
-        hd = _macro_average(
-            comparison.sweep_d.hit_by_cutoff[cutoff], CORE_PARAPHRASE_TYPES
-        )
-        mc = _macro_average(
-            comparison.sweep_c.mrr_by_cutoff[cutoff], CORE_PARAPHRASE_TYPES
-        )
-        md = _macro_average(
-            comparison.sweep_d.mrr_by_cutoff[cutoff], CORE_PARAPHRASE_TYPES
-        )
+        hc = _macro_average(comparison.sweep_c.hit_by_cutoff[cutoff], CORE_PARAPHRASE_TYPES)
+        hd = _macro_average(comparison.sweep_d.hit_by_cutoff[cutoff], CORE_PARAPHRASE_TYPES)
+        mc = _macro_average(comparison.sweep_c.mrr_by_cutoff[cutoff], CORE_PARAPHRASE_TYPES)
+        md = _macro_average(comparison.sweep_d.mrr_by_cutoff[cutoff], CORE_PARAPHRASE_TYPES)
         lines.append(f"| hit@{cutoff} | {hc:.3f} | {hd:.3f} | {mc:.3f} | {md:.3f} |")
 
     lines += [
@@ -1188,8 +1136,7 @@ def _render_rerank_section(
         mc, md = c.mrr_by_type.get(ptype, 0.0), d.mrr_by_type.get(ptype, 0.0)
         n = c.n_by_type.get(ptype, d.n_by_type.get(ptype, 0))
         lines.append(
-            f"| {ptype} | {hc:.3f} | {hd:.3f} | {hd - hc:+.3f} | "
-            f"{mc:.3f} | {md:.3f} | {n} |"
+            f"| {ptype} | {hc:.3f} | {hd:.3f} | {hd - hc:+.3f} | {mc:.3f} | {md:.3f} | {n} |"
         )
     core_c = _macro_average(c.by_type, CORE_PARAPHRASE_TYPES)
     core_d = _macro_average(d.by_type, CORE_PARAPHRASE_TYPES)
@@ -1274,17 +1221,14 @@ def _render_spotcheck(spotcheck: SpotcheckResult | None) -> str:
     control = spotcheck.agreement_by_zone.get("control")
     control_flag = ""
     if control is not None:
-        control_flag = (
-            f"\n\n> **Control-zone calibration: agreement {control:.3f}.** "
-            + (
-                "This approaches 100% — the judge baseline is trustworthy, so its "
-                "Marginal/Disagreement verdicts can be read as a genuine independent "
-                "signal."
-                if control >= 0.9
-                else "⚠️ This is BELOW the ~100% the Control zone exists to confirm — "
-                "the judge itself looks **mis-calibrated**, so treat its other-zone "
-                "verdicts with suspicion (PRD #100 user story 21)."
-            )
+        control_flag = f"\n\n> **Control-zone calibration: agreement {control:.3f}.** " + (
+            "This approaches 100% — the judge baseline is trustworthy, so its "
+            "Marginal/Disagreement verdicts can be read as a genuine independent "
+            "signal."
+            if control >= 0.9
+            else "⚠️ This is BELOW the ~100% the Control zone exists to confirm — "
+            "the judge itself looks **mis-calibrated**, so treat its other-zone "
+            "verdicts with suspicion (PRD #100 user story 21)."
         )
 
     zone_labels = {
@@ -1433,9 +1377,7 @@ def _render_talking_points() -> str:
 # ---------------------------------------------------------------------------
 # Aggregation helpers
 # ---------------------------------------------------------------------------
-def _macro_average(
-    by_type: dict[str, float], types: list[str] | tuple[str, ...]
-) -> float:
+def _macro_average(by_type: dict[str, float], types: list[str] | tuple[str, ...]) -> float:
     """Unweighted mean of a per-type metric over ``types`` present in ``by_type``."""
     present = [by_type[t] for t in types if t in by_type]
     return sum(present) / len(present) if present else 0.0
@@ -1476,13 +1418,9 @@ def run_comparison(
     charts_dir = charts_dir or (report_path.parent / "charts")
     paraphrases = load_paraphrases()
     metadata = load_metadata()
-    scoring, spotcheck, rerank_comparison = _run_scored(
-        paraphrases, k, judge, with_rerank
-    )
+    scoring, spotcheck, rerank_comparison = _run_scored(paraphrases, k, judge, with_rerank)
     stack_a, stack_b, stack_c = scoring.primary
-    chart_files = charts.render_charts(
-        stack_a, stack_b, charts_dir=charts_dir, stack_c=stack_c
-    )
+    chart_files = charts.render_charts(stack_a, stack_b, charts_dir=charts_dir, stack_c=stack_c)
     write_text_atomic(
         report_path,
         render_report(

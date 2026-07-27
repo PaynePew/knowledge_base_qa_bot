@@ -36,9 +36,7 @@ from pathlib import Path
 # Frontmatter scan (mirrors eval.paraphrase_comparison.stacks's regex pair,
 # duplicated rather than imported — PRD #654: corpus v3 stays isolated from
 # the v2 eval package).
-_SOURCES_BLOCK_RE = re.compile(
-    r"^sources:\s*\n((?:[ \t]*-[ \t]*\S+.*\n)+)", re.MULTILINE
-)
+_SOURCES_BLOCK_RE = re.compile(r"^sources:\s*\n((?:[ \t]*-[ \t]*\S+.*\n)+)", re.MULTILINE)
 _SOURCE_ITEM_RE = re.compile(r"^[ \t]*-[ \t]*(\S+)", re.MULTILINE)
 
 # Wiki page id -> the full set of docs-native Section ids its `sources:`

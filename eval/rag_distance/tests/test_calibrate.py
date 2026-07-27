@@ -87,9 +87,7 @@ def test_collect_distances_shape_by_lang(lang):
     embeddings run (calibrate.main); this only checks the shape.
     """
     cfg = resolve_lang(lang)
-    positive, negative = collect_distances(
-        cfg.corpus_dir, cfg.positive_cases, cfg.negative_cases
-    )
+    positive, negative = collect_distances(cfg.corpus_dir, cfg.positive_cases, cfg.negative_cases)
     assert len(positive) == len(cfg.positive_cases)
     assert len(negative) == len(cfg.negative_cases)
     assert all(d >= 0.0 for d in positive + negative)

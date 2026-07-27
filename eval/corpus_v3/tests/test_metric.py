@@ -41,9 +41,7 @@ def test_docs_native_item_still_hits_its_own_gold_id():
         {"return-window": frozenset({"refund_policy.md#return-window"})},
         "refund_policy.md#return-window",
     )
-    item = _item(
-        "refund_policy.md#return-window", "Items may be returned within 30 days."
-    )
+    item = _item("refund_policy.md#return-window", "Items may be returned within 30 days.")
 
     assert metric.is_hit(item, gold_set, ["30", "days"], [])
 
@@ -72,9 +70,7 @@ def test_reworded_wiki_section_passes_via_wiki_side_key_tokens():
     )
 
     key_tokens_docs = ["refund", "processing"]  # docs-body wording; absent from content
-    key_tokens_wiki = [
-        "reimbursement"
-    ]  # wiki's own reworded wording; present in content
+    key_tokens_wiki = ["reimbursement"]  # wiki's own reworded wording; present in content
 
     assert not metric.is_hit(item, gold_set, key_tokens_docs, [])  # docs-only: miss
     assert metric.is_hit(item, gold_set, key_tokens_docs, key_tokens_wiki)  # union: hit

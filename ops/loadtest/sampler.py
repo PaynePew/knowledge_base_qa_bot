@@ -47,9 +47,7 @@ class MemorySampler:
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
-        self._thread = threading.Thread(
-            target=self._run, name="loadtest-sampler", daemon=True
-        )
+        self._thread = threading.Thread(target=self._run, name="loadtest-sampler", daemon=True)
         self._thread.start()
 
     def stop(self) -> SampleResult:
@@ -59,9 +57,7 @@ class MemorySampler:
         peak_wset = self._read_peak_wset()
         return SampleResult(
             peak_rss_polled_mb=round(self._peak_rss_bytes / _BYTES_PER_MB, 2),
-            peak_wset_os_mb=round(peak_wset / _BYTES_PER_MB, 2)
-            if peak_wset is not None
-            else None,
+            peak_wset_os_mb=round(peak_wset / _BYTES_PER_MB, 2) if peak_wset is not None else None,
             sample_count=self._sample_count,
         )
 

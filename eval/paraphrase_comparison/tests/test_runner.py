@@ -120,9 +120,7 @@ def test_stack_a_resolves_wiki_hit_to_docs_gold_section(fake_vector_index):
     items = stacks.stack_a_retrieval("forgot my login passphrase reset", k=3)
     # The wiki page 'password-reset' synthesises the docs section
     # 'account_management.md#password-reset'; Stack A must report the docs id.
-    assert any(
-        it.source_section_id == "account_management.md#password-reset" for it in items
-    )
+    assert any(it.source_section_id == "account_management.md#password-reset" for it in items)
 
 
 def test_scored_hit_rate_is_a_fraction(fake_vector_index):
@@ -144,14 +142,10 @@ def test_render_report_records_embedding_mode(fake_vector_index):
     assert "OFFLINE TRACER NUMBERS" in report
 
 
-def test_running_comparison_does_not_touch_production_paths(
-    tmp_path, fake_vector_index
-):
+def test_running_comparison_does_not_touch_production_paths(tmp_path, fake_vector_index):
     kb_before = sorted(p.name for p in PROD_KB.glob("*")) if PROD_KB.exists() else []
     wiki_index_before = (
-        PROD_WIKI_INDEX.read_text(encoding="utf-8")
-        if PROD_WIKI_INDEX.exists()
-        else None
+        PROD_WIKI_INDEX.read_text(encoding="utf-8") if PROD_WIKI_INDEX.exists() else None
     )
     log_before = PROD_LOG.read_text(encoding="utf-8") if PROD_LOG.exists() else None
 
@@ -159,9 +153,7 @@ def test_running_comparison_does_not_touch_production_paths(
 
     kb_after = sorted(p.name for p in PROD_KB.glob("*")) if PROD_KB.exists() else []
     wiki_index_after = (
-        PROD_WIKI_INDEX.read_text(encoding="utf-8")
-        if PROD_WIKI_INDEX.exists()
-        else None
+        PROD_WIKI_INDEX.read_text(encoding="utf-8") if PROD_WIKI_INDEX.exists() else None
     )
     log_after = PROD_LOG.read_text(encoding="utf-8") if PROD_LOG.exists() else None
 
@@ -220,9 +212,7 @@ def test_report_notes_how_to_enable_spotcheck_when_not_run(tmp_path, fake_vector
     assert "not run (opt-in via `--judge`)" in report
 
 
-def test_report_renders_spotcheck_section_when_judge_runs(
-    tmp_path, fake_vector_index, monkeypatch
-):
+def test_report_renders_spotcheck_section_when_judge_runs(tmp_path, fake_vector_index, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setattr(spotcheck_mod, "_judge_client", lambda: _StubJudgeClient())
 
@@ -245,9 +235,7 @@ def test_report_renders_spotcheck_section_when_judge_runs(
     assert "item(s) judged" in report
 
 
-def test_run_comparison_fail_fasts_with_judge_but_no_key(
-    tmp_path, fake_vector_index, monkeypatch
-):
+def test_run_comparison_fail_fasts_with_judge_but_no_key(tmp_path, fake_vector_index, monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     with pytest.raises(spotcheck_mod.JudgeUnavailableError):
         run_comparison(
@@ -290,9 +278,7 @@ def test_report_includes_wilson_ci_for_core_types(tmp_path, fake_vector_index):
     assert "[" in report and "]" in report
 
 
-def test_report_holm_correction_applied_across_five_core_types(
-    tmp_path, fake_vector_index
-):
+def test_report_holm_correction_applied_across_five_core_types(tmp_path, fake_vector_index):
     """The report must mention Holm correction and show it covers the 5 Core types."""
     report_path = tmp_path / "report.md"
     run_comparison(report_path=report_path, embedding_mode="fake")
@@ -318,9 +304,7 @@ def test_report_probes_excluded_from_statistical_tests(tmp_path, fake_vector_ind
     stat_start = report.index(stat_heading)
     # The section ends at the next "## " heading or end of string.
     next_section = report.find("\n## ", stat_start + 1)
-    stat_window = (
-        report[stat_start:next_section] if next_section != -1 else report[stat_start:]
-    )
+    stat_window = report[stat_start:next_section] if next_section != -1 else report[stat_start:]
     for ptype in PROBE_PARAPHRASE_TYPES:
         assert ptype not in stat_window, (
             f"Probe type '{ptype}' appeared in the McNemar statistical table — "

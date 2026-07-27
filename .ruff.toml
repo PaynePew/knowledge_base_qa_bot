@@ -1,0 +1,28 @@
+# Repo-wide ruff config (issue #690 rework). ruff resolves the "closest"
+# ruff.toml / .ruff.toml / pyproject.toml walking up from each file, and a
+# pyproject.toml with no [tool.ruff] table still counts as the closest config
+# (it does not keep climbing). Before this file existed, any path with no
+# local pyproject.toml of its own (eval/corpus_v3, eval/cost_ledger,
+# project-docs/, ops/, deploy/, ...) climbed all the way to the workspace
+# root pyproject.toml - which has no [tool.ruff] section - and silently fell
+# back to ruff's built-in 88-col default instead of this repo's documented
+# 100 (CODING_STANDARD 8.1). That mismatch produced false format drift on PR
+# #684 and again on #686.
+#
+# A prior fix for this (issue #690) added a standalone pyproject.toml under
+# each of eval/corpus_v3 and eval/cost_ledger to pin line-length=100. An
+# adversarial verifier caught the side effect: a bare pyproject.toml is also
+# how uv identifies a project root, so `uv run` (and pytest collection via
+# uv) executed from inside either directory treated it as its own project
+# and provisioned a stray, wrong-Python nested .venv there instead of using
+# the workspace root's .venv. This root-level .ruff.toml is ruff-only syntax
+# (uv never reads *.ruff.toml files), so it fixes the same config-resolution
+# gap with no uv side effect.
+#
+# The four workspace members that already carry their own [tool.ruff] in
+# their pyproject.toml (markdown_kb, gateway, kb_mcp, kb_cli) are closer to
+# their own files than this root file and are unaffected. vector_rag,
+# hybrid_kb, and eval/paraphrase_comparison each have a pyproject.toml of
+# their own (no [tool.ruff] table) and are likewise closer than this file, so
+# they are also unaffected - out of scope for this rework.
+line-length = 100

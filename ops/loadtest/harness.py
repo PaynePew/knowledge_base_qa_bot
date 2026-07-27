@@ -63,9 +63,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     out_path = RESULTS_DIR / f"{out_name}.json"
-    out_path.write_text(
-        json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    out_path.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(f"Wrote {out_path}")
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
@@ -111,9 +109,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_parser.set_defaults(func=_cmd_run)
 
-    summarize_parser = sub.add_parser(
-        "summarize", help="Merge result JSONs into a Markdown table."
-    )
+    summarize_parser = sub.add_parser("summarize", help="Merge result JSONs into a Markdown table.")
     summarize_parser.add_argument("--results-dir", default=None)
     summarize_parser.add_argument(
         "--out", default=None, help="Write the table here instead of stdout."

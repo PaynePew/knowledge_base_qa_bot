@@ -57,9 +57,7 @@ def spawn_gateway(
         )
 
 
-def wait_for_health(
-    base_url: str, timeout: float, proc: subprocess.Popen, log_path: Path
-) -> None:
+def wait_for_health(base_url: str, timeout: float, proc: subprocess.Popen, log_path: Path) -> None:
     """Poll ``GET /healthz`` until 200 or *timeout* seconds elapse.
 
     Raises:

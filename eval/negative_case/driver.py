@@ -43,12 +43,8 @@ def evaluate_case(query: str) -> RefusalOutcome:
     surfaced so a report can show how close each leak was to the threshold.
     """
     gate = retrieval._retrieve_and_gate(query)
-    refused = (
-        bool(gate["early_exit"]) and gate["answer"] == retrieval.CANNOT_CONFIRM_PHRASE
-    )
+    refused = bool(gate["early_exit"]) and gate["answer"] == retrieval.CANNOT_CONFIRM_PHRASE
     reason = gate["grounding_outcome"].reason if refused else "answered"
     sources = gate.get("sources") or []
     top_score = float(sources[0]["score"]) if sources else 0.0
-    return RefusalOutcome(
-        query=query, refused=refused, reason=reason, top_score=top_score
-    )
+    return RefusalOutcome(query=query, refused=refused, reason=reason, top_score=top_score)

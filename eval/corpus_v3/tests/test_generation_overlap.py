@@ -79,9 +79,5 @@ def test_classify_respects_custom_threshold():
     reference = "return window damaged"
     ratio = lexical_overlap_ratio(query, [reference])
     # Pick a threshold just above the observed ratio to flip the classification.
-    assert classify_overlap_stratum(query, [reference], threshold=ratio + 0.01) == (
-        "low_overlap"
-    )
-    assert classify_overlap_stratum(query, [reference], threshold=ratio) == (
-        "high_overlap"
-    )
+    assert classify_overlap_stratum(query, [reference], threshold=ratio + 0.01) == ("low_overlap")
+    assert classify_overlap_stratum(query, [reference], threshold=ratio) == ("high_overlap")

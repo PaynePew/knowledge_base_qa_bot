@@ -100,9 +100,7 @@ class TestBuildSectionContexts:
             heading, body = _SECTION_BODIES[sec.section_id]
             # The combined context strings should include the body somewhere.
             full_text = " ".join(ctx)
-            assert body in full_text, (
-                f"Section body not found in context for {sec.section_id!r}"
-            )
+            assert body in full_text, f"Section body not found in context for {sec.section_id!r}"
 
     def test_contexts_are_list_of_string_lists(self):
         """Synthesizer expects List[List[str]] for contexts."""
@@ -221,9 +219,7 @@ class TestGoldensToQueries:
 
         section_id = "returns_policy.md#return-window"
         goldens = [self._make_golden(source_file=section_id)]
-        queries = goldens_to_queries(
-            goldens, paraphrase_type="synonym_swap", id_prefix="syn"
-        )
+        queries = goldens_to_queries(goldens, paraphrase_type="synonym_swap", id_prefix="syn")
         assert len(queries) == 1
         assert queries[0].gold_docs_section_id == section_id
 
@@ -234,12 +230,8 @@ class TestGoldensToQueries:
         )
 
         text = "How long do I have to return an item?"
-        goldens = [
-            self._make_golden("returns_policy.md#return-window", input_text=text)
-        ]
-        queries = goldens_to_queries(
-            goldens, paraphrase_type="synonym_swap", id_prefix="syn"
-        )
+        goldens = [self._make_golden("returns_policy.md#return-window", input_text=text)]
+        queries = goldens_to_queries(goldens, paraphrase_type="synonym_swap", id_prefix="syn")
         assert queries[0].text == text
 
     def test_ids_are_sequential_with_prefix(self):
@@ -253,9 +245,7 @@ class TestGoldensToQueries:
             self._make_golden("b.md#two"),
             self._make_golden("c.md#three"),
         ]
-        queries = goldens_to_queries(
-            goldens, paraphrase_type="word_reorder", id_prefix="wr"
-        )
+        queries = goldens_to_queries(goldens, paraphrase_type="word_reorder", id_prefix="wr")
         assert queries[0].paraphrase_id == "wr-001"
         assert queries[1].paraphrase_id == "wr-002"
         assert queries[2].paraphrase_id == "wr-003"
@@ -266,9 +256,7 @@ class TestGoldensToQueries:
         )
 
         goldens = [self._make_golden("a.md#s")]
-        queries = goldens_to_queries(
-            goldens, paraphrase_type="verbosity_expansion", id_prefix="ve"
-        )
+        queries = goldens_to_queries(goldens, paraphrase_type="verbosity_expansion", id_prefix="ve")
         assert queries[0].paraphrase_type == "verbosity_expansion"
 
     def test_empty_goldens_returns_empty_list(self):
@@ -276,9 +264,7 @@ class TestGoldensToQueries:
             goldens_to_queries,
         )
 
-        queries = goldens_to_queries(
-            [], paraphrase_type="synonym_swap", id_prefix="syn"
-        )
+        queries = goldens_to_queries([], paraphrase_type="synonym_swap", id_prefix="syn")
         assert queries == []
 
     def test_none_source_file_raises(self):
@@ -335,9 +321,7 @@ class TestSynthesizerConfig:
 
         cfg = SynthesizerConfig()
         # Both must be OpenAI models (same family — PRD #137 justification)
-        assert (
-            "gpt" in cfg.generator_model.lower() or "o1" in cfg.generator_model.lower()
-        )
+        assert "gpt" in cfg.generator_model.lower() or "o1" in cfg.generator_model.lower()
         assert "gpt" in cfg.critic_model.lower() or "o1" in cfg.critic_model.lower()
 
     def test_quality_threshold_between_zero_and_one(self):
@@ -417,9 +401,7 @@ class TestConfigBuilders:
         )
 
         cfg = build_styling_config()
-        combined = " ".join(
-            filter(None, [cfg.task, cfg.scenario, cfg.input_format])
-        ).lower()
+        combined = " ".join(filter(None, [cfg.task, cfg.scenario, cfg.input_format])).lower()
         # Must include at least one of these steering terms
         steering_terms = [
             "customer",
@@ -433,9 +415,7 @@ class TestConfigBuilders:
             f"StylingConfig must steer toward natural customer questions; got: {combined!r}"
         )
 
-    def test_build_filtration_config_returns_filtration_config_instance(
-        self, monkeypatch
-    ):
+    def test_build_filtration_config_returns_filtration_config_instance(self, monkeypatch):
         """FiltrationConfig.__post_init__ calls initialize_model which needs OPENAI_API_KEY.
 
         We monkeypatch the env var to a dummy value so the model is instantiated

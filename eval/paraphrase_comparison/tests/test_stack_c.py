@@ -85,9 +85,7 @@ def test_stack_c_dense_arm_built_from_bm25_section_list(fake_dense_embeddings):
 # ---------------------------------------------------------------------------
 # Stack C + rerank (the 4th arm) — ADR-0019 / #310
 # ---------------------------------------------------------------------------
-def test_stack_c_rerank_returns_docs_id_items(
-    fake_dense_embeddings, fake_cross_encoder
-):
+def test_stack_c_rerank_returns_docs_id_items(fake_dense_embeddings, fake_cross_encoder):
     """The reranked arm returns RetrievedItems resolved to docs Gold Section ids."""
     _index_both_arms()
     para = next(p for p in load_paraphrases() if p.paraphrase_type == "synonym_swap")
@@ -99,9 +97,7 @@ def test_stack_c_rerank_returns_docs_id_items(
         assert item.source_section_id.split("#")[0].endswith(".md")
 
 
-def test_stack_c_rerank_truncates_to_cutoff_k(
-    fake_dense_embeddings, fake_cross_encoder
-):
+def test_stack_c_rerank_truncates_to_cutoff_k(fake_dense_embeddings, fake_cross_encoder):
     """The reranked output is truncated to the final cutoff ``k`` (not rerank_depth)."""
     _index_both_arms()
     para = next(p for p in load_paraphrases() if p.paraphrase_type == "synonym_swap")
@@ -121,8 +117,7 @@ def test_stack_c_rerank_introduces_no_ids_beyond_the_fused_pool(
     _index_both_arms()
     para = next(p for p in load_paraphrases() if p.paraphrase_type == "synonym_swap")
     deep_plain = {
-        it.source_section_id
-        for it in stacks.stack_c_retrieval(para.text, k=20, candidate_depth=50)
+        it.source_section_id for it in stacks.stack_c_retrieval(para.text, k=20, candidate_depth=50)
     }
     reranked = {
         it.source_section_id

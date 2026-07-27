@@ -51,13 +51,10 @@ class _FakeVectorStore:
 
     def __init__(self, documents):
         self._docs = [
-            _FakeDoc(page_content=d.page_content, metadata=dict(d.metadata))
-            for d in documents
+            _FakeDoc(page_content=d.page_content, metadata=dict(d.metadata)) for d in documents
         ]
 
-    def similarity_search_with_score(
-        self, query: str, k: int = 3, filter=None, fetch_k: int = 20
-    ):
+    def similarity_search_with_score(self, query: str, k: int = 3, filter=None, fetch_k: int = 20):
         # Mirror FAISS's dict-metadata filter (#290 RAG language filter): drop
         # docs whose metadata does not match every key in ``filter`` before
         # ranking, so the offline fake reproduces same-language retrieval rather
@@ -66,9 +63,7 @@ class _FakeVectorStore:
         docs = self._docs
         if filter:
             docs = [
-                doc
-                for doc in docs
-                if all(doc.metadata.get(fk) == fv for fk, fv in filter.items())
+                doc for doc in docs if all(doc.metadata.get(fk) == fv for fk, fv in filter.items())
             ]
         q = set(tokenize(query))
         scored = []
@@ -117,9 +112,7 @@ class _FakeDenseEmbeddings(Embeddings):
 @pytest.fixture()
 def fake_vector_index(monkeypatch):
     """Swap vector_rag's FAISS factory for the deterministic fake (offline)."""
-    monkeypatch.setattr(
-        vr_indexer, "_build_faiss", lambda documents: _FakeVectorStore(documents)
-    )
+    monkeypatch.setattr(vr_indexer, "_build_faiss", lambda documents: _FakeVectorStore(documents))
     yield
     vr_indexer.vectorstore = None
 

@@ -126,9 +126,9 @@ def derive_generation_targets(
         else:  # pragma: no cover - AdversarialClass is a closed Literal
             raise ValueError(f"unknown adversarial_class: {group.adversarial_class!r}")
 
-        distractor_ids = [
-            sid for sid in by_id if sid not in group.gold_section_ids
-        ] or list(group.gold_section_ids)
+        distractor_ids = [sid for sid in by_id if sid not in group.gold_section_ids] or list(
+            group.gold_section_ids
+        )
         buckets["unanswerable"].append(
             GenerationTarget(
                 scenario_stratum="unanswerable",
@@ -193,8 +193,5 @@ def _digest(seed: str, target: GenerationTarget) -> str:
     # Python's stable sort would leave those ties in their original list
     # order regardless of ``seed`` -- silently defeating the "different seed,
     # different order" contract ``sample_targets`` relies on for variety.
-    key = (
-        f"{seed}:{target.group_id}:{target.scenario_stratum}:"
-        f"{','.join(target.reference_ids)}"
-    )
+    key = f"{seed}:{target.group_id}:{target.scenario_stratum}:{','.join(target.reference_ids)}"
     return hashlib.sha256(key.encode()).hexdigest()

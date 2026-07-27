@@ -16,9 +16,7 @@ from eval.paraphrase_comparison import loader
 from eval.paraphrase_comparison.loader import replace_atomic, write_text_atomic
 
 
-def test_replace_atomic_recovers_after_one_transient_permission_error(
-    tmp_path, monkeypatch
-):
+def test_replace_atomic_recovers_after_one_transient_permission_error(tmp_path, monkeypatch):
     src = tmp_path / "src.tmp"
     dst = tmp_path / "dst.txt"
     src.write_text("payload", encoding="utf-8")
@@ -33,9 +31,7 @@ def test_replace_atomic_recovers_after_one_transient_permission_error(
         return real_replace(a, b)
 
     monkeypatch.setattr(loader.os, "replace", flaky_replace)
-    monkeypatch.setattr(
-        loader.time, "sleep", lambda _s: None
-    )  # no real backoff in test
+    monkeypatch.setattr(loader.time, "sleep", lambda _s: None)  # no real backoff in test
 
     replace_atomic(str(src), dst)
 

@@ -131,9 +131,7 @@ def test_rerank_passes_query_passage_pairs_to_encoder(fake_encoder):
     assert fake_encoder.seen_pairs is not None
     assert all(pair[0] == "my query" for pair in fake_encoder.seen_pairs)
     passages = [pair[1] for pair in fake_encoder.seen_pairs]
-    assert any("alpha body" in p for p in passages), (
-        "passage must carry Section content"
-    )
+    assert any("alpha body" in p for p in passages), "passage must carry Section content"
 
 
 def test_rerank_empty_candidates_returns_empty(fake_encoder):
@@ -180,17 +178,11 @@ def test_rerank_real_model_promotes_relevant_passage_en_and_zh():
             "shipping-en",
             content="Standard shipping delivery takes three to five business days.",
         )
-        ranked_en = rerank.rerank(
-            "how long does a refund take", [shipping_en, refund_en], top_n=2
-        )
+        ranked_en = rerank.rerank("how long does a refund take", [shipping_en, refund_en], top_n=2)
         assert ranked_en[0].id == "refund-en"
 
-        refund_zh = make_section(
-            "refund-zh", content="退款會在核准後七個工作天內處理完成。"
-        )
-        shipping_zh = make_section(
-            "shipping-zh", content="標準運送通常需要三到五個工作天送達。"
-        )
+        refund_zh = make_section("refund-zh", content="退款會在核准後七個工作天內處理完成。")
+        shipping_zh = make_section("shipping-zh", content="標準運送通常需要三到五個工作天送達。")
         ranked_zh = rerank.rerank("退款要多久才會到", [shipping_zh, refund_zh], top_n=2)
         assert ranked_zh[0].id == "refund-zh"
     finally:

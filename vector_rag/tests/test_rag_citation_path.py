@@ -58,8 +58,7 @@ def _sources_for(question: str) -> list[dict]:
     """Run the real pre-LLM retrieve+gate and return its RAG source dicts."""
     gate = retrieval._retrieve_and_gate(question)
     assert not gate["early_exit"], (
-        "expected retrieval to pass the pre-LLM gates, got "
-        f"{gate['grounding_outcome'].reason}"
+        f"expected retrieval to pass the pre-LLM gates, got {gate['grounding_outcome'].reason}"
     )
     assert gate["sources"], "expected at least one retrieved source"
     return gate["sources"]
@@ -73,9 +72,7 @@ def test_rag_source_carries_docs_relative_path(indexed_real_corpus):
     for s in _sources_for(_EN_QUERY):
         assert "path" in s, f"RAG source must carry a clickable path: {s}"
         p = s["path"]
-        assert p.startswith("docs/"), (
-            f"path must be repo-root-relative under docs/: {p!r}"
-        )
+        assert p.startswith("docs/"), f"path must be repo-root-relative under docs/: {p!r}"
         assert "\\" not in p, f"path must use forward slashes (Windows-safe): {p!r}"
         assert p.endswith(".md"), f"path must point at a markdown Source: {p!r}"
 
@@ -113,9 +110,7 @@ def test_rag_sources_still_have_no_score_or_derived_from(indexed_real_corpus):
 # ---------------------------------------------------------------------------
 def test_source_without_file_emits_no_path(monkeypatch):
     """A Chunk whose ``file`` is empty (old persisted index) omits ``path`` entirely."""
-    chunk = indexer.Chunk(
-        id="x.md#h", source="x.md#h", heading_path=["X"], content="body"
-    )
+    chunk = indexer.Chunk(id="x.md#h", source="x.md#h", heading_path=["X"], content="body")
     assert chunk.file == "", "Chunk.file must default to '' for back-compat"
 
     monkeypatch.setattr(indexer, "vectorstore", object())
@@ -166,14 +161,10 @@ def test_source_with_non_whitelisted_file_emits_no_path(monkeypatch):
             file=bad_file,
         )
         monkeypatch.setattr(indexer, "vectorstore", object())
-        monkeypatch.setattr(
-            indexer, "search_with_distance", lambda q, k=3, _c=chunk: [(_c, 0.5)]
-        )
+        monkeypatch.setattr(indexer, "search_with_distance", lambda q, k=3, _c=chunk: [(_c, 0.5)])
         gate = retrieval._retrieve_and_gate("anything")
         for s in gate["sources"]:
-            assert "path" not in s, (
-                f"non-whitelisted file {bad_file!r} must omit path: {s}"
-            )
+            assert "path" not in s, f"non-whitelisted file {bad_file!r} must omit path: {s}"
 
 
 # ---------------------------------------------------------------------------
@@ -181,9 +172,7 @@ def test_source_with_non_whitelisted_file_emits_no_path(monkeypatch):
 # ---------------------------------------------------------------------------
 def test_chunk_from_document_reads_file_metadata():
     """_chunk_from_document maps Document metadata['file'] onto Chunk.file."""
-    doc = Document(
-        page_content="body", metadata={"source": "x.md#h", "file": "docs/x.md"}
-    )
+    doc = Document(page_content="body", metadata={"source": "x.md#h", "file": "docs/x.md"})
     assert indexer._chunk_from_document(doc).file == "docs/x.md"
 
 

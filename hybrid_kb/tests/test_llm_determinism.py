@@ -27,9 +27,7 @@ def test_hybrid_draft_llm_pinned_to_temperature_zero_and_seed(monkeypatch):
 
     llm = query_module.get_llm()
 
-    assert llm.temperature == 0, (
-        "Hybrid answer LLM must be deterministic (temperature=0)"
-    )
+    assert llm.temperature == 0, "Hybrid answer LLM must be deterministic (temperature=0)"
     assert llm.seed == query_module._HYBRID_DRAFT_LLM_SEED, (
         "Hybrid answer LLM must pin the fixed seed"
     )

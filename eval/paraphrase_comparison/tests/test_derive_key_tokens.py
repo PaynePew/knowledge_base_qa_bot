@@ -179,12 +179,8 @@ def test_rekeying_committed_queries_yields_no_multiword_tokens(tmp_path):
         if not tokens:
             empty_set_count += 1
 
-    assert multi_word_count == 0, (
-        f"found {multi_word_count} multi-word tokens after re-keying"
-    )
-    assert empty_set_count == 0, (
-        f"found {empty_set_count} Paraphrases with empty Key-Token set"
-    )
+    assert multi_word_count == 0, f"found {multi_word_count} multi-word tokens after re-keying"
+    assert empty_set_count == 0, f"found {empty_set_count} Paraphrases with empty Key-Token set"
 
 
 # ---------------------------------------------------------------------------

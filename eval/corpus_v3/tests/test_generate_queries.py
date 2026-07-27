@@ -332,9 +332,7 @@ def test_run_generation_windows_partition_one_id_space():
 # ---------------------------------------------------------------------------
 # Cost guard wiring (end-to-end main(), fake LLM, real cost math)
 # ---------------------------------------------------------------------------
-def test_main_halts_and_writes_nothing_when_projected_spend_exceeds_cap(
-    monkeypatch, tmp_path
-):
+def test_main_halts_and_writes_nothing_when_projected_spend_exceeds_cap(monkeypatch, tmp_path):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.setattr(gq, "load_dotenv", lambda *a, **k: None)
@@ -395,9 +393,7 @@ def _human_slice_file(tmp_path) -> object:
     return path
 
 
-def test_main_writes_artifact_with_deviations_when_qc_rejects_some(
-    monkeypatch, tmp_path
-):
+def test_main_writes_artifact_with_deviations_when_qc_rejects_some(monkeypatch, tmp_path):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.setattr(gq, "load_dotenv", lambda *a, **k: None)
@@ -435,9 +431,7 @@ def test_main_writes_artifact_with_deviations_when_qc_rejects_some(
     assert data["metadata"]["generator_family_b"] == "human"
 
 
-def test_main_splits_cells_between_model_families_when_anthropic_key_present(
-    monkeypatch, tmp_path
-):
+def test_main_splits_cells_between_model_families_when_anthropic_key_present(monkeypatch, tmp_path):
     """ANTHROPIC_API_KEY present -> Family B is the second model family:
     every cell's enumeration is split A=[0, ceil(n/2)) / B=[ceil(n/2), n),
     ids partition with no duplicates, and each query records its own
@@ -543,9 +537,7 @@ def test_backfill_fills_qc_shorted_slots_in_family(monkeypatch, tmp_path):
 
     def recording(target, *, language, variant_index):
         variant_indices.append(variant_index)
-        return real_build_prompt(
-            target, language=language, variant_index=variant_index
-        )
+        return real_build_prompt(target, language=language, variant_index=variant_index)
 
     monkeypatch.setattr(gq, "build_prompt", recording)
 
@@ -581,8 +573,7 @@ def test_backfill_caps_attempts_and_keeps_deviation_honest(monkeypatch, tmp_path
     assert still_rejecting.calls == 4 * gq.BACKFILL_MAX_ATTEMPTS
     en_cells = [c for c in after["metadata"]["counts"] if c["language"] == "en"]
     assert all(
-        c["actual"] == 1 and c["qc_rejected"] == 1 + gq.BACKFILL_MAX_ATTEMPTS
-        for c in en_cells
+        c["actual"] == 1 and c["qc_rejected"] == 1 + gq.BACKFILL_MAX_ATTEMPTS for c in en_cells
     )
 
 
