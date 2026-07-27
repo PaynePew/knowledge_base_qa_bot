@@ -244,11 +244,11 @@ answers **at a fixed token budget**, the same token-efficiency axis GraphRAG mea
 
 ### (a) The industry's claimed value axes — governance vs retrieval-quality
 
-1. **Contradiction control / auditability** — the wiki's own home axis, and the one
-   axis corpus v3 actually measured for this project: `wiki` 0.032 vs `rag` 0.002,
-   `hybrid` 0.032 vs `rag` 0.002 contradiction-leak rate, both McNemar p < 0.0001 —
-   the curated layer lost its own home axis (Karpathy's lint operation; claude-obsidian
-   "stays healthy"; VERDICT.md).
+1. **Contradiction control** — the wiki's own home axis, and the one axis corpus v3
+   actually measured for this project: `wiki` 0.032 vs `rag` 0.002, `hybrid` 0.032 vs
+   `rag` 0.002 contradiction-leak rate, both McNemar p < 0.0001 — the curated layer
+   lost its own home axis (Karpathy's lint operation; claude-obsidian "stays healthy";
+   VERDICT.md). Auditability is a separate, unmeasured property — see item 2 below.
 2. **Compounding accumulation** and **human auditability** — the governance properties
    this file is now scoped to motivate (Karpathy gist; claude-obsidian README;
    Anthropic memory docs; MemGPT). No head-to-head benchmark found anywhere, for this
@@ -264,10 +264,10 @@ answers **at a fixed token budget**, the same token-efficiency axis GraphRAG mea
 
 | Axis | Status for this project | Evidence |
 |---|---|---|
-| Contradiction control / auditability | **MEASURED — negative** | corpus v3: `wiki` 0.032 vs `rag` 0.002, `hybrid` 0.032 vs `rag` 0.002 contradiction-leak, both p < 0.0001 (VERDICT.md) |
+| Contradiction control | **MEASURED — negative** | corpus v3: `wiki` 0.032 vs `rag` 0.002, `hybrid` 0.032 vs `rag` 0.002 contradiction-leak rate, both p < 0.0001 (VERDICT.md) |
 | Global/sensemaking QA | argued (analogue only) | GraphRAG 72–83% comprehensiveness win (2404.16130 Fig.2/T6) — a different system, not this wiki |
 | Multi-hop QA | argued (analogue only) | RAPTOR +20% abs. QuALITY (2401.18059); HippoRAG2 70.27 vs 67.02 (2502.11371 §4.1) — not this wiki |
-| Token efficiency at query time | argued (analogue only); a different quantity measured locally | GraphRAG 9×–43× fewer tokens (T2), Dense X +4.9–7.8 EM (2312.06648) are analogue papers; this project's own draft-input-tokens-per-stratum is measured locally (VERDICT.md cost chapter) but is a cost figure, not a quality-win figure |
+| Token efficiency at query time | argued (analogue only); a different quantity measured locally | GraphRAG 9×–43× fewer tokens (T2), Dense X +4.9–7.8 EM (2312.06648) are analogue papers; this project's own draft-input-tokens-per-stratum is measured locally (VERDICT.md decision matrix, `Query-time token efficiency` row; raw per-call usage in `eval/corpus_v3/live_run_ledger.json`) but is a cost figure, not a quality-win figure |
 | Better retrieval units via synthesis | argued (analogue only) | Dense X Recall@5 +12.0/+9.3; RAPTOR SOTA on NarrativeQA/QASPER — not this wiki |
 | Article-level organization/coverage | argued (analogue only, editor-flagged defects) | STORM +25%/+10% (2402.14207) |
 | Compounding cross-session memory | argued only | Karpathy gist, claude-obsidian README, Anthropic memory docs — zero head-to-head numbers found anywhere |
