@@ -6,15 +6,16 @@ the established pattern in ``test_ui_bilingual_starters.py`` /
 ``test_ui_citation_links.py``, these tests inspect the production UI file's text
 to assert the structural invariants of issue #314's reader-toggle AC:
 
-- A third **Hybrid** toggle button exists, mirroring the existing Wiki / RAG
-  buttons (same ``el()`` factory, same ``setStack`` dispatch, same masthead
-  toggle group).
+- A **Hybrid** toggle button exists, mirroring the RAG button (same ``el()``
+  factory, same ``setStack`` dispatch, same masthead toggle group). Wiki's
+  standalone toggle was retired by issue #681 (ADR-0045 kill clause) — see
+  ``test_ui_wiki_retired_standalone_arm.py`` for that removal's own coverage.
 - Selecting Hybrid issues a fresh ``?stack=hybrid`` request AND preserves
   ``?session=`` for multi-turn (ADR-0013 / §12.9). The request builder is
   stack-agnostic (it already interpolates ``stack`` + ``sessionId``), so this is
   inherited — the tests pin that it stays intact.
-- The empty state is stack-aware for all three stacks (a per-stack label lookup,
-  not a binary wiki/RAG branch that would mislabel Hybrid).
+- The empty state is stack-aware for both remaining stacks (a per-stack label
+  lookup, not a hardcoded single-stack string that would mislabel Hybrid).
 - Still textContent-only (§12.4 — no innerHTML).
 
 No DOM, no fetch, no browser, no OPENAI_API_KEY — fully hermetic (§6.3 / §12.7).
@@ -32,7 +33,7 @@ def _ui_text() -> str:
 
 
 # ---------------------------------------------------------------------------
-# A third Hybrid toggle button, mirroring Wiki / RAG
+# A Hybrid toggle button, mirroring RAG
 # ---------------------------------------------------------------------------
 
 
@@ -44,19 +45,24 @@ def test_ui_has_hybrid_toggle_button():
 
 
 def test_ui_hybrid_button_mirrors_existing_segments():
-    """The Hybrid button reuses the same segment variable pattern as Wiki / RAG."""
+    """The Hybrid button reuses the same segment variable pattern as RAG."""
     text = _ui_text()
-    # The two existing segment vars are segWiki / segRag; the third must follow suit.
+    # The existing segment var is segRag; Hybrid follows the same pattern.
     assert "segHybrid" in text, "a segHybrid segment button variable must exist (parity)"
 
 
-def test_ui_masthead_toggle_includes_all_three_buttons():
-    """All three segment buttons are placed in the masthead toggle group."""
+def test_ui_masthead_toggle_includes_both_remaining_buttons():
+    """Both surviving segment buttons are placed in the masthead toggle group.
+
+    Issue #681 (ADR-0045 kill clause): the toggle group is now [segRag,
+    segHybrid] only — segWiki was retired as a standalone option (see
+    test_ui_wiki_retired_standalone_arm.py for that removal's coverage).
+    """
     text = _ui_text()
-    # The toggle group element is `.mast-toggle`; assert the three segments are
-    # appended to it together (one mast-toggle el() call carrying all three).
+    # The toggle group element is `.mast-toggle`; assert the two segments are
+    # appended to it together (one mast-toggle el() call carrying both).
     assert "mast-toggle" in text
-    for seg in ("segWiki", "segRag", "segHybrid"):
+    for seg in ("segRag", "segHybrid"):
         assert seg in text, f"masthead toggle must include {seg}"
 
 

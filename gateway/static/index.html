@@ -954,18 +954,18 @@ var TEACHING = {
 
 /* ── STACK METADATA ───────────────────────────────────────────────────────────
    Per-stack label + empty-state copy, keyed by the active stack so the greeting
-   is correct for ALL THREE stacks (a binary wiki/RAG branch would mislabel
-   Hybrid). Static UI copy only (§12.5 — no client business logic). Hybrid fuses
-   keyword + semantic retrieval over the SAME curated wiki layer (ADR-0018), so
-   its copy reflects the union, not a new corpus. */
+   is correct for BOTH selectable stacks (a hardcoded single-stack string would
+   mislabel Hybrid). Static UI copy only (§12.5 — no client business logic).
+   Hybrid fuses keyword + semantic retrieval over the SAME curated wiki layer
+   (ADR-0018), so its copy reflects the union, not a new corpus.
+
+   Issue #681 (ADR-0045 kill clause): the wiki entry is retired along with the
+   standalone Wiki toggle — corpus v3 found no significant stack=wiki
+   advantage over stack=rag on any content axis, so wiki is no longer offered
+   as a selectable retrieval arm here. Retrieval-quality copy for BOTH
+   remaining stacks (rag, hybrid) is purely descriptive, per the ADR-0045
+   demote clause: no narrative claim of superiority for hybrid. */
 var STACK_META = {
-  wiki: {
-    label: "Wiki",
-    sub: {
-      en: "Answers are synthesised from the curated wiki layer and checked against every cited record — if the sources don’t support a claim, the bot says so instead of guessing.",
-      zh: "答案由策展過的 wiki 層彙整而成,並逐一比對每筆引用來源——來源若不支持某項說法,機器人會直說,而不是硬猜。",
-    },
-  },
   rag: {
     label: "RAG",
     sub: {
@@ -1060,7 +1060,7 @@ var CHROME = {
     emptyEyebrow: "Grounded Q&A · ", emptyTitle: "What would you like to know?",
     presetLabel: "Try asking",
     loopTitle: "The curation loop",
-    loopBody: "Grounded answers cite their sources. When one can't be — a gap, a contradiction, a stale page — the console catches it and walks you through the fix.",
+    loopBody: "Grounded answers cite their sources. When one can't be — a gap, a contradiction, a stale page — the console catches it and walks you through the fix. Retrieval quality comes from RAG's dense search; the curated wiki layer is this demo's governance surface — provenance, curation, lifecycle.",
     loopAxes: "Coverage · Freshness · Coherence · Lifecycle",
     errTitle: "Service interrupted", errDefault: "An unexpected error occurred.",
     tryAgain: "Try again", langToggle: "中文", langToggleAria: "切換為中文",
@@ -1086,7 +1086,7 @@ var CHROME = {
     emptyEyebrow: "有據問答 · ", emptyTitle: "想知道些什麼?",
     presetLabel: "範例提問",
     loopTitle: "策展迴圈",
-    loopBody: "答案都以引用來源為依據;答不出來時(缺口、矛盾、過期),console 會抓出來並帶你修復。",
+    loopBody: "答案都以引用來源為依據;答不出來時(缺口、矛盾、過期),console 會抓出來並帶你修復。檢索品質來自 RAG 的語意密集搜尋;策展過的 wiki 層則是這個示範的治理層——出處、策展、生命週期。",
     loopAxes: "涵蓋度 · 新鮮度 · 一致性 · 生命週期",
     errTitle: "服務中斷", errDefault: "發生未預期的錯誤。",
     tryAgain: "再試一次", langToggle: "EN", langToggleAria: "Switch to English",
@@ -1100,7 +1100,12 @@ var CHROME = {
 function t(key) { return (CHROME[uiLang] || CHROME.en)[key]; }
 
 /* ── STATE ───────────────────────────────────────────────────────────────── */
-var stack = "wiki";
+/* Issue #681 (ADR-0045 kill clause): default active stack is rag, mirroring
+   the server-side POST /chat/stream default flip (gateway/app/routes.py).
+   Wiki is no longer offered as a standalone toggle option (see build() —
+   the mast-toggle group is [segRag, segHybrid] only); the wiki layer
+   remains as the hybrid embedding substrate and governance/Console surface. */
+var stack = "rag";
 var answerEl = null, answerBody = null, verifyEl = null;
 /* Accumulates the current answer's plain text across onToken calls so onDone
    can linkify the complete text in one pass (issue #410 — a [[wikilink]] can
@@ -1114,9 +1119,9 @@ var answerRawText = "";
 var currentSources = [];
 var currentQuery = "";
 /* Phase 11 Slice 4: session id captured from done.session; echoed on next request.
-   Never cleared — stack toggle preserves history across Wiki↔RAG switches. */
+   Never cleared — stack toggle preserves history across RAG↔Hybrid switches. */
 var sessionId = null;
-var stream, segWiki, segRag, segHybrid, input;
+var stream, segRag, segHybrid, input;
 /* In-flight request tracking. Each request gets a monotonically increasing
    sequence; only the latest renders. A new request aborts the previous fetch
    (stops the server stream too) so two overlapping streams can never interleave
@@ -1136,7 +1141,6 @@ var lastQuery = "";
 function build() {
   stream = el("div", { class: "stream" });
   input = el("input", { type: "text", placeholder: t("placeholder") });
-  segWiki   = el("button", { type: "button", text: "Wiki",   onclick: function() { setStack("wiki"); } });
   segRag    = el("button", { type: "button", text: "RAG",    onclick: function() { setStack("rag"); } });
   segHybrid = el("button", { type: "button", text: "Hybrid", onclick: function() { setStack("hybrid"); } });
   sendBtn = el("button", { class: "send", type: "button", text: t("ask"), onclick: submit });
@@ -1166,7 +1170,7 @@ function build() {
       el("span", { class: "amp" }, "&"),
       "RAG",
     ),
-    el("div", { class: "mast-toggle", role: "tablist" }, segWiki, segRag, segHybrid),
+    el("div", { class: "mast-toggle", role: "tablist" }, segRag, segHybrid),
     langBtn,
     consoleBtn,
   );
@@ -1189,7 +1193,6 @@ function build() {
 }
 
 function syncSeg() {
-  segWiki.setAttribute("aria-pressed", String(stack === "wiki"));
   segRag.setAttribute("aria-pressed", String(stack === "rag"));
   segHybrid.setAttribute("aria-pressed", String(stack === "hybrid"));
 }
@@ -1308,7 +1311,7 @@ function setStack(s) {
   /* Switching stacks is a fresh request (§12.3), but the transcript is
      append-only: re-ask the current question on the new stack as a NEW turn
      below the existing ones (so the prior Query/answer stay visible — the whole
-     point is comparing Wiki vs RAG), then scroll to it. With no conversation
+     point is comparing RAG vs Hybrid), then scroll to it. With no conversation
      yet, just refresh the empty state so its copy reflects the active stack. */
   if (currentQuery) {
     onQuery(currentQuery);
@@ -1331,7 +1334,7 @@ function ask(query) {
 
 function renderEmptyState() {
   resetStreamState();
-  var meta = STACK_META[stack] || STACK_META.wiki;
+  var meta = STACK_META[stack] || STACK_META.rag;
 
   var eyebrow = el("div", { class: "empty-eyebrow",
     text: t("emptyEyebrow") + meta.label });
@@ -1408,8 +1411,9 @@ function clearIndicator() {
 function onQuery(text) {
   /* Begin a new turn in the append-only transcript: tidy any turn abandoned
      mid-stream, drop the empty state on the first question, then append the
-     Query and glide to it. The stack tag (· WIKI / · RAG) makes the Wiki-vs-RAG
-     comparison legible when the same question is re-asked via the toggle. */
+     Query and glide to it. The stack tag (· RAG / · HYBRID) makes the
+     RAG-vs-Hybrid comparison legible when the same question is re-asked via
+     the toggle. */
   clearEmptyState();
   clearIndicator();
   removeCursors();
@@ -2133,7 +2137,7 @@ function startRequest(query) {
   var parser = createSSEParser();
   /* Phase 11 Slice 4: echo session id on turn 2+ so the gateway continues the
      conversation.  Stack toggle is a fresh request but keeps the same sessionId
-     (history preserved across Wiki↔RAG — PRD #158 decision E). */
+     (history preserved across stack toggles — PRD #158 decision E). */
   var url = "/chat/stream?stack=" + encodeURIComponent(stack);
   if (sessionId) url += "&session=" + encodeURIComponent(sessionId);
 
