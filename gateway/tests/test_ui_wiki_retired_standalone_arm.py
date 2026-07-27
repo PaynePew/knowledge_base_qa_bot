@@ -181,9 +181,11 @@ def test_ui_stack_meta_wiki_entry_is_governance_framed():
     assert "wiki: {" in text, "STACK_META must carry a governance-framed wiki entry (issue #687)"
     # The fallback for an unrecognised/absent stack still resolves to rag.
     assert "STACK_META[stack] || STACK_META.rag" in text
-    # The label reads as a governance concept, not a retrieval-quality brand
-    # name (contrast STACK_META.rag.label: "RAG", STACK_META.hybrid.label: "Hybrid").
-    assert 'label: "Governance"' in text
+    # The label leads with "Wiki" to reconnect the entry to the ask.Wiki&RAG
+    # masthead (issue #696) but keeps "governance" so it still reads as a
+    # workflow concept, never a bare retrieval-quality brand name (contrast
+    # STACK_META.rag.label: "RAG", STACK_META.hybrid.label: "Hybrid").
+    assert 'label: "Wiki governance"' in text
 
 
 def test_ui_governance_copy_frames_curation_workflow_bilingual():
