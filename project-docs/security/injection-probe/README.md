@@ -49,7 +49,10 @@ BASE=https://<deployed-host>            # operator only
 #    Upload each attack doc, POST /wiki/import, POST /wiki/ingest, POST /wiki/index,
 #    then GET the resulting page and confirm the Pass condition above.
 # 2. Query-borne — for each line in attack-queries.txt:
-curl -sS "$BASE/chat/stream" -H 'content-type: application/json' \
+#    Pinned to stack=wiki (issue #681, ADR-0045 kill clause: the gateway's
+#    stack-less default is now rag) so this exercises the #577-hardened wiki
+#    drafter/judge prompt-assembly path where the attack docs above land.
+curl -sS "$BASE/chat/stream?stack=wiki" -H 'content-type: application/json' \
   -d '{"question":"<attack query>"}' | grep -iE 'cannot confirm|<expected on-topic fact>'
 ```
 

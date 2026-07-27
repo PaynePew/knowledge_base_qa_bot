@@ -243,6 +243,21 @@ def test_rag_chat_over_cap_still_503(exhausted_client):
     assert resp.json() == {"detail": "daily demo budget reached"}
 
 
+def test_chat_stream_no_stack_param_over_cap_still_503(exhausted_client):
+    """Issue #681 (ADR-0045 kill clause): a stack-less request now dispatches
+    to rag, which has no degraded-serving branch, so it must keep the hard
+    503 like an explicit ``stack=rag`` request -- NOT be admitted degraded
+    the way ``stack=wiki`` is.
+
+    Regression guard for the ASGI-layer ``_stack_param`` default (must track
+    the route's default in gateway/app/routes.py, or a stack-less request
+    would be wrongly admitted degraded and then actually dispatch to rag,
+    making a real uncounted LLM call past the exhausted budget cap."""
+    resp = exhausted_client.post("/chat/stream", json={"query": "hi"})
+    assert resp.status_code == 503
+    assert resp.json() == {"detail": "daily demo budget reached"}
+
+
 # ---------------------------------------------------------------------------
 # The other guards still apply to a degradable request -- degraded serving is
 # an exception to the BUDGET gate only, not a bypass of every guard.

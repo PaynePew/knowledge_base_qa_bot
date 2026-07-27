@@ -91,7 +91,11 @@ def test_sse_llmerror_retryable_true_emits_error_event(indexed_wiki_corpus, monk
     from gateway.app.main import app as _gateway_app
 
     client = TestClient(_gateway_app)
-    resp = client.post("/chat/stream", json={"query": "How long do refunds take?"})
+    # Issue #681 (ADR-0045 kill clause): stack default flipped wiki -> rag, so
+    # this must stay pinned to stack=wiki explicitly -- these tests exercise
+    # the wiki stack's LLM error path via monkeypatching
+    # markdown_kb.app.retrieval._call_llm_with_error_handling above.
+    resp = client.post("/chat/stream?stack=wiki", json={"query": "How long do refunds take?"})
 
     assert resp.status_code == 200, "SSE always returns 200 (HTTP already committed)"
     events = _parse_sse_events(resp.text)
@@ -121,7 +125,11 @@ def test_sse_llmerror_retryable_false_emits_error_event(indexed_wiki_corpus, mon
     from gateway.app.main import app as _gateway_app
 
     client = TestClient(_gateway_app)
-    resp = client.post("/chat/stream", json={"query": "How long do refunds take?"})
+    # Issue #681 (ADR-0045 kill clause): stack default flipped wiki -> rag, so
+    # this must stay pinned to stack=wiki explicitly -- these tests exercise
+    # the wiki stack's LLM error path via monkeypatching
+    # markdown_kb.app.retrieval._call_llm_with_error_handling above.
+    resp = client.post("/chat/stream?stack=wiki", json={"query": "How long do refunds take?"})
 
     assert resp.status_code == 200
     events = _parse_sse_events(resp.text)
@@ -148,7 +156,11 @@ def test_sse_llmerror_detail_carried_through(indexed_wiki_corpus, monkeypatch):
     from gateway.app.main import app as _gateway_app
 
     client = TestClient(_gateway_app)
-    resp = client.post("/chat/stream", json={"query": "How long do refunds take?"})
+    # Issue #681 (ADR-0045 kill clause): stack default flipped wiki -> rag, so
+    # this must stay pinned to stack=wiki explicitly -- these tests exercise
+    # the wiki stack's LLM error path via monkeypatching
+    # markdown_kb.app.retrieval._call_llm_with_error_handling above.
+    resp = client.post("/chat/stream?stack=wiki", json={"query": "How long do refunds take?"})
 
     events = _parse_sse_events(resp.text)
     error_events = [e for e in events if e["type"] == "error"]

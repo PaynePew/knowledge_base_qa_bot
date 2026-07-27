@@ -304,3 +304,31 @@ def test_chat_stream_unknown_stack_still_400(rag_gateway_client):
         json={"query": "test"},
     )
     assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Issue #681 (ADR-0045 kill clause): stack-less request defaults to RAG
+# ---------------------------------------------------------------------------
+
+
+def test_chat_stream_no_stack_param_defaults_to_rag(rag_gateway_client):
+    """A stack-less POST /chat/stream now dispatches to the RAG stack.
+
+    ADR-0045 kill clause: corpus v3 found no significant stack=wiki advantage
+    over stack=rag on any content axis, so stack=wiki is retired as the
+    *default* standalone retrieval option (it remains dispatchable when
+    explicitly requested — see test_chat_stream.py's stack=wiki coverage).
+    """
+    resp = rag_gateway_client.post(
+        "/chat/stream",
+        json={"query": "What is the refund policy?"},
+    )
+    assert resp.status_code == 200
+    events = _parse_sse_response(resp.text)
+    done = events[-1]
+    assert done["type"] == "done"
+    assert done["data"]["stack"] == "rag", (
+        f"a stack-less request must dispatch to rag by default, got: {done['data']}"
+    )
+    # RAG never files — the same invariant a stack=rag request carries.
+    assert done["data"].get("filed") is None
