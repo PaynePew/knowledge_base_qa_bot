@@ -143,24 +143,35 @@ class AxisSample:
     outcomes_b: Sequence[int]
 
     def to_comparison(self, *, stratum: str = "macro") -> PairwiseComparison:
-        """Issue #683 item 3: an empty stratum (e.g. a small/custom query
-        subset with no ``unanswerable`` queries at all -- nothing for
-        ``correct_refusal_rate`` to score) reports "no evidence" -- rate 0.0,
-        ``p_value=1.0`` -- rather than raising. ``p_value=1.0`` mirrors
-        ``statistics.mcnemar_exact_p``'s own convention for zero discordant
-        pairs: no data means no evidence of a difference, never a crash."""
+        """Issue #683 finding 2 (adversarial-verified MEDIUM): an empty
+        stratum (e.g. a small/custom query subset with no ``unanswerable``
+        queries at all -- nothing for ``correct_refusal_rate`` to score)
+        raises ``ValueError`` naming the axis and stratum, rather than
+        fabricating a PairwiseComparison for a test that never ran. A prior
+        version of this fix reported "no evidence" (rate 0.0 vs 0.0,
+        p_value=1.0, "mcnemar") for n=0 -- but because the two fabricated
+        rates are equal, ``PairwiseComparison.significant_advantage()`` reads
+        False for that axis, so a ZERO-observation axis would silently count
+        toward ADR-0045's pre-registered kill/demote clauses (which iterate
+        every ``REQUIRED_AXES`` comparison and read `significant_advantage`
+        off each one) and the rendered report would carry a fake "mcnemar
+        p=1.0000, n=0" row. A pre-registered verdict clause must never be
+        satisfiable (or blockable) by data that does not exist, so this
+        raises instead -- the caller must supply a query set that covers
+        every required stratum, or explicitly exclude the axis."""
         n = len(self.outcomes_a)
         if n == 0:
-            return PairwiseComparison(
-                axis=self.axis,
-                stratum=stratum,
-                arm_a=self.arm_a,
-                arm_b=self.arm_b,
-                rate_a=0.0,
-                rate_b=0.0,
-                n=0,
-                p_value=1.0,
-                test_name="mcnemar",
+            raise ValueError(
+                f"AxisSample for axis={self.axis!r} stratum={stratum!r} "
+                f"({self.arm_a!r} vs {self.arm_b!r}) has zero paired "
+                "observations -- the query set behind this run has no "
+                f"queries in the {stratum!r} stratum this axis needs to "
+                "score. Either supply a --queries file whose stratified "
+                "query set covers every required stratum, or explicitly "
+                "exclude this axis from the comparison set before calling "
+                "to_comparison() -- a fabricated p=1.0 for an axis that "
+                "never ran could silently flip a pre-registered ADR-0045 "
+                "kill/demote clause."
             )
         result = mcnemar_test(list(self.outcomes_a), list(self.outcomes_b))
         return PairwiseComparison(

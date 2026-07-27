@@ -37,12 +37,18 @@ def test_axis_sample_to_comparison_computes_rates_and_a_real_p_value():
     assert comparison.test_name == "mcnemar"
 
 
-def test_axis_sample_to_comparison_guards_an_empty_stratum():
-    """Issue #683 item 3: a small/custom query subset can leave a whole
-    stratum empty (e.g. no unanswerable queries -- correct_refusal_rate has
-    nothing to score). ``to_comparison`` must report "no evidence" (n=0,
-    rate 0.0, p=1.0 -- mcnemar_exact_p's own n_d==0 convention) instead of
-    raising."""
+def test_axis_sample_to_comparison_raises_on_an_empty_stratum():
+    """Issue #683 finding 2 (adversarial-verified MEDIUM): a small/custom
+    query subset can leave a whole stratum empty (e.g. no unanswerable
+    queries -- correct_refusal_rate has nothing to score). The old fix
+    fabricated a PairwiseComparison (rate 0.0 vs 0.0, p=1.0, "mcnemar") for a
+    test that never ran; because the rates are equal, significant_advantage()
+    reads False, so a ZERO-observation axis silently counted toward
+    ADR-0045's pre-registered kill clause and the report rendered a fake
+    "mcnemar p=1.0000, n=0" row. A pre-registered verdict clause must never
+    be satisfied (or blocked) by data that doesn't exist -- fail fast with an
+    actionable, axis-named error instead, naming the stratum and pointing at
+    the fix (a fuller --queries set, or excluding the axis explicitly)."""
     sample = run_verdict.AxisSample(
         axis="correct_refusal_rate",
         arm_a="wiki",
@@ -50,12 +56,21 @@ def test_axis_sample_to_comparison_guards_an_empty_stratum():
         outcomes_a=[],
         outcomes_b=[],
     )
-    comparison = sample.to_comparison()
-    assert comparison.n == 0
-    assert comparison.rate_a == 0.0
-    assert comparison.rate_b == 0.0
-    assert comparison.p_value == 1.0
-    assert comparison.significant() is False
+    with pytest.raises(ValueError, match="correct_refusal_rate"):
+        sample.to_comparison(stratum="unanswerable")
+
+
+def test_axis_sample_to_comparison_empty_stratum_error_names_the_stratum_and_queries_fix():
+    sample = run_verdict.AxisSample(
+        axis="contradiction_leak_rate",
+        arm_a="wiki",
+        arm_b="rag",
+        outcomes_a=[],
+        outcomes_b=[],
+    )
+    with pytest.raises(ValueError, match="unanswerable") as exc_info:
+        sample.to_comparison(stratum="unanswerable")
+    assert "--queries" in str(exc_info.value)
 
 
 # ---------------------------------------------------------------------------
