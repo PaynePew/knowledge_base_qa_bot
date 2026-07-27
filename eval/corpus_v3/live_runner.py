@@ -543,14 +543,30 @@ def run_live_verdict(
 
     answer_fn = build_answer_fn({q.query_id: q.text for q in queries}, ledger=ledger)
 
-    result = run_live_answering(
-        queries,
-        ledger=ledger,
-        checkpoint_path=checkpoint_path,
-        answer_fn=answer_fn,
-        already_done=done,
-        cap_usd=cap_usd,
-    )
+    try:
+        result = run_live_answering(
+            queries,
+            ledger=ledger,
+            checkpoint_path=checkpoint_path,
+            answer_fn=answer_fn,
+            already_done=done,
+            cap_usd=cap_usd,
+        )
+    except Exception as exc:
+        # Issue #683 item 2: _answer_with_retry (module docstring) re-raises
+        # the original error once its bounded backoff schedule is exhausted
+        # -- an outage that outlasts every retry, or a non-transient error
+        # that never qualified for one. Every row answered before this point
+        # is already durably checkpointed (checkpoint.py's append-per-answer
+        # contract), so this is a clean, resumable halt, not data loss --
+        # surface it as one, instead of an unhandled traceback.
+        print(
+            f"live run: answering failed -- {exc} -- halting; the "
+            "checkpoint is intact, mark the issue ready-for-human rather "
+            "than resuming blindly",
+            file=sys.stderr,
+        )
+        return 1
     if result.aborted:
         print(f"live run: {result.abort_reason}", file=sys.stderr)
         return 1

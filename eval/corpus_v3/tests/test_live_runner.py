@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import anthropic
 import httpx
+import openai
 import hybrid_kb.app.query as hybrid_query
 import markdown_kb.app.retrieval as mk_retrieval
 import pytest
@@ -511,6 +512,48 @@ def test_run_live_verdict_refuses_without_an_api_key(monkeypatch, tmp_path):
 
     assert exit_code == 1
     assert not (tmp_path / "VERDICT.md").exists()
+
+
+class _AlwaysTimingOutLLM:
+    """Every ``.invoke()`` call times out -- forces ``_answer_with_retry`` to
+    exhaust its full backoff schedule (issue #683 item 2)."""
+
+    def invoke(self, messages):
+        raise openai.APITimeoutError(
+            request=httpx.Request("POST", "https://api.openai.com/v1/chat/completions")
+        )
+
+
+def test_run_live_verdict_exits_cleanly_when_retries_are_exhausted(
+    monkeypatch, tmp_path, fake_vector_index, capsys
+):
+    """Issue #683 item 2: an outage that outlasts the bounded retry schedule
+    must surface as a clean ``exit(1)`` with an actionable stderr message --
+    not an unhandled traceback -- so an AFK live run fails loud without
+    dumping a Python stack trace instead of guidance."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
+    monkeypatch.setattr(live_runner.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(
+        grounding_module,
+        "get_verifier_llm",
+        lambda: _FakeVerifierLLM(_passing_result("store-hours")),
+    )
+    for module in (mk_retrieval, vr_retrieval, hybrid_query):
+        monkeypatch.setattr(module, "get_llm", lambda: _AlwaysTimingOutLLM())
+    report_out = tmp_path / "VERDICT.md"
+
+    exit_code = live_runner.run_live_verdict(
+        queries_path=_small_queries_path(tmp_path),
+        checkpoint_path=tmp_path / "checkpoint.jsonl",
+        ledger_out_path=tmp_path / "ledger.json",
+        report_out_path=report_out,
+    )
+
+    assert exit_code == 1
+    assert not report_out.exists()
+    err = capsys.readouterr().err
+    assert "retries" in err or "retry" in err
+    assert "ready-for-human" in err  # mirrors the mid-run spend-abort message
 
 
 def test_run_live_verdict_writes_report_ledger_and_checkpoint(
