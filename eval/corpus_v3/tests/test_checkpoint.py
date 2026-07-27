@@ -208,6 +208,56 @@ def test_append_checkpoint_row_truncates_when_file_has_no_newline_at_all(tmp_pat
     assert loaded == [row1]
 
 
+def test_append_checkpoint_row_does_not_discard_a_row_torn_only_on_the_trailing_lf(
+    tmp_path,
+):
+    """Windows regression (verdict follow-up on issue #683 finding 1):
+    append_checkpoint_row opens in text mode, so on Windows every ``"\\n"``
+    it writes becomes ``"\\r\\n"`` on disk. A crash torn exactly between the
+    ``\\r`` and the ``\\n`` of that trailing sequence leaves the file ending
+    in a lone ``b"\\r"`` -- the row's own JSON content is fully written, only
+    the newline SEQUENCE itself is torn. load_checkpoint reads with
+    universal newlines, so it already treats that lone ``\\r`` as a line
+    terminator and successfully loads the row, durably counting its
+    ``(query_id, arm)`` pair as done. ``_truncate_torn_tail`` must agree: if
+    it instead discards this row (because its raw bytes don't end in
+    ``b"\\n"``), a durably-committed, already-"done" paid answer is silently
+    dropped out from under the next append -- and it is never re-answered,
+    since the caller's in-memory ``done`` set still has the pair marked
+    answered from the earlier load."""
+    path = tmp_path / "checkpoint.jsonl"
+    row1 = checkpoint.CheckpointRow(query_id="q1", arm="wiki", answer_text="a1")
+    with path.open("wb") as fh:
+        fh.write(json.dumps(row1.to_json_dict()).encode("utf-8") + b"\r")
+
+    # load_checkpoint (universal newlines) already treats this as complete.
+    assert checkpoint.load_checkpoint(path) == [row1]
+
+    row2 = checkpoint.CheckpointRow(query_id="q2", arm="wiki", answer_text="a2")
+    checkpoint.append_checkpoint_row(path, row2)
+
+    assert checkpoint.load_checkpoint(path) == [row1, row2]
+
+
+def test_append_checkpoint_row_truncation_search_respects_a_lone_cr_boundary(tmp_path):
+    """The truncation-point search (used when the tail genuinely IS torn)
+    must also recognize a lone ``\\r`` as a valid row boundary, not just
+    ``\\n`` -- otherwise, with no ``\\n`` anywhere in the file, it would
+    wrongly truncate all the way back to empty on a later row's real tear,
+    discarding an earlier row that was already durably complete (terminated
+    only by ``\\r``, the same Windows-torn-CRLF case as above)."""
+    path = tmp_path / "checkpoint.jsonl"
+    row1 = checkpoint.CheckpointRow(query_id="q1", arm="wiki", answer_text="a1")
+    with path.open("wb") as fh:
+        fh.write(json.dumps(row1.to_json_dict()).encode("utf-8") + b"\r")
+        fh.write(b'{"query_id": "q2", "arm": "wiki", "answer_te')  # genuinely torn
+
+    row2 = checkpoint.CheckpointRow(query_id="q2", arm="wiki", answer_text="a2")
+    checkpoint.append_checkpoint_row(path, row2)
+
+    assert checkpoint.load_checkpoint(path) == [row1, row2]
+
+
 def test_ledger_call_dicts_matches_checkpoint_row_ledger_calls_shape(tmp_path):
     """The exact shape ``run_live_answering`` feeds into ``CheckpointRow
     .ledger_calls`` -- round-trips through ``replay_ledger`` unchanged."""
