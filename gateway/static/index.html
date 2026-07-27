@@ -129,7 +129,18 @@
     transition: color .15s ease, border-color .15s ease, background .15s ease;
   }
   .mast-governance:hover, .mast-governance:focus-visible {
-    outline: none; background: rgba(154, 100, 15, .12);
+    background: rgba(154, 100, 15, .12);
+  }
+  /* :focus-visible keeps a real outline (rather than outline: none) because the
+     [aria-pressed="true"] rule below shares its background/color property with
+     the hover/focus rule above at equal specificity -- source order made it win
+     whenever the active pill was tabbed to, so the focus-visible background tint
+     was silently overridden back to the resting pressed look (WCAG 2.4.7: a
+     keyboard user tabbing to the already-active pill saw zero visual change).
+     outline is a property neither the pressed rule nor the hover rule touches,
+     so it survives every state combination. */
+  .mast-governance:focus-visible {
+    outline: 2px solid var(--warn); outline-offset: 2px;
   }
   .mast-governance[aria-pressed="true"] { background: var(--warn); color: var(--surface); }
 
@@ -928,6 +939,20 @@ var REASON_TEXT = {
     en: "The knowledge base index has not been built yet.",
     zh: "知識庫索引尚未建立。",
   },
+  /* Degraded serving (issue #598 Slice B) -- the verifier never ran, so
+     neither reason is a claim_supported/claim_unsupported outcome. Without
+     these keys renderAnswerFoot's REASON_TEXT[reason] lookup falls back to
+     the raw machine identifier (index.html renderAnswerFoot), so an
+     over-cap Governance-mode visitor would see e.g. "degraded_budget_exhausted"
+     printed verbatim as the verdict line. */
+  degraded_budget_exhausted: {
+    en: "Today's demo budget was exhausted — this answer was served from curated sources without calling the LLM.",
+    zh: "今日示範額度已用盡——本次答案改由精選來源提供,未呼叫 LLM。",
+  },
+  degraded_cached_qa: {
+    en: "This answer replays a previously filed, already-verified answer — no new LLM call was made.",
+    zh: "此答案取自先前已歸檔並驗證過的紀錄——未再呼叫 LLM。",
+  },
 };
 
 /* ── TEACHING MAP ──────────────────────────────────────────────────────────────
@@ -1102,7 +1127,7 @@ var CHROME = {
     errTitle: "Service interrupted", errDefault: "An unexpected error occurred.",
     tryAgain: "Try again", langToggle: "中文", langToggleAria: "切換為中文",
     govToggle: "Governance demo",
-    govAria: "Governance-mode demo: KB curation and filing workflow, not a retrieval-quality option",
+    govAria: "Governance demo: KB curation and filing workflow, not a retrieval-quality option",
     noticeLabel: "Notice",
     budgetBody: "Daily demo budget reached — it resets every day, please come back tomorrow.",
     feedbackPrompt: "Was this helpful?", feedbackUpAria: "Mark as helpful", feedbackDownAria: "Mark as not helpful",
@@ -1475,8 +1500,13 @@ function onQuery(text) {
   clearEmptyState();
   clearIndicator();
   removeCursors();
+  /* Tag with the STACK_META label (e.g. "Governance"), not the raw stack id --
+     stack="wiki" rendered as an uppercased "· WIKI" via the .label CSS
+     text-transform, recreating the unlabeled-peer look issue #687 exists to
+     avoid. rag/hybrid render identically either way (their labels are already
+     "RAG"/"Hybrid", case-equivalent to the raw ids under the same transform). */
   var entry = el("div", { class: "entry" },
-    makeLabel(t("queryLabel"), { tag: stack }),
+    makeLabel(t("queryLabel"), { tag: (STACK_META[stack] || STACK_META.rag).label }),
     el("div", { class: "query", text: text }),
   );
   add(entry);

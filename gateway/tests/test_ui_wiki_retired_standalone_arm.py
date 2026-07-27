@@ -188,12 +188,22 @@ def test_ui_stack_meta_wiki_entry_is_governance_framed():
 
 def test_ui_governance_copy_frames_curation_workflow_bilingual():
     """The wiki entry's sub copy names the governance workflow -- curation,
-    filing, the console -- in BOTH languages, not just one."""
+    filing, the console -- in BOTH languages, not just one.
+
+    Asserts the actual STACK_META.wiki.sub copy sentences, not a bare
+    substring like "KB-governance workflow" -- that phrase also appears in
+    this file's own explanatory comments (index.html around lines 117/996),
+    so a bare `in text` check could pass on comment prose alone (e.g. an
+    English-only comment plus a missing/emptied zh copy string) without any
+    actual bilingual copy ever rendering to a visitor.
+    """
     text = _ui_text()
-    assert "KB-governance workflow" in text, (
-        "English governance copy must name the KB-governance workflow"
+    assert "This is a demo of the KB-governance workflow" in text, (
+        "English governance copy must open by naming the KB-governance workflow"
     )
-    assert "治理工作流程" in text, "Chinese governance copy must name the governance workflow"
+    assert "這是 KB 治理工作流程的示範" in text, (
+        "Chinese governance copy must open by naming the governance workflow"
+    )
     assert "draft QA page" in text and "草稿 QA 頁面" in text, (
         "governance copy must describe the filing outcome (draft QA page) bilingually"
     )
@@ -202,10 +212,20 @@ def test_ui_governance_copy_frames_curation_workflow_bilingual():
 def test_ui_governance_copy_references_corpus_v3_verdict():
     """Governance copy points to the corpus v3 verdict as where retrieval
     quality is actually measured (issue #687 AC: 'links or references the
-    corpus v3 verdict for retrieval quality'), in both languages."""
+    corpus v3 verdict for retrieval quality'), in both languages.
+
+    Asserts each language's own sentence fragment individually rather than a
+    raw `text.count("corpus v3 verdict") >= 2` -- that count is also
+    satisfied by one copy string plus this file's own explanatory comment
+    (index.html:997), so it could pass even if one language's copy never
+    actually referenced the verdict.
+    """
     text = _ui_text()
-    assert text.count("corpus v3 verdict") >= 2, (
-        "both the English and Chinese governance copy must reference the corpus v3 verdict"
+    assert "see the corpus v3 verdict" in text, (
+        "English governance copy must reference the corpus v3 verdict"
+    )
+    assert "詳見 corpus v3 verdict" in text, (
+        "Chinese governance copy must reference the corpus v3 verdict"
     )
 
 
@@ -229,4 +249,72 @@ def test_ui_wiki_layer_repositioned_as_governance_demo():
     assert (
         "Retrieval quality comes from RAG" in text
         or "retrieval quality comes from rag" in text.lower()
+    )
+
+
+# ---------------------------------------------------------------------------
+# Turn tag renders the STACK_META label, not the raw stack id (verdict finding)
+# ---------------------------------------------------------------------------
+
+
+def test_ui_query_turn_tag_uses_stack_meta_label_not_raw_id():
+    """The Query turn's tag (rendered "· <tag>" by makeLabel, then uppercased
+    by the .label CSS text-transform) must come from STACK_META's label, not
+    the raw ``stack`` identifier.
+
+    Before this fix, ``onQuery`` passed the raw ``stack`` variable straight
+    through, so stack="wiki" rendered as an uppercased "· WIKI" -- recreating
+    the unlabeled-peer look issue #687 exists specifically to avoid (the
+    governance entry is supposed to read as "· Governance", matching
+    STACK_META.wiki.label). rag/hybrid happen to render identically either
+    way, which is exactly why the raw-id bug went unnoticed for them.
+    """
+    text = _ui_text()
+    assert 'makeLabel(t("queryLabel"), { tag: stack })' not in text, (
+        "the turn tag must not pass the raw stack id straight through to makeLabel"
+    )
+    assert (
+        'makeLabel(t("queryLabel"), { tag: (STACK_META[stack] || STACK_META.rag).label })'
+        in text
+    ), "the turn tag must render the STACK_META label (e.g. Governance), not the raw stack id"
+
+
+# ---------------------------------------------------------------------------
+# REASON_TEXT covers both degraded-serving reasons, bilingually (verdict finding)
+# ---------------------------------------------------------------------------
+
+
+def test_reason_text_has_degraded_serving_keys_bilingual():
+    """REASON_TEXT must carry both degraded-serving reasons (issue #598 Slice
+    B: ``degraded_budget_exhausted`` / ``degraded_cached_qa``), each with both
+    an ``en`` and a ``zh`` field.
+
+    renderAnswerFoot falls back to the raw ``d.grounding.reason`` machine
+    identifier when ``REASON_TEXT[reason]`` is undefined, so without these
+    keys an over-cap Governance-mode visitor sees e.g.
+    "degraded_budget_exhausted" printed verbatim as the verdict line instead
+    of prose.
+    """
+    text = _ui_text()
+    start = text.index("var REASON_TEXT")
+    end = text.index("};", start)
+    reason_block = text[start:end]
+
+    assert "degraded_budget_exhausted:" in reason_block, (
+        "REASON_TEXT must carry a degraded_budget_exhausted entry"
+    )
+    assert "degraded_cached_qa:" in reason_block, (
+        "REASON_TEXT must carry a degraded_cached_qa entry"
+    )
+
+    budget_start = reason_block.index("degraded_budget_exhausted:")
+    budget_entry = reason_block[budget_start : budget_start + 300]
+    assert "en:" in budget_entry and "zh:" in budget_entry, (
+        "degraded_budget_exhausted must define both en and zh copy"
+    )
+
+    cached_start = reason_block.index("degraded_cached_qa:")
+    cached_entry = reason_block[cached_start : cached_start + 300]
+    assert "en:" in cached_entry and "zh:" in cached_entry, (
+        "degraded_cached_qa must define both en and zh copy"
     )
