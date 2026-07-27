@@ -298,8 +298,9 @@ calls. Full report and per-axis tables:
 [`eval/corpus_v3/VERDICT.md`](eval/corpus_v3/VERDICT.md).
 
 **Kill clause: `wiki` killed.** `stack=wiki` needed a significant advantage
-over `stack=rag` (dense retrieval over raw `docs/`) on all three content
-axes to survive. It lost all three — every McNemar p < 0.0001:
+over `stack=rag` (dense retrieval over raw `docs/`) on at least one of the
+three content axes to survive. It won none — it lost all three, every
+McNemar p < 0.0001:
 
 | Axis | wiki | rag | n |
 | --- | --- | --- | --- |
@@ -327,7 +328,11 @@ gate, so its correct-refusal numbers reflect synthesis/grounding refusal
 only, not an apples-to-apples gate comparison against `wiki` and `rag`. The
 governance axis itself — whether the curation workflow saves operator time
 or catches errors a flat corpus would miss — remains unmeasured; corpus v3
-tested content-quality axes only.
+tested content-quality axes only. This verdict also covers the 3,636-query
+English slice alone — the pre-registered zh slice
+([`POWER_ANALYSIS.md`](eval/corpus_v3/POWER_ANALYSIS.md): n=200/stratum,
+power relaxed to 0.70) was never run, so the zh axis of this bilingual
+product remains unmeasured.
 
 ### Earlier eval (v2, superseded on content-quality axes)
 
@@ -740,9 +745,9 @@ knowledge_base_qa_bot/
 $3.97,共 24,863 次 LLM 呼叫。完整報告與逐軸表格見
 [`eval/corpus_v3/VERDICT.md`](eval/corpus_v3/VERDICT.md)。
 
-**殺條款:`wiki` 被殺。** `stack=wiki` 得在三個內容軸上都對 `stack=rag`
-(在原始 `docs/` 上做密集檢索)顯著勝出才能存活。結果三軸全輸,每一個
-McNemar p 都 < 0.0001:
+**殺條款:`wiki` 被殺。** `stack=wiki` 只要在三個內容軸中**至少一軸**對
+`stack=rag`(在原始 `docs/` 上做密集檢索)顯著勝出就能存活;結果一軸都沒
+贏 —— 三軸全輸,每一個 McNemar p 都 < 0.0001:
 
 | 軸 | wiki | rag | n |
 | --- | --- | --- | --- |
@@ -767,7 +772,10 @@ Hybrid 引擎與 Console 都還依賴它 —— 但任何「檢索或 grounding 
 **誠實的限制。** `dense_over_wiki` 跑的時候沒有校正過的 LLM 前置拒答閘門,
 所以它的正確拒答率只反映合成/grounding 層的拒答,不是跟 `wiki`、`rag` 對等
 的閘門比較。治理軸本身 —— 策展工作流是否真的省下操作者的時間、或抓到一份
-未策展語料會漏掉的錯誤 —— 仍未量測;corpus v3 只測了內容品質軸。
+未策展語料會漏掉的錯誤 —— 仍未量測;corpus v3 只測了內容品質軸。這次判決
+也只涵蓋 3,636 筆英文查詢的切片 —— 事先登記好的 zh 切片
+([`POWER_ANALYSIS.md`](eval/corpus_v3/POWER_ANALYSIS.md):每層 n=200、
+power 放寬到 0.70)從未真的跑過,所以這個雙語產品的 zh 軸仍未量測。
 
 ### 較早的評測(v2,在內容品質軸上已被取代)
 

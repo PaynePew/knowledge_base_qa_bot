@@ -51,6 +51,11 @@ beat `rag` on any measured axis.
    fix-source, the Console) saves operator time or catches errors an
    unstructured corpus would miss — is unmeasured. Corpus v3 tested
    content-quality axes only (ADR-0045 Consequences).
+3. This verdict covers the 3,636-query English slice only. The
+   pre-registered zh slice
+   ([`POWER_ANALYSIS.md`](../corpus_v3/POWER_ANALYSIS.md): n=200/stratum,
+   power relaxed to 0.70) was never run, so the zh axis of this bilingual
+   product remains unmeasured.
 
 ## Retrieval arms (v2 numbers; superseded on content-quality axes above)
 
