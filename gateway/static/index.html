@@ -1036,7 +1036,7 @@ var STACK_META = {
     },
   },
   wiki: {
-    label: "Governance",
+    label: "Wiki governance",
     sub: {
       en: "This is a demo of the KB-governance workflow, not a retrieval-quality option: a grounded answer here also files a draft QA page for a curator to promote or demote in the console. Retrieval quality for this corpus is measured on RAG and Hybrid — see the corpus v3 verdict.",
       zh: "這是 KB 治理工作流程的示範,並非檢索品質選項:在此模式下,一則有據答案也會歸檔為草稿 QA 頁面,供策展者在 console 決定提升或退回。此語料的檢索品質數據落在 RAG 與 Hybrid 上——詳見 corpus v3 verdict。",
@@ -1126,8 +1126,8 @@ var CHROME = {
     loopAxes: "Coverage · Freshness · Coherence · Lifecycle",
     errTitle: "Service interrupted", errDefault: "An unexpected error occurred.",
     tryAgain: "Try again", langToggle: "中文", langToggleAria: "切換為中文",
-    govToggle: "Governance demo",
-    govAria: "Governance demo: KB curation and filing workflow, not a retrieval-quality option",
+    govToggle: "Wiki governance demo",
+    govAria: "Wiki governance demo: KB curation and filing workflow, not a retrieval-quality option",
     noticeLabel: "Notice",
     budgetBody: "Daily demo budget reached — it resets every day, please come back tomorrow.",
     feedbackPrompt: "Was this helpful?", feedbackUpAria: "Mark as helpful", feedbackDownAria: "Mark as not helpful",
@@ -1154,8 +1154,8 @@ var CHROME = {
     loopAxes: "涵蓋度 · 新鮮度 · 一致性 · 生命週期",
     errTitle: "服務中斷", errDefault: "發生未預期的錯誤。",
     tryAgain: "再試一次", langToggle: "EN", langToggleAria: "Switch to English",
-    govToggle: "治理示範",
-    govAria: "治理示範模式:知識庫策展與歸檔流程,並非檢索品質選項",
+    govToggle: "Wiki 治理示範",
+    govAria: "Wiki 治理示範模式:知識庫策展與歸檔流程,並非檢索品質選項",
     noticeLabel: "提示",
     budgetBody: "今日示範額度已滿,每日重置 — 歡迎明天再來試。",
     feedbackPrompt: "這個答案有幫助嗎?", feedbackUpAria: "標記為有幫助", feedbackDownAria: "標記為沒有幫助",
@@ -1500,7 +1500,7 @@ function onQuery(text) {
   clearEmptyState();
   clearIndicator();
   removeCursors();
-  /* Tag with the STACK_META label (e.g. "Governance"), not the raw stack id --
+  /* Tag with the STACK_META label (e.g. "Wiki governance"), not the raw stack id --
      stack="wiki" rendered as an uppercased "· WIKI" via the .label CSS
      text-transform, recreating the unlabeled-peer look issue #687 exists to
      avoid. rag/hybrid render identically either way (their labels are already
