@@ -111,11 +111,44 @@ def load_checkpoint(path: Path) -> list[CheckpointRow]:
     return rows
 
 
+def _truncate_torn_tail(path: Path) -> None:
+    """If ``path``'s last byte is not a newline -- a previous
+    :func:`append_checkpoint_row` was interrupted mid-write, before the
+    trailing newline landed -- truncate the file back to the end of its last
+    complete line (issue #683 finding 1, adversarial-verified HIGH).
+
+    Without this, the next append's ``"a"`` mode would concatenate the new
+    row's JSON directly onto the torn partial one, producing a single
+    invalid line that is no longer LAST. :func:`load_checkpoint`'s torn-tail
+    tolerance only forgives a torn line that IS last (its own docstring); a
+    torn line buried mid-file is real corruption and raises forever --
+    turning one already-lost row into every row appended after it also
+    becoming unrecoverable.
+
+    This is a pure trailing-byte check, not a JSON-validity check: it always
+    truncates when the last byte isn't ``b"\\n"``, even if the dangling
+    content happens to parse as complete JSON. ``append_checkpoint_row``
+    always terminates its own writes with ``"\\n"``, so a missing trailing
+    newline can only mean an interrupted write -- there is no legitimate case
+    where a complete row is deliberately left unterminated. The discarded
+    partial row is not newly lost data: :func:`load_checkpoint` already
+    treats a torn final line as unrecoverable and skips it the same way.
+    """
+    data = path.read_bytes()
+    if not data or data.endswith(b"\n"):
+        return
+    truncate_at = data.rfind(b"\n") + 1  # 0 when no newline exists at all
+    with path.open("r+b") as fh:
+        fh.truncate(truncate_at)
+
+
 def append_checkpoint_row(path: Path, row: CheckpointRow) -> None:
     """Append one row as a single JSON line, flushing immediately -- the
     append-only durability property issue #679 AC 2 requires (never
     write-at-end; a crash after this call has already banked the answer)."""
     path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        _truncate_torn_tail(path)
     with path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(row.to_json_dict()) + "\n")
         fh.flush()

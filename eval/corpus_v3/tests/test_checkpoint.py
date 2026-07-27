@@ -144,6 +144,70 @@ def test_load_checkpoint_raises_on_a_torn_line_that_is_not_last(tmp_path):
         checkpoint.load_checkpoint(path)
 
 
+def test_append_checkpoint_row_truncates_a_torn_tail_before_appending(tmp_path):
+    """Issue #683 finding 1 (adversarial-verified HIGH): append_checkpoint_row
+    used to open in "a" mode unconditionally, so a torn tail left by a crash
+    mid-write got the NEXT row's JSON concatenated onto it -- producing one
+    invalid line that is no longer LAST, which load_checkpoint's torn-tail
+    tolerance (only forgives a torn line that IS last) then raises on
+    forever, destroying every row appended after the crash too. The verifier's
+    exact repro: append two good rows, simulate a crash writing a partial
+    third row with no trailing newline, then append three MORE rows -- every
+    one of those appends must start on its own fresh line, and the final
+    load must return all five complete rows without ever raising."""
+    path = tmp_path / "checkpoint.jsonl"
+    row1 = checkpoint.CheckpointRow(query_id="q1", arm="wiki", answer_text="a1")
+    row2 = checkpoint.CheckpointRow(query_id="q1", arm="rag", answer_text="a2")
+    checkpoint.append_checkpoint_row(path, row1)
+    checkpoint.append_checkpoint_row(path, row2)
+    # Simulate a crash mid-write: a partial row with no trailing newline.
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write('{"query_id": "q3", "arm": "wiki", "answer_te')
+
+    row3 = checkpoint.CheckpointRow(query_id="q3", arm="wiki", answer_text="a3")
+    row4 = checkpoint.CheckpointRow(query_id="q4", arm="wiki", answer_text="a4")
+    row5 = checkpoint.CheckpointRow(query_id="q5", arm="wiki", answer_text="a5")
+    checkpoint.append_checkpoint_row(path, row3)
+    checkpoint.append_checkpoint_row(path, row4)
+    checkpoint.append_checkpoint_row(path, row5)
+
+    loaded = checkpoint.load_checkpoint(path)
+
+    assert loaded == [row1, row2, row3, row4, row5]
+
+
+def test_append_checkpoint_row_truncates_a_file_that_is_entirely_a_torn_tail(tmp_path):
+    """A checkpoint file that crashed on its very first write (no complete
+    row at all yet, just a torn partial line with no newline) must truncate
+    to empty before the next append, not concatenate onto it."""
+    path = tmp_path / "checkpoint.jsonl"
+    path.write_text('{"query_id": "q1", "arm": "wiki", "answer_te', encoding="utf-8")
+
+    row = checkpoint.CheckpointRow(query_id="q1", arm="wiki", answer_text="a1")
+    checkpoint.append_checkpoint_row(path, row)
+
+    loaded = checkpoint.load_checkpoint(path)
+    assert loaded == [row]
+
+
+def test_append_checkpoint_row_truncates_when_file_has_no_newline_at_all(tmp_path):
+    """Even a technically well-formed JSON row missing only its trailing
+    newline is treated as an unterminated tail and discarded before the next
+    append. The torn-tail check is a pure trailing-byte check (mirrors how
+    append_checkpoint_row always writes its OWN trailing newline), not a
+    JSON-validity check -- it can never leave an ambiguous partial write on
+    disk for the next append to build on."""
+    path = tmp_path / "checkpoint.jsonl"
+    row0 = checkpoint.CheckpointRow(query_id="q0", arm="wiki", answer_text="a0")
+    path.write_text(json.dumps(row0.to_json_dict()), encoding="utf-8")  # no trailing \n
+
+    row1 = checkpoint.CheckpointRow(query_id="q1", arm="wiki", answer_text="a1")
+    checkpoint.append_checkpoint_row(path, row1)
+
+    loaded = checkpoint.load_checkpoint(path)
+    assert loaded == [row1]
+
+
 def test_ledger_call_dicts_matches_checkpoint_row_ledger_calls_shape(tmp_path):
     """The exact shape ``run_live_answering`` feeds into ``CheckpointRow
     .ledger_calls`` -- round-trips through ``replay_ledger`` unchanged."""
