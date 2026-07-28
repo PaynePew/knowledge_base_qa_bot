@@ -11,8 +11,10 @@ A grounded Q&A bot over a Markdown knowledge base. Every answer is assembled onl
 from cited records. When the sources don't back a claim, the bot says
 _"I cannot confirm from the knowledge base"_ rather than guessing.
 
-The same question can run against **three retrieval stacks**, switchable from one
-toggle:
+The same question can run against **three retrieval stacks**. In the Reader, RAG
+and Hybrid sit on the retrieval-quality toggle (RAG is the default); Wiki is
+reachable only through a separate **Wiki governance demo** entry (see below).
+The CLI and MCP server accept all three as `stack` values:
 
 | Stack | How it retrieves | Corpus |
 | --- | --- | --- |
@@ -36,7 +38,8 @@ toggle:
 > curated `wiki/` layer: RAG (dense retrieval over raw `docs/`) beat both
 > wiki-backed stacks on every measured content axis. The layer stays live as
 > the substrate for the Hybrid stack and the Operator Console's curation
-> workflow (upload, ingest, lint, reconcile) — see Evaluation below.
+> workflow (upload, ingest, lint, reconcile), which the Reader surfaces as a
+> separate **Wiki governance demo** entry — see Evaluation below.
 
 **Live demo: <https://ask-wiki-rag.paynepew.dev>.** Reader at `/`, Operator
 Console at `/console`.
@@ -76,7 +79,7 @@ are built from that corpus. This is the write side of the Operator Console.
   drafts, a second model pass (the **Grounding Check**) extracts each atomic
   claim and checks it against the cited Sections. One unsupported claim discards
   the whole draft and returns _"I cannot confirm."_ The system fails closed.
-- **Three retrieval architectures behind one toggle**, compared with an honest,
+- **Three retrieval architectures behind one `stack` switch**, compared with an honest,
   statistically-tested benchmark (Cochran's Q omnibus → post-hoc McNemar with
   Holm correction), not a hand-picked headline number.
 - **Same-corpus Hybrid fusion.** Both Hybrid arms index the _same_ wiki Sections,
@@ -202,8 +205,13 @@ for the Console.
 ![Reader UI](project-docs/screenshots/reader.png)
 
 - **Ask anything** in the box (English _or_ Chinese) and press Enter.
-- **Toggle Wiki / RAG / Hybrid** to run the same question against each retrieval
-  stack and compare them side by side.
+- **Toggle RAG / Hybrid** to run the same question against both
+  retrieval-quality stacks and compare them side by side; RAG is the default.
+- **Wiki governance demo** — a separate masthead pill, deliberately not part of
+  the quality toggle, runs the question through the demoted `stack=wiki` path to
+  demonstrate the KB-governance workflow: a grounded answer also files a draft
+  Q&A page for a curator to promote or discard in the Console (ADR-0045's
+  demote clause).
 - **Sources appear first** (the records the answer is grounded in), then the
   answer streams in below them.
 - A **grounding badge** confirms every claim traces back to a cited source; if it
@@ -493,7 +501,9 @@ it from the wiki corpus.
 記錄組成;當來源無法支持某個說法,機器人會回答 _"I cannot confirm from the
 knowledge base"_,而不是亂猜。
 
-同一個問題可以丟給**三套檢索引擎**,用一個切換鈕即時對照:
+同一個問題可以丟給**三套檢索引擎**。在 Reader 裡,RAG 與 Hybrid 掛在檢索品質
+切換鈕上(預設 RAG);Wiki 只能從獨立的「**Wiki 治理示範**」入口進入(見下方
+說明)。CLI 與 MCP 伺服器則接受全部三個 `stack` 值:
 
 | 引擎 | 怎麼檢索 | 語料 |
 | --- | --- | --- |
@@ -514,7 +524,8 @@ knowledge base"_,而不是亂猜。
 > × 4 條臂)判 `stack=wiki` 淘汰(不再是獨立檢索選項)、`wiki/` 精選層降級:
 > RAG(在原始 `docs/` 上做密集檢索)在每一個有量測的內容軸上都贏過兩套
 > wiki-backed 引擎。這個層留著,是因為 Hybrid 引擎與 Operator Console 的
-> 策展工作流(上傳、ingest、lint、reconcile)還依賴它 —— 細節見下方「評測」。
+> 策展工作流(上傳、ingest、lint、reconcile)還依賴它,Reader 也以獨立的
+> 「**Wiki 治理示範**」入口展示這條工作流 —— 細節見下方「評測」。
 
 **線上 Demo:<https://ask-wiki-rag.paynepew.dev>。** Reader 在 `/`,
 Operator Console 在 `/console`。
@@ -551,7 +562,7 @@ Console 的寫入側。
   context 夠不夠強到能回答;LLM 起草之後,再由第二次模型呼叫(**Grounding
   Check**)逐一抽出原子級主張,對照引用的 Sections 檢核。只要有一個主張不被支持,
   整份草稿就作廢、回 _"I cannot confirm"_。系統 fail closed。
-- **三套檢索架構共用一個切換鈕**,並用一個誠實、有統計檢定的基準對照
+- **三套檢索架構共用同一個 `stack` 參數**,並用一個誠實、有統計檢定的基準對照
   (Cochran's Q omnibus → 事後 McNemar + Holm 校正),而不是挑一個好看的頭條數字。
 - **同語料的 Hybrid 融合。** Hybrid 的兩條臂索引的是**同一份** wiki Sections,
   id 1:1 對齊,所以 Reciprocal Rank Fusion(K=60)不需要去調和 BM25 分數與 FAISS
@@ -663,7 +674,11 @@ uv run uvicorn gateway.app.main:app --port 8000
 ![Reader 介面](project-docs/screenshots/reader.png)
 
 - 在輸入框**輸入任何問題**(英文**或**中文),按 Enter。
-- **切換 Wiki / RAG / Hybrid**,用同一個問題去問三套引擎,並排比較。
+- **切換 RAG / Hybrid**,用同一個問題去問兩套檢索品質引擎,並排比較;預設是
+  RAG。
+- **Wiki 治理示範** —— masthead 上獨立的 pill(刻意不放進品質切換鈕),把同一
+  個問題走過已降級的 `stack=wiki` 路徑,示範 KB 治理工作流:有據答案會同時歸檔
+  一頁草稿 Q&A,供策展者在 Console 升級或捨棄(ADR-0045 降級條款)。
 - **資料來源先行** —— 也就是答案所依據的記錄 —— 接著答案會在下方逐字串流出現。
 - **grounding 標章**會確認每個說法都能追溯到引用來源;若無法,你會看到
   _"I cannot confirm"_,而不是幻覺式答案。
