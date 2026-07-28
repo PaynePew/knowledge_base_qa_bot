@@ -267,8 +267,8 @@ def test_ui_query_turn_tag_uses_stack_meta_label_not_raw_id():
     Before this fix, ``onQuery`` passed the raw ``stack`` variable straight
     through, so stack="wiki" rendered as an uppercased "· WIKI" -- recreating
     the unlabeled-peer look issue #687 exists specifically to avoid (the
-    governance entry is supposed to read as "· Governance", matching
-    STACK_META.wiki.label). rag/hybrid happen to render identically either
+    governance entry is supposed to read as "· Wiki governance", matching
+    STACK_META.wiki.label after #696). rag/hybrid happen to render identically either
     way, which is exactly why the raw-id bug went unnoticed for them.
     """
     text = _ui_text()
@@ -278,7 +278,7 @@ def test_ui_query_turn_tag_uses_stack_meta_label_not_raw_id():
     assert (
         'makeLabel(t("queryLabel"), { tag: (STACK_META[stack] || STACK_META.rag).label })'
         in text
-    ), "the turn tag must render the STACK_META label (e.g. Governance), not the raw stack id"
+    ), "the turn tag must render the STACK_META label (e.g. Wiki governance), not the raw stack id"
 
 
 # ---------------------------------------------------------------------------
