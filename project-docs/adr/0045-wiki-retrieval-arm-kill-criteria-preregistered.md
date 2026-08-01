@@ -31,3 +31,29 @@ Significance means a paired test on the shared query set (McNemar or bootstrap o
 - The corpus v3 issue must link this ADR; its report must state each clause's verdict explicitly (kill / demote / survive, per axis, with test statistics).
 - Interview and README narrative follow the verdict, not the other way around. Until corpus v3 runs, the honest claim stays: "retrieval-axis winner is dense; the governance axis is unmeasured; the trial and its kill criteria are pre-registered."
 - Known axes the wiki loses regardless of corpus v3, to be stated rather than hidden: update amplification (a Source edit re-triggers synthesis + grounding LLM calls, vs cheap re-embedding for B) and the staleness window between ingest runs. Corpus v3 does not test these; they bound the wiki's applicable domain (low-churn, contradiction-prone, audit-requiring corpora) even in the survival case.
+
+## Postscript — verdict executed (2026-07-27)
+
+Corpus v3 ran 2026-07-25/26 (PR #680; canonical record `eval/corpus_v3/VERDICT.md`). Both clauses in this ADR's Decision section triggered, and there is zero survival: `rag` (dense-over-raw-docs, stack B) won all three content axes — contradiction-leak rate, grounding pass rate, correct-refusal rate — each significant at McNemar p<0.0001 against every wiki-backed arm (`wiki`, `hybrid`, `dense_over_wiki`); `dense_over_wiki`'s correct-refusal comparison carries the Honest limits #1 caveat below (no calibrated pre-LLM refusal gate), so read that one axis as directional, not apples-to-apples.
+
+- **Kill clause: triggered.** `stack=wiki` showed no significant advantage over `stack=rag` on any of the three content axes; the retrieval arm is killed per this ADR's stated consequence. (This clause rests on `wiki` only — `dense_over_wiki`'s caveated numbers are not part of its evidentiary basis.)
+- **Demote clause: triggered.** `hybrid` showed no significant advantage over `rag` on contradiction-leak rate, the curated layer's home axis; the wiki layer demotes per this ADR's stated consequence. (This clause rests on `hybrid` only, likewise unaffected by the `dense_over_wiki` caveat.)
+- **Survival clause: not met.** No wiki-backed stack significantly beat `rag` on any axis.
+
+**Execution** (all merged 2026-07-27, narrative following the verdict as this ADR's Consequences require):
+
+- README + `eval/fairness_review/method-comparison.md` rewritten to lead with the verdict (PR #684).
+- `project-docs/why-wiki.md` + `eval/fairness_review/why-wiki-industry-evidence.md` rewritten; every wiki/hybrid superiority claim retracted or reframed as argued/analogue (PR #693).
+- Kill clause applied as config/routing, per this ADR's W2 hedge (ADR-0003): the gateway's default stack flips to `rag`, `stack=wiki` is retired as a standalone demo/menu option, and the ADR-0040 injection probe is pinned to `?stack=wiki` explicitly so it keeps covering the wiki drafter/judge path after the default flip (PR #685).
+- A duplicate-`stack`-param budget-scope bypass — middleware and route disagreed on which occurrence of a repeated `stack` param won — fixed so the middleware degrade-gate can no longer be tricked into serving an uncounted paid call (PR #692).
+- Five low-severity robustness tails from the PR #680 live-run review (checkpoint torn-line handling, retry-exhausted clean exit, empty-stratum fail-fast, etc.) batched in (PR #686).
+- A root `.ruff.toml` consistency sweep, among other post-kill-clause cleanups (PR #694) — see that file's own header comment for what it actually does.
+
+**Demote-clause repositioning.** Per the demote clause's consequence ("code is retained ... but every narrative claim of retrieval or grounding superiority is dropped"), the demo gained an explicitly-framed **Governance mode** (PR #691): a separate `stack=wiki` entry point framed as a KB-governance workflow demonstration (curation, filing, the Console), carrying no retrieval-quality claim. This is the sanctioned form of "the demo and Console depend on it" — not a backdoor revival of the killed retrieval arm.
+
+**Errata of record.** `VERDICT.md` stays frozen as shipped (it is the canonical run record) and is deliberately not edited here. Its decision-matrix row "Contradiction control / auditability", graded `[measured-local]`, over-scopes what corpus v3 actually measured: this run measured the contradiction-leak rate only, not auditability, which remains argued rather than measured. The PR #693 fix round caught and corrected this same over-scoping in the downstream narrative docs (`why-wiki-industry-evidence.md`); `VERDICT.md` itself was out of that PR's scope and keeps the wider phrasing. Read the "Contradiction control" row of `VERDICT.md`'s decision matrix with that scoping in mind.
+
+**Still open**, per this ADR's own Consequences and `VERDICT.md`'s honest-limits section:
+
+- The governance axis is unmeasured — corpus v3 tested content-quality axes only.
+- The pre-registered zh query slice (this ADR's Prerequisite 3; relaxed power target, ~$0.9 estimated cost — unit economics from the live run: $3.9675 / 3,636 en queries × 800 zh queries ≈ $0.87) was never run. The `rag` recommendation is validated for the English slice only.
